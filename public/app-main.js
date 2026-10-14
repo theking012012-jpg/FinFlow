@@ -2933,6 +2933,17 @@ function saveExpense(){
 // ════════════════════════════════════════════
 // INVENTORY
 // ════════════════════════════════════════════
+// LA5 (live audit 2026-10-13 M2): an item's stock value is the FIFO value of the layers left (server /api/cogs
+// inventoryValueByItem — the same loop as the Inventory value card and the Balance Sheet), never units × the item's
+// current cost field (Widget: 5 × 15 = 75 under a card of 90). null = not loaded yet → the row shows "—".
+window._invItemValue = function(item){
+  const by = window._inventoryValueByItem;
+  if(!item || item._dbId == null || !by) return null;
+  const v = by[item._dbId];
+  return v == null ? 0 : (parseFloat(v) || 0);
+};
+// Shadowed at runtime by finflow-api-wiring-medium.js window.renderInventory (a replacement override). Kept on the
+// same sources so it can never re-grow C7/LA5 if it ever runs.
 function renderInventory(){
   if(!inventory) inventory=[];
   const lowCount=inventory.filter(i=>i.low).length;
@@ -2941,19 +2952,18 @@ function renderInventory(){
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('inv-skus',inventory.length);
   set('inv-lowstock',lowCount);
-  const totalVal=inventory.reduce((s,i)=>s+(i.units||0)*(i.cost||0),0);
-  set('inv-value',S(totalVal));
+  set('inv-value',window._inventoryValue!=null?S(window._inventoryValue):'—');   // C7
   document.getElementById('inventory-list').innerHTML=inventory.map((item,idx)=>{
     const pct=Math.min(100,Math.round(item.units/item.max*100));
     const col=pct<10?'var(--red)':pct<20?'var(--amber)':'var(--green)';
-    const val=item.units*item.cost;
+    const val=window._invItemValue(item);   // LA5
     const cogsVal=item.cogs!=null?S(item.cogs):'—';
     return`<div class="inv-item-row">
       <span style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
       <span>${esc(item.name)}</span>
       <span style="color:${item.low?'var(--red)':'var(--t1)'}">${item.units} units${item.low?' ⚠':''}</span>
       <div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${col}"></div></div>
-      <span style="color:${item.low?'var(--red)':'var(--t1)'};">${S(val)}</span>
+      <span style="color:${item.low?'var(--red)':'var(--t1)'};">${val==null?'—':S(val)}</span>
       <span style="text-align:right;font-family:var(--font-mono);color:var(--t2)">${cogsVal}</span>
       <span class="table-actions" style="display:flex;gap:4px">
         <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="openStockInModal(${idx})">+ In</button>

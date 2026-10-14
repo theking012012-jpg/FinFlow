@@ -576,6 +576,7 @@ window.switchEntity=async function(idx){
   try {
     window._realInvoices = []; window.userInvoices = []; window._realExpenses = [];
     window._inventoryValue = null;   // C7: the previous business's stock value
+    window._inventoryValueByItem = null;   // LA5: and its per-item values
     window.receipts = []; window.bizExpenses = [];
     if (typeof updateDashboard === 'function') updateDashboard();
   } catch(_clrE){}

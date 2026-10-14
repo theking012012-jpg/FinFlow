@@ -12191,12 +12191,20 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   // field: 5 units at 15 = 75, while the Balance Sheet carried the layers actually left, 5 at 18 = 90).
   const { rows: invItems } = await pool.query(
     `SELECT id FROM inventory WHERE user_id = $1 AND ($2::int IS NULL OR entity_id IS NULL OR entity_id = $2)`, [uid, eid]);
+  // LA5 (live audit 2026-10-13 M2): the per-item stock value too, from the SAME loop, so the Inventory rows add up to the
+  // card by construction. C7 fixed the card; each row still multiplied units by the item's current cost (Widget: 5 × 15
+  // = 75 under a card of 90 — the 5 units left are the 18-a-unit layer).
   let inventoryValue = 0;
-  for (const it of invItems) inventoryValue += await fifoRemainingValue(pool, it.id);
+  const inventoryValueByItem = {};
+  for (const it of invItems) {
+    const v = await fifoRemainingValue(pool, it.id);
+    inventoryValueByItem[it.id] = Math.round(v * 100) / 100;
+    inventoryValue += v;
+  }
   inventoryValue = Math.round(inventoryValue * 100) / 100;
   res.json({
     totalCOGS, grossProfit: Math.round((revenue - totalCOGS) * 100) / 100, revenue,
-    breakdown, uncoveredItems, cogsMethod: 'fifo', inventoryValue,
+    breakdown, uncoveredItems, cogsMethod: 'fifo', inventoryValue, inventoryValueByItem,
   });
 }));
 

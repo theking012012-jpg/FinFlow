@@ -7251,7 +7251,9 @@ async function loadCOGS(){
     window._cogsTotal=parseFloat(data.totalCOGS)||0;
     // C7: stock on hand at FIFO cost — the Inventory value card shows this (one figure with the Balance Sheet).
     window._inventoryValue=(data.inventoryValue!=null)?(parseFloat(data.inventoryValue)||0):null;
+    window._inventoryValueByItem=(data.inventoryValueByItem&&typeof data.inventoryValueByItem==='object')?data.inventoryValueByItem:null;   // LA5: each row's FIFO value
     { const _iv=document.getElementById('inv-value'); if(_iv && window._inventoryValue!=null) _iv.textContent=S(window._inventoryValue); }
+    if(typeof window.renderInventory==='function'){ try{ window.renderInventory(); }catch(e){ console.error('[COGS] inventory repaint failed:', e && e.message); } }   // LA5: rows read the per-item values just loaded
     ['updateDashboard','updateAI','updateHealthScore'].forEach(fn=>{if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}}});
     const totalEl=document.getElementById('cogs-total');
     const revEl=document.getElementById('cogs-revenue');
@@ -8125,6 +8127,7 @@ window.switchEntity=async function(idx){
   try {
     window._realInvoices = []; window.userInvoices = []; window._realExpenses = [];
     window._inventoryValue = null;   // C7: the previous business's stock value
+    window._inventoryValueByItem = null;   // LA5: and its per-item values
     window.receipts = []; window.bizExpenses = [];
     if (typeof updateDashboard === 'function') updateDashboard();
   } catch(_clrE){}

@@ -613,13 +613,13 @@
       el.innerHTML = window.inventory.map((item, idx) => {
         const pct = Math.min(100, Math.round(item.units / item.max * 100));
         const col = pct < 10 ? 'var(--red)' : pct < 20 ? 'var(--amber)' : 'var(--green)';
-        const val = item.units * item.cost;
+        const val = window._invItemValue(item);   // LA5: FIFO value of what is left — the card's figure, per item
         return `<div class="inv-item-row">
           <span style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
           <span>${esc(item.name)}</span>
           <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${item.units} units${item.low ? ' ⚠' : ''}</span>
           <div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${col}"></div></div>
-          <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${S(val)}</span>
+          <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${val == null ? '—' : S(val)}</span>
           <span class="table-actions">
             ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openStockInModal(${idx})" title="Record a purchase (adds a FIFO cost layer)">+ In</button><button class="btn btn-ghost btn-sm" onclick="openStockOutModal(${idx})" title="Record a sale (FIFO cost of goods sold)">− Out</button>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="restockItem(${idx})">Restock</button>

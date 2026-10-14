@@ -39,6 +39,22 @@ Working rules for changing this codebase live in [`CLAUDE.md`](CLAUDE.md) — th
 
 ---
 
+## 🔴 LIVE AUDIT 2026-10-13 — LA rows (source: `LIVE_AUDIT_2026-10-13.md`, browser audit of the live dab2 instance)
+
+Each fix: harness written first, **RED on the old code and GREEN on the fix, both executed** (real scratch Postgres,
+real SPA in jsdom where the defect is client-side), then the related harnesses re-run. Full sweeps: the owner, in
+PowerShell. Commit messages carry the exact output counts.
+
+| # | Audit | Problem | Status |
+|---|---|---|---|
+| LA1 | B1 | Dashboard cards randomly showed "$0" (Investments "$0 · +81%"). The count-up animation snapshotted the card's text when it started and wrote the snapshot back on its last frame, over the real value painted meanwhile. Affected every `.mc-val` tile on every page. | ✅ `ee83114` — counter moved to `finflow-counter.js`; each frame stops if another writer painted since; zero not animated; app-main copy deleted (Rule 1). `verify-la1-counter-race` RED 5 failed → GREEN 9/0; `verify-la1-dashboard-counter-spa` RED (card "$0", runtime winner false) → GREEN 3/0. |
+| LA2 | B1 | Live console: "a deferred render hook threw … Cannot set properties of null" (133 over ~8 loads, counts in multiples of 7). Not reproduced on any harness seed (`verify-slim-boot-renders` green). | 🟠 **OPEN** — diagnostic only (`ee83114`): the `_hdrain` log now names the hook and its top stack frames. Needs the next live check to name it. |
+| LA3 | B2 | Owner salary did not reach Personal on a paid run. The crossing books only lines whose roster entry is `is_owner`; Add employee always saved `is_owner:false`, Edit employee could not set it, and a paid run with no owner line crossed nothing, silently. | ✅ `23a4716` — "This is me — the business owner" on Add/Edit employee; one owner per business (409); mark-paid returns `owner_salary` and the UI says what crossed or why nothing did. `verify-la3-owner-salary-crossing` RED 7 failed (0 Personal rows — the live symptom) → GREEN 12/0. **Live cause not confirmed**: run `tools/live-audit-2026-10-13/b2-owner-salary-probe.js` (read-only) against prod. |
+| LA4 | M1 | Customers "0 customers · $0 lifetime revenue" beside $23K invoiced: an invoice client matching no saved customer was counted nowhere (C19, Customers part). | ✅ `06a7559` — one attribution pass feeds `GET /api/customers` and new `GET /api/customers/unsaved`; page lists unsaved names with Save (pre-filled); totals include them. Nothing written (Rule 8). `verify-la4-customers-from-invoices` RED ("0", "$0") → GREEN 10/0. `verify-customer-derived-revenue` expectation 750 → 770: the old value encoded this defect. |
+| LA5 | M2 | Inventory value card $90, SKU row $75. C7 fixed the card (FIFO); rows still units × current cost (Rule 2 mirror). | ✅ `58aa2e8` — `/api/cogs` returns `inventoryValueByItem` from the same loop as the card; rows read it. `verify-la5-inventory-row-value` RED (rows $70/$27 under $121) → GREEN 4/0. |
+| LA7 | (found during LA6) | `app-main.js updateInvoices` is a dead copy (shadowed by `finflow-api-wiring-postgres.js window.updateInvoices`, a replacement) that still computes Outstanding as Σ amount over status ≠ paid — the pre-F56 formula. Harmless while shadowed; a regrowth hazard if the override is ever removed. | 🟡 **OPEN** — not fixed (outside LA6's scope). |
+| — | C19 rest | Vendors (bills / payments made to a name with no vendor record) and Items: same shape as LA4. | 🟡 **OPEN** — next. |
+
 ## ✅ 2026-08-09 RECONCILIATION — verified-fixed rows (authoritative; supersedes stale headers below)
 
 A finding-by-finding reconciliation on 2026-08-09 found many row headers/bodies below are **badly stale** —

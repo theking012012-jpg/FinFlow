@@ -19,6 +19,15 @@
 - The owner has given standing permission (2026-10-11) to commit and push each fix once verified, on this branch.
   Never merge to `main`; the owner does that.
 
+### Live audit 2026-10-13 (current work — `LIVE_AUDIT_2026-10-13.md`; rows LA1–LA7 in `AUDIT_MASTER.md`)
+
+Branch `claude/laughing-hawking-lkvv38` (from `main` at `98d5d69`). B1 → LA1 ✅ `ee83114` · B2 → LA3 ✅ `23a4716`
+(confirm the live cause with `tools/live-audit-2026-10-13/b2-owner-salary-probe.js`) · M1 → LA4 ✅ `06a7559` ·
+M2 → LA5 ✅ `58aa2e8` · M3 → LA6 in progress · LA2 (boot null errors) open, diagnostic logging only · LA7 open.
+Harness substrate: `pgScratch.js` now runs as root in a Linux container via an unprivileged uid (`d91045b`), so the
+agent executes DB harnesses RED/GREEN itself. Test data the auditor left in the live account (AUDIT TEST ZZ invoice,
+AUDIT TEST EXP expense, AUDIT TEST VENDOR bill, a voided Oct payroll run) is the owner's to remove (Rule 8).
+
 ### Money audit (done)
 
 `MONEY_AUDIT_2026-10-09.md` §1–§9: 62 findings (M1–M62). All fixed and verified RED → GREEN, except M47 (cleared: not a

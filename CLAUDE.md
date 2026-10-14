@@ -100,7 +100,11 @@ read-only investigate  →  report evidence  →  propose  →  diff  →  verif
 - **One fix per commit.** Two money changes in one commit means neither can be reverted
   independently.
 - **Edit wiring sources, never `public/finflow-bundle.js`.** The `F13` pre-commit hook
-  regenerates it; edits to the bundle are silently destroyed.
+  regenerates it; edits to the bundle are silently destroyed. The browser (and every jsdom harness) loads the
+  BUNDLE, so after editing a wiring file run `node bundle.js` before running a harness, or it tests the old code.
+- **Full sweeps are the owner's, in PowerShell** (`node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js`,
+  run 3×). The agent runs the targeted harnesses for its fix: written first, executed RED on the old code and GREEN
+  on the fix, plus the related harnesses re-run — and reports their counts.
 
 ---
 

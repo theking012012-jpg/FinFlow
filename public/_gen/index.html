@@ -4261,6 +4261,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
     <div class="ded-disclaimer" style="margin-bottom:.6rem">You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.</div>
     <div class="field-wrap" style="margin-bottom:.85rem"><label class="field-label" for="emp-startdate">Start date</label><input class="finput" id="emp-startdate" type="date"></div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--t2);margin:0 0 .6rem;cursor:pointer"><input type="checkbox" id="emp-is-owner" style="margin-top:2px"> <span><strong style="color:var(--t1)">This is me — the business owner.</strong> When a payroll run that includes you is marked paid, your net pay is added to your Personal income (the only thing that crosses from the business to Personal).</span></label>
     <div style="font-size:12.5px;color:var(--t2);padding:.4rem 0 .85rem">Net pay: <span id="emp-net-preview" style="color:var(--green);font-family:var(--font-mono);font-weight:600">—</span></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('add-employee-modal')">Cancel</button>
@@ -4980,6 +4981,7 @@ select.ob-input{cursor:pointer}
         <button type="button" class="btn btn-ghost btn-sm" onclick="addDedRow('edit-emp-deductions-rows','previewEditEmpNet')" style="margin-top:2px">+ Add deduction</button>
       </div>
       <div class="ded-disclaimer">You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.</div>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--t2);margin:0 0 .6rem;cursor:pointer"><input type="checkbox" id="edit-emp-is-owner" style="margin-top:2px"> <span><strong style="color:var(--t1)">This is me — the business owner.</strong> When a payroll run that includes you is marked paid, your net pay is added to your Personal income (the only thing that crosses from the business to Personal).</span></label>
       <div style="font-size:12.5px;color:var(--t2);padding:.5rem 0 0">Net pay: <span id="edit-emp-net-preview" style="color:var(--green);font-family:var(--font-mono);font-weight:600">—</span></div>
     </div>
     <div class="modal-footer">

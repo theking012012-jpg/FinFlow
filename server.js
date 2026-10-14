@@ -2547,6 +2547,16 @@ app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── PAYROLL ───────────────────────────────────────────────────────────────────
+// LA3: the roster entry flagged as the owner (is_owner) in a business, other than `exceptId`. The owner is the account
+// holder, so a business has at most one: it is whose net pay crosses to Personal when a run is paid.
+async function rosterOwnerOf(userId, entityId, exceptId) {
+  const { rows: [r] } = await pool.query(
+    `SELECT id, data->>'fname' AS fname, data->>'lname' AS lname FROM payroll
+      WHERE user_id = $1 AND entity_id IS NOT DISTINCT FROM $2::int AND COALESCE(data->>'is_owner','false') IN ('true','1')
+        AND ($3::int IS NULL OR id <> $3::int) ORDER BY id LIMIT 1`, [userId, entityId, exceptId]);
+  return r || null;
+}
+const rosterOwnerTaken = r => (String((r.fname || '') + ' ' + (r.lname || '')).trim() || 'Another person') + ' is already marked as the owner of this business. Only one roster entry can be you.';
 app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
   const userId = scopeId(req);
   const entityId = req.entityId || null;
@@ -2574,6 +2584,10 @@ app.post('/api/payroll', requireAuth, requirePerm('payroll:write'), wrap(async (
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + fname + lname + gross).
   const _dup = await findRecentDuplicate('payroll', scopeId(req), _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
   if (_dup) return res.status(200).json(_dup);
+  if (b.is_owner) {   // LA3: the owner is the account holder — one roster entry per business
+    const _own = await rosterOwnerOf(scopeId(req), _peid, null);
+    if (_own) return res.status(409).json({ error: rosterOwnerTaken(_own) });
+  }
   const { row } = await db.insert('payroll', { user_id: scopeId(req), entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, deductions: Array.isArray(b.deductions) ? computeDeductions(parseFloat(b.gross)||0, b.deductions).rows.map(({label,value,type})=>({label,value,type})) : [], av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false, salary_profile_id: b.salary_profile_id != null ? Number(b.salary_profile_id) : null });
   await recordAudit(pool, { userId: scopeId(req), entityId: _peid, table: 'payroll', recordId: row.id, action: 'CREATE', newData: row, req });  // C29b: roster changes are audited
   res.status(201).json(row);
@@ -2590,6 +2604,15 @@ app.put('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(asyn
   // salary_profile_id links the owner's payroll to its recurring personal-income
   // profile so the salary sync finds-or-updates ONE profile (never fuzzy-matches).
   if (b.salary_profile_id !== undefined) patch.salary_profile_id = b.salary_profile_id != null ? Number(b.salary_profile_id) : null;
+  // LA3 (live audit 2026-10-13 B2): an employee added through Add employee could never be marked as the owner, so a
+  // paid run that paid the owner crossed nothing to Personal. The flag is now settable here (one owner per business).
+  if (b.is_owner !== undefined) {
+    patch.is_owner = !!b.is_owner;
+    if (patch.is_owner) {
+      const _own = await rosterOwnerOf(scopeId(req), row.entity_id == null ? null : row.entity_id, row.id);
+      if (_own) return res.status(409).json({ error: rosterOwnerTaken(_own) });
+    }
+  }
   await db.updateById('payroll', row.id, patch);
   const { rows: [_payr] } = await pool.query(`SELECT * FROM payroll WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'payroll', recordId: row.id, action: 'UPDATE', oldData: row, newData: _payr ? rowToObj(_payr) : null, req });  // C29b
@@ -10083,30 +10106,38 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
 // currency, dated on the paid date), keyed to the run line so a repeat mark-paid books nothing new. Voiding the
 // run removes it. It used to come from the ROSTER template: saving the owner's salary created a monthly recurring
 // personal-income profile the scheduler materialised whether or not a run was approved, paid or voided.
+// LA3 (live audit 2026-10-13 B2): returns what crossed — { ownerOnRun, booked: [{ employee, amount, currency, isNew }] } —
+// so mark-paid can tell the person. A paid run with no owner line crossed nothing and said nothing; on the live audit that
+// read as "the crossing does not fire".
 async function syncOwnerSalaryFromRun(userId, run, mode) {
-  if (!run) return;
+  if (!run) return { ownerOnRun: false, booked: [] };
   if (mode === 'void') {
     await pool.query(`DELETE FROM personal_transactions WHERE user_id = $1 AND entity_id IS NULL AND data->>'source' = 'payroll' AND data->>'payroll_run_id' = $2::text`, [userId, String(run.id)]);
-    return;
+    return { ownerOnRun: false, booked: [] };
   }
   const { rows: lines } = await pool.query(
     `SELECT l.id, l.net_pay, l.employee_name FROM payroll_run_lines l JOIN payroll p ON p.id = l.payroll_id AND p.user_id = $2
       WHERE l.run_id = $1 AND COALESCE(p.data->>'is_owner','false') IN ('true','1')`, [run.id, userId]);
-  if (!lines.length) return;
+  const outcome = { ownerOnRun: lines.length > 0, booked: [] };
+  if (!lines.length) return outcome;
   const { rows: [ent] } = run.entity_id != null ? await pool.query(`SELECT data->>'name' AS name, data->>'currency' AS cur FROM entities WHERE id = $1`, [run.entity_id]) : { rows: [] };
   const paid = FinFlowDates._toYmd(run.paid_date) || await entityTodayYmd(run.entity_id);
   for (const l of lines) {
     const amt = Math.round((parseFloat(l.net_pay) || 0) * 100) / 100;
     if (!(amt > 0)) continue;
     const key = ('owner-salary:' + run.id + ':' + l.id).slice(0, 64);
+    const cur = String((ent && ent.cur) || 'USD').toUpperCase();
     const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id = $1 AND data->>'idempotency_key' = $2 LIMIT 1`, [userId, key]);
-    if (dup) continue;
-    await db.insert('personal_transactions', {
-      user_id: userId, description: 'Owner salary — ' + String((ent && ent.name) || 'Business').slice(0, 120) + ' (' + String(run.period || '').slice(0, 40) + ')',
-      category: 'Salary', amount: amt, tx_type: 'income', tx_date: paid, currency: String((ent && ent.cur) || 'USD').toUpperCase(),
-      source: 'payroll', payroll_run_id: run.id, idempotency_key: key,
-    });
+    if (!dup) {
+      await db.insert('personal_transactions', {
+        user_id: userId, description: 'Owner salary — ' + String((ent && ent.name) || 'Business').slice(0, 120) + ' (' + String(run.period || '').slice(0, 40) + ')',
+        category: 'Salary', amount: amt, tx_type: 'income', tx_date: paid, currency: cur,
+        source: 'payroll', payroll_run_id: run.id, idempotency_key: key,
+      });
+    }
+    outcome.booked.push({ employee: l.employee_name || '', amount: amt, currency: cur, isNew: !dup });
   }
+  return outcome;
 }
 
 // M41 (fix pass round 2): a run's cash legs, from its LINES (basis C). gross = Σ (gross + bonus + overtime); net = Σ net
@@ -10148,7 +10179,10 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
     return res.status(404).json({ error: 'Not found.' });
   }
   await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
-  try { await syncOwnerSalaryFromRun(scopeId(req), rows[0], 'paid'); } catch (e) { console.error('[payroll] owner salary → personal failed:', e && e.message); }   // M14
+  // M14 / LA3: the outcome goes back to the person — a failure is reported, never only logged.
+  let _ownerSalary;
+  try { _ownerSalary = await syncOwnerSalaryFromRun(scopeId(req), rows[0], 'paid'); }
+  catch (e) { console.error('[payroll] owner salary → personal failed:', e && e.message, e && e.stack); _ownerSalary = { ownerOnRun: true, booked: [], error: 'The run is paid, but the owner salary could not be added to Personal. Mark it paid again to retry.' }; }
   // GL Phase 5b (cash completeness): mark-paid is the CASH-OUT event - settle the payroll liability with
   // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), from the run's LINES. M41: on the 'net' basis the cash out
   // is Σ NET pay — the withholdings stay in 2200 (owed to the authority) until PUT /remit pays them; a run paid
@@ -10167,7 +10201,7 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
       });
     }
   } catch (glErr) { console.error('[GL] payroll cash-out posting failed (shadow, non-fatal):', glErr && glErr.message); }
-  res.json(rows[0]);
+  res.json({ ...rows[0], owner_salary: _ownerSalary });
 }));
 
 // M41 (fix pass round 2): REMIT a paid run's withholdings — the cash leaves to the tax authority / pension fund on the

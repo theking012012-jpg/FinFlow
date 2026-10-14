@@ -3327,6 +3327,7 @@ window.openEditEmployee = function(id){
   document.getElementById('edit-emp-type').value = emp.type||emp.emp_type||'Full-time';
   document.getElementById('edit-emp-gross').value = emp.gross||0;
   setDedRows('edit-emp-deductions-rows','previewEditEmpNet', emp.deductions);
+  const _own=document.getElementById('edit-emp-is-owner'); if(_own) _own.checked=false;   // LA3: this list holds non-owners only
   document.getElementById('modal-edit-employee').style.display='flex';
 };
 
@@ -3345,16 +3346,27 @@ window.saveEditEmployee = async function(){
   const emp_type = document.getElementById('edit-emp-type').value;
   const gross = parseFloat(document.getElementById('edit-emp-gross').value)||0;
   const deductions = readDedRows('edit-emp-deductions-rows');
+  const makeOwner = !!document.getElementById('edit-emp-is-owner')?.checked;   // LA3: mark an existing employee as you
   if(!id) return;
   const btn = document.querySelector('#modal-edit-employee .btn-primary');
   btn.disabled=true; btn.textContent='Saving…';
   try{
+    const body = {role,emp_type,gross,deductions};
+    if(makeOwner) body.is_owner = true;
     const res = await fetch('/api/payroll/'+id,{
       method:'PUT', credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({role,emp_type,gross,deductions})
+      body:JSON.stringify(body)
     });
-    if(!res.ok) throw new Error(await res.text());
+    if(!res.ok){ let m=''; try{ m=(await res.json()).error||''; }catch(_){ } throw new Error(m||('HTTP '+res.status)); }
+    if(makeOwner){
+      window.closeEditEmployee();
+      const _ai=(typeof ENTITIES!=='undefined')?ENTITIES.findIndex(e=>e.active):-1;
+      if(typeof window.loadEntityData==='function' && _ai>=0) await window.loadEntityData(_ai);
+      if(typeof renderPayroll==='function') renderPayroll();
+      notify('Marked as you, the owner ✦');
+      return;
+    }
     const emp = (window.payrollEmployees||[]).find(e=>(e._dbId||e.id)===id);
     if(emp){ emp.role=role; emp.type=emp_type; emp.gross=gross; emp.deductions=deductions; emp.net=netFromDeductions(gross, deductions); }
     window.closeEditEmployee();
@@ -3990,6 +4002,7 @@ function openAddEmployeeModal(){
   _sv('emp-fname',''); _sv('emp-lname',''); _sv('emp-jobtitle','');
   _sv('emp-type','Full-time'); _sv('emp-gross',''); _sv('emp-startdate','');
   setDedRows('emp-deductions-rows','previewEmpNet', []);
+  const _own=document.getElementById('emp-is-owner'); if(_own) _own.checked=false;   // LA3
   const prev=document.getElementById('emp-net-preview');
   if(prev) prev.textContent='—';
   openModal('add-employee-modal');
@@ -4015,11 +4028,23 @@ async function saveNewEmployee(){
   const avClass=colors[Math.floor(Math.random()*colors.length)];
   const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
   const entity=activeIdx>=0?ENTITIES[activeIdx]:null;
+  // LA3 (live audit 2026-10-13 B2): this form always saved is_owner:false, so an owner added here was an ordinary
+  // employee and a paid run crossed nothing to Personal. "This is me" flags the roster entry as the owner.
+  const isOwner=!!document.getElementById('emp-is-owner')?.checked;
   try{
     const r=await fetch('/api/payroll',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
-      body:JSON.stringify({fname,lname,role,emp_type:empType,gross,deductions,is_owner:false,av_class:avClass,entity_id:entity?._dbId||null})});
+      body:JSON.stringify({fname,lname,role,emp_type:empType,gross,deductions,is_owner:isOwner,av_class:avClass,entity_id:entity?._dbId||null})});
     if(!r.ok) throw new Error((await r.json()).error||'Failed to save');
     const saved=await r.json();
+    if(isOwner){
+      // The owner is drawn from the roster by loadEntityData (owner card + payroll link) — reload rather than guess.
+      closeModal('add-employee-modal');
+      if(typeof window.loadEntityData==='function' && activeIdx>=0) await window.loadEntityData(activeIdx);
+      if(typeof renderPayroll==='function') renderPayroll();
+      window.finflow?.refresh(['payroll','dashboard']);
+      notify(fname+' '+lname+' added as you, the owner ✦');
+      return;
+    }
     const net=netFromDeductions(gross, deductions);
     const initials=((fname[0]||'')+(lname[0]||'')).toUpperCase();
     payrollEmployees.push({_dbId:saved.id,fname,lname,role,type:empType,gross,deductions,net,initials,avClass,isOwner:false});

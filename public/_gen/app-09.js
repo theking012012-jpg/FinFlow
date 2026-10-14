@@ -540,8 +540,14 @@ async function markPayrollPaid(id){
     const res=await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include'});
     const d=await res.json().catch(()=>({}));
     if(!res.ok){notify('⚠ '+(d.error||'Could not update'),true);loadPayrollRuns();return;}   // N58: e.g. "Approve this payroll run before marking it paid."
-    notify('✓ Payroll marked paid');
+    // LA3 (live audit 2026-10-13 B2): say what crossed to Personal — or why nothing did. It used to be silent.
+    const os=d.owner_salary||{};
+    const _m=b=>Number(b.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' '+b.currency;   // the business currency, never a display conversion
+    if(os.error) notify('✓ Payroll marked paid. ⚠ '+os.error,true);
+    else if(os.booked&&os.booked.length) notify('✓ Payroll marked paid · your salary ('+os.booked.map(_m).join(', ')+') is in your Personal income');
+    else notify('✓ Payroll marked paid. Nobody on this run is marked as you (the owner), so nothing was added to Personal. To change that, edit yourself on the roster and tick "This is me".',true);
     loadPayrollRuns();
+    if(typeof window.loadPersonalFinance==='function'){ try{ window.loadPersonalFinance(); }catch(_){} }
   }catch(e){notify('Could not update',true);}
 }
 // F106 (HYBRID): a DRAFT run is deleted outright (never recognised); an approved/paid run is VOIDED

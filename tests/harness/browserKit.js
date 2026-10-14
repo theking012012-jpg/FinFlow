@@ -60,15 +60,17 @@ function runBrowser(title, body, opts = {}) {
 
       browser = await pw.chromium.launch();
       const host = new URL(server.baseUrl).hostname;
-      const open = async ({ width, height }, pathname = '/app') => {
+      // beforeGoto(ctx, page): optional — e.g. ctx.route(...) to add network latency before the first navigation (LA2).
+      const open = async ({ width, height, beforeGoto }, pathname = '/app') => {
         const ctx = await browser.newContext({ viewport: { width, height } });
         await ctx.addCookies([...http.cookies.entries()].map(([name, value]) => ({ name, value, domain: host, path: '/' })));
         const page = await ctx.newPage();
+        if (beforeGoto) await beforeGoto(ctx, page);
         await page.goto(server.baseUrl + pathname, { waitUntil: 'load' });
         await page.waitForTimeout(1500);   // the app's boot loads (entities, settings) settle
         return page;
       };
-      await body({ open, A, eq, J, http, c, uid, base: server.baseUrl });
+      await body({ open, A, eq, J, http, c, uid, base: server.baseUrl, server });
     } catch (e) {
       fail++;
       console.error('\n  FATAL:', e && e.message, e && e.code, e && e.stack);

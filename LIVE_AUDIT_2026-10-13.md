@@ -40,7 +40,7 @@ merged and Railway deploys it; the owner's full PowerShell sweep has not been ru
 **Verdict now:** ONE blocker (B1) — fixed on the branch, still live until it is merged and deployed (the 2026-10-14 Cowork
 repro saw Revenue / Expenses / Net Profit = $0 again on a hard reload). B2 is withdrawn (above). Launch-ready once the branch
 is merged and deployed, the owner's full sweep is green, and the next live check (which should also cover the "Not yet
-exercised" list below) shows no `$0` cards and names any remaining boot error (LA2).
+exercised" list below) shows no `$0` cards and names any remaining boot error (LA2). **LA2 is now root-caused and fixed on the branch** (boot work waited for sign-in but not for the page to finish loading — see AUDIT_MASTER LA2).
 
 ---
 

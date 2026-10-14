@@ -1320,9 +1320,19 @@ function initEnhancements(){
   if(checked) checked.closest('label').style.borderColor = 'var(--acc)';
   // Always verify server session before firing ff:authed — avoids 401 race
   // when sessionStorage has ff_role but the cookie has expired server-side.
+  // LA2 (live audit 2026-10-13): /api/me starts now, but its answer is ACTED ON only once the document is fully
+  // parsed (DOMContentLoaded). On a real network /api/me answers while the parser is still waiting on the production
+  // build's blocking /_gen scripts — before the lazy-screen hook (end of <body>) and the deferred bundle exist — and
+  // everything listening to ff:authed ran against a half-built page: the boot render hooks threw "Cannot set
+  // properties of null" (7 per live boot) and ran the SHADOWED app-main copies (renderInvoices, renderPayroll, …).
+  // Same race as F50 / F50 REOPEN / F97, removed at its source rather than re-fired afterwards.
+  const _ffDomReady = document.readyState === 'loading'
+    ? new Promise(res => document.addEventListener('DOMContentLoaded', res, { once: true }))
+    : Promise.resolve();
   fetch('/api/me', {credentials:'include'}).then(async r => {
     if (!r.ok) { sessionStorage.removeItem('ff_role'); return; }
     const data = await r.json();
+    await _ffDomReady;
     window.CURRENT_USER = data.user;
     _setUserDisplay(data.user);
     const role = sessionStorage.getItem('ff_role') || 'owner';

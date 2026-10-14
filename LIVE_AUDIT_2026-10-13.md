@@ -20,7 +20,7 @@ merged and Railway deploys it; the owner's full PowerShell sweep has not been ru
 |---|---|---|
 | B1 cards show `$0` | ✅ Fixed (LA1). Root cause differs from the audit's suspicion — see B1. | `ee83114` |
 | B1 console "Cannot set properties of null" | 🟠 Open (LA2) — not reproduced on test data; the log now names the hook | `ee83114` |
-| B2 owner salary not reaching Personal | ✅ Fixed (LA3) — live cause to confirm with the read-only probe | `23a4716` |
+| B2 owner salary not reaching Personal | **WITHDRAWN 2026-10-14 — not a defect.** Live repro (Cowork, deployed main): mark-paid booked the owner-salary row (id 113, $4,000, Personal) and the Personal page shows it in Month / Quarter / Year. The 10-13 "no row" was read off the rendered page during the B1 render race. LA3's changes (flag the owner on Edit, mark-paid says what crossed) remain as improvements. | `23a4716` |
 | M1 Customers 0 | ✅ Fixed (LA4) | `06a7559` |
 | M2 Inventory $90 vs $75 | ✅ Fixed (LA5) — $90 was right, the row was wrong | `58aa2e8` |
 | M3 credit note in Outstanding / Revenue | ✅ Amounts correct as they are; caption fixed (LA6) | `98f4cec` |
@@ -37,9 +37,10 @@ merged and Railway deploys it; the owner's full PowerShell sweep has not been ru
 | Found while fixing: consolidated accountant view dropped an unconvertible business silently | ✅ Now says which currency is missing and how to fix it (LA15b) | `2ed98f8` |
 | Found while fixing: e2e lifecycle test stale since C6 | ✅ Test fixed (LA18) | `cce19e7` |
 
-**Verdict now:** both blockers are fixed on the branch. Launch-ready once the branch is merged and deployed, the owner's
-full sweep is green, the B2 probe confirms the live cause, and the next live check (which should also cover the
-"Not yet exercised" list below) shows no `$0` cards and names any remaining boot error.
+**Verdict now:** ONE blocker (B1) — fixed on the branch, still live until it is merged and deployed (the 2026-10-14 Cowork
+repro saw Revenue / Expenses / Net Profit = $0 again on a hard reload). B2 is withdrawn (above). Launch-ready once the branch
+is merged and deployed, the owner's full sweep is green, and the next live check (which should also cover the "Not yet
+exercised" list below) shows no `$0` cards and names any remaining boot error (LA2).
 
 ---
 
@@ -75,6 +76,14 @@ The money engine is largely correct and reconciles across surfaces. Two defects 
 > and where it threw, so the next live check will identify it.
 
 ### B2 — Owner-salary Business→Personal crossing does NOT fire on PAID
+> **WITHDRAWN 2026-10-14 (live repro by Cowork on deployed main, observe-only):** run #3 "November 2026" approved → marked paid
+> at 10:57:28 UTC−4; `GET /api/personal-transactions` immediately carried `{id:113, amount:4000, currency:USD, source:payroll,
+> entity_id:null, payroll_run_id:3, description:"Owner salary — Northwind Studio (November 2026)"}`, and after a hard reload
+> the Personal page listed it (+$4,000) in Month / Quarter / Year (Year income $3.4K → $7.4K). The code was unchanged since
+> 10-13; the 10-13 conclusion came from reading the rendered Personal page during the B1 render race instead of the API.
+> Read-only probes agree: id 112 was handed out at run #2's mark-paid (row later removed by its void). The section below is
+> kept as originally written.
+
 **Severity: launch-blocking** (core walled feature, non-functional). Ran a payroll (Oct 2026), approved it, marked it **Paid** — logged-in user **is** the owner (Sam Owner).
 
 - **Business side correct:** on Paid, the dashboard booked a `Payroll $8,000` expense line (basis-C read the run gross); voiding reversed it.

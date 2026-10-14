@@ -8,7 +8,7 @@
 
 ---
 
-## FIX STATUS — updated 2026-10-14 (branch `claude/laughing-hawking-lkvv38`, not yet merged to `main`)
+## FIX STATUS — updated 2026-10-14, second pass (branch `claude/laughing-hawking-lkvv38`, not yet merged to `main`)
 
 The audit text below is kept as written; each finding now carries a **Status** line. Every fix was verified by a
 harness run on a real scratch Postgres (and the real app in jsdom where the defect is in the browser): **it fails on
@@ -27,12 +27,15 @@ merged and Railway deploys it; the owner's full PowerShell sweep has not been ru
 | No COGS on dashboard | ✅ Fixed (LA13) | `f0a7491` |
 | VAT Return tile | ✅ Removed (LA9) | `a99215f` |
 | "Business" / "89% deductible" labels | ✅ Fixed (LA8) | `9cc150a` |
-| Full reload on every navigation | ⚪ Not reproduced (LA11) | — |
-| Negative-revenue September | ⚪ Not a defect (LA12) | — |
+| Full reload on every navigation | ⚪ Not reproduced (LA11) — needs the exact click from the owner | — |
+| Negative-revenue September | ⚪ Not a defect (LA12) — owner decision: keep credit notes netted | — |
 | Found while fixing: Vendors 0 (same as M1) | ✅ Fixed (LA14) | `2391779` |
-| Found while fixing: literal "$" money in ~28 places | 🟡 Open (LA15) | — |
-| Found while fixing: Items page 0 | ⬜ Owner decision (LA16) | — |
-| Found while fixing: "1099 / W-2 Summary" is US-only naming | ⬜ Owner decision (LA10) | — |
+| Found while fixing: literal "$" money (62 matches classified) | ✅ Fixed (LA15a business app, LA15b accountant client view, LA15c marketplace rates in the accountant's own currency) | `1cdc309` · `2ed98f8` · `f51e6cc` |
+| Found while fixing: Items page 0 | ✅ Fixed (LA16) — owner decision: one product list | `cfb01ad` |
+| Found while fixing: "1099 / W-2 Summary" is US-only naming | ✅ Renamed "Payroll by person" (LA10) — owner decision | `b551af9` |
+| Found while fixing: accountant sign-up pricing was never saved | ✅ Fixed (LA17) | `f51e6cc` |
+| Found while fixing: consolidated accountant view dropped an unconvertible business silently | ✅ Now says which currency is missing and how to fix it (LA15b) | `2ed98f8` |
+| Found while fixing: e2e lifecycle test stale since C6 | ✅ Test fixed (LA18) | `cce19e7` |
 
 **Verdict now:** both blockers are fixed on the branch. Launch-ready once the branch is merged and deployed, the owner's
 full sweep is green, the B2 probe confirms the live cause, and the next live check (which should also cover the

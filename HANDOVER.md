@@ -25,10 +25,13 @@ Branch `claude/laughing-hawking-lkvv38` (from `main` at `98d5d69`). B1 → LA1 �
 (confirm the live cause with `tools/live-audit-2026-10-13/b2-owner-salary-probe.js`) · M1 → LA4 ✅ `06a7559` ·
 M2 → LA5 ✅ `58aa2e8` · M3 → LA6 ✅ `98f4cec` · minor → LA8 ✅ `9cc150a`, LA9 ✅ `a99215f`, LA13 ✅ `f0a7491`, LA11/LA12
 not defects (evidence in the rows) · C19 Vendors → LA14 ✅ `2391779`.
+Second pass (owner decisions 2026-10-14): LA10 ✅ `b551af9` ("Payroll by person"), LA16 ✅ `cfb01ad` (one product
+list), LA15 ✅ `1cdc309` / `2ed98f8` / `f51e6cc` (literal "$" → each business's / accountant's own currency; currency
+table + country map now in `public/finflow-currency.js`), LA17 ✅ `f51e6cc` (accountant sign-up pricing was never
+saved), LA18 ✅ `cce19e7` (e2e lifecycle harness stale since C6), LA12 kept netted (owner decision).
 Open: LA2 (boot null errors — diagnostic logging only, needs the next live check), LA7 (dead app-main updateInvoices
-with the pre-F56 formula), LA15 (literal "$" money, 28 sites to classify). Owner decisions: LA10 (rename
-"1099 / W-2 Summary"), LA16 (Items: one product list or two). Every ✅ was executed RED on the old code and GREEN on
-the fix here; full sweeps are the owner's (PowerShell).
+with the pre-F56 formula), LA11 (needs the owner's exact click that reloads the page). Every ✅ was executed RED on
+the old code and GREEN on the fix here; full sweeps are the owner's (PowerShell).
 Harness substrate: `pgScratch.js` now runs as root in a Linux container via an unprivileged uid (`d91045b`), so the
 agent executes DB harnesses RED/GREEN itself. Test data the auditor left in the live account (AUDIT TEST ZZ invoice,
 AUDIT TEST EXP expense, AUDIT TEST VENDOR bill, a voided Oct payroll run) is the owner's to remove (Rule 8).

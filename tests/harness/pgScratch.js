@@ -49,7 +49,52 @@ function rmScratchDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// ROOT FALLBACK (Linux containers only). Postgres refuses to run as root, and embedded-postgres's own answer is to
+// create an OS user. Where the harness runs as root (a cloud container), the SAME bundled binaries run instead as an
+// existing unprivileged uid (FINFLOW_PG_UID, default 65534 = nobody) via setpriv — one fresh cluster per run, torn
+// down after, exactly like the normal path. Never taken on Windows/macOS or as a normal user (getuid() !== 0).
+const _isRoot = () => typeof process.getuid === 'function' && process.getuid() === 0 && process.platform === 'linux';
+
+async function startAsUnprivileged({ keep }) {
+  const { spawnSync } = require('child_process');
+  const uid = String(parseInt(process.env.FINFLOW_PG_UID || '65534', 10));
+  const bin = path.join(path.dirname(require.resolve('pg/package.json')), '..', '@embedded-postgres', 'linux-x64', 'native', 'bin');
+  const port = await findFreePort();
+  const base = path.join(os.tmpdir(), 'finflow-harness');
+  const dataDir = path.join(base, keep ? 'kept-cluster' : `run-${process.pid}-${Date.now()}`);
+  rmScratchDir(dataDir);
+  fs.mkdirSync(base, { recursive: true }); fs.chmodSync(base, 0o755);
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.chownSync(dataDir, Number(uid), Number(uid));
+  const pwfile = path.join(dataDir, '.pw');
+  fs.writeFileSync(pwfile, PG_PASS); fs.chownSync(pwfile, Number(uid), Number(uid));
+  const pgdata = path.join(dataDir, 'data');
+  const asPg = (cmd, args) => {
+    const r = spawnSync('setpriv', ['--reuid=' + uid, '--regid=' + uid, '--clear-groups', path.join(bin, cmd), ...args], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`[pgScratch] ${cmd} failed (status ${r.status}):\n${r.stdout}\n${r.stderr}${r.error ? '\n' + r.error.stack : ''}`);
+    return r;
+  };
+  asPg('initdb', ['-D', pgdata, '-U', PG_USER, '--pwfile=' + pwfile, '-A', 'password', '--encoding=UTF8', '--locale=C']);
+  asPg('pg_ctl', ['-D', pgdata, '-w', '-l', path.join(dataDir, 'pg.log'),
+    '-o', `-p ${port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=${dataDir} -c timezone=UTC -c log_timezone=UTC`, 'start']);
+  const stopCluster = () => {
+    try { asPg('pg_ctl', ['-D', pgdata, '-m', 'fast', '-w', 'stop']); } catch (e) { /* already down */ }
+    if (!keep) { try { rmScratchDir(dataDir); } catch { /* best effort */ } }
+  };
+  try {
+    const admin = new Client({ connectionString: `postgres://${PG_USER}:${PG_PASS}@127.0.0.1:${port}/postgres` });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${DB_NAME}`);
+    await admin.end();
+  } catch (err) { stopCluster(); throw new Error(`[pgScratch] (root fallback) create database failed: ${err.message}\n${err.stack}`); }
+  return { port, dataDir, logLines: [], pgStop: async () => stopCluster() };
+}
+
 async function startScratchPostgres({ keep = false } = {}) {
+  if (_isRoot()) {
+    const { port, dataDir, logLines, pgStop } = await startAsUnprivileged({ keep });
+    return _finishScratch({ port, dataDir, logLines, keep, pgStop });
+  }
   const mod = await import('embedded-postgres');           // package is ESM-only
   const EmbeddedPostgres = mod.default || mod;
 
@@ -111,6 +156,17 @@ async function startScratchPostgres({ keep = false } = {}) {
     throw new Error(detail);
   }
 
+  return _finishScratch({ port, dataDir, logLines, keep, pgStop: async () => {
+    try { await pg.stop(); } catch (e) { logLines.push('[stop] ' + e.message); }
+    if (!keep) {
+      // persistent:false should have removed it; make sure (Windows file locks can defeat it).
+      try { rmScratchDir(dataDir); } catch { /* best effort — reported by caller if it matters */ }
+    }
+  } });
+}
+
+// The checks every scratch cluster passes before a harness may use it, whichever way it was started.
+async function _finishScratch({ port, dataDir, logLines, keep, pgStop }) {
   const url = `postgres://${PG_USER}:${PG_PASS}@127.0.0.1:${port}/${DB_NAME}`;
 
   // Everything from here on runs with a LIVE cluster. If any of it throws, the cluster must
@@ -130,8 +186,7 @@ async function startScratchPostgres({ keep = false } = {}) {
     await guard.installScratchMarker(client, `verification harness · pid ${process.pid}`);
   } catch (err) {
     if (client) { try { await client.end(); } catch { /* ignore */ } }
-    try { await pg.stop(); } catch { /* ignore */ }
-    if (!keep) { try { rmScratchDir(dataDir); } catch { /* best effort */ } }
+    try { await pgStop(); } catch { /* ignore */ }
     err.message = `[pgScratch] cluster started but failed its checks — cluster stopped.\n${err.message}`;
     throw err;
   }
@@ -141,11 +196,7 @@ async function startScratchPostgres({ keep = false } = {}) {
     if (stopped) return;
     stopped = true;
     try { await client.end(); } catch { /* ignore */ }
-    try { await pg.stop(); } catch (e) { logLines.push('[stop] ' + e.message); }
-    if (!keep) {
-      // persistent:false should have removed it; make sure (Windows file locks can defeat it).
-      try { rmScratchDir(dataDir); } catch { /* best effort — reported by caller if it matters */ }
-    }
+    await pgStop();
   };
 
   return { url, port, dataDir, facts, client, stop, logLines, keep };

@@ -11103,6 +11103,24 @@ async function glConsolidated(userId, opts = {}) {
   };
 }
 
+// LA19: the GL 5b gates' failed checks, by name, with both sides. `flags` are [name, ok, detail]; `legs` are
+// [name, gl, books], equal to the cent. Each gate derives `reconciled` from this list, so its log can never disagree
+// with its decision (the old message printed four legs and tb only — a gross / payroll / FX-coverage / income /
+// expense failure logged two identical sides and no reason).
+function glGateFailures(flags, legs) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const out = [];
+  for (const [name, ok, detail] of flags) if (!ok) out.push(name + (detail ? '(' + detail + ')' : ''));
+  for (const [name, gl, bk] of legs) if (!(Math.abs(r2(gl) - r2(bk)) < 0.01)) out.push(name + '(gl=' + r2(gl) + ' books=' + r2(bk) + ')');
+  return out;
+}
+function glCoverageDetail(cov) {
+  const u = (cov && Array.isArray(cov.unconvertible)) ? cov.unconvertible : [];
+  const pairs = [...new Set(u.map(x => (x.from || '?') + '→' + (x.to || '?')))];
+  return 'no rate ' + (pairs.join(',') || '?') + ', ' + u.length + ' row' + (u.length === 1 ? '' : 's');
+}
+const glTbDetail = tb => 'dr=' + (Math.round((tb.totalDebit || 0) * 100) / 100) + ' cr=' + (Math.round((tb.totalCredit || 0) * 100) / 100);
+
 // GL PHASE 5b - RECONCILE-GATED read of the P&L from the ledger, with computeBooks as ORACLE FALLBACK.
 // The read only flips to the GL when the GL's own P&L reconciles to computeBooks to the CENT for this
 // entity+period AND the trial balance ties; otherwise it serves computeBooks unchanged (and logs the
@@ -11151,18 +11169,18 @@ async function glProfitLoss(userId, entityId, opts = {}) {
   const glOpex = r2(f.accounts.filter(a => a.type === 'expense' && a.code !== '5000' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0));
   const glGross = r2(glRevenue - glCogs);
   const glNet = r2(glRevenue - glCogs - glOpex);
-  const eq = (a, b) => Math.abs(r2(a) - r2(b)) < 0.01;
   const coverageOk = !f.fxCoverage || f.fxCoverage.complete !== false;   // never serve a partial (missing-rate) translation
-  const reconciled =
-    f.trialBalance.balanced && coverageOk &&
-    eq(glRevenue, books.revenue) && eq(glCogs, books.cogs) && eq(glGross, books.grossProfit) &&
-    eq(glPayroll, books.parts ? books.parts.payroll : 0) && eq(glOpex, books.opex) && eq(glNet, books.netProfit);
+  const failed = glGateFailures([
+    ['tb', f.trialBalance.balanced, glTbDetail(f.trialBalance)],
+    ['fxCoverage', coverageOk, glCoverageDetail(f.fxCoverage)],
+  ], [
+    ['rev', glRevenue, books.revenue], ['cogs', glCogs, books.cogs], ['gross', glGross, books.grossProfit],
+    ['payroll', glPayroll, books.parts ? books.parts.payroll : 0], ['opex', glOpex, books.opex], ['net', glNet, books.netProfit],
+  ]);
+  const reconciled = failed.length === 0;
   if (!reconciled) {
     // Books incomplete or diverging for this entity/period -> serve the proven oracle, log for signal.
-    console.warn('[GL 5b] P&L divergence (serving computeBooks) uid=' + userId + ' eid=' + entityId +
-      ' gl{rev:' + glRevenue + ',cogs:' + glCogs + ',opex:' + glOpex + ',net:' + glNet + '}' +
-      ' books{rev:' + r2(books.revenue) + ',cogs:' + r2(books.cogs) + ',opex:' + r2(books.opex) + ',net:' + r2(books.netProfit) + '}' +
-      ' tb=' + f.trialBalance.balanced);
+    console.warn('[GL 5b] P&L not reconciled (serving computeBooks) uid=' + userId + ' eid=' + entityId + ' failed: ' + failed.join('; '));
     return fromBooks(books, 'computeBooks');
   }
   const _out = {
@@ -11229,20 +11247,23 @@ async function glBalanceSheet(userId, entityId, opts = {}) {
   // journalBalances, so the gate fails if exactly ONE side carries a leg (it passed vacuously when both dropped it).
   const glAR = r2((bal['1100'] || 0) + (bal['J1100'] || 0)), glAP = r2((bal['2000'] || 0) + (bal['J2000'] || 0));
   const glExpNonFx = r2(f.accounts.filter(a => a.type === 'expense' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0));
-  const eq = (a, b) => Math.abs(r2(a) - r2(b)) < 0.01;
   const coverageOk = !f.fxCoverage || f.fxCoverage.complete !== false;
   // Consolidated gate drops the single-entity AP-equality (no clean consolidated-base AP oracle); TB ties
   // + P&L reconciles + AR matches computeBooks' consolidated AR is a strong completeness proxy, and cash
   // is trustworthy under it (payroll cash-out posts). Single-entity keeps the exact AP check.
-  const reconciled = f.trialBalance.balanced && coverageOk &&
-    eq(f.incomeStatement.income, books.revenue) && eq(glExpNonFx, books.cogs + books.opex) &&
-    // N96: compare the ledger's AP with the SIGNED canonical position. With vendor credits above open
-    // bills the ledger's AP is negative while the displayed AP floors at 0, so the old comparison
-    // always failed and the balance sheet fell back to "cash not tracked".
-    eq(glAR, ar) && (consolidated ? true : eq(glAP, apNet));
+  // N96: compare the ledger's AP with the SIGNED canonical position. With vendor credits above open
+  // bills the ledger's AP is negative while the displayed AP floors at 0, so the old comparison
+  // always failed and the balance sheet fell back to "cash not tracked".
+  const failed = glGateFailures([
+    ['tb', f.trialBalance.balanced, glTbDetail(f.trialBalance)],
+    ['fxCoverage', coverageOk, glCoverageDetail(f.fxCoverage)],
+  ], [
+    ['income', f.incomeStatement.income, books.revenue], ['expenses', glExpNonFx, books.cogs + books.opex],
+    ['ar', glAR, ar],
+  ].concat(consolidated ? [] : [['ap', glAP, apNet]]));
+  const reconciled = failed.length === 0;
   if (!reconciled) {
-    console.warn('[GL 5b] balance-sheet divergence (serving oracle) uid=' + userId + ' eid=' + entityId +
-      ' glAR=' + glAR + ' AR=' + ar + ' glAP=' + glAP + ' AP=' + ap + ' tb=' + f.trialBalance.balanced + ' cov=' + coverageOk);
+    console.warn('[GL 5b] balance-sheet not reconciled (serving oracle) uid=' + userId + ' eid=' + entityId + ' failed: ' + failed.join('; '));
     return oracle();
   }
   // L6c: the statement's LINES are a partition of the SAME accounts the totals are summed from, so Σ lines = totals

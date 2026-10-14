@@ -5260,6 +5260,7 @@ async function _applyConvertedKPIs(ccy){
       set('d-rev', j.revenue||0);
       set('d-exp', j.expenses||0);
       set('d-profit', j.netProfit||0);
+      { const _ce=document.getElementById('d-profit-cogs'); if(_ce){ _ce.textContent=''; _ce.style.display='none'; } }   // LA13: native COGS never under a foreign symbol (F59)
       set('d-outstanding', j.outstanding||0);   // Outstanding/AR converts at each invoice's issue date
       _applyConvertedChart(j.monthly);          // F34 B surface 1 — overview chart from server buckets
       _applyConvertedBreakdown(j.expenseBreakdown); // F34 B surface 2 — expense breakdown from server
@@ -5320,6 +5321,10 @@ async function _applyServerBooks(){
     _set('d-rev', cur.revenue||0);
     _set('d-exp', cur.expenses||0);
     _set('d-profit', cur.netProfit||0);
+    // LA13 (live audit 2026-10-13): Net = Revenue − COGS − Expenses, and COGS is on no card, so the three cards did not
+    // visibly reconcile. Name the COGS under Net Profit — the server's figure for the same period. Sole writer.
+    { const _ce=document.getElementById('d-profit-cogs'); if(_ce){ const _c=Number(cur.cogs!=null?cur.cogs:cur.totalCOGS)||0;
+      if(_c>0.005){ _ce.textContent='after '+S(_c)+' cost of goods sold'; _ce.style.display=''; } else { _ce.textContent=''; _ce.style.display='none'; } } }
     // Outstanding stays EXACT, as the native card shows it (money(), not abbreviated) — it is the AR balance.
     { const _el=document.getElementById('d-outstanding'); if(_el) _el.textContent=S(cur.outstanding||0); }
     // M36: business holdings are USD-priced — convert with the server's USD→entity rate; no rate ⇒ "—" + hint.

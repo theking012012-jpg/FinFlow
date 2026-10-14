@@ -1051,6 +1051,7 @@
           }));
           window.inventory = [...mapped, ...(window.inventory || []).filter(i => !i._dbId)];
           if (typeof renderInventory === 'function') renderInventory();
+          if (_itemsFetched && typeof window.renderItems === 'function') window.renderItems();   // LA16: Items lists stock too
         }
       } catch (e) {
         console.warn('[Inventory] loadInventoryFromDB failed:', e.message);
@@ -1489,6 +1490,27 @@
       </div>`;
     }
 
+    // LA16 (HANDOVER C19 Items; owner decision 2026-10-14: ONE product list). Stocked products (Inventory) are listed
+    // on Items too, read-only, opening Inventory — a business with stock but no catalogue entries read "0 items".
+    // A product already in the catalogue (same SKU, or same name when it has no SKU) is listed once, as the item.
+    function _stockOnlyItems(data) {
+      const k = v => String(v || '').trim().toLowerCase();
+      const skus = new Set(data.map(i => k(i.sku)).filter(Boolean)), names = new Set(data.map(i => k(i.name)));
+      return (window.inventory || []).filter(iv => iv && iv._dbId != null && !(iv.sku ? skus.has(k(iv.sku)) : names.has(k(iv.name))))
+        .map(iv => ({ _stock: true, _invDbId: iv._dbId, name: iv.name, sku: iv.sku || '', type: 'Stock item',
+          stock: parseFloat(iv.units) || 0, status: (parseFloat(iv.units) || 0) < 10 ? 'Low Stock' : 'Active' }));
+    }
+    function renderStockItemRow(i) {
+      return `<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
+        <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
+        <span><span class="badge b-amber">Stock item</span></span>
+        <span style="color:var(--t3)" title="Stock is valued on Inventory; add it as an item to set a sale price">—</span>
+        <span style="color:var(--t2)">${i.stock} units</span>
+        <span><span class="badge ${i.status === 'Active' ? 'b-green' : 'b-amber'}">${esc(i.status)}</span></span>
+        <div class="table-actions"><button class="btn btn-ghost btn-sm" onclick="showPage('inventory')">Inventory</button></div>
+      </div>`;
+    }
+
     window.renderItems = function (filter) {
       if (filter === undefined) filter = window.itemsFilter || 'all';
       window.itemsFilter = filter;
@@ -1503,22 +1525,24 @@
       }
 
       const data = window.itemsData || [];
+      const stockOnly = _stockOnlyItems(data);   // LA16
+      const all = data.concat(stockOnly);
       // KPI cards: Total Items · Active · Low Stock · Avg Margin
       // Items only carry a price (no cost), so margin can't be computed;
       // we show "—" rather than invent a percentage.
       const _itKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-      _itKpi('items-total', data.length);
-      _itKpi('items-active', data.filter(i => i.status === 'Active').length);
-      _itKpi('items-lowstock', data.filter(i => i.stock !== null && i.stock !== undefined && i.stock < 10).length);
+      _itKpi('items-total', all.length);
+      _itKpi('items-active', all.filter(i => i.status === 'Active').length);
+      _itKpi('items-lowstock', all.filter(i => i.stock !== null && i.stock !== undefined && i.stock < 10).length);
       const _withMargin = data.filter(i => (parseFloat(i.price) || 0) > 0 && i.cost != null && (parseFloat(i.cost) || 0) > 0);
       const _avgMargin = _withMargin.length
         ? Math.round(_withMargin.reduce((s, i) => s + (i.price - i.cost) / i.price * 100, 0) / _withMargin.length)
         : null;
       _itKpi('items-margin', _avgMargin != null ? _avgMargin + '%' : '—');
       window._refreshDashboardUI?.();
-      const filtered = data.filter(i => filter === 'all' || (i.type || '').toLowerCase() === filter);
+      const filtered = all.filter(i => filter === 'all' || (i._stock ? filter === 'product' : (i.type || '').toLowerCase() === filter));
       list.innerHTML = filtered.length
-        ? filtered.map(i => renderItemRow(i)).join('')
+        ? filtered.map(i => i._stock ? renderStockItemRow(i) : renderItemRow(i)).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
     };
 
@@ -1529,11 +1553,11 @@
       const list = document.getElementById('items-list');
       if (!list) return;
       const q = v.toLowerCase();
-      const filtered = data.filter(i =>
-        i.name.toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q)
+      const filtered = data.concat(_stockOnlyItems(data)).filter(i =>   // LA16: search covers stock items
+        String(i.name || '').toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q)
       );
       list.innerHTML = filtered.length
-        ? filtered.map(i => renderItemRow(i)).join('')
+        ? filtered.map(i => i._stock ? renderStockItemRow(i) : renderItemRow(i)).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
     };
 

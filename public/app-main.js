@@ -2880,11 +2880,13 @@ function updateExpenses(d=getPeriodData()){
   // Business = real recorded expense rows (data model has no personal/business split)
   _set('ex-biz', S(b.business));
   const _bizPct=document.getElementById('ex-biz-pct');
-  if(_bizPct){ _bizPct.textContent = b.total>0 ? Math.round(b.business/b.total*100)+'% of total' : 'Business expenses'; _bizPct.className='mc-change neutral'; }
+  // LA8 (live audit 2026-10-13): this card is the recorded expense ENTRIES only — bills and payroll are in the total, not
+  // here — and it was labelled "Business". The label and caption now say so; the figure is unchanged.
+  if(_bizPct){ _bizPct.textContent = b.total>0 ? 'Excl. bills & payroll · '+Math.round(b.business/b.total*100)+'% of total' : 'Excl. bills & payroll'; _bizPct.className='mc-change neutral'; }
   // Tax deductible = real sum of deductible rows (yes 100% + half 50%)
   _set('ex-ded', S(b.deductible));
   const _dedEl=document.getElementById('ex-ded-save');
-  if(_dedEl){ _dedEl.textContent = b.business>0 ? Math.round(b.deductible/b.business*100)+'% of expenses deductible' : ''; _dedEl.className='mc-change up'; }
+  if(_dedEl){ _dedEl.textContent = b.business>0 ? Math.round(b.deductible/b.business*100)+'% of expense entries' : ''; _dedEl.className='mc-change up'; }   // LA8: name the base
   const ec=chg(b.total, d?d.prevExp:null, true);
   set('ex-total-chg',ec.txt,ec.cls);
   // Largest cost + breakdown bars — operating categories PLUS Payroll and Bill

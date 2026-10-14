@@ -3946,8 +3946,9 @@ app.delete('/api/quotes/:id', requireAuth, requireOwnedRow('quotes'), wrap(async
 }));
 
 // ── VENDORS ───────────────────────────────────────────────────────────────────
-app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
-  const uid = scopeId(req), eid = req.entityId || null;
+// LA14 (HANDOVER C19, Vendors part — same class as LA4): one pass over bills and payments made feeds both the saved
+// vendors' figures and `unsaved` — names on bills / payments that match no saved vendor, which were listed nowhere.
+async function vendorBook(uid, eid) {
   const scoped = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   const vendors = await db.allByUser('vendors', uid, scoped, (a,b) => a.name.localeCompare(b.name));
   // N24: a vendor's "owing" and "YTD paid" are DERIVED from the books — never typed in. They were free-entry
@@ -3959,20 +3960,34 @@ app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
   const key = v => String(v || '').trim().toLowerCase();
   const today = await entityTodayYmd(eid);
   const fy = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: await accountFyStartIdx(uid), today });
-  const owing = {}, paid = {};
+  const owing = {}, paid = {}, bills = {}, label = {};
   for (const b of await db.allByUser('bills', uid, scoped)) {
     if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
     const d = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date);
     if (d == null || d > today) continue;
     owing[key(b.vendor)] = (owing[key(b.vendor)] || 0) + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0));
+    bills[key(b.vendor)] = (bills[key(b.vendor)] || 0) + 1;
+    if (!label[key(b.vendor)]) label[key(b.vendor)] = String(b.vendor || '').trim().replace(/\s+/g, ' ');
   }
   for (const p of await db.allByUser('payments_made', uid, scoped)) {
     const d = FinFlowDates._toYmd(p.date || p.created_at);
     if (d == null || d > today || d < fy.start || d >= fy.end) continue;
     paid[key(p.vendor)] = (paid[key(p.vendor)] || 0) + (parseFloat(p.amount) || 0);
+    if (!label[key(p.vendor)]) label[key(p.vendor)] = String(p.vendor || '').trim().replace(/\s+/g, ' ');
   }
   const r2 = n => Math.round((n || 0) * 100) / 100;
-  res.json(vendors.map(v => ({ ...v, owing: r2(owing[key(v.name)]), ytd_paid: r2(paid[key(v.name)]) })));
+  const saved = new Set(vendors.map(v => key(v.name)));
+  const unsaved = Object.keys(label).filter(k => k && !saved.has(k) && ((owing[k] || 0) > 0.005 || (paid[k] || 0) > 0.005 || (bills[k] || 0) > 0))
+    .map(k => ({ name: label[k], owing: r2(owing[k]), ytd_paid: r2(paid[k]), bills: bills[k] || 0 }))
+    .sort((a, b) => b.owing - a.owing || a.name.localeCompare(b.name));
+  return { vendors: vendors.map(v => ({ ...v, owing: r2(owing[key(v.name)]), ytd_paid: r2(paid[key(v.name)]) })), unsaved };
+}
+app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
+  res.json((await vendorBook(scopeId(req), req.entityId || null)).vendors);
+}));
+// LA14: bill / payment vendors that match no saved vendor — { name, owing, ytd_paid, bills }.
+app.get('/api/vendors/unsaved', requireAuth, wrap(async (req, res) => {
+  res.json((await vendorBook(scopeId(req), req.entityId || null)).unsaved);
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};

@@ -3111,24 +3111,56 @@ function clearAIChat(){
     // VENDORS
     // ════════════════════════════════════════════
     let _vendorsData = [], _vendorsFetched = false;
+    // LA14 (HANDOVER C19, Vendors part — same class as LA4): bill / payment vendors that match no saved vendor
+    // (GET /api/vendors/unsaved, the same pass as the saved list). Keyed by business; a stale response is dropped (C1).
+    let _vendorsUnsaved = { eid: null, rows: [] }, _vendorsUnsavedSeq = 0;
+    const _vendorsEid = () => (window.ENTITIES || []).find(e => e.active)?._dbId || null;
+    const _vendorsUnsavedNow = () => (_vendorsUnsaved.eid === _vendorsEid() ? _vendorsUnsaved.rows : []);
 
     async function loadVendors() {
+      const seq = ++_vendorsUnsavedSeq;
       try {
-        const _eidV2 = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
-        const rows = await api('GET', '/api/vendors' + (_eidV2 ? '?entity_id=' + _eidV2 : ''));
+        const _eidV2 = _vendorsEid();
+        const _q = _eidV2 ? '?entity_id=' + _eidV2 : '';
+        const [rows, unsaved] = await Promise.all([
+          api('GET', '/api/vendors' + _q),
+          api('GET', '/api/vendors/unsaved' + _q).catch(e => { console.error('[Vendors] could not load bill vendors:', e.message); return []; }),
+        ]);
         _vendorsFetched = true;
         _vendorsData = rows || [];
         window.vendors = _vendorsData;
-        console.log('[Vendors] loaded', _vendorsData.length);
+        if (seq === _vendorsUnsavedSeq && _vendorsEid() === _eidV2) _vendorsUnsaved = { eid: _eidV2, rows: Array.isArray(unsaved) ? unsaved : [] };
+        console.log('[Vendors] loaded', _vendorsData.length, '+', _vendorsUnsavedNow().length, 'not saved');
         renderVendors();
       } catch (e) { console.warn('[Vendors]', e.message); }
     }
     loadVendors();
 
-    function renderVendorRows(list) {
+    window.openVendorModalFromUnsaved = function (i) {
+      const u = _vendorsUnsavedNow()[i]; if (!u) return;
+      window.openNewVendorModal();
+      const n = document.getElementById('vendor-name'); if (n) n.value = u.name || '';
+    };
+
+    function renderVendorRows(list, unsavedList) {
       const el = document.getElementById('vendors-list');
       if (!el) return;
-      el.innerHTML = list.length
+      const unsaved = (unsavedList || _vendorsUnsavedNow()).map(u => ({ u, i: _vendorsUnsavedNow().indexOf(u) }));
+      const unsavedHtml = unsaved.map(({ u, i }) => `
+          <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
+            <div>
+              <div style="font-weight:500">${esc(u.name)}</div>
+              <div style="font-size:11px;color:var(--t3)">${u.bills} bill${u.bills === 1 ? '' : 's'} · not saved as a vendor yet</div>
+            </div>
+            <span style="color:var(--t3)">—</span>
+            <span style="color:${u.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
+              ${u.owing > 0 ? S(u.owing) + ' owing' : '—'}
+            </span>
+            <span style="color:var(--t2)">${S(u.ytd_paid || 0)} YTD</span>
+            <span><span class="badge b-amber">Not saved</span></span>
+            <button class="btn btn-ghost btn-sm" onclick="openVendorModalFromUnsaved(${i})">Save</button>
+          </div>`).join('');
+      el.innerHTML = (list.length || unsaved.length)
         ? list.map(v => `
           <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
             <div>
@@ -3142,7 +3174,7 @@ function clearAIChat(){
             <span style="color:var(--t2)">${S(v.ytd_paid || 0)} YTD</span>
             <span><span class="badge ${v.status === 'active' ? 'b-green' : 'b-red'}">${esc(v.status || 'active')}</span></span>
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendor(${v.id})">✕</button>
-          </div>`).join('')
+          </div>`).join('') + unsavedHtml
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendors yet</div>';
     }
 
@@ -3198,7 +3230,7 @@ function clearAIChat(){
       // KPI cards: count · total payables (canonical AP, filled by _refreshVendorsPayables) · overdue · paid
       const _vPaid = _paymentsMadeData.filter(r => inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);   // L5: "This month"
       const _vOverdue = window._billsOverdueSum(_billsData);   // F-C1: was hardcoded null → static $0
-      setKpiCards('page-vendors', [_vendorsData.length, null, S(_vOverdue), S(_vPaid)]);
+      setKpiCards('page-vendors', [_vendorsData.length + _vendorsUnsavedNow().length, null, S(_vOverdue), S(_vPaid)]);   // LA14: incl. not-saved bill vendors
       _refreshVendorsPayables();
       window._refreshDashboardUI?.();
     };
@@ -3207,7 +3239,8 @@ function clearAIChat(){
       const q = v.toLowerCase();
       renderVendorRows(q
         ? _vendorsData.filter(r => (r.name || '').toLowerCase().includes(q) || (r.category || '').toLowerCase().includes(q) || (r.contact || '').toLowerCase().includes(q))
-        : _vendorsData);
+        : _vendorsData,
+        q ? _vendorsUnsavedNow().filter(u => (u.name || '').toLowerCase().includes(q)) : null);
     };
 
     window.openNewVendorModal = function () {

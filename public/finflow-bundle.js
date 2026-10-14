@@ -5636,7 +5636,7 @@ function clearAIChat(){
         chgEl.title = 'Past-due balances, net of open credit notes.';
         chgEl.className = 'mc-change dn';
       } else if (_ar.count > 0) {
-        chgEl.textContent = `${_ar.count} unpaid invoice${_ar.count === 1 ? '' : 's'}`;
+        chgEl.textContent = `${_ar.count} unpaid invoice${_ar.count === 1 ? '' : 's'}` + (window._arCreditSuffix ? window._arCreditSuffix(_ar, money, !_fxOwned) : '');   // LA6
         chgEl.className = 'mc-change neutral';
       } else {
         chgEl.textContent = 'All invoices paid';
@@ -6349,7 +6349,7 @@ function clearAIChat(){
     if (titleEl) titleEl.textContent = 'Invoices — ' + (period.label || 'All time');
 
     // Update "N invoices" count subtitles (id="inv-out-cnt" / "inv-over-cnt")
-    set('inv-out-cnt',  outCount     + ' invoice' + (outCount     !== 1 ? 's' : ''));
+    set('inv-out-cnt',  outCount     + ' invoice' + (outCount     !== 1 ? 's' : '') + (window._arCreditSuffix ? window._arCreditSuffix(_arP, money) : ''));   // LA6
     set('inv-over-cnt', overdueCount + ' invoice' + (overdueCount !== 1 ? 's' : ''));
 
     // Navigation badge

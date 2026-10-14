@@ -334,7 +334,7 @@
     if (titleEl) titleEl.textContent = 'Invoices — ' + (period.label || 'All time');
 
     // Update "N invoices" count subtitles (id="inv-out-cnt" / "inv-over-cnt")
-    set('inv-out-cnt',  outCount     + ' invoice' + (outCount     !== 1 ? 's' : ''));
+    set('inv-out-cnt',  outCount     + ' invoice' + (outCount     !== 1 ? 's' : '') + (window._arCreditSuffix ? window._arCreditSuffix(_arP, money) : ''));   // LA6
     set('inv-over-cnt', overdueCount + ' invoice' + (overdueCount !== 1 ? 's' : ''));
 
     // Navigation badge

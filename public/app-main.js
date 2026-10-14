@@ -2325,14 +2325,24 @@ function arOutstanding(invoices){
     if(_cy==null||_cy>_arToday) return;
     _cnTotal+=parseFloat(cn.amount)||0;
   });
+  const invoiceTotal=total;   // LA6: before the credit-note contra — the captions show what makes up the net figure
   total=Math.max(0,total-_cnTotal);
   // L35: overdue nets the SAME contra and is clamped to [0, total] — mirror of computeBooks.arSummary.overdueTotal
   // and /api/reports `overdue` (server.js). Un-netted it read ABOVE outstanding whenever a credit note was open
   // (live: Overdue $14,300 > Outstanding $13,550) — impossible, overdue is a subset of outstanding.
   overdueTotal=Math.max(0,Math.min(total,overdueTotal-_cnTotal));
-  return { total, count, overdueTotal, overdueCount };
+  return { total, count, overdueTotal, overdueCount, invoiceTotal, creditTotal:_cnTotal };
 }
 window._arOutstanding = arOutstanding;
+// LA6 (live audit 2026-10-13 M3): "Outstanding $2,400 · 2 invoices" while the two invoices totalled $2,700 — the open
+// credit note is netted in (correct: an issued credit note reduces what the customer owes, applied or not), but the
+// caption hid it. Every caption of the net Outstanding appends this, so it says what the figure is made of.
+// showAmounts=false under a display currency (F59: native amounts never under a foreign symbol).
+window._arCreditSuffix = function(ar, money, showAmounts){
+  if(!ar || !(ar.creditTotal > 0.005)) return '';
+  if(showAmounts === false) return ' · less credit notes';
+  return ' · ' + money(ar.invoiceTotal) + ' less ' + money(ar.creditTotal) + ' in credit notes';
+};
 
 // N20 (dashboard parity): the CLIENT mirror of the server's manual-journal P&L leg. The server
 // (computeBooks) reads posted journals back FROM the GL (source_type='journal') and folds the

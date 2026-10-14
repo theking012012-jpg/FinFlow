@@ -196,7 +196,7 @@
         chgEl.title = 'Past-due balances, net of open credit notes.';
         chgEl.className = 'mc-change dn';
       } else if (_ar.count > 0) {
-        chgEl.textContent = `${_ar.count} unpaid invoice${_ar.count === 1 ? '' : 's'}`;
+        chgEl.textContent = `${_ar.count} unpaid invoice${_ar.count === 1 ? '' : 's'}` + (window._arCreditSuffix ? window._arCreditSuffix(_ar, money, !_fxOwned) : '');   // LA6
         chgEl.className = 'mc-change neutral';
       } else {
         chgEl.textContent = 'All invoices paid';

@@ -163,7 +163,7 @@ window.getScenarioAI = function(){
   const aiText = document.getElementById('scenario-ai-text');
   if(aiText){ aiText.textContent='Analysing scenario with Claude…'; aiText.style.color='var(--t3)'; }
   openAIPanel&&openAIPanel();
-  sendAIQuery&&sendAIQuery(`Scenario analysis: revenue growth ${revGrowth}%, ${headcount} new hires, churn ${churn}%, $${invest}K one-time investment. Projected 12-month profit: ${text}. Give me a specific recommendation — should I proceed? What are the top 3 risks?`);
+  sendAIQuery&&sendAIQuery(`Scenario analysis: revenue growth ${revGrowth}%, ${headcount} new hires, churn ${churn}%, ${(window._nativeSymbol?window._nativeSymbol():'$')}${invest}K one-time investment. Projected 12-month profit: ${text}. Give me a specific recommendation — should I proceed? What are the top 3 risks?`);
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -204,7 +204,7 @@ async function renderAutocat(){
       : `<span class="autocat-conf-pct" style="width:auto;color:var(--t3)">${sug?(sug.source==='rule'?'rule':'—'):'—'}</span>`;
     return `<div class="autocat-row" id="acat-row-${e.id}">
       <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description||'(no description)')}</div></div>
-      <div style="font-family:var(--font-mono);font-size:12px;color:var(--red);width:80px;text-align:right;flex-shrink:0">-$${Math.abs(parseFloat(e.amount)||0).toLocaleString()}</div>
+      <div style="font-family:var(--font-mono);font-size:12px;color:var(--red);width:80px;text-align:right;flex-shrink:0">-${_fmtMoneyNative(Math.abs(parseFloat(e.amount)||0))}</div>
       <div style="width:110px;flex-shrink:0">
         <select class="finput" id="acat-sel-${e.id}" style="font-size:11px;padding:3px 6px">
           ${cats.map(c=>`<option${c===selected?' selected':''}>${esc(c)}</option>`).join('')}

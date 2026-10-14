@@ -1480,7 +1480,7 @@
       return `<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
         <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
         <span><span class="badge ${i.type === 'Service' ? 'b-blue' : 'b-purple'}">${esc(i.type)}</span></span>
-        <span style="font-family:var(--font-mono)">$${i.price}<span style="font-size:10px;color:var(--t3)">/${esc(i.unit || '')}</span></span>
+        <span style="font-family:var(--font-mono)">${(window._nativeSymbol ? window._nativeSymbol() : '$') + (parseFloat(i.price) || 0).toLocaleString('en-US', { minimumFractionDigits: (parseFloat(i.price) || 0) % 1 ? 2 : 0, maximumFractionDigits: 2 })}<span style="font-size:10px;color:var(--t3)">/${esc(i.unit || '')}</span></span>
         <span style="color:var(--t2)">${i.stock != null ? i.stock + ' units' : '—'}</span>
         <span><span class="badge ${i.status === 'Active' ? 'b-green' : i.status === 'Low Stock' ? 'b-amber' : 'b-red'}">${esc(i.status || '')}</span></span>
         <div class="table-actions">
@@ -4422,7 +4422,7 @@ function clearAIChat(){
           <div style="display:flex;align-items:center;gap:10px">
             <div style="text-align:right">
               <div style="font-size:11px;color:var(--t3)">Billed / Budget</div>
-              <div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">$${billed.toLocaleString()} / $${budget.toLocaleString()}</div>
+              <div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${window._fmtMoneyNative(billed)} / ${window._fmtMoneyNative(budget)}</div>
             </div>
             <span class="badge ${colorMap[p.status] || 'b-blue'}">${e(p.status)}</span>
             <button class="btn btn-ghost btn-sm" onclick="deleteProject(${p.id})" style="color:var(--red);padding:2px 6px" title="Delete">✕</button>

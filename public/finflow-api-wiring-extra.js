@@ -510,7 +510,7 @@
           <div style="display:flex;align-items:center;gap:10px">
             <div style="text-align:right">
               <div style="font-size:11px;color:var(--t3)">Billed / Budget</div>
-              <div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">$${billed.toLocaleString()} / $${budget.toLocaleString()}</div>
+              <div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${window._fmtMoneyNative(billed)} / ${window._fmtMoneyNative(budget)}</div>
             </div>
             <span class="badge ${colorMap[p.status] || 'b-blue'}">${e(p.status)}</span>
             <button class="btn btn-ghost btn-sm" onclick="deleteProject(${p.id})" style="color:var(--red);padding:2px 6px" title="Delete">✕</button>

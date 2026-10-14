@@ -1392,7 +1392,7 @@ async function renderCOALive(){
         <div style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
           <span style="color:var(--t3);font-family:var(--font-mono)">${esc(a.code||'')}</span>
           <span style="color:var(--t1)">${esc(a.name||'')}</span>
-          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${(a.balance||0).toLocaleString()}</span>
+          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">${_fmtMoneyNative(a.balance||0)}</span>
           <span style="color:var(--t3);text-align:right">${a.nature||''}</span>
         </div>`).join('')}
       </div>`).join('');
@@ -1411,7 +1411,7 @@ async function renderCOALive(){
           return `<div style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
             <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
             <span style="color:var(--t1)">${esc(a.name)}</span>
-            <span style="font-family:var(--font-mono);text-align:right;color:${changed?'var(--acc)':'var(--t1)'};font-weight:${changed?600:400}">$${liveBalance.toLocaleString()}${changed?'<span style="font-size:10px;color:var(--acc);margin-left:3px">●</span>':''}</span>
+            <span style="font-family:var(--font-mono);text-align:right;color:${changed?'var(--acc)':'var(--t1)'};font-weight:${changed?600:400}">${_fmtMoneyNative(liveBalance)}${changed?'<span style="font-size:10px;color:var(--acc);margin-left:3px">●</span>':''}</span>
             <span style="color:var(--t3);text-align:right">${a.nature}</span>
           </div>`;
         }).join('')}
@@ -5877,7 +5877,7 @@ function renderProjects(){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(p.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(p.client)} · ${p.hours}h logged</div></div>
         <div style="display:flex;align-items:center;gap:12px">
-          <div style="text-align:right"><div style="font-size:11px;color:var(--t3)">Billed / Budget</div><div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">$${p.billed.toLocaleString()} / $${p.budget.toLocaleString()}</div></div>
+          <div style="text-align:right"><div style="font-size:11px;color:var(--t3)">Billed / Budget</div><div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${_fmtMoneyNative(p.billed)} / ${_fmtMoneyNative(p.budget)}</div></div>
           <span class="badge ${p.status==='Completed'?'b-green':'b-blue'}">${p.status}</span>
         </div>
       </div>
@@ -6281,6 +6281,7 @@ function renderTemplates(){
 
 // ── INVOICE HTML RENDERER ─────────────────────────────────────────
 function buildInvoiceHTML(templateId, logoDataURL, settings){
+  const _sym = _nativeSymbol();   // LA15a: the business's own currency symbol, not a literal "$"
   const t = invTemplatesData.find(x=>x.id===templateId) || invTemplatesData[0];
   const acc = settings.accentColor || t.accentColor;
   // F196: the issuing ENTITY's name wins over the account-wide settings business_name.
@@ -6305,8 +6306,8 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     <tr>
       <td style="padding:10px 0;border-bottom:1px solid #eee;color:#333">${esc(i.desc)}</td>
       <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;color:#666">${i.qty}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;color:#666">$${i.rate.toLocaleString()}</td>
-      <td style="padding:10px 0;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:500">$${i.total.toLocaleString()}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;color:#666">${_sym}${i.rate.toLocaleString()}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:500">${_sym}${i.total.toLocaleString()}</td>
     </tr>`).join('');
 
   const poweredByHTML = poweredBy
@@ -6325,10 +6326,10 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     <div class="hdr">${logoHTML}<div style="margin-top:8px;font-size:10px;color:#888">${bizEmail}</div>
     <div style="margin-top:8px;font-size:11px;font-weight:700">RECEIPT #INV-1042</div>
     <div style="font-size:10px;color:#888">April 28, 2026 · TechCorp Inc.</div></div>
-    ${items.map(i=>`<div class="row"><span>${esc(i.desc)}</span><span>$${i.total.toLocaleString()}</span></div>`).join('')}
-    <div class="row" style="color:#888;margin-top:4px"><span>Subtotal</span><span>$${subtotal.toLocaleString()}</span></div>
-    <div class="row" style="color:#888"><span>Tax (12.5%)</span><span>$${tax.toLocaleString()}</span></div>
-    <div class="row total"><span>TOTAL</span><span style="color:${acc}">$${total.toLocaleString()}</span></div>
+    ${items.map(i=>`<div class="row"><span>${esc(i.desc)}</span><span>${_sym}${i.total.toLocaleString()}</span></div>`).join('')}
+    <div class="row" style="color:#888;margin-top:4px"><span>Subtotal</span><span>${_sym}${subtotal.toLocaleString()}</span></div>
+    <div class="row" style="color:#888"><span>Tax (12.5%)</span><span>${_sym}${tax.toLocaleString()}</span></div>
+    <div class="row total"><span>TOTAL</span><span style="color:${acc}">${_sym}${total.toLocaleString()}</span></div>
     <div style="text-align:center;margin-top:16px;font-size:10px;color:#aaa">Thank you for your business</div>
     ${poweredByHTML}
     </body></html>`;
@@ -6368,9 +6369,9 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   </table>
   <div style="display:flex;justify-content:flex-end;margin-top:24px">
     <div style="width:220px">
-      <div style="display:flex;justify-content:space-between;padding:6px 0;color:#888;font-size:13px"><span>Subtotal</span><span>$${subtotal.toLocaleString()}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0;color:#888;font-size:13px"><span>Tax (12.5%)</span><span>$${tax.toLocaleString()}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid ${acc};font-weight:700;font-size:16px"><span>Total</span><span style="color:${acc}">$${total.toLocaleString()}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;color:#888;font-size:13px"><span>Subtotal</span><span>${_sym}${subtotal.toLocaleString()}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;color:#888;font-size:13px"><span>Tax (12.5%)</span><span>${_sym}${tax.toLocaleString()}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid ${acc};font-weight:700;font-size:16px"><span>Total</span><span style="color:${acc}">${_sym}${total.toLocaleString()}</span></div>
     </div>
   </div>
   <div style="margin-top:36px;padding:16px;background:#f9f9f9;border-radius:6px;font-size:12px;color:#888">

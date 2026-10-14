@@ -651,10 +651,12 @@
       </div>
 
       <div class="form-group">
-        <label for="rate-hourly">Hourly rate (USD)</label>
+        <label for="rate-currency">Currency for your rates</label>
+        <select id="rate-currency" onchange="syncRateSymbols()" style="margin-bottom:10px"></select>
+        <label for="rate-hourly">Hourly rate</label>
         <div style="position:relative">
-          <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:13px">$</span>
-          <input type="number" id="rate-hourly" placeholder="e.g. 75" min="0" style="padding-left:28px">
+          <span class="rate-sym" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:13px">$</span>
+          <input type="number" id="rate-hourly" placeholder="e.g. 75" min="0" style="padding-left:40px">
         </div>
         <div style="font-size:11px;color:var(--text3);margin-top:4px">Leave blank if you prefer to quote per project</div>
       </div>
@@ -724,6 +726,7 @@
 
 </div>
 
+<script src="/finflow-currency.js"></script>
 <script>
   // ── RESUME UPLOAD ──────────────────────────────────────────────────────────
   window._resumeCredentials = '';
@@ -888,8 +891,8 @@
     div.innerHTML = `
       <input type="text" placeholder="e.g. Personal tax return" id="pkg-name-${id}" style="font-size:12px">
       <div style="position:relative">
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:12px">$</span>
-        <input type="number" placeholder="200" id="pkg-price-${id}" min="0" style="padding-left:22px;font-size:12px">
+        <span class="rate-sym" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:12px">${esc(rateSymbol())}</span>
+        <input type="number" placeholder="200" id="pkg-price-${id}" min="0" style="padding-left:34px;font-size:12px">
       </div>
       <button type="button" class="pkg-remove" onclick="removePackage(${id})">×</button>
     `;
@@ -904,6 +907,29 @@
     document.getElementById('add-package-btn').style.display = '';
   }
 
+  // LA15c (owner decision 2026-10-14): rates are in the accountant's own currency — defaulted from the country,
+  // changeable, and sent as rateCurrency (shared table: /finflow-currency.js).
+  function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
+  function rateSymbol() {
+    const c = (document.getElementById('rate-currency') || {}).value || 'USD';
+    return window.FinFlowCurrency ? window.FinFlowCurrency.symbol(c) : '$';
+  }
+  function syncRateSymbols() { document.querySelectorAll('.rate-sym').forEach(el => { el.textContent = rateSymbol(); }); }
+  window.syncRateSymbols = syncRateSymbols;
+  (function initRateCurrency() {
+    const sel = document.getElementById('rate-currency');
+    if (!sel || !window.FinFlowCurrency) return;
+    const C = window.FinFlowCurrency.CURRENCIES;
+    sel.innerHTML = Object.keys(C).sort().map(k => `<option value="${k}">${k} — ${esc(C[k].name || k)}</option>`).join('');
+    const fromCountry = () => { const n = (document.getElementById('country') || {}).value; return (window.FinFlowCurrency.COUNTRY_CURRENCY[n]) || 'USD'; };
+    sel.value = fromCountry();
+    let touched = false;
+    sel.addEventListener('change', () => { touched = true; });
+    const cty = document.getElementById('country');
+    if (cty) cty.addEventListener('change', () => { if (!touched) { sel.value = fromCountry(); syncRateSymbols(); } });
+    syncRateSymbols();
+  })();
+
   function collectPricing() {
     const hourly = parseFloat(document.getElementById('rate-hourly').value) || null;
     const note = document.getElementById('pricing-note').value.trim();
@@ -915,7 +941,7 @@
         packages.push({ name: nameEl.value.trim(), price: parseFloat(priceEl.value) });
       }
     }
-    return { hourlyRate: hourly, packages, pricingNote: note };
+    return { hourlyRate: hourly, packages, pricingNote: note, rateCurrency: (document.getElementById('rate-currency') || {}).value || 'USD' };
   }
 
   // ── VERIFICATION METHOD SELECTION ──

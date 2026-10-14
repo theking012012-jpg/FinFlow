@@ -374,6 +374,8 @@ async function initDB() {
     // not_started | pending | verified | failed. Set human proof (mandatory-proof gate) stays separate.
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_status VARCHAR(20) DEFAULT 'not_started'`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_session_id TEXT`);
+    // LA15c (owner decision 2026-10-14): an accountant's hourly rate and packages are in THEIR OWN currency.
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS rate_currency VARCHAR(3) DEFAULT 'USD'`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_verified_at TIMESTAMPTZ`);
     // Accountant MFA (TOTP). Secrets stored AES-256-GCM at rest (totp.encSecret); pending during enrollment.
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT FALSE`);

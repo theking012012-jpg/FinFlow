@@ -164,10 +164,48 @@
   IMP:{symbol:'£',     flag:'🇮🇲',name:'Manx Pound',             rate:0.79},
   GGP:{symbol:'£',     flag:'🇬🇬',name:'Guernsey Pound',         rate:0.79},
 };
+  // ── COUNTRY → CURRENCY MAP (auto-select on country pick) — moved unchanged from app-main.js (LA15c) ──────────
+  var COUNTRY_CURRENCY = {
+  'United States':'USD','United Kingdom':'GBP','Eurozone':'EUR',
+  'Japan':'JPY','China':'CNY','India':'INR','Canada':'CAD','Australia':'AUD',
+  'Switzerland':'CHF','Hong Kong':'HKD','Singapore':'SGD','Sweden':'SEK',
+  'Norway':'NOK','Denmark':'DKK','New Zealand':'NZD','Mexico':'MXN',
+  'Brazil':'BRL','Argentina':'ARS','Chile':'CLP','Colombia':'COP',
+  'Peru':'PEN','Venezuela':'VES','Uruguay':'UYU','South Korea':'KRW',
+  'Indonesia':'IDR','Malaysia':'MYR','Thailand':'THB','Philippines':'PHP',
+  'Vietnam':'VND','Taiwan':'TWD','Pakistan':'PKR','Bangladesh':'BDT',
+  'Sri Lanka':'LKR','Nepal':'NPR','Myanmar':'MMK',
+  'South Africa':'ZAR','Nigeria':'NGN','Kenya':'KES','Ghana':'GHS',
+  'Ethiopia':'ETB','Tanzania':'TZS','Uganda':'UGX','Rwanda':'RWF',
+  'Morocco':'MAD','Algeria':'DZD','Tunisia':'TND','Egypt':'EGP',
+  'UAE':'AED','Saudi Arabia':'SAR','Qatar':'QAR','Kuwait':'KWD',
+  'Bahrain':'BHD','Oman':'OMR','Jordan':'JOD','Israel':'ILS',
+  'Turkey':'TRY','Russia':'RUB','Ukraine':'UAH','Poland':'PLN',
+  'Czech Republic':'CZK','Hungary':'HUF','Romania':'RON','Bulgaria':'BGN',
+  'Serbia':'RSD','Georgia':'GEL','Armenia':'AMD','Azerbaijan':'AZN',
+  'Kazakhstan':'KZT','Uzbekistan':'UZS','Mongolia':'MNT',
+  'Trinidad & Tobago':'TTD','Jamaica':'JMD','Barbados':'BBD',
+  'Antigua & Barbuda':'XCD','Dominica':'XCD','Grenada':'XCD',
+  'St Kitts & Nevis':'XCD','St Lucia':'XCD','St Vincent':'XCD',
+  'Guyana':'GYD','Bahamas':'BSD','Haiti':'HTG','Dominican Republic':'DOP',
+  'Cuba':'CUP','Bermuda':'BMD','Cayman Islands':'KYD','Aruba':'AWG',
+  'Suriname':'SRD','Panama':'PAB','Costa Rica':'CRC','Guatemala':'GTQ',
+  'Honduras':'HNL','Nicaragua':'NIO',
+  'Mozambique':'MZN','Zambia':'ZMW','Botswana':'BWP','Namibia':'NAD',
+  'Mauritius':'MUR','Seychelles':'SCR','Maldives':'MVR','Brunei':'BND',
+  'Papua New Guinea':'PGK','Fiji':'FJD',
+  'Cameroon':'XAF','Senegal':'XOF','Côte d\'Ivoire':'XOF',
+  'Angola':'AOA','DR Congo':'CDF','Libya':'LYD','Sudan':'SDG',
+  'Somalia':'SOS','Eritrea':'ERN','Djibouti':'DJF','Comoros':'KMF',
+  'Madagascar':'MGA','Malawi':'MWK','Cape Verde':'CVE',
+  'Syria':'SYP','Lebanon':'LBP','Yemen':'YER','Afghanistan':'AFN',
+  'Kyrgyzstan':'KGS','Tajikistan':'TJS','Turkmenistan':'TMT',
+  'Macau':'MOP','Laos':'LAK','Bhutan':'BTN','Iceland':'ISK',
+};
   // The symbol for an ISO code; an unknown code shows the code itself ("XYZ 1,000"), never a borrowed "$".
   function symbol(code) {
     var c = String(code || '').toUpperCase();
     return (CURRENCIES[c] && CURRENCIES[c].symbol) || (c ? c + ' ' : '');
   }
-  return { CURRENCIES: CURRENCIES, symbol: symbol };
+  return { CURRENCIES: CURRENCIES, COUNTRY_CURRENCY: COUNTRY_CURRENCY, symbol: symbol };
 });

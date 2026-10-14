@@ -145,6 +145,8 @@ async function loadDirectory() {
   loadMyAccountant();
 }
 
+// LA15c (owner decision 2026-10-14): an accountant's rates are in their own currency (rate_currency), not "$".
+function _accRateSym(a){ return window.FinFlowCurrency ? window.FinFlowCurrency.symbol((a && a.rate_currency) || 'USD') : '$'; }
 window.filterAccountants = function() {
   const q = (document.getElementById('acc-search')?.value || '').toLowerCase();
   const country = document.getElementById('acc-filter-country')?.value || '';
@@ -198,7 +200,7 @@ window.filterAccountants = function() {
       </div>
       <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${a.bio ? esc(a.bio) : 'FinFlow professional accountant.'}</div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
-        ${a.hourly_rate ? `<span style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From $${parseFloat(a.hourly_rate).toFixed(0)}/hr</span>` : a.packages && a.packages.length ? '<span style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From $'+(function(){try{var pkgs=typeof a.packages==="string"?JSON.parse(a.packages):a.packages;return Math.min.apply(null,pkgs.map(function(p){return p.price;})).toFixed(0);}catch(e){return "?";}})()+'</span>' : '<span style="font-size:12px;color:var(--t3,#5a5040)">Rates on request</span>'}
+        ${a.hourly_rate ? `<span style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From ${_accRateSym(a)}${parseFloat(a.hourly_rate).toLocaleString('en-US',{maximumFractionDigits:0})}/hr</span>` : a.packages && a.packages.length ? '<span style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From '+_accRateSym(a)+(function(){try{var pkgs=typeof a.packages==="string"?JSON.parse(a.packages):a.packages;return Math.min.apply(null,pkgs.map(function(p){return p.price;})).toFixed(0);}catch(e){return "?";}})()+'</span>' : '<span style="font-size:12px;color:var(--t3,#5a5040)">Rates on request</span>'}
         ${a.has_pricing ? '<span style="font-size:10px;background:rgba(200,164,74,0.08);color:var(--acc,#c8a44a);border:1px solid rgba(200,164,74,0.25);border-radius:4px;padding:2px 7px">💰 Transparent Pricing</span>' : ''}
       </div>
       <div style="display:flex;gap:8px">

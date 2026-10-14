@@ -424,6 +424,7 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
       firm, country, specialisation, bio, experience,
       referralCode: referredByCode,
       verification,
+      hourlyRate, packages: rawPackages, pricingNote, rateCurrency,
     } = req.body || {};
 
     console.log('[Register] req.body fields:', JSON.stringify({ firstName, lastName, email: email ? '***' : undefined, firm, country, specialisation, experience, verificationMethod: verification?.method }));
@@ -443,6 +444,20 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
     if (!verification || !verification.method) {
       return res.status(400).json({ error: 'Verification method is required.' });
     }
+
+    // LA17 (live audit 2026-10-13 follow-up): the sign-up form has always sent pricing (hourly rate, up to 4 packages,
+    // a note) and this route never read it — every accountant's pricing was dropped and the marketplace could only say
+    // "Rates on request". LA15c (owner decision 2026-10-14): the rates are in the accountant's OWN currency.
+    const _FinFlowCurrency = require('./public/finflow-currency.js');
+    const _rateCur = rateCurrency == null || rateCurrency === '' ? 'USD' : String(rateCurrency).toUpperCase();
+    if (!_FinFlowCurrency.CURRENCIES[_rateCur]) return res.status(400).json({ error: 'Unknown currency for your rates.' });
+    const _hourly = hourlyRate == null || hourlyRate === '' ? null : Number(hourlyRate);
+    if (_hourly != null && !(isFinite(_hourly) && _hourly >= 0 && _hourly <= 1000000)) return res.status(400).json({ error: 'Hourly rate must be a number between 0 and 1,000,000.' });
+    if (rawPackages != null && !Array.isArray(rawPackages)) return res.status(400).json({ error: 'Packages must be a list.' });
+    const _packages = (rawPackages || []).filter(p => p && String(p.name || '').trim()).slice(0, 4).map(p => ({ name: String(p.name).trim().slice(0, 80), price: Number(p.price) }));
+    if (_packages.some(p => !(isFinite(p.price) && p.price >= 0 && p.price <= 10000000))) return res.status(400).json({ error: 'Each package needs a price between 0 and 10,000,000.' });
+    const _pricingNote = String(pricingNote || '').trim().slice(0, 500);
+    const _hasPricing = (_hourly != null && _hourly > 0) || _packages.length > 0;
 
     // Step F: validate the optional credential document BEFORE creating anything, so
     // a present-but-invalid file fails the whole submission (never silently dropped —
@@ -485,8 +500,9 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
       const result = await client.query(`
         INSERT INTO accountants
           (email, password_hash, first_name, last_name, firm, country, specialisation,
-           bio, experience, referral_code, referred_by, status, verification_method, verification_data)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13)
+           bio, experience, referral_code, referred_by, status, verification_method, verification_data,
+           hourly_rate, packages, pricing_note, has_pricing, rate_currency)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13,$14,$15,$16,$17,$18)
         RETURNING id
       `, [
         email.toLowerCase(), hash,
@@ -496,6 +512,7 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
         refCode, referredById,
         verification.method,
         JSON.stringify(verification),
+        _hourly, JSON.stringify(_packages), _pricingNote, _hasPricing, _rateCur,   // LA17 / LA15c
       ]);
 
       const accountantId = result.rows[0].id;
@@ -732,7 +749,7 @@ If you cannot find a field, use null. Be concise.`;
     const result = await pool.query(
       `SELECT id, first_name, last_name, email, firm, country, specialisation,
               bio, experience, referral_code, status, verified_at, created_at,
-              hourly_rate, packages, pricing_note, has_pricing, avg_rating,
+              hourly_rate, packages, pricing_note, has_pricing, rate_currency, avg_rating,
               credentials, memberships
        FROM accountants WHERE id = $1`,
       [req.session.accountantId]
@@ -1861,7 +1878,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       // Step G (F28): clients see ONLY admin-confirmed_credentials — never the self-declared
       // `credentials`/`memberships` (those stay admin-only). `stripe_onboarded` gates the
       // "FinFlow Protected" chip (true only when payments actually run through FinFlow).
-      let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, confirmed_credentials, stripe_onboarded, hourly_rate, packages, has_pricing FROM accountants WHERE status = 'verified'`;
+      let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, confirmed_credentials, stripe_onboarded, hourly_rate, packages, has_pricing, rate_currency FROM accountants WHERE status = 'verified'`;
       const params = [];
       if (country) { params.push(country); query += ` AND country = $${params.length}`; }
       if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }

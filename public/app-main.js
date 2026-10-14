@@ -6093,8 +6093,9 @@ const reportsData=[
   {name:'Expense Report',desc:'Spending by category and vendor',icon:'🧾'},
   {name:'Payroll Summary',desc:'Staff costs and deductions',icon:'👔'},
 ];
+// LA9 (live audit 2026-10-13): no "VAT Return" tile — FinFlow has no VAT/GST engine by design (tax = estimates only),
+// so it could only ever answer "not tracked". generateReport('VAT Return') still answers that honestly if called.
 const taxReportsData=[
-  {name:'VAT Return',desc:'Tax collected and paid',icon:'🏛️'},
   {name:'Income Tax Estimate',desc:'Estimated quarterly taxes',icon:'📋'},
   {name:'1099 / W-2 Summary',desc:'Contractor and employee forms',icon:'📄'},
   {name:'Tax-Deductible Expenses',desc:'All deductible business costs',icon:'✅'},

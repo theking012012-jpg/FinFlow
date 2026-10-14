@@ -1015,6 +1015,11 @@ If you cannot find a field, use null. Be concise.`;
       entityId, // echoes the scope applied (null = all entities)
       period,   // echoes the period applied (month|quarter|year)
       window: books.window || null,   // L11: the calendar window the summary covers — the portal lists rows over exactly it
+      // LA15b: the currency the summary is in (the selected business's own, or the base currency the all-entities view
+      // consolidates into) and the FX coverage — a business with no rate to that currency is left out of the
+      // consolidated figures, and the portal must say so instead of showing a smaller total silently.
+      currency: (books.fxCoverage && books.fxCoverage.display) || (entityId != null ? ((entities.rows.find(r => r.id === entityId) || {}).currency || 'USD') : 'USD'),
+      fxCoverage: books.fxCoverage || null,
       summary: {
         // Canonical values (F9). Legacy keys kept as aliases so nothing breaks.
         revenue:       books.revenue.toFixed(2),

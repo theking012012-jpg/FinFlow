@@ -781,6 +781,7 @@
 </div>
 
 <script src="/finflow-dates.js"></script>
+<script src="/finflow-currency.js"></script>
 <script>
 // ── STATE ──────────────────────────────────────────────────────────────────
 let _data = null;
@@ -979,8 +980,40 @@ function getFiltered() {
 }
 
 // ── FORMAT ─────────────────────────────────────────────────────────────────
+// LA15b: the summary's own currency — the selected business's, or the base currency the all-entities view is
+// consolidated into (server `currency`) — never a literal "$" (shared table: /finflow-currency.js).
+function _curCode() {
+  if (_activeEntity && _activeEntity !== 'all') {
+    const e = ((_data && _data.entities) || []).find(x => String(x.id) === String(_activeEntity));
+    if (e && e.currency) return String(e.currency).toUpperCase();
+  }
+  return String((_data && _data.currency) || 'USD').toUpperCase();
+}
 function fmt(n) {
-  return '$' + (parseFloat(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const sym = window.FinFlowCurrency ? window.FinFlowCurrency.symbol(_curCode()) : '$';
+  return sym + (parseFloat(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+// LA15b: on the consolidated view, a business with no rate to the base currency is left out of every figure. Say
+// which currencies are missing and how to fix it — a smaller total must never look complete.
+function renderFxCoverageNote() {
+  let n = document.getElementById('fx-coverage-note');
+  const cov = _data && _data.fxCoverage;
+  const missing = (_activeEntity === 'all' && cov && cov.complete === false)
+    ? [...new Set((cov.unconvertible || []).map(u => String(u.from || '').toUpperCase()).filter(Boolean))] : [];
+  if (!missing.length) { if (n) { n.style.display = 'none'; n.textContent = ''; } return; }
+  if (!n) {
+    n = document.createElement('div');
+    n.id = 'fx-coverage-note';
+    n.setAttribute('role', 'status');
+    n.style.cssText = 'margin:0 0 12px;padding:9px 12px;border:1px solid rgba(201,168,76,.4);background:rgba(201,168,76,.1);border-radius:8px;font-size:12px;color:var(--text2)';
+    const anchor = document.getElementById('d-revenue');
+    const host = (anchor && anchor.closest('.page, section, main')) || document.body;
+    host.insertBefore(n, host.firstChild);
+  }
+  const to = _curCode();
+  n.textContent = missing.join(', ') + ' figures are not included in these ' + to + ' totals — there is no ' + missing.map(c => c + '→' + to).join(' / ') +
+    ' rate. The client can add one under FX / Currency, or pick a single business above for its own figures.';
+  n.style.display = '';
 }
 // Rule 10: a 'YYYY-MM-DD' (or ISO timestamp) reduces to its calendar date by STRING, and displays from its own
 // parts — new Date('2026-08-30').toLocaleDateString() is "Aug 29" for every viewer west of UTC.
@@ -995,6 +1028,7 @@ function fmtDate(d) {
 // ── RENDER ALL ─────────────────────────────────────────────────────────────
 function renderAll() {
   const { invoices, expenses } = getFiltered();
+  renderFxCoverageNote();   // LA15b
   renderDashboard(invoices, expenses);
   renderInvoicesPage(invoices);
   renderExpensesPage(expenses);

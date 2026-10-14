@@ -4459,6 +4459,8 @@ function loadChartJS(callback){
      _fyContext() (→ window.FinFlowDates) at load time (currentMonthIdx). The bundle loads after
      app-main, so this cannot live there. -->
 <script src="/finflow-dates.js"></script>
+<!-- LA15b: the shared currency table. Before app-main.js, which reads it at load. -->
+<script src="/finflow-currency.js"></script>
 <!-- LA1: stat-card count-up animation (animateCounter/animateCounters). Before app-main.js, which calls it. -->
 <script src="/finflow-counter.js"></script>
 <script src="/app-main.js"></script>

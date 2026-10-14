@@ -32,6 +32,7 @@ const TARGETS = [
   'finflow-owner-mfa.js',
   'finflow-dates.js',
   'finflow-counter.js',
+  'finflow-currency.js',
   'finflow-api.js',
 ];
 

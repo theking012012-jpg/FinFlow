@@ -2372,7 +2372,7 @@ function refreshAllPeriodData(){
   updateDashboard(d);
   updateCashflow(d);
   updateExpenses(d);
-  updateInvoices(d);
+  if(typeof window.updateInvoices==='function') window.updateInvoices(d);
   updateCharts(d);
   updateAI(d);
   // F25: COGS is period-scoped like revenue/expenses. updateDashboard above paints Net with the
@@ -2584,28 +2584,12 @@ function renderCashflow(){updateCashflow()}
 // ════════════════════════════════════════════
 // INVOICES
 // ════════════════════════════════════════════
-function updateInvoices(d=getPeriodData()){
-  if(!userInvoices) userInvoices=[];
-  // Use actual totals from real data, no multiplier
-  const totalBilled=userInvoices.reduce((a,i)=>a+(parseFloat(i.amount)||0),0);
-  const collected=userInvoices.filter(i=>i.status?.toLowerCase()==='paid').reduce((a,i)=>a+(parseFloat(i.amount)||0),0);
-  const outstanding=userInvoices.filter(i=>i.status?.toLowerCase()!=='paid').reduce((a,i)=>a+(parseFloat(i.amount)||0),0);
-  const overdue=userInvoices.filter(i=>i.status?.toLowerCase()==='overdue').reduce((a,i)=>a+(parseFloat(i.amount)||0),0);
-  const pctCollected=totalBilled>0?Math.round(collected/totalBilled*100):0;
-  document.getElementById('inv-billed').textContent=S(totalBilled);
-  document.getElementById('inv-billed-lbl').textContent=d.label;
-  document.getElementById('inv-billed-lbl').className='mc-change neutral';
-  document.getElementById('inv-paid').textContent=S(collected);
-  document.getElementById('inv-paid-pct').textContent=pctCollected+'% collected';
-  document.getElementById('inv-out').textContent=S(outstanding);
-  document.getElementById('inv-over').textContent=S(overdue);
-  document.getElementById('inv-table-title').textContent='Invoices — '+d.label;
-  const overdueCount=userInvoices.filter(i=>i.status?.toLowerCase()==='overdue').length;
-  document.getElementById('badge-inv').textContent=overdueCount;
-  document.getElementById('badge-inv').style.display=overdueCount>0?'':'none';
-}
+// LA7 (live audit 2026-10-13): updateInvoices lives ONLY in finflow-api-wiring-postgres.js (window.updateInvoices —
+// the F56/D2/M27 AR definition). The copy that stood here was shadowed (never executed — instrumented boot, 0 calls)
+// and still held the pre-F56 Outstanding formula (Σ amount over status ≠ paid: drafts and partial payments counted
+// whole). Deleted so it cannot regrow if the override ever moves (Rule 1). Callers below go through window.
 function renderInvoices(){
-  updateInvoices();
+  if(typeof window.updateInvoices==='function') window.updateInvoices();
   if(!userInvoices) userInvoices=[];
   const badgeCls={'paid':'b-green','pending':'b-amber','overdue':'b-red','partial':'b-blue'};
   document.getElementById('invoice-list').innerHTML=userInvoices.map((inv,idx)=>{

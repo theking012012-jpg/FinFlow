@@ -1,0 +1,41 @@
+# b2-personal-schema.js output against a scratch database built by DEPLOYED main (origin/main 98d5d69) schema, 2026-10-14.
+# Compare the production run line by line: any extra NOT NULL column, CHECK, trigger, unique index or RLS policy there is a candidate cause.
+COLUMNS
+┌─────────┬──────────────┬────────────────────────────┬──────────┬─────────────────────────────────────────────────────┐
+│ (index) │ col          │ type                       │ nullable │ dflt                                                │
+├─────────┼──────────────┼────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+│ 0       │ 'id'         │ 'integer'                  │ 'NO'     │ "nextval('personal_transactions_id_seq'::regclass)" │
+│ 1       │ 'user_id'    │ 'integer'                  │ 'YES'    │ ''                                                  │
+│ 2       │ 'entity_id'  │ 'integer'                  │ 'YES'    │ ''                                                  │
+│ 3       │ 'data'       │ 'jsonb'                    │ 'NO'     │ "'{}'::jsonb"                                       │
+│ 4       │ 'created_at' │ 'timestamp with time zone' │ 'NO'     │ 'now()'                                             │
+│ 5       │ 'updated_at' │ 'timestamp with time zone' │ 'NO'     │ 'now()'                                             │
+└─────────┴──────────────┴────────────────────────────┴──────────┴─────────────────────────────────────────────────────┘
+CONSTRAINTS (c = check, f = foreign key, p = primary key, u = unique)
+┌─────────┬───────────────────────────────────┬──────┬─────────────────────────────────────────────────────────────────────┐
+│ (index) │ name                              │ type │ definition                                                          │
+├─────────┼───────────────────────────────────┼──────┼─────────────────────────────────────────────────────────────────────┤
+│ 0       │ 'fk_personal_transactions_entity' │ 'f'  │ 'FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE' │
+│ 1       │ 'fk_personal_transactions_user'   │ 'f'  │ 'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE'      │
+│ 2       │ 'personal_transactions_pkey'      │ 'p'  │ 'PRIMARY KEY (id)'                                                  │
+└─────────┴───────────────────────────────────┴──────┴─────────────────────────────────────────────────────────────────────┘
+TRIGGERS
+┌─────────┐
+│ (index) │
+├─────────┤
+└─────────┘
+INDEXES
+┌─────────┬──────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ (index) │ name                                     │ definition                                                                                                                            │
+├─────────┼──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 0       │ 'idx_personal_transactions_entity_id'    │ 'CREATE INDEX idx_personal_transactions_entity_id ON public.personal_transactions USING btree (entity_id)'                            │
+│ 1       │ 'idx_personal_transactions_user_created' │ 'CREATE INDEX idx_personal_transactions_user_created ON public.personal_transactions USING btree (user_id, created_at DESC, id DESC)' │
+│ 2       │ 'idx_personal_transactions_user_id'      │ 'CREATE INDEX idx_personal_transactions_user_id ON public.personal_transactions USING btree (user_id)'                                │
+│ 3       │ 'personal_transactions_pkey'             │ 'CREATE UNIQUE INDEX personal_transactions_pkey ON public.personal_transactions USING btree (id)'                                     │
+└─────────┴──────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ROW-LEVEL SECURITY {"rls_enabled":false,"rls_forced":false}
+┌─────────┐
+│ (index) │
+├─────────┤
+└─────────┘
+

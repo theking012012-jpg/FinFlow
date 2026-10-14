@@ -242,6 +242,14 @@ async function main() {
     const approve = await a1.post('/api/accountants/approve-request', { userId: uid });
     A('the accountant approves the request → 200 (link goes active)', approve.status === 200 && approve.json.success, JSON.stringify(approve.json));
 
+    // LA18: since C6 (f849833) a new link grants NO business until the owner picks one; this harness expected invoices
+    // straight after approval and had been failing since C6. Follow the owner's real steps: nothing visible yet, then
+    // the owner grants its businesses ('view') through the same route the app uses, then the books flow.
+    const books0 = await a1.get(BOOKS);
+    A('approved link, nothing granted yet → no client invoices visible (C6)', books0.status === 200 && Array.isArray(books0.json && books0.json.allInvoices) && books0.json.allInvoices.length === 0, 'status ' + books0.status + ' allInvoices ' + (books0.json && books0.json.allInvoices && books0.json.allInvoices.length));
+    const _ents = ((await client.get('/api/entities')).json || []);
+    const _grant = await client.request('PUT', '/api/accountants/my-accountant/access', { entity_access: { entities: Object.fromEntries(_ents.map(e => [e.id, 'view'])), personal: 'none' } });
+    A('the client grants its businesses (view) → 200', _grant.status === 200, 'status ' + _grant.status + ' ' + String(_grant.text).slice(0, 160));
     const books = await a1.get(BOOKS);
     A('the accountant now reads the client books → 200', books.status === 200, 'status ' + books.status);
     A('the client\'s real invoices flow through the connection', books.json && Array.isArray(books.json.allInvoices) && books.json.allInvoices.length >= 2, 'allInvoices ' + (books.json && books.json.allInvoices && books.json.allInvoices.length));

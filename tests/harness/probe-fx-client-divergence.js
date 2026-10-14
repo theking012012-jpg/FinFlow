@@ -49,10 +49,11 @@ function sliceBalanced(src, header) {
 
 // Load the REAL client functions into an executable sandbox (no re-implementation).
 function loadRealClient() {
-  const appMain = fs.readFileSync(path.join(ROOT, 'public', 'app-main.js'), 'utf8');
   const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
 
-  const curDef = sliceBalanced(appMain, 'const CURRENCIES = {');       // app-main.js:61  (real static table)
+  // The real static table. LA15b moved it out of app-main.js into public/finflow-currency.js (app-main reads
+  // window.FinFlowCurrency.CURRENCIES), so it is imported, not marker-sliced from source text (Rule 5 corollary).
+  const { CURRENCIES } = require(path.join(ROOT, 'public', 'finflow-currency.js'));
 
   // index.html client block: consolCurrency + fxConvert + fmtConsol + getConsolTotal
   const consolDeclIdx = indexHtml.indexOf("let consolCurrency");
@@ -61,9 +62,8 @@ function loadRealClient() {
   const clientBlock = indexHtml.slice(consolDeclIdx, getConsolEnd);     // real consolCurrency + fxConvert + getConsolTotal
 
   const win = {};
-  const wrapper = new Function('window', `
+  const wrapper = new Function('window', 'CURRENCIES', `
     var ENTITIES = [];
-    ${curDef}
     window.CURRENCIES = CURRENCIES;
     ${clientBlock}
     return {
@@ -74,7 +74,7 @@ function loadRealClient() {
       setConsolCurrency: function(v){ consolCurrency = v; }
     };
   `);
-  return wrapper(win);
+  return wrapper(win, CURRENCIES);
 }
 
 let _seq = 0;

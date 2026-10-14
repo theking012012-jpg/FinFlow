@@ -5157,9 +5157,10 @@ function clearAIChat(){
         return;
       }
 
-      // ── F137-m: 1099 / W-2 Summary — per-employee wages from real payroll runs (W-2-style; gross =
-      // Σ line items, basis C). Contractor/1099 payments are NOT tracked, stated plainly. ───────────
-      if (name === '1099 / W-2 Summary') {
+      // ── F137-m / LA10: Payroll by person — each person's pay from real payroll runs (gross = Σ line items,
+      // basis C). Was "1099 / W-2 Summary" (US form names; owner decision 2026-10-14). The old name still opens it,
+      // so a saved or scheduled reference does not break. ─────────────────────────────────────────────────
+      if (name === 'Payroll by person' || name === '1099 / W-2 Summary') {
         // L12: wages from the runs the P&L recognises (approved + paid — a draft or voided run is not
         // payroll), in the active period (year ⇒ fiscal year). It summed every run ever, drafts included.
         // (Whether W-2 should count only runs marked PAID is an owner tax-policy question — Owner Handoff.)
@@ -5176,13 +5177,13 @@ function clearAIChat(){
         const rows = emps.map(([nm, v]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(nm)}</span><span style="font-family:var(--font-mono)">gross ${m(v.g)} · net ${m(v.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(v.g / gDen * 100))}%"></i></div></div>`).join('');
         _rptBody(
           tiles([
-            tile('Employees', String(emps.length), 'on payroll (W-2)'),
+            tile('People', String(emps.length), 'on payroll runs'),
             tile('Total Wages', m(tG), 'approved + paid runs, gross Σ line items', 'var(--red)'),
             tile('Total Withheld', m(Math.round((tG - tN) * 100) / 100), 'deductions'),
             tile('Total Net', m(tN), 'take-home', 'var(--green)'),
           ])
-          + `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:var(--t2)">Employee (W-2) wages from payroll runs. <strong>Contractor / 1099 payments are not separately tracked</strong> in FinFlow.</div>`
-          + hdr('Employee wages (W-2)')
+          + `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:var(--t2)">Pay per person from approved and paid payroll runs. <strong>Payments to contractors outside payroll are not included</strong> — they are expenses or bills.</div>`
+          + hdr('Pay by person')
           + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs recorded.</div>')
           + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Wages / Net</span><span style="font-family:var(--font-mono)">${m(tG)} / ${m(tN)}</span></div>`);
         return;

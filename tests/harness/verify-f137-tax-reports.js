@@ -5,7 +5,7 @@
  *   F137-j Tax-Deductible Expenses — deductible expenses by category; total == Σ (canonical).
  *   F137-k Income Tax Estimate     — /api/tax-filing figures; "not tax advice" banner; taxable matches.
  *   F137-l VAT Return              — honest "not tracked" state (no fabricated numbers).
- *   F137-m 1099 / W-2 Summary      — per-employee W-2 wages == Σ payroll line gross; 1099 note.
+ *   F137-m Payroll by person (was 1099 / W-2 Summary, LA10) — per-person wages == Σ payroll line gross; contractor note.
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-f137-tax-reports.js
  *
@@ -111,8 +111,9 @@ process.on('uncaughtException', (e) => {
     A('VAT: NOT generic', !/incl\.\s*bills/i.test(vt.raw));
 
     // F137-m 1099 / W-2 Summary
-    const w2 = await bodyOf('1099 / W-2 Summary');
-    A('1099/W-2: own content ("Employee wages (W-2)") + 1099-not-tracked note', /Employee wages/i.test(w2.raw) && /1099[^.]*not (separately )?tracked/i.test(w2.raw));
+    // LA10 (owner decision 2026-10-14): renamed "Payroll by person" (was "1099 / W-2 Summary"; the old name still opens it).
+    const w2 = await bodyOf('Payroll by person');
+    A('Payroll by person: own content ("Pay by person") + contractors-not-included note', /Pay by person/i.test(w2.raw) && /contractors outside payroll are not included/i.test(w2.raw));
     A('1099/W-2: NOT generic', !/incl\.\s*bills/i.test(w2.raw));
     A('1099/W-2: Total Wages === Σ payroll line gross (basis C)', w2.flat.includes('TotalWages' + flat(fmt(srvWages))), `want TotalWages${flat(fmt(srvWages))} (wages=${srvWages})`);
     A('1099/W-2: seeded employee "Alice A" appears', /Alice A/.test(w2.raw));

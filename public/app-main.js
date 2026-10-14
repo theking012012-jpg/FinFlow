@@ -6097,12 +6097,14 @@ const reportsData=[
   {name:'Sales by Customer',desc:'Revenue breakdown by client',icon:'👥'},
   {name:'Expense Report',desc:'Spending by category and vendor',icon:'🧾'},
   {name:'Payroll Summary',desc:'Staff costs and deductions',icon:'👔'},
+  // LA10 (owner decision 2026-10-14): was "1099 / W-2 Summary" under Tax reports — US form names on a multi-region,
+  // estimates-only product. It is each person's pay from payroll runs, so it is a payroll report.
+  {name:'Payroll by person',desc:'Gross, deductions and net pay per person',icon:'🧾'},
 ];
 // LA9 (live audit 2026-10-13): no "VAT Return" tile — FinFlow has no VAT/GST engine by design (tax = estimates only),
 // so it could only ever answer "not tracked". generateReport('VAT Return') still answers that honestly if called.
 const taxReportsData=[
   {name:'Income Tax Estimate',desc:'Estimated quarterly taxes',icon:'📋'},
-  {name:'1099 / W-2 Summary',desc:'Contractor and employee forms',icon:'📄'},
   {name:'Tax-Deductible Expenses',desc:'All deductible business costs',icon:'✅'},
 ];
 async function renderReports(){

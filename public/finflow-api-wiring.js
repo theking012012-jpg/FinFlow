@@ -99,6 +99,41 @@
     // Exposed so the entity switcher can repaint the panel without a page reload (index.html switchEntity).
     window._ffApplyEntityProfile = applyEntityProfileFields;
 
+    // LA21 (owner decision 2026-10-15): the account's reporting currency. `saved` = the owner's choice (null = default:
+    // the first business's currency); `effective` = the currency the server reports "All entities" in. The dropdown lists
+    // every supported currency (the shared table, finflow-currency.js); the consolidation view follows `effective` —
+    // it used to start from a hardcoded 'USD' whatever the account's businesses were.
+    window._ffApplyReportingCurrency = function (saved, effective) {
+      const sel = document.getElementById('s-reporting-currency');
+      if (sel) {
+        const C = (window.FinFlowCurrency && window.FinFlowCurrency.CURRENCIES) || window.CURRENCIES || {};
+        if (sel.options.length <= 1) {
+          Object.keys(C).sort().forEach(code => {
+            const o = document.createElement('option'); o.value = code; o.textContent = code + ' — ' + ((C[code] && C[code].name) || code); sel.appendChild(o);
+          });
+        }
+        sel.options[0].textContent = "Your first business's currency" + (!saved && effective ? ' (' + effective + ')' : '');
+        sel.value = saved || '';
+        sel.dataset.saved = saved || '';
+      }
+      if (effective && typeof window.setConsolCurrency === 'function' && window.consolCurrency !== effective) window.setConsolCurrency(effective);
+    };
+    window.saveReportingCurrency = async function () {
+      const sel = document.getElementById('s-reporting-currency');
+      if (!sel) return;
+      const v = sel.value || null;
+      try {
+        const r = await fetch('/api/settings', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporting_currency: v }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+        window._ffApplyReportingCurrency(v, j.reporting_currency_effective || v);
+        if (typeof notify === 'function') notify('All-businesses totals now shown in ' + (j.reporting_currency_effective || v));
+      } catch (e) {
+        sel.value = sel.dataset.saved || '';   // the server refused — show what is actually saved
+        if (typeof notify === 'function') notify('Could not save the reporting currency: ' + (e && e.message), true);
+      }
+    };
+
     // Load settings from DB and apply them to the form fields
     async function loadSettingsFromDB() {
       try {
@@ -111,6 +146,8 @@
         // (defined in index.html). It shows the wizard only when THIS user is not onboarded, and
         // hides it otherwise. `s` is already fetched, so no extra round-trip on the page-load path.
         try { if (typeof window._ffDecideOnboarding === 'function') window._ffDecideOnboarding(s); } catch (e) {}
+        // LA21: the reporting ("All entities") currency — fills the Settings dropdown and starts the consolidation view in it.
+        try { window._ffApplyReportingCurrency(s.reporting_currency, s.reporting_currency_effective); } catch (e) {}
         // Apply currency
         if (s.currency) {
           const sel = document.getElementById('s-currency');

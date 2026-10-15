@@ -13,9 +13,9 @@
  *                           GL payroll 200 vs books 0; rev/cogs/opex/net identical (1,000/0/200/800), tb ties.
  *                           old log: gl{…800} books{…800} tb=true — no reason.   fix: names payroll(gl=200 books=0)
  *   B  P&L, FX coverage   — consolidated: USD business invoice 1,000, then TTD business invoice 500, no USD↔TTD rate.
- *                           The user has no saved base currency, so the consolidation base is the NEWEST business's
- *                           currency (allByUser: created_at DESC) — TTD — and the USD invoice is the unconvertible one
- *                           (see LA21). old log: gl{rev:500} = books{rev:500}, no reason.  fix: names fxCoverage, USD→TTD
+ *                           No reporting currency chosen ⇒ the base is the OLDEST business's currency (LA21) — USD —
+ *                           and the TTD invoice is the unconvertible one. old log: identical gl{} / books{}, no reason.
+ *                           fix: names fxCoverage, TTD→USD
  *   C  balance sheet, expenses — invoice 1,000 · expense 200; the expense's whole ledger entry deleted (tb ties).
  *                           GL non-FX expenses 0 vs books 200; AR/AP identical.  fix: names expenses(gl=0 books=200)
  *   D  healthy ledger     — no warning, source 'gl' (the gate's decision is unchanged).
@@ -106,7 +106,7 @@ async function main() {
       const l = lines.join('\n');
       console.log('     log: ' + (l || '(none)'));
       A('B consolidated with an unconvertible TTD business: not served from the ledger', result.source === 'computeBooks', JSON.stringify({ source: result.source, rev: result.totalRevenue }));
-      A('B log names the failing check: fxCoverage, with the missing pair USD→TTD (base = newest business, TTD)', /fxCoverage\([^)]*USD→TTD/.test(l), 'old message: identical gl{} / books{} and tb=true');
+      A('B log names the failing check: fxCoverage, with the missing pair TTD→USD (base = the oldest business, USD — LA21)', /fxCoverage\([^)]*TTD→USD/.test(l), 'old message: identical gl{} / books{} and tb=true');
     }
 
     // ── C: balance sheet, non-FX expenses ────────────────────────────────────────────────

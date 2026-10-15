@@ -3048,11 +3048,23 @@ app.get('/api/settings', requireAuth, wrap(async (req, res) => {
     `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`,
     [scopeId(req)]
   );
-  res.json(_sr ? rowToObj(_sr) : {});
+  const _out = _sr ? rowToObj(_sr) : {};
+  // LA21: the account's reporting ("All entities") currency — the saved choice (null = none) and the one in effect.
+  const { rows: [_bc] } = await pool.query(`SELECT data->>'base_currency' AS b FROM users WHERE id = $1`, [scopeId(req)]);
+  _out.reporting_currency = (_bc && /^[A-Z]{3}$/i.test(_bc.b || '')) ? _bc.b.toUpperCase() : null;
+  _out.reporting_currency_effective = await accountBaseCurrency(scopeId(req), await db.allByUser('entities', scopeId(req)));
+  res.json(_out);
 }));
 app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
+  // LA21: reporting currency — an ISO code the app supports, or null / '' to go back to the default (oldest business).
+  let _repCur;   // undefined = not sent
+  if ('reporting_currency' in b) {
+    const v = b.reporting_currency == null ? '' : String(b.reporting_currency).trim().toUpperCase();
+    if (v && (!/^[A-Z]{3}$/.test(v) || _badCurrency(v))) return res.status(400).json({ error: 'Invalid reporting currency.' });
+    _repCur = v || null;
+  }
   // Read current settings for audit diff
   const { rows: [_sb] } = await pool.query(
     `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`,
@@ -3121,7 +3133,16 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
     if (String(oldVal||'') === String(newVal||'')) continue;
     logAudit(req, 'UPDATE', 'settings', null, { field: f, value: oldVal || null }, { field: f, value: newVal });
   }
-  res.json({ ok: true });
+  // LA21: the reporting currency lives on the account's user row (users.data.base_currency — what the consolidation
+  // resolver reads). Account-scoped (scopeId), like the rest of the settings.
+  if (_repCur !== undefined) {
+    const { rows: [_prev] } = await pool.query(`SELECT data->>'base_currency' AS b FROM users WHERE id = $1`, [scopeId(req)]);
+    if (_repCur) await pool.query(`UPDATE users SET data = data || jsonb_build_object('base_currency', $1::text) WHERE id = $2`, [_repCur, scopeId(req)]);
+    else await pool.query(`UPDATE users SET data = data - 'base_currency' WHERE id = $1`, [scopeId(req)]);
+    const _old = (_prev && _prev.b) || null;
+    if (String(_old || '') !== String(_repCur || '')) await logAudit(req, 'UPDATE', 'settings', null, { field: 'reporting_currency', value: _old }, { field: 'reporting_currency', value: _repCur });
+  }
+  res.json({ ok: true, reporting_currency_effective: _repCur !== undefined ? await accountBaseCurrency(scopeId(req), await db.allByUser('entities', scopeId(req))) : undefined });
 }));
 
 // ── AUTH — CHANGE PASSWORD ────────────────────────────────────────────────────
@@ -10959,6 +10980,21 @@ async function reconcileAfterImport(userId, entityId) {
 // GAAP consolidated figure, offered alongside. Missing rates are flagged in fxCoverage (never silently
 // mis-translated). entityId set => single entity (optionally to a display currency); entityId null =>
 // ALL entities consolidated to base. Pure reader.
+// LA21 (owner decision 2026-10-15): the ONE resolver for the account's reporting ("All entities") currency — the
+// currency the owner chose in Settings (users.data.base_currency), else the OLDEST business's currency, else USD.
+// Before, both consolidation paths fell back to `entRows[0]` of allByUser (created_at DESC = the NEWEST business), so
+// creating a business silently changed the currency of every consolidated figure. `entRows` are the account's
+// entities (any order). Never throws.
+async function accountBaseCurrency(userId, entRows) {
+  const ok = c => typeof c === 'string' && /^[A-Z]{3}$/i.test(c);
+  let saved = null;
+  try { saved = (await pool.query(`SELECT data->>'base_currency' AS b FROM users WHERE id=$1`, [userId])).rows[0]; } catch (_) {}
+  if (saved && ok(saved.b)) return saved.b.toUpperCase();
+  const t = e => { const v = new Date(e && e.created_at).getTime(); return isFinite(v) ? v : Infinity; };
+  const oldest = (entRows || []).slice().sort((a, b) => (t(a) - t(b)) || ((Number(a.id) || 0) - (Number(b.id) || 0)))[0];
+  return String((oldest && oldest.currency) || 'USD').toUpperCase();
+}
+
 async function glConsolidated(userId, opts = {}) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
@@ -10975,10 +11011,8 @@ async function glConsolidated(userId, opts = {}) {
   // compares like-for-like (base mismatch would force a needless fallback).
   const entRows = await db.allByUser('entities', userId);
   const entCur = {}; for (const e of entRows) entCur[e.id] = (e.currency || 'USD');
-  // base currency (match computeBooks F24): users.base_currency, else first entity, else USD.
-  let baseCur = null;
-  try { const b = (await pool.query(`SELECT data->>'base_currency' AS b FROM users WHERE id=$1`, [userId])).rows[0]; baseCur = (b && typeof b.b === 'string' && /^[A-Z]{3}$/i.test(b.b)) ? b.b.toUpperCase() : null; } catch (_) {}
-  baseCur = baseCur || (entRows[0] && entRows[0].currency) || 'USD';
+  // base currency (match computeBooks F24): accountBaseCurrency — the chosen reporting currency, else the OLDEST entity, else USD.
+  const baseCur = await accountBaseCurrency(userId, entRows);   // LA21: chosen reporting currency, else the oldest business
   const viewedCur = entityId != null ? (entCur[entityId] || 'USD') : baseCur;
   const _disp = (typeof opts.display === 'string' && /^[A-Z]{3}$/.test(opts.display)) ? opts.display.toUpperCase() : null;
   const displayCur = entityId != null ? (_disp || viewedCur) : (_disp || baseCur);
@@ -11478,15 +11512,12 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const entCur = {}; for (const e of _entRows) entCur[e.id] = (e.currency || 'USD');
   // F24 — CONSOLIDATED base-currency resolution. Single-entity keeps native identity unless an explicit
   // display != native is requested (unchanged). The ALL-ENTITIES view resolves to the account BASE
-  // currency (users.data.base_currency, else the first entity's currency, else USD) and converts EVERY
+  // currency (accountBaseCurrency: the chosen reporting currency, else the OLDEST entity's, else USD) and converts EVERY
   // leg from its OWN entity's currency to base — so a TTD entity + a USD entity no longer raw-sum. For a
   // single-currency account base === every entity currency => from===to => rate 1 => BYTE-IDENTICAL.
   let baseCur = null;
   if (entityId == null) {
-    let _setBase = null;
-    try { _setBase = (await pool.query(`SELECT data->>'base_currency' AS b FROM users WHERE id=$1`, [userId])).rows[0]; } catch (_) {}
-    baseCur = ((_setBase && typeof _setBase.b === 'string' && /^[A-Z]{3}$/i.test(_setBase.b)) ? _setBase.b.toUpperCase() : null)
-              || (_entRows[0] && _entRows[0].currency) || 'USD';
+    baseCur = await accountBaseCurrency(userId, _entRows);   // LA21: chosen reporting currency, else the oldest business
   }
   const viewedCur = (entityId != null ? entCur[entityId] : baseCur) || 'USD';
   const _disp = (typeof display === 'string' && /^[A-Z]{3}$/.test(display)) ? display.toUpperCase() : null;

@@ -11,8 +11,10 @@
  * pending, issued 2026-07-10. Clock 2026-07-25, period year.
  *   TTD selected            → Revenue "TT$8,000.00"                          bug: "$8,000.00"
  *   USD selected            → Revenue "$1,500.00"
- *   All, no USD↔TTD rate    → Revenue "$1,500.00" + note: TTD not included   bug: no note (8,000 dropped silently)
- *   All, rate 1 USD = 6.8 TTD → Revenue "$2,676.47" (1,500 + 8,000 / 6.8), no note
+ *   LA21 (owner decision 2026-10-15): with no reporting currency chosen, "All entities" reports in the OLDEST business's
+ *   currency. Island Traders (TTD) is created first, so the base is TTD (it was USD before — the NEWEST business).
+ *   All, no USD↔TTD rate    → Revenue "TT$8,000.00" + note: USD not included   bug: no note (1,500 dropped silently)
+ *   All, rate 1 USD = 6.8 TTD → Revenue "TT$18,200.00" (8,000 + 1,500 × 6.8), no note
  *   node -r ./tests/harness/clock.js tests/harness/verify-la15b-accountant-client-currency.js
  */
 const bcrypt = require('bcryptjs');
@@ -81,13 +83,13 @@ const settle = async (n = 60, ms = 100) => { for (let i = 0; i < n; i++) await n
     await pick(us.id);
     eq('Northwind (USD): Revenue', rev(), '$1,500.00');
     await pick('all');
-    eq('All entities (base USD), TTD unconvertible: Revenue', rev(), '$1,500.00');
-    eq('All entities: the page says the TTD figures are not included', note(), true, false);
-    eq('note names the currency and the fix', /TTD/.test(noteText()) && /rate/i.test(noteText()), true, false);
+    eq('All entities (base TTD — the oldest business, LA21), USD unconvertible: Revenue', rev(), 'TT$8,000.00');
+    eq('All entities: the page says the USD figures are not included', note(), true, false);
+    eq('note names the left-out currency (USD) and the fix', /USD/.test(noteText()) && /rate/i.test(noteText()), true, false);
 
     await J('POST', '/api/fx-rates', { from_currency: 'USD', to_currency: 'TTD', rate: 6.8, rate_date: '2026-01-01' });
     await pick(tt.id); await pick('all');
-    eq('All entities with a rate: TTD converted into the total', rev(), '$2,676.47');
+    eq('All entities with a rate: USD converted into the total (8,000 + 1,500 × 6.8)', rev(), 'TT$18,200.00');
     eq('All entities with a rate: no note', note(), false, true);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   finally {

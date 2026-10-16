@@ -15,6 +15,8 @@
   Railway (auto-deploys `main`). Everything after `15f207f` is on the branch only, until the owner merges it.
 - Production data was wiped on 2026-10-11 (clean slate; 71 tables rebuilt at boot).
 - The owner runs ALL full sweeps in PowerShell (`node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js`).
+  **2026-10-16: after the 555/555 sweep on `ed6090b`, LA21 (reporting currency in Settings), LA23a/b (payroll 'TT' default + clean-up
+  migration) and LA22 (decision only) landed — the owner's next sweep should be ~557 harnesses (new: verify-la21, verify-la23).**
   The agent runs only targeted harnesses. (Capture tip — scrollback drops runs: `1..3 | ForEach-Object { node -r ./tests/harness/clock.js
   tests/harness/run-verification-sweep.js *> "$env:TEMP\sweep-$_.log" }` then `Select-String -Path "$env:TEMP\sweep-*.log" -Pattern "SWEEP COMPLETE|^\s+FAIL"`.)
   Last full sweep by the owner: **555/555 GREEN** (2026-10-15, on `ed6090b`,

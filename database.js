@@ -656,7 +656,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS payroll_runs (
         id                SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
-        period            TEXT, jurisdiction TEXT DEFAULT 'TT',
+        period            TEXT, jurisdiction TEXT,   -- LA23: dead (tax engine removed); no 'TT' default
         run_date          DATE, status TEXT DEFAULT 'draft',
         total_gross       NUMERIC(12,2), total_deductions NUMERIC(12,2), total_net NUMERIC(12,2),
         notes             TEXT, created_at TIMESTAMPTZ DEFAULT NOW()

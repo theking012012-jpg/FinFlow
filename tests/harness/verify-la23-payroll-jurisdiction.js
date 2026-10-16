@@ -68,7 +68,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
 
     // ── LA23b ── (skipped until its migration file exists — it ships in its own commit)
     if (fs.existsSync(path.join(MIG, B_FILE))) {
-      const mk = async (j, key) => (await c.query(`INSERT INTO payroll_runs (user_id, entity_id, period, status, jurisdiction, idempotency_key) SELECT user_id, $1, 'Legacy', 'draft', $2, $3 FROM payroll_runs WHERE id = $4 RETURNING id`, [ent.id, j, key, run.id])).rows[0].id;
+      const mk = async (j, key) => (await c.query(`INSERT INTO payroll_runs (user_id, entity_id, period, status, jurisdiction, idempotency_key) SELECT user_id, $1, 'Legacy ' || $3, 'draft', $2, $3 FROM payroll_runs WHERE id = $4 RETURNING id`, [ent.id, j, key, run.id])).rows[0].id;
       const tt1 = await mk('TT', 'la23-l1'), tt2 = await mk('TT', 'la23-l2'), jm = await mk('JM', 'la23-l3');
       await c.query(`DELETE FROM schema_migrations WHERE name = $1`, [B_FILE]);
       const rb = await runMigrations(pool);

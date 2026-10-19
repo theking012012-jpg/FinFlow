@@ -25,7 +25,7 @@ This is the single list of what stands between today and going public. Work it t
 
 | # | Step | Status | Evidence / how to confirm |
 |---|---|---|---|
-| 0.1 | Full sweep 3× on the branch | ⬜ OPEN (running 2026-10-19) | Expect **557/557 GREEN** ×3 (555 on `ed6090b` + `verify-la21`, `verify-la23`). Previous: 555/555 ×3 on `ed6090b` (2026-10-15, HANDOVER). |
+| 0.1 | Full sweep 3× on the branch | ✅ VERIFIED | **557/557 GREEN ×3** on `14709a6` (owner's PowerShell run, 2026-10-19; all three `SWEEP COMPLETE` lines captured). Later commits on the branch are docs only. |
 | 0.2 | Merge the branch into `main` | ⬜ OPEN | Fast-forward: `main` has no commits the branch lacks (checked 2026-10-19). Railway deploys `main`. |
 | 0.3 | Migrations run on first boot | ⬜ OPEN | `2026-10-16-payroll-runs-jurisdiction-no-default.sql` (schema) and `…-clear-tt.sql` (data, owner-approved). Railway log shows `[migrate] applied …`. |
 | 0.4 | Post-deploy live check | ⬜ OPEN | `COWORK_LIVE_CHECK.md` Part A (today's fixes live) — e.g. 0 `deferred render hook threw` on hard reload, no `$0` KPI cards. |
@@ -89,7 +89,7 @@ This is the single list of what stands between today and going public. Work it t
 |---|---|---|
 | Live audit 2026-10-13 — 23 rows (LA1–LA23) | ✅ VERIFIED closed (20 fixed, LA11/LA12/LA22 explained or decided) | `AUDIT_MASTER.md` "LIVE AUDIT 2026-10-13" table; each fix has a harness RED on the old code, GREEN on the fix. B2 withdrawn after a live repro (crossing works). |
 | Money audit 2026-10-09 (M-rows) | ✅ VERIFIED per `MONEY_AUDIT_2026-10-09.md` | Rounds 1–3 fixed with harnesses (e.g. M53, M62 green in the 555 sweep). |
-| Full sweep | ✅ 555/555 ×3 on `ed6090b` (2026-10-15); 557 pending (§0.1) | `HANDOVER.md`. |
+| Full sweep | ✅ 557/557 ×3 on `14709a6` (2026-10-19) | `HANDOVER.md`. |
 | Duplicate-submit (Rule 9) on money routes | ✅ VERIFIED | 17 `verify-c1-*` harnesses (payroll runs, invoices, invoice payments, expenses, bills, payments made/received, sales receipts, credit notes, vendor credits, journals, chart of accounts, inventory movements, client lock); shared client `withSubmitGuard` (`app-main.js:30`). |
 | Boot race (F50 / F97 / LA2) | ✅ VERIFIED root-fixed on the branch | `verify-la2-boot-after-parse` — real Chromium, production build, network latency: 3/5 errors → 0. Live confirmation is §0.4. |
 

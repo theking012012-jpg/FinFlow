@@ -19,7 +19,8 @@
   migration) and LA22 (decision only) landed — the owner's next sweep should be ~557 harnesses (new: verify-la21, verify-la23).**
   The agent runs only targeted harnesses. (Capture tip — scrollback drops runs: `1..3 | ForEach-Object { node -r ./tests/harness/clock.js
   tests/harness/run-verification-sweep.js *> "$env:TEMP\sweep-$_.log" }` then `Select-String -Path "$env:TEMP\sweep-*.log" -Pattern "SWEEP COMPLETE|^\s+FAIL"`.)
-  Last full sweep by the owner: **555/555 GREEN** (2026-10-15, on `ed6090b`,
+  Last full sweep by the owner: **557/557 GREEN ×3** (2026-10-19, on `14709a6`, all three summaries captured via the
+  log-file command — includes verify-la21 + verify-la23). Before that: **555/555 GREEN** (2026-10-15, on `ed6090b`,
   branch `claude/laughing-hawking-lkvv38`; run 3× by the owner, two summaries captured (scrollback), both 555/555, identical — incl. the Playwright layout harnesses C20/C21/C25
   and the real-Chromium LA2 boot-race harness). Previous: 512/512 GREEN ×3 on `15f207f`.
 - The owner has given standing permission (2026-10-11) to commit and push each fix once verified, on this branch.

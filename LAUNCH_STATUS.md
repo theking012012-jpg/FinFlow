@@ -57,7 +57,7 @@ This is the single list of what stands between today and going public. Work it t
 | 2.4 | Cloudflare in front (proxied DNS, TLS Full (strict), managed WAF — free tier is enough) | ❔ CONFIRM | |
 | 2.5 | Secrets rotation schedule (DB URL, Stripe, connector keys) + rotate on any suspected exposure | ⬜ OPEN | 1.1 is the first instance. |
 | 2.6 | Legal review of `terms`, `privacy`, `security` pages | ⬜ OPEN · 🔒 OWNER | Pages exist (`public/terms.html`, `privacy.html`, `security.html`); content not reviewed for a product holding bank data. Plaid production approval asks for them. |
-| 2.7 | Live functional check of the areas no audit has exercised | ⬜ OPEN | `COWORK_LIVE_CHECK.md` Part B: Time Tracking, Budget, MRR/SaaS, Quotes, Sales Receipts, Payments Received/Made, Classes, Scheduled Documents, Reminders, Documents/Templates, Audit trail, accountant portal. |
+| 2.7 | Live functional check of the areas no audit has exercised | ⬜ OPEN | `COWORK_LIVE_CHECK.md` Part C: Time Tracking, Budget, MRR/SaaS, Quotes, Sales Receipts, Payments Received/Made, Classes, Scheduled Documents, Reminders, Documents/Templates, Audit trail, accountant portal. |
 | 2.8 | `SECURITY_ALERT_EMAIL` (audit-anomaly digest), `LOG_REQUESTS=1` | ⬜ OPEN (optional) | Supported in `server.js`. |
 
 ---
@@ -79,7 +79,7 @@ This is the single list of what stands between today and going public. Work it t
 | 4.1 | Full sweep 3× GREEN on the exact commit going live | ⬜ OPEN | `node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js`. Capture: `HANDOVER.md` (log-file command). |
 | 4.2 | `VERIFICATION.md` re-sweep on real seeded data | ⬜ OPEN | Per `CLAUDE.md`, **done = every check in `VERIFICATION.md` green**; anything not on it is unverified. 19 Result cells are empty (A7.5–8, A7.18, A8a/A8b) — gate-tested but not stamped. |
 | 4.3 | Human smoke test on production | ⬜ OPEN | Sign up → create a business → invoice + expense → record a payment → P&L / balance sheet / All entities → connect one sandbox bank → invite an accountant. **Confirm the emails actually arrive** (needs 1.2). |
-| 4.4 | Live check complete with no open FAIL | ⬜ OPEN | `COWORK_LIVE_CHECK.md` A + B. |
+| 4.4 | Live check complete with no open FAIL | ⬜ OPEN | `COWORK_LIVE_CHECK.md` A (fixes live) + B (rerun of the 13 Oct live audit) + C (untested areas). |
 
 ---
 

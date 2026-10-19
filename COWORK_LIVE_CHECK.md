@@ -1,10 +1,12 @@
 # FinFlow — post-deploy live check (for Cowork)
 
 **Run this only after** the branch `claude/laughing-hawking-lkvv38` is merged into `main` and Railway shows the new
-deployment as live. It has two parts:
+deployment as live. It has three parts — **run them in this order**:
 
 - **Part A — confirm the fixes are live.** Observe only. Nothing is created or changed.
-- **Part B — exercise the areas no audit has tested yet.** Creates a few clearly labelled test records.
+- **Part B — rerun the 2026-10-13 live audit** (`LIVE_AUDIT_2026-10-13.md`): the same reconciliations, flow tests,
+  payroll run, walls and multi-currency checks, now against the fixed app.
+- **Part C — exercise the areas no audit has tested yet.** Creates a few clearly labelled test records.
 
 App: https://finflow-production-dab2.up.railway.app — use the same test account as the 2026-10-13 live audit
 (owner Sam Owner; businesses **Northwind Studio** (USD) and **Island Traders** (TTD)).
@@ -40,7 +42,7 @@ step it appeared in, and any full page reload you saw (what you clicked).
 **A0. The new code is deployed.** Open **Settings**. There is a field **"Reporting currency — all businesses
 combined"**. If it is missing, **stop here** — the deploy has not landed; report that and nothing else.
 
-**A1. No boot errors, no $0 cards (B1 / LA1 / LA2).** On the Dashboard, hard reload (**Ctrl+Shift+R**) and wait for it
+**A1. No boot errors, no $0 cards (13 Oct B1 / LA1 / LA2).** On the Dashboard, hard reload (**Ctrl+Shift+R**) and wait for it
 to finish loading. Do this **twice**.
 - Console: **zero** red errors containing `deferred render hook threw` or `Cannot set properties of null`.
   (Before the fix: 7 on every reload.) Copy any red error that does appear.
@@ -89,63 +91,121 @@ fields show **TT$**. **Do not submit the form.**
 
 ---
 
-## Part B — areas no audit has exercised yet
+## Part B — rerun of the 2026-10-13 live audit
+
+The 13 Oct audit's figures (in brackets below) have moved since — Cowork's November 2026 payroll run (paid 14 Oct),
+the audit's own test records — so each check here is a **reconciliation** (surfaces agree with each other) or a
+**before/after change**, not a fixed total. Where a figure differs from 13 Oct, say which records explain it.
+
+**B1. P&L reconciles end to end.** Northwind, Year, Reports → Profit & Loss: Revenue − COGS = Gross profit;
+Gross profit − Expenses = Net; every month row reconciles the same way. Net profit is **identical** on the Dashboard
+card, Reports' NET RESULT, the Money-flow block and the P&L. *(13 Oct: 15,400 − 390 = 15,010 − 3,005 = 12,005.)*
+
+**B2. Receivables reconcile.** Reports → AR by customer: the per-customer amounts add up to Outstanding on the
+Dashboard **and** on the Invoices page (all three equal). Overdue = the overdue customers' amounts.
+*(13 Oct: Bright 1,500 + Delta 1,200 + Acme −300 = 2,400; overdue 1,200.)*
+
+**B3. Revenue basis (accrual, issue-based).** Revenue (Year) = total of this year's issued invoices (pending, overdue,
+partial, paid — **drafts excluded**) − this year's credit notes. Show the two numbers. *(13 Oct: 15,700 − 300 = 15,400.)*
+
+**B4. Expense basis (accrual).** An **unpaid** bill is already in Expenses. A bill tagged **Stock** goes to Inventory,
+not Expenses. Check one existing example of each and say which.
+
+**B5. Flow tests — each action writes exactly once.** Note Dashboard Revenue, Expenses and Outstanding first. Click
+**Save once** for each:
+- Invoice **ZZ-LIVECHECK flow**, **$777.00**, pending, today → listed **once** on Invoices; Revenue **+777.00**;
+  Outstanding **+777.00**; it also shows in the Money-flow block, the transactions list and the current month's chart bar.
+- Expense **ZZ-LIVECHECK flow**, **$88.00** → listed once; Expenses **+88.00**; it shows in the expense breakdown and
+  Money-flow.
+- Bill **ZZ-LIVECHECK flow**, **$44.00**, unpaid → listed once on Bills; Expenses **+44.00**; payables **+44.00**.
+
+**B6. Payroll and the owner salary (the old B2, rerun end to end).** Note Dashboard Expenses (Year) and Personal income
+(Year). Payroll → run payroll for **December 2026**, approve it, **Mark paid**.
+- The mark-paid message says the owner's salary was added to Personal (name and amount).
+- Expenses rise by exactly the run's **total gross** (shown on the run).
+- Personal: a row **"Owner salary — Northwind Studio (December 2026)"** for Sam's **net** pay (expected **$4,000.00**),
+  and Personal income rises by exactly that. Check the API too: `GET /api/personal-transactions` contains it.
+- Now **Void** the December run. Expenses return to the figure you noted; the owner-salary row is **gone** from
+  Personal and Personal income returns to the figure you noted.
+- Leave Cowork's earlier **November 2026** run as it is (paid). Do not void it.
+
+**B7. The personal / business wall.** Personal has its own bank feed and its own investments; **no** personal item
+appears on any business page, and **no** business figure appears in Personal except owner-salary rows (B6). Check the
+Dashboard, Reports, Banking and Investments of Northwind against Personal.
+
+**B8. Each business in its own currency.** Switch to **Island Traders (TTD)**: money shows **TT$** everywhere, and its
+books reconcile (Revenue − Expenses = Net, Year). *(13 Oct: TT$8,000 − TT$1,250 = TT$6,750.)* Switch back.
+
+**B9. Tax is estimates only.** Personal and Reports carry the "no tax calculation / estimate" disclaimer; there is no
+VAT / GST return.
+
+**B10. The 13 Oct findings, re-checked.** For each, PASS / FAIL with what you saw:
+- 13 Oct B1 `$0` cards → A1. · 13 Oct B2 owner salary → B6 above. · M1 customers → A5. · M2 inventory value → A6.
+- M3 credit notes → A7; and the credit note is recognised in its **own** month (a negative month is expected — by design).
+- Minor labels → A8. · Full page reloads: none from sidebar navigation or period buttons; a business switch shows the
+  "Loading your workspace…" screen without a document reload (by design).
+
+**B11. Console for Part B.** Count of red console errors across B1–B10 (expected **0**), each copied in full.
+
+---
+
+## Part C — areas no audit has exercised yet
 
 For each area: note the figures **before**, do the action, then the figures **after**. The expected result is
 always stated as a **change**, so it holds whatever the account already contains. Use today's date unless told
 otherwise.
 
-**B1. Quotes.** Note Dashboard Revenue (Year). Create a quote **ZZ-LIVECHECK quote**, 1 line, **$100.00**.
+**C1. Quotes.** Note Dashboard Revenue (Year). Create a quote **ZZ-LIVECHECK quote**, 1 line, **$100.00**.
 - Revenue is **unchanged** (a quote is not income).
 - If the app offers **Convert to invoice**, do it: one new invoice of **$100.00**, and Revenue rises by exactly
   **$100.00**. The quote shows as converted.
 
-**B2. Sales receipts.** Note Revenue. Create a sales receipt **ZZ-LIVECHECK receipt**, **$50.00**, paid today.
+**C2. Sales receipts.** Note Revenue. Create a sales receipt **ZZ-LIVECHECK receipt**, **$50.00**, paid today.
 Revenue rises by exactly **$50.00**. Outstanding (Invoices page) is **unchanged** — a sales receipt is paid on the spot.
 
-**B3. Payments received.** On the invoice from B1 (or create **ZZ-LIVECHECK invoice**, $100.00, pending), record a
+**C3. Payments received.** On the invoice from B5 (or create **ZZ-LIVECHECK invoice**, $100.00, pending), record a
 payment of **$40.00**. Note Outstanding before and after: it drops by exactly **$40.00**. Payments Received lists the
 $40.00. The invoice shows partial, with **$60.00** remaining.
 
-**B4. Payments made.** Create a bill **ZZ-LIVECHECK bill**, **$30.00**, unpaid. Note Accounts payable / bills
+**C4. Payments made.** Create a bill **ZZ-LIVECHECK bill**, **$30.00**, unpaid. Note Accounts payable / bills
 outstanding. Record a payment of **$30.00** against it from Payments Made (or the bill's Pay button). Payables drop by
 exactly **$30.00**; the bill shows paid; it is listed once in Payments Made.
 
-**B5. Classes.** Create an expense **ZZ-LIVECHECK expense**, **$20.00**, and tag it with a class (create one named
+**C5. Classes.** Create an expense **ZZ-LIVECHECK expense**, **$20.00**, and tag it with a class (create one named
 **ZZ-LIVECHECK class** if needed). Reports → Classes / segments: that class shows **$20.00** of cost.
 
-**B6. Time tracking.** Projects: create **ZZ-LIVECHECK project** (budget $500). Timesheet: log **1.5 hours** to it.
+**C6. Time tracking.** Projects: create **ZZ-LIVECHECK project** (budget $500). Timesheet: log **1.5 hours** to it.
 The timesheet shows 1.5 h; the project shows the logged time. Record whatever billed / budget figures appear.
 
-**B7. Budget.** Budget page: set a monthly budget for the expense category you used in B5. The "actual" for that
-category includes the **$20.00** from B5, and actual + remaining = budget.
+**C7. Budget.** Budget page: set a monthly budget for the expense category you used in C5. The "actual" for that
+category includes the **$20.00** from C5, and actual + remaining = budget.
 
-**B8. MRR / SaaS.** Record MRR and ARR as shown. Then compare with Recurring Invoices: MRR = sum of the **active
+**C8. MRR / SaaS.** Record MRR and ARR as shown. Then compare with Recurring Invoices: MRR = sum of the **active
 monthly** recurring invoices (annual ones ÷ 12, if any). Write down both numbers. **Do not create a recurring
 invoice.**
 
-**B9. Scheduled Documents.** The list shows the upcoming recurring invoices and bills, with dates and amounts matching
+**C9. Scheduled Documents.** The list shows the upcoming recurring invoices and bills, with dates and amounts matching
 the Recurring Invoices / Recurring Bills pages. Note any mismatch.
 
-**B10. Reminders.** Open Reminders. Overdue invoices are listed, with the amount still owed (after any payments).
+**C10. Reminders.** Open Reminders. Overdue invoices are listed, with the amount still owed (after any payments).
 Open one draft to read it. **Do not send anything.**
 
-**B11. Documents and Templates.** Templates: preview each template — business name and currency are right for the
+**C11. Documents and Templates.** Templates: preview each template — business name and currency are right for the
 active business. Documents: if upload is offered, upload a small harmless file named **ZZ-LIVECHECK.txt**; it appears
 in the list and opens. Switch to Island Traders: it does **not** appear there (documents belong to one business).
 
-**B12. Audit trail.** The Audit trail lists the actions from B1–B11 (quote, receipt, payment, bill, expense, class,
+**C12. Audit trail.** The Audit trail lists the actions from C1–C11 (quote, receipt, payment, bill, expense, class,
 project, time entry, budget, document), each with the right user and a sensible time. Note any action that is
 missing.
 
-**B13. Bank Rec.** Open Bank Rec. Record the matched and unmatched counts and the statement vs book balance shown.
+**C13. Bank Rec.** Open Bank Rec. Record the matched and unmatched counts and the statement vs book balance shown.
 Nothing is created here — just note whether the page's figures are consistent with each other.
 
-**B14. Accountant portal (only if an accountant login is available).** Log in as the existing test accountant in a
+**C14. Accountant portal (only if an accountant login is available).** Log in as the existing test accountant in a
 private window. The accountant sees **only** the businesses granted to them, in each business's own currency, and the
 "All entities" view states any currency it cannot include. If no accountant login is available, mark **BLOCKED**.
 
-**B15. Every page, every console.** Open each sidebar page once on Northwind Studio (Dashboard through Settings, plus
+**C15. Every page, every console.** Open each sidebar page once on Northwind Studio (Dashboard through Settings, plus
 Personal and Investments). For each: PASS if it renders with no error banner, blank panel, `undefined` or `NaN`, and
 no red console error. Then repeat Dashboard, Invoices, Expenses and Personal in a **phone-sized window (~390 px wide)**
 and note anything cut off or unusable.
@@ -155,7 +215,8 @@ and note anything cut off or unusable.
 ## Final summary (put this at the top of your report)
 
 - Part A: how many PASS / FAIL out of 12 (A0–A11).
-- Part B: how many PASS / FAIL / SKIPPED / BLOCKED out of 15.
+- Part B: how many PASS / FAIL out of 11 (B1–B11) — and every figure that differs from 13 Oct, with what explains it.
+- Part C: how many PASS / FAIL / SKIPPED / BLOCKED out of 15 (C1–C15).
 - Every FAIL in one line each, worst first.
 - The `ZZ-LIVECHECK` records you created (for the owner to clean up).
 - Every red console error, and any full page reload, with the step.

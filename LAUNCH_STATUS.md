@@ -1,187 +1,119 @@
-# FinFlow — Launch Status (authoritative)
+# FinFlow — Launch Checklist (authoritative)
 
-**Last verified:** 2026-10-05 · **Repo HEAD at write:** `main` at `cf2050f` (review bulk actions; deployed & Online)
+**Rewritten:** 2026-10-19 · **Code at write:** branch `claude/laughing-hawking-lkvv38` @ `14709a6` (50 commits ahead of
+`main` @ `98d5d69`, not merged yet) · **Replaces** the 2026-10-05 version of this file (see git history at `47a026c`),
+which predated the 2026-10-09 money audit and the 2026-10-13 live audit.
 
-This is the single source of truth for "what's done vs what's left." It supersedes and replaces the
-scattered audit/handover/status/plan docs that used to live in the repo root (all consolidated here on
-2026-09-28). For *how the system works* see the kept reference docs listed at the bottom.
+This is the single list of what stands between today and going public. Work it top to bottom.
 
-> **Bottom line:** the CODE is launch-complete and harness-backed (316 harnesses). What remains before
-> going public is **ops/config only the owner can do** — the sharp edges are the Resend sending domain
-> and the Stripe prices. Nothing code-side blocks launch.
+**How to read the status marks**
 
----
+| Mark | Meaning |
+|---|---|
+| ✅ VERIFIED | Checked in the repo or by an executed test/probe. The evidence is named. |
+| ⬜ OPEN | Not done, as far as the record shows. |
+| ❔ CONFIRM | Last recorded state is from **2026-10-05** (Railway / Stripe / Resend dashboards). Claude cannot see those dashboards; the owner confirms and ticks. |
+| 🔒 OWNER | A decision only the owner can make. |
 
-## 1. Genuinely OPEN — owner / ops (external; cannot be done in code)
-
-### Billing (billing is wrong until these are set — Stripe dashboard)
-- [ ] Set the **Business price to $249/mo** (still $199 in Stripe → customers keep being billed $199).
-- [ ] Create the **Scale price ($400/mo)** and set `STRIPE_PRICE_SCALE` in Railway (until then Scale
-      checkout returns "Checkout unavailable"). `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS` already wired.
-- [ ] Enable **Stripe Identity** in the dashboard (no new key — reuses `STRIPE_SECRET_KEY`); lights up KYC.
-- [ ] Confirm core Stripe envs: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CONNECT_CLIENT_ID`,
-      `STRIPE_CONNECT_REDIRECT_URI`.
-
-### Email (launch blocker for real users)
-- [ ] Verify **`finflow.app` in Resend** (SPF + DKIM DNS), set `RESEND_API_KEY`,
-      `EMAIL_FROM=noreply@finflow.app`, `ADMIN_EMAIL`. Until done, password-reset / receipt / invite mail
-      to real users is unreliable (currently on the sandbox sender, which only delivers to the owner inbox).
-
-### Provider go-live keys (each integration is DARK — clean 502 — until keyed; add one sandbox txn to confirm)
-- [ ] Plaid → production (`PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=production`).
-- [ ] Belvo (`BELVO_SECRET_ID`, `BELVO_SECRET_PASSWORD`, `BELVO_ENV=production`).
-- [ ] OAuth connectors (client id + secret each): QuickBooks, Xero, Zoho, Square, PayPal, Coinbase, Shopify.
-- [ ] Finch (`FINCH_*`), Codat (`CODAT_API_KEY`), optional market data (`FINNHUB_API_KEY`, `COINGECKO_API_KEY`).
-- [ ] WiPay / WooCommerce need no env keys (per-user merchant creds entered in-app).
-
-### Core env
-- [ ] `SESSION_SECRET` (long random), `APP_URL` (public https), `CONNECTOR_ENC_KEY` (AES-256-GCM for stored
-      connector tokens), `ANTHROPIC_API_KEY` (AI assistant / receipt scan).
-- [ ] **`ALLOW_INDEXING=1` at launch** — ships as `noindex` while testing. Verify after:
-      `curl -sI https://<domain>/ | grep -i x-robots-tag` is EMPTY and `robots.txt` shows `Allow: /`.
-
-### Infra / security hardening (recommended before real users)
-- [ ] Cloudflare in front (DNS proxied, TLS Full (strict), managed WAF). Free tier is enough to launch.
-- [ ] Tested backups + point-in-time restore — actually run a restore (see `scripts/restore-drill.sh`).
-- [ ] Least-privilege DB role — app connects as non-superuser (see `INFRA_RUNBOOK.md` §4 + `scripts/db-app-role.sql`);
-      set `SKIP_INIT_DDL=1` on the web process and apply schema via `node scripts/migrate.js` in the release step.
-- [ ] Secrets rotation cadence (DB URL / Stripe / connector keys) on a schedule + on any suspected exposure.
-- [ ] Uptime monitor on `GET /healthz` (200 healthy / 503 degraded).
-- [ ] Optional: `SENTRY_DSN` (+ `npm i @sentry/node`), `SECURITY_ALERT_EMAIL` (audit-anomaly digest),
-      `LOG_REQUESTS=1`, `CRON_SECRET` (if driving the scheduler externally).
-
-### Housekeeping
-- [ ] **Move the repo out of OneDrive** — this is the cause of the recurring `.git/index.lock` fight on commit.
-- [ ] Prod test-data cleanup — remove QA Tester / Claude TestCPA links + the ZZ-QA sample rows.
-
-### The done-gate (do last, right before flipping public)
-- [ ] 3× full harness sweep GREEN: `node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js` (0 RED each run).
-- [ ] VERIFICATION.md re-sweep on real seeded data (this — not any tracking ledger — establishes sign-off).
-- [ ] Smoke: sign up -> create entity -> invoice + expense -> record payment -> P&L / balance sheet /
-      consolidated -> connect one bank (sandbox) -> accountant invite. Confirm email actually arrives.
+> **Bottom line:** once the current release (§0) is merged and confirmed live, **nothing on the code side blocks
+> launch**. What remains is one security action, external configuration, a final verification pass, and a few
+> launch-scope decisions.
 
 ---
 
-## 2. Genuinely OPEN — code (mine to build; all NON-blocking, deferred on purpose)
+## 0. Finish the release in flight
 
-- **CSP `script-src 'unsafe-inline'`** — ACCEPTED DECISION, not a hole. Escaping is the guarded primary
-  XSS defense (`verify-escaping-sweep` scans every render source; the two real sinks were fixed). Dropping
-  `unsafe-inline` needs 509 inline `on*` handlers rewritten to event delegation (CSP3 is all-or-nothing once
-  hashes are present) — real breakage risk for marginal defense-in-depth gain. Revisit as staged, per-page,
-  verified work only if there's appetite. 25 inline scripts are hashable; 1,107 inline styles stay under
-  `style-src 'unsafe-inline'`.
-- **Wire-level invoice pagination** — `_realInvoices`/`userInvoices` feed money features across 6 files
-  (KPIs, transactions, revenue, YTD, recurring detection, payment-party). Removing the full fetch is an
-  app-wide rewrite; risk > gain. Deferred.
-- **Client adoption of keyset pagination** on the invoices/transactions screens — server side is done +
-  tested (`db.pageByUser`, `verify-list-pagination` 13/0); pointing the heavy screens at `{rows,nextCursor}`
-  needs live-UI regression. Perf A -> A+.
-- **Postgres RLS** — designed (`RLS_DESIGN.md`); currently only `page_views` has RLS. App-level tenant
-  isolation IS tested (`verify-tenant-isolation`, `verify-entity-leakage-sweep`). DB-level RLS is
-  defense-in-depth; needs per-session user threading through the Supabase pooler.
-- **Sentry** wiring (needs a DSN), **express 4 -> 5** (clears the last `qs` moderate advisory; major bump).
-- **GL Phase 4 + 5** (owner-gated) — historical backfill into the ledger, then flip source-of-truth to the
-  GL + live "books balanced ✓". Ties into the investments-on-ledger accounting decision. See `GL_DESIGN.md`.
-- **Investments-on-ledger** — currently labeled tracking-only (not posted to the double-entry books);
-  posting them is an accounting decision for the owner.
-- **VERIFICATION.md** has 19 empty Result cells (A7.5–8, A7.18, A8a/A8b) — they ARE gate-tested; the gates
-  just don't auto-stamp those rows. Cosmetic doc gap, not a coverage gap.
-
-- **QuickBooks-parity gaps — all CLOSED 2026-10-05** (shipped; see §3). classes/locations, public API + Zapier, Google Sheets sync, and the native-app (Capacitor) scaffold are done — FinFlow now matches or beats QuickBooks on AI *and* ecosystem. Only owner follow-ups remain: native-app STORE submission (Apple/Play accounts + signing) and the optional OAuth push-sync for Sheets (a Google Cloud app) — neither is code.
-- **Mobile performance** — desktop Lighthouse is in the 90s; mobile remains the weaker surface. The boot-window request cache is now **shipped** (see §3) — it collapses the repeated boot fetches of invoices/expenses/bills onto one call. Further mobile tuning (Lighthouse, task #18) is optional, ongoing, non-blocking.
+| # | Step | Status | Evidence / how to confirm |
+|---|---|---|---|
+| 0.1 | Full sweep 3× on the branch | ⬜ OPEN (running 2026-10-19) | Expect **557/557 GREEN** ×3 (555 on `ed6090b` + `verify-la21`, `verify-la23`). Previous: 555/555 ×3 on `ed6090b` (2026-10-15, HANDOVER). |
+| 0.2 | Merge the branch into `main` | ⬜ OPEN | Fast-forward: `main` has no commits the branch lacks (checked 2026-10-19). Railway deploys `main`. |
+| 0.3 | Migrations run on first boot | ⬜ OPEN | `2026-10-16-payroll-runs-jurisdiction-no-default.sql` (schema) and `…-clear-tt.sql` (data, owner-approved). Railway log shows `[migrate] applied …`. |
+| 0.4 | Post-deploy live check | ⬜ OPEN | `COWORK_LIVE_CHECK.md` Part A (today's fixes live) — e.g. 0 `deferred render hook threw` on hard reload, no `$0` KPI cards. |
 
 ---
 
-## 3. CLOSED / shipped (verified against code + harnesses)
+## 1. Hard blockers — do not launch without these
 
-Money engine & GL: double-entry GL (dual-write shadow), 12 posting types, reconcile monitor, statements,
-read-swap; **multi-currency consolidation proven live** (`verify-fx-consolidation` 12/12, `verify-gl-consolidation`
-13/13 incl. USD+TTD + ASC 830 CTA, `verify-fx-client-consolidation` 4/4 client==server). Payroll basis-C,
-AP/AR netting (F58), period-scoped opex, FIFO COGS.
-
-Entity isolation: documents, audit trail, transaction-lock, team (invite + edit), templates, timesheet,
-projects, connectors — all per-entity, harness-backed. Connectors are now FULLY per-scope: every connection (Stripe, Plaid, QuickBooks, Xero, PayPal, Zoho, Square, Shopify, WooCommerce, Coinbase, Finch, Codat, Belvo, Wise, WiPay, dLocal, Mercado Pago) + the `/api/connections` toggle state is keyed per business entity AND personal (entity_id NULL) with NO cross-scope fallback (`verify-connections-isolation` 15/15; deployed + verified live 2026-10-04). Cross-tenant IDOR tested (`verify-tenant-isolation`).
-
-Accountant marketplace: client<->accountant handshake, bidirectional chat, per-entity access grants,
-KYC (Stripe Identity + registry links), GL certification, tax summary.
-
-Security: session hardening + cookie flags, layered rate limits, CSRF defense, RBAC matrix, owner + accountant
-TOTP MFA, audit-trail (append-only) + anomaly detection/delivery/monitor (brute-force, cross-client, mass-export),
-connector-token encryption at rest, security headers + Permissions-Policy, upload/download hardening,
-account deletion purge + GDPR export, no secrets in the client bundle (`verify-no-secrets-in-bundle`).
-
-Perf/ops: composite index + keyset pagination (server), server-aggregated AR + top-clients, minify build
-(`prestart` regenerates `public/.min/` on every deploy; served only when newer than source), self-hosted
-Chart.js, compression, region routing, `/healthz`, migrations runner, restore drill, CI npm-audit gate,
-accessibility (0 axe violations across 10 pages).
-
-Integrations live-verified: Stripe, Plaid, WiPay (2026-08-16); Resend email path wired (sandbox sender).
-
-### Fixed this session (2026-09-28) — each with a discriminating harness, all green on real Postgres
-- **H1** overdue nets credit notes, clamped ≤ outstanding (dashboard KPI + AR report) — `verify-fc1-overdue-date` (credit-note seed, RED→GREEN).
-- **M1** expense breakdown decomposes opex so Σ(rows) == Expenses KPI — `verify-expense-breakdown-reconcile`.
-- **H2** escaped two real unescaped sinks (accountant bill dropdown [cross-tenant], timesheet) — `verify-escaping-sweep` (static, all render sources).
-- **M2** entity create infers IANA timezone from country (no silent UTC) — `verify-entity-tz-infer`.
-- **Payroll** approve can't revert a paid run (409) — `verify-payroll-approve-guard`.
-- **Security** no live secret in any client-served file — `verify-no-secrets-in-bundle`.
-- Also: the `\u` escape literals in static HTML rendered as text — fixed.
-
-### Added since (2026-09-30 → 10-04) — each harness-backed, deployed
-- **World-class Help Center + support**: in-app help (25 articles / 11 categories), guided tours, ⌘K palette, threaded “Ask FinFlow” AI with grounded deep-links + AI→ticket escalation, 6-step onboarding checklist from real data; support inbox (client/accountant → admin) — `verify-help-*`, `verify-support-request`, `verify-admin-support`.
-- **Client↔accountant chat deepened**: offline-email notify (cooldowned), file attachments, threaded Ask FinFlow — `verify-chat-attachments`, `verify-chat-ai-wiring`.
-- **Accountant marketplace engagement loop**: proposals, client tasks/requests, dashboard attention rollup — `verify-accountant-proposals`, `verify-accountant-tasks`, `verify-accountant-rollup`, `verify-proposals-ui`.
-- **FX-live layer** (pair resolution: direct/inverse/cross-via-USD + USD-base feed, manual-wins, idempotent-per-day) — `verify-fx-live-rates` 14/14.
-- **Admin platform ops** (audited CSV exports, operating-costs / platform_settings round-trip, flagged-transactions lifecycle) — `verify-admin-platform` 16/16.
-- **Full per-scope connector isolation** (above) — `verify-connections-isolation` 15/15; deployed + verified live on prod.
-- Product-scope note: tax = **ESTIMATES only** (no filing / VAT / GST engine) — by design (see `CLAUDE.md`).
-
-### Added 2026-10-05 — QuickBooks-parity AI layer — each harness-backed, deployed
-- **Review / cleanup queue** (`books-review.js`, `GET /api/books-review`): read-only anomaly detector — uncategorized, possible duplicates (create-time identity + exact date), missing required fields, per-category median outliers; AI category suggestions reuse `/api/autocat-rules/ai-suggest`. Pure engine, no money-KPI recompute (Rule 2) — `verify-books-review` 19/19. Verified live (owner opened the tab; flagged a real duplicate invoice + a missing-due-date invoice). (commit `054b9f0`)
-- **AI payment-reminders agent** (`payment-reminders.js`, `GET /api/payment-reminders`, `POST /draft`, `POST /send`): deterministic late-payer prediction from real `invoice_payments` history, severity-tuned drafts, optional Haiku polish (shared-capped, template fallback), supervised one-at-a-time send via Resend (recipient resolved server-side, idempotent 60s, audit-logged) — `verify-payment-reminders` 25/25. Engine-verified; live send needs `RESEND_API_KEY`, AI polish needs `ANTHROPIC_API_KEY` (both degrade clean). (commit `fed2142`)
-- **13-week cash-flow forecast** (`cashflow-forecast.js`, `GET /api/cashflow-forecast`): forward projection from GL cash (`glBalanceSheet`, acct 1000 — authoritative, Rule 2), open AR/AP by due date, recurring invoices/bills (expanded via `nextRunDate`), plus a 90-day opex run-rate; weekly running balance, lowest point, runway; graceful when GL cash untracked. Forecast card on the Cash Flow page — `verify-cashflow-forecast` 19/19. Engine-verified; endpoint sourcing gets first live run on the page. (commit `95091c2`)
-- **Supervised bulk actions in the review queue**: confirm-gated "Delete duplicate" (routes through the existing GL-reversing `DELETE /api/{type}/:id`, keeps the original) and "Apply all (N)" AI-suggested categories (batched `PUT /api/expenses/:id` after review). Client-only; reuses audited endpoints, detector engine unchanged. (commit `cf2050f`)
-- Origin: closes the AI gaps vs QuickBooks Intuit Assist identified 2026-10-05 (agentic send + real forecasting + supervised cleanup). Remaining QB-ahead items — classes/locations, public API + Zapier, Google Sheets sync, native app stores — tracked separately, not launch-blocking.
-
-### Fixed 2026-10-05 (pm) — entity-switch money leak (client display)
-- **`window.userInvoices` went stale on an entity switch.** `loadEntityData` refreshed the lexical `userInvoices` and `window._realInvoices`, but never `window.userInvoices` — the source the **Invoices table**, **CSV/XLSX export** and **invoice action handlers** read. So switching to e.g. the TT company left those surfaces listing the US entity’s invoices with the new entity’s currency symbol stamped on them (“the TT company is just the US figures converted to TT”). Dashboard KPIs were already correct — they read `window._realInvoices`, which reloads on switch. Fix: keep `window.userInvoices` canonical inside `loadEntityData` under the F151 stale-response guard, and `switchEntity` now clears the money collections synchronously at the currency flip (belt to the boot-splash). `verify-entity-switch-money-clear` 8/8 (RED→GREEN on real Postgres); cross-entity `verify-entity-leakage-sweep` still 18/0. **312 harnesses.** (commit pending)
-- **Entity-switch overview-chart stale bar** (same class, chart layer): the Revenue-vs-Expenses monthly arrays REV[]/EXP[] are rebuilt from the global collections on switch, but the chart was only painted once by loadEntityData (with the previous entity's collections) and never repainted after the Promise.all reload — updateDashboard doesn't call updateCharts and _refreshDashboardUI only rebuilds a MISSING chart — so an empty entity kept a lingering bar. switchEntity now rebuilds the arrays from the reloaded collections and repaints (updateCharts). `verify-entity-switch-chart-clear` 8/8 (RED→GREEN; updateCharts calls on switch 0→1). **313 harnesses.** (commit pending)
-- **Downloadable PDF export**: Export PDF produced only a print dialog; now data pages render a real `.pdf` via vendored jsPDF + autotable (self-hosted at `/vendor`, lazy-loaded, reuses the page-aware CSV/XLSX row builder), visual pages still print. `verify-pdf-export` 10/10 (RED→GREEN; live-verified valid %PDF). **314 harnesses.** (commit pending)
-
-### Added 2026-10-05 (pm) — QuickBooks ecosystem parity: the 4 non-AI gaps closed — deployed
-- **Classes & Locations** (`segments.js`, `GET /api/reports/segments`): tag invoices/expenses with class/location (create+edit, datalists); segment report (revenue/cost/net per class or location) as a reweighting of the exact rows — totals tie, cannot invent a dollar (Rule 2). Scoped: tagged docs, active entity, native, all-time (labeled, not the reconciled P&L). `verify-segments` 13/13. (commit `29428b6`) Deferred fast-follows (backend already accepts them): tagging on the **edit** modals, bills tagging, period filters, multi-currency consolidation.
-- **Public API v1** (`api-keys.js`, `/api/v1/*`): new `api_keys` JSONB table + hash index; session-authed key mgmt (create-once / list / revoke; a key cannot mint keys); `requireApiKey` (sha256 lookup, rate-limited, user+entity scoped); read-only me/invoices/expenses/customers/reports-summary (limit/since); Developer page + API reference. Writes deferred to v2 (no create-validation duplication). `verify-api-keys` 19/19. (commit `88986b4`)
-- **Google Sheets connector** (Developer page): ready-to-paste Google Apps Script (base URL auto-filled) that pulls read-only `/api/v1` into sheet tabs with a FinFlow sync menu, using an API key — zero FinFlow-side OAuth. Full OAuth push-sync deferred (needs a Google Cloud app). (commit `e13de51`)
-- **Native app scaffold** (`mobile/`): self-contained Capacitor project (own package.json, no server impact) — WebView shell pointed at production, config, offline fallback, full iOS/Android build+submit README. Store accounts, signing, and iOS native-plugin wiring remain (owner). (commit `1662e28`)
-- Net: all four QB-ahead non-AI gaps closed; with the AI layer (above) FinFlow is parity-or-ahead vs QuickBooks on AI and ecosystem. **315 harnesses.**
-
-### Added 2026-10-05 (pm) — perf: boot-window request cache — deployed
-- **Boot cache** (`bootcache.js`, `GET /api/dashboard-bootstrap`): the dashboard refetched invoices (~5×), expenses (~4×) and bills (~2×) on boot; a client `fetch` wrapper now coalesces those onto ONE bootstrap call during a 15s window. The endpoint returns BYTE-IDENTICAL data — the shared respondList path (`db.allByUser` + `_entityScopeFilter` + id-desc) — so no money logic is duplicated (Rule 2). Strict fallback for any miss / non-GET / entity-mismatch / failure (correctness cannot regress) + a kill-switch (`localStorage ff_no_bootcache`). Pure match helper `verify-bootcache` 16/16. Live boot speedup + batch-vs-individual parity is the owner deploy check (needs live DB). **316 harnesses.** (commit `7951bc2`)
-
-### QA 2026-10-05 — accountant flows (the two manual-QA walkthroughs) are automation-covered
-- The accountant **engagement handshake** and **scoped-books + chat** flows (the only remaining manual-QA tracker items) are covered by automated harnesses — `verify-accountant-client-handshake`, `verify-accountant-access-grant`, `verify-accountant-portal-access`, `verify-accountant-entity-scope`, `verify-accountant-chat`, `verify-chat-attachments`, `verify-chat-ai-wiring`. Correctness is verified; a human UX click-through at launch is the only residual, and it is optional.
+| # | Item | Status | Evidence / how to confirm |
+|---|---|---|---|
+| 1.1 | **Rotate the database password** | ⬜ OPEN | The full production `DATABASE_URL`, password included, was pasted into a Claude chat on 2026-10-14 (twice). Supabase → Database → Reset password; update `DATABASE_URL` in Railway. Until then, anyone with the transcript can read and change the live books. |
+| 1.2 | **Real email** — verify the sending domain in Resend (SPF + DKIM), set `RESEND_API_KEY`, `EMAIL_FROM=noreply@<domain>`, `ADMIN_EMAIL` | ❔ CONFIRM | Last record (2026-10-05): sandbox sender `onboarding@resend.dev`, which delivers only to the owner's inbox → password resets, invites, receipts and reminders do not reach real users. Settings exist in code (`server.js`, `.env.example`). Confirm: a reset email arrives at a non-owner address. |
+| 1.3 | **Stripe prices match the site** — Business **$249/mo** (was $199 in Stripe), create Scale **$400/mo**, set `STRIPE_PRICE_PRO` / `_BUSINESS` / `_SCALE` | ❔ CONFIRM | The site advertises $249 and $400 (`public/landing.html:388,421`, `public/index.html:3306,3319,3352`). Checkout reads `STRIPE_PRICE_<PLAN>` (`server.js:1079`); an unset price returns "Checkout … not set up". |
+| 1.4 | **Stripe live mode** — `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (live), `STRIPE_CONNECT_CLIENT_ID`, `STRIPE_CONNECT_REDIRECT_URI` | ❔ CONFIRM | Then do ONE real paid upgrade: trial → Upgrade → Stripe checkout → plan shows paid. This also closes the last open half of **F132** ("Upgrade reaches a working checkout"). |
+| 1.5 | **Core settings** — `SESSION_SECRET` (long random), `APP_URL` (public https), `CONNECTOR_ENC_KEY`, `ANTHROPIC_API_KEY` | ❔ CONFIRM | All read by `server.js`; listed in `.env.example`. |
+| 1.6 | **Production test data** | ⬜ OPEN · 🔒 OWNER | On the live database: QA Tester / Claude TestCPA accountant links, ZZ-QA rows, `AUDIT TEST ZZ` invoice ($7,777), `AUDIT TEST EXP` expense ($888), `AUDIT TEST VENDOR` bill ($444), Cowork's November 2026 payroll run (paid), plus any `ZZ-LIVECHECK` records from §4. Decide: clean this database, or launch real customers on a fresh one. Deleting is a data change (Rule 8) — owner-run. |
+| 1.7 | **Backups proven** — run one real restore | ⬜ OPEN | `scripts/restore-drill.sh` exists. A backup nobody has restored is not a backup. |
+| 1.8 | **Search indexing** — set `ALLOW_INDEXING=1` at the moment of launch, not before | ⬜ OPEN (correctly) | Read by `server.js`. Verify after: `curl -sI https://<domain>/ \| grep -i x-robots-tag` is empty; `robots.txt` shows `Allow: /`. |
 
 ---
 
-## 4. Verifying (how)
+## 2. Strongly recommended before real users
 
-Full sweep (auto-discovers every `verify-*.js` + `-gate.js`):
-`node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js` (clock pinned 2026-07-25).
-
-Owner runs all git in PowerShell (assistant provides commands, never runs git). Bundle is regenerated by
-`node bundle.js`; `index.html` / `app-main.js` ship direct (not bundled). If `device_bash` can't run the
-Postgres harnesses (OneDrive FUSE), run them in a clean Linux env: fresh `npm install` (unpacks the
-embedded-postgres linux-x64 binary), run AS the `postgres` user
-(`runuser -u postgres -- env SESSION_SECRET=test HOME=<dir> bash -c 'cd <dir> && node -r ./tests/harness/clock.js tests/harness/<FILE>.js'`).
+| # | Item | Status | Evidence / how to confirm |
+|---|---|---|---|
+| 2.1 | Uptime monitor on `GET /healthz` (200 healthy / 503 degraded) | ❔ CONFIRM | Endpoint exists (`server.js:1097`, `verify-healthz`). |
+| 2.2 | Error monitoring — `SENTRY_DSN` (+ `npm i @sentry/node`) | ⬜ OPEN | Supported in `server.js`. B2 (2026-10-14) showed why: a swallowed server error is invisible without it. |
+| 2.3 | Least-privilege DB role — web process as `finflow_app` with `SKIP_INIT_DDL=1`; schema via `node scripts/migrate.js` in the release step | ⬜ OPEN | All built and tested (`scripts/db-app-role.sql`, `verify-db-app-role`, `verify-migrate-entrypoint`); not switched on in Railway. See `INFRA_RUNBOOK.md` §4. |
+| 2.4 | Cloudflare in front (proxied DNS, TLS Full (strict), managed WAF — free tier is enough) | ❔ CONFIRM | |
+| 2.5 | Secrets rotation schedule (DB URL, Stripe, connector keys) + rotate on any suspected exposure | ⬜ OPEN | 1.1 is the first instance. |
+| 2.6 | Legal review of `terms`, `privacy`, `security` pages | ⬜ OPEN · 🔒 OWNER | Pages exist (`public/terms.html`, `privacy.html`, `security.html`); content not reviewed for a product holding bank data. Plaid production approval asks for them. |
+| 2.7 | Live functional check of the areas no audit has exercised | ⬜ OPEN | `COWORK_LIVE_CHECK.md` Part B: Time Tracking, Budget, MRR/SaaS, Quotes, Sales Receipts, Payments Received/Made, Classes, Scheduled Documents, Reminders, Documents/Templates, Audit trail, accountant portal. |
+| 2.8 | `SECURITY_ALERT_EMAIL` (audit-anomaly digest), `LOG_REQUESTS=1` | ⬜ OPEN (optional) | Supported in `server.js`. |
 
 ---
 
-## 5. Kept reference docs (not status — these explain how the system works)
+## 3. Launch-scope decisions (owner)
 
-- `CLAUDE.md` — the 3 defining failures + 14 non-negotiable rules. Overrides default behavior. Read first.
-- `VERIFICATION.md` — the money-cell ledger; the re-sweep on real data is the launch sign-off.
-- `ARCHITECTURE_MAP.md` — system architecture.
-- `GL_DESIGN.md`, `GL_CONSOLIDATION_DESIGN.md`, `FX_CONSOLIDATION_DESIGN.md` — accounting/FX design specs
-  (note: the FX doc's STATUS header predates the client-layer fix, which is now shipped + verified).
-- `RLS_DESIGN.md` — design for the (open) Postgres RLS work.
-- `INFRA_RUNBOOK.md` — ops runbook (deploy, DB role, restore, env).
-- `REVIEW_RULES.md` — review-layer process.
+| # | Decision | Status | Notes |
+|---|---|---|---|
+| 3.1 | Which integrations are live on day one | 🔒 OWNER | Each connector is dark (clean "not set up") until keyed. Some need the provider's approval and take time: Plaid production, QuickBooks / Xero app review. Suggestion: launch with Stripe + Plaid + statement import; label the rest "coming soon". Keys: Plaid `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=production` · Belvo `BELVO_SECRET_ID`, `BELVO_SECRET_PASSWORD`, `BELVO_ENV` · OAuth connectors (QuickBooks, Xero, Zoho, Square, PayPal, Coinbase, Shopify): client id + secret each · Finch `FINCH_*` · Codat `CODAT_API_KEY` · optional `FINNHUB_API_KEY`, `COINGECKO_API_KEY`. WiPay / WooCommerce take per-user credentials in-app (no server keys). |
+| 3.2 | Expired trial: read-only (current) vs hard-lock vs grace period | 🔒 OWNER | Read-only is built and verified (F132, `f130-trial-expired-paywall`). F130 left the policy open; confirm read-only is the launch policy. |
+| 3.3 | Pick the account's reporting currency | 🔒 OWNER (after 0.2) | New Settings field (LA21). Until chosen, "All entities" uses the oldest business's currency. |
+
+---
+
+## 4. The done-gate — last, right before flipping public
+
+| # | Gate | Status | Notes |
+|---|---|---|---|
+| 4.1 | Full sweep 3× GREEN on the exact commit going live | ⬜ OPEN | `node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js`. Capture: `HANDOVER.md` (log-file command). |
+| 4.2 | `VERIFICATION.md` re-sweep on real seeded data | ⬜ OPEN | Per `CLAUDE.md`, **done = every check in `VERIFICATION.md` green**; anything not on it is unverified. 19 Result cells are empty (A7.5–8, A7.18, A8a/A8b) — gate-tested but not stamped. |
+| 4.3 | Human smoke test on production | ⬜ OPEN | Sign up → create a business → invoice + expense → record a payment → P&L / balance sheet / All entities → connect one sandbox bank → invite an accountant. **Confirm the emails actually arrive** (needs 1.2). |
+| 4.4 | Live check complete with no open FAIL | ⬜ OPEN | `COWORK_LIVE_CHECK.md` A + B. |
+
+---
+
+## 5. Code state (verified)
+
+| Area | Status | Evidence |
+|---|---|---|
+| Live audit 2026-10-13 — 23 rows (LA1–LA23) | ✅ VERIFIED closed (20 fixed, LA11/LA12/LA22 explained or decided) | `AUDIT_MASTER.md` "LIVE AUDIT 2026-10-13" table; each fix has a harness RED on the old code, GREEN on the fix. B2 withdrawn after a live repro (crossing works). |
+| Money audit 2026-10-09 (M-rows) | ✅ VERIFIED per `MONEY_AUDIT_2026-10-09.md` | Rounds 1–3 fixed with harnesses (e.g. M53, M62 green in the 555 sweep). |
+| Full sweep | ✅ 555/555 ×3 on `ed6090b` (2026-10-15); 557 pending (§0.1) | `HANDOVER.md`. |
+| Duplicate-submit (Rule 9) on money routes | ✅ VERIFIED | 17 `verify-c1-*` harnesses (payroll runs, invoices, invoice payments, expenses, bills, payments made/received, sales receipts, credit notes, vendor credits, journals, chart of accounts, inventory movements, client lock); shared client `withSubmitGuard` (`app-main.js:30`). |
+| Boot race (F50 / F97 / LA2) | ✅ VERIFIED root-fixed on the branch | `verify-la2-boot-after-parse` — real Chromium, production build, network latency: 3/5 errors → 0. Live confirmation is §0.4. |
+
+---
+
+## 6. Deliberately deferred — not launch blockers
+
+- **CSP `script-src 'unsafe-inline'`** — accepted: escaping is the guarded XSS defence (`verify-escaping-sweep`); dropping
+  it means rewriting ~500 inline handlers.
+- **Wire-level invoice pagination** — money features read the full invoice array across 6 files; app-wide rewrite.
+- **Client adoption of keyset pagination** — server side done (`verify-list-pagination`).
+- **Postgres row-level security** — designed (`RLS_DESIGN.md`); app-level isolation is tested
+  (`verify-tenant-isolation`, `verify-entity-leakage-sweep`).
+- **GL Phase 4 + 5** (ledger as source of truth) and **investments on the ledger** — owner-gated accounting decisions
+  (`GL_DESIGN.md`).
+- **Express 4 → 5** (last `qs` moderate advisory), **mobile performance** tuning, **native app store** submission
+  (`mobile/` scaffold exists), **Google Sheets OAuth push-sync**.
+- **Housekeeping:** move the working copy out of OneDrive (cause of the recurring `.git/index.lock` fights).
+
+---
+
+## 7. Reference docs (how the system works — not status)
+
+`CLAUDE.md` (rules) · `VERIFICATION.md` (the sign-off list) · `AUDIT_MASTER.md` (findings ledger) ·
+`LIVE_AUDIT_2026-10-13.md` · `MONEY_AUDIT_2026-10-09.md` · `HANDOVER.md` · `INFRA_RUNBOOK.md` ·
+`ARCHITECTURE_MAP.md` · `GL_DESIGN.md` · `FX_CONSOLIDATION_DESIGN.md` ·
+`RLS_DESIGN.md` · `COWORK_TEST_SCRIPT.md` (full end-to-end) · `COWORK_LIVE_CHECK.md` (post-deploy check).

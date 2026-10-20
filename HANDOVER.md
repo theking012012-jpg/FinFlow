@@ -17,6 +17,8 @@
 - The last owner sweep is **557/557 ×3 on `14709a6`**. The 15 commits after it have NOT had the owner's 3× sweep —
   that is the first thing to do (`LAUNCH_STATUS.md` 0.1). Command and capture tip: the 2026-10-11 section below.
 - Uncommitted on the agent's working copy only: `personal-history.js` (LC3c draft, not deployed, not wired in).
+- 2026-10-20 later: `2fd2396` (owner) adds `COWORK_RETEST_RESULTS_2026-10-20.md`; the docs commit after it records the
+  results (AUDIT_MASTER LR rows, LAUNCH_STATUS 0.4 / 1.6 / 2.7 / 4.4, this section). No code changed.
 
 ### Done since 2026-10-19 (Cowork live check → `COWORK_FIX_HANDOFF.md` on branch `audit/live-2026-10-19`)
 
@@ -40,20 +42,44 @@ Every fix: its harness written first, RED on the old code, GREEN on the fix, rel
 AUDIT_MASTER row). Labelled UNEXECUTED where a provider is needed: the OAuth callbacks (LC3e), the Stripe payout-account
 link (LC3f), the payment-link audit (LC3b).
 
+### Live retest 2026-10-20 (Cowork) — what it found
+
+Full retest of this release on production (`main` @ `e023214`): `COWORK_RETEST_2026-10-20.md` R / F / T + all of
+`COWORK_LIVE_CHECK.md` A / B / C. **52 checks: 40 PASS · 6 FAIL · 5 BLOCKED · 1 SKIPPED.** Report:
+`COWORK_RETEST_RESULTS_2026-10-20.md`. Findings: `AUDIT_MASTER.md` LR1–LR21 (none fixed yet; class enumeration still to do).
+
+- **Confirmed live:** LC1 / LC1b (time links to its project), LC3 creates, LC3e, LC4, LC5, the wall (T7), LA21, LA23,
+  LA4 / LA14, LA5, LA6, LA8–LA10, LA13, LA15 (one bare "$" left — LR4), LA16, LA17, and **LA2: 0 boot errors on two
+  reloads** (console caveat in the LR section).
+- **🔴 LR1** — Run Payroll "December 2026" → HTTP 500 (17:02:56 and 17:03:26 UTC). A voided Dec 2026 run exists; cause
+  not confirmed. Blocks the owner-salary re-check.
+- **🔴 LR7** — Budget targets: "Monthly" does not convert existing rows and save stores every row × 12 (silent ×12 on
+  a money target).
+- **🟠 LR2 / LR3** — Dashboard Money-flow block stale after an expense (until reload) and stuck "Loading…" after a
+  business switch. **🟠 LR11** — Banking "+ Add" is a toast-only stub.
+- **🔒 Owner decisions:** LR5 (owner card has no "This is me" flag — A4), LR6 (Reports period wording — F2), LR9 / LR10
+  (no edit for quotes / time entries).
+- Minor: LR4, LR8, LR12–LR21.
+- Not run: T4 failed-sign-in (owner step), C14 (no accountant login), T6 skipped (would e-mail the accountant).
+
 ### Outstanding
 
-**Agent (next):** LC3c — the separate personal history (owner decision 2026-10-20). Design and full scope in the
+**Agent (next — proposed order, owner to confirm):** LR1 (needs the Railway log first) → LR7 → LR2 / LR3 → LR11 →
+LC3c — the separate personal history (owner decision 2026-10-20). Design and full scope in the
 `AUDIT_MASTER.md` LC3c row; the guard still lists its 17 routes as the one known gap.
 
 **Owner:**
-1. Full sweep ×3 on `main` (`LAUNCH_STATUS.md` 0.1), then the post-deploy check (0.4).
+1. Full sweep ×3 on `main` (`LAUNCH_STATUS.md` 0.1). The post-deploy check (0.4) was run by Cowork on 2026-10-20 —
+   see the section above. Still yours from it: the Railway log lines for LR1's two 500s; T4's wrong-password sign-in
+   (private window) then Settings → Recent security activity; LR17 (did the 12:24 new-device alert e-mail go out?);
+   decisions LR5 / LR6 / LR9 / LR10; cleanup of the 21 `ZZ-LIVECHECK` records (1.6).
 2. Confirm in the Railway log that the 2026-10-20 schema changes applied (0.3).
 3. Rotate the database password (1.1 — still open, the hard blocker).
 4. Configure Resend (1.2) — the new security alerts e-mail only once it is set.
 5. Decisions: LC1c old time entries (3.4) · LC3d-b retention of a deleted account's security events (3.5, legal) ·
    LC3e-c a business service connected before any business exists (3.6) · LC3g-b named admin accounts, only if needed (3.7).
-6. Still open from before: LA2's live confirmation only (fixed and verified in real Chromium; on production, a hard
-   reload should log 0 "deferred render hook threw"). LA7 and LA11 are closed (`AUDIT_MASTER.md`); the older sections
+6. LA2's live confirmation: observed 2026-10-20 (A1 — 0 "deferred render hook threw" on two reloads; see the LR
+   section's console caveat). LA7 and LA11 are closed (`AUDIT_MASTER.md`); the older sections
    below still call them open — they predate that.
 
 ---

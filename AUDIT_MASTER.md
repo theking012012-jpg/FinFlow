@@ -98,6 +98,61 @@ Same discipline as the LA rows: harness first, RED on the old code and GREEN on 
 | LC4 | FIX-4 | Record Payment keeps showing "Amount exceeds the remaining balance" after a lower amount is typed. Root cause (read, then executed): the check DOES re-run on every keystroke (`oninput="_rpCheckOverpay()"`, index.html — the runtime copy; no wiring override) and toggles class `hidden` correctly, but the stylesheet had no plain `.hidden` rule — only `.modal-overlay.hidden`, `.notif.hidden`, `.cmd-overlay.hidden` — so on a plain div the class did nothing and the warning was ALWAYS visible. Class (Rule 13 — every element relying on `hidden` that is not an overlay): 2 — `#rp-overpay-warn` and `#si-bill-fields` (Stock In "Supplier / Bill due date", M34: shown even when paid by cash). | ✅ **FIXED — owner-approved 2026-10-20.** One rule `.hidden{display:none!important}` (`!important`: `.field-group{display:grid}` is declared later and would win). `verify-fix4-hidden-class` (real Chromium, production build, visibility MEASURED): old 6 failed (warning shown at 40 and 100 of a $100 balance; supplier fields shown for cash) → GREEN 13/0 (shown only at 150; Save disabled only then; modals still open / close). Re-run GREEN: c2-confirm-modal 10 · c20 18 · c21 35 · c25 93 · m34-stock-in-on-credit-ui 7 · m34-inventory-on-credit 19 · stock-in-out-ui 8 · f119-partial-remaining 3 · marketplace-review-modal 7 · la2-boot 4. |
 | LC5 | FIX-5 | Invoices list scrolls horizontally, clipping client name and amount (reported at ~390px). MEASURED (real Chromium, production build): at 375 / 390 px nothing overflows. The overflow is the 769 → ~1,056 px band (sidebar shown): `.topbar-right` was `flex-shrink:0` and its controls need 837 px with the Owner pill, so `.main` (viewport − 200 px) was narrower than its content on **all 54 pages** (+268 px at 769, +13 at 1,024); `.main` is overflow:hidden, so a scroll-into-view slides the whole page sideways and clips its left edge. Same root, second symptom: at 1,100–1,280 px the page title was squeezed to **0 px** (invisible). C25 missed both: its invoice is overdue (no Record Payment / Pay link) and it never measured `.main`'s own scroll width or the title's width. | ✅ **FIXED — owner-approved 2026-10-20.** `.topbar-right` may shrink and wraps its controls onto a second row (`flex:0 100 auto; flex-wrap:wrap; justify-content:flex-end`); the period label shortens (…) before the title. `verify-fix5-no-sideways-scroll` (54 pages × 12 widths 375–1,440, pending + partial + overdue invoices): old 18 failed (54/54 pages scrolling sideways at 769–1,040; Export / CSV / XLSX / Ask AI / bell off-screen; titles cut or 0 px at 769–1,440) → GREEN 50/0; one top-bar row at 1,440. Re-run GREEN: c25 93 · c20 18 · c21 35 · la2-boot 4 · fix4 13 · c2-confirm-modal 10 · date-label-tz 12. |
 
+## 🔴 LIVE RETEST 2026-10-20 — LR rows (source: `COWORK_RETEST_RESULTS_2026-10-20.md`, Cowork, live dab2 on `main` @ `e023214`)
+
+Full retest of the 2026-10-20 release: `COWORK_RETEST_2026-10-20.md` R / F / T + all of `COWORK_LIVE_CHECK.md` A / B / C — **52 checks: 40 PASS · 6 FAIL · 5 BLOCKED · 1 SKIPPED**. Run 2026-10-20 12:25–13:20 UTC−4 in the Claude desktop app's built-in browser (no DevTools panel; console read via tool + an in-page error hook — see the results file's method note). Every LR row below is a **finding, not a fix**: none is verified fixed. Class enumeration (Rule 13) is still to do for each.
+
+**Live confirmation of earlier fixes (observed on production 2026-10-20):**
+
+| Row | Check | Live result |
+|---|---|---|
+| LA2 | A1 | 0 "deferred render hook threw" / "Cannot set properties of null" on two reloads; all 27 boot hooks re-run without throwing; Dashboard $24.1K / $4.5K / $19.2K = P&L to the cent. Caveat: the console buffer is flooded by report-only CSP `[info]` lines, so errors in the first seconds of a load could be missed. |
+| LA21 | A2 | PASS — default "(USD)" selected; API null / "USD"; TTD switches All entities to TT$; restored. |
+| LA23 | A3 | PASS — all 4 runs `jurisdiction: null`. |
+| LA3 | A4 | **FAIL → LR5.** |
+| LA4 / LA14 | A5 | PASS. |
+| LA5 / LA6 / LA8–LA10 / LA13 / LA16 | A6–A9 | PASS. |
+| LA15 | A10, B8 | PASS on COA / Projects / Items / templates; **one bare "$" left → LR4.** |
+| LA17 | A11 | PASS (checked in the page DOM; step 3 needs sign-up credentials, not entered). |
+| LC1 / LC1b | F1, F1b, C6 | PASS — P1 2h / $120 / $500, P2 2h / $100 / $300, old entry 0h; labels right. |
+| LC2 | F2 | Dashboard PASS; **Reports period line → LR6.** |
+| LC3 | T1, T2, C12 | PASS for creates (projects, time, quotes, receipt, payments, bill, expense, budget, document); quote UPDATE untestable (LR9). |
+| LC3b | T3 | Not testable from the UI — no way to add a manual bank line (LR11). |
+| LC3d | T4 | Partial — "Signed in · Chrome on Windows · IP" listed, newest first; failed sign-in not tried (owner step). |
+| LC3e | T5 | PASS — "support_requests · CREATE · FreshBooks"; Connected services empty. |
+| LC3f | T6 | SKIPPED — a client message e-mails the accountant when offline. |
+| LC4 | F3 | PASS — warning only above the balance; Save disabled only then. |
+| LC5 | F4, C15 | PASS — no sideways scroll at 800–1,280 px or 390 px on Dashboard / Invoices / Expenses / Personal. |
+| B2 withdrawal | B6 | Could not re-check — payroll run creation fails (LR1). |
+
+| # | Live check | Problem | Status |
+|---|---|---|---|
+| LR1 | B6 (Payroll) | Run Payroll for "December 2026" on Northwind → `POST /api/payroll-runs` **HTTP 500** `{"error":"An unexpected error occurred. Please try again."}` (13:02:56 and 13:03:26 UTC−4 = 17:02:56 / 17:03:26 UTC). No run created. A voided run #4 "December 2026" (19 Oct) exists on the same business; the route's 23505 recovery is meant to return the existing run, not 500 — **cause not confirmed** (inference only). Blocks the owner-salary re-check (13 Oct B2) and approve / mark-paid / void on this account. | ⬜ **OPEN 🔴** — next: Railway log for the two 500s; read-only check of `payroll_runs` indexes on production. |
+| LR2 | B5 (Money flow) | Dashboard "Money flow" block does not refresh after money changes. After a new $88 expense it kept "$19,972 net profit" across two Dashboard visits and a Reports round-trip while Reports NET RESULT and `GET /api/reports` said $19,884; corrected only by a full reload. After a new $777 invoice it showed $24,104 until the Dashboard was reopened. After a bill it did update. Cards, chart and transactions list were right each time (Rule 2 — one figure, several surfaces, one stale). | ⬜ **OPEN 🟠** |
+| LR3 | B8 (Money flow) | After switching business to Island Traders the Money-flow block stayed "Loading…" (>10 s, also after reopening Dashboard); rendered "TT$6,750 net profit" only after a reload. Possibly the same root as LR2 — not verified. | ⬜ **OPEN 🟠** |
+| LR4 | B8 (LA15 class) | Island Traders (TTD) Payroll page helper text: "…so your reports currently show **$0** of payroll…" — literal "$" on a TTD business. | ⬜ **OPEN 🟡** |
+| LR5 | A4 (LA3) | Payroll → Sam Owner's edit button calls `openOwnerModal()` ("Your payroll — all entities": name, type "Owner / Director", gross, deductions, "Save & sync to Personal") — **no "This is me — the business owner" checkbox**. LA3 put the checkbox on Add / Edit employee (`#edit-emp-is-owner`); it shows on Jordan Lee's form, unticked. Either the owner card should show the flag, or the A4 expectation is wrong. | ⬜ **OPEN 🔒 OWNER** — decide which. |
+| LR6 | F2 (LC2) | Reports period line reads "Year to date · Jan 2026 – Oct 2026" (`#period-label`); the retest expected "Fiscal year to date · … – today". The Year button's tooltip says "Fiscal year to date". Labels only; figures unchanged. | ⬜ **OPEN 🔒 OWNER** — confirm the intended wording (the LC2 decision said "Year to date"). |
+| LR7 | T2 / C7 (Budget) | Budget targets modal: switching to **Monthly** does not convert the existing rows, and save stores every row × 12 (`targets[cat] = period === 'monthly' ? Math.round(v * 12) : …`, finflow-api-wiring-medium.js `_saveBudgetTargets`). Rent showed 60000 after the switch — saving would have stored 720,000/yr. Avoided in the test by re-entering Rent as 5,000/mo. A silent ×12 on a stored money target. | ⬜ **OPEN 🔴** |
+| LR8 | T2 (Budget audit) | Budget audit row records the stored annual figure (`{"Software":300}`) — not the $25/month the user typed. | ⬜ **OPEN 🟡** |
+| LR9 | T2 (Quotes) | Quotes cannot be edited in the UI: rows have only View (read-only viewer) and ✕. `PUT /api/quotes/:id` exists; no client code calls it. No "Convert to invoice" either (C1). | ⬜ **OPEN 🔒 OWNER** — build edit or drop the expectation. |
+| LR10 | T8 (Timesheet) | Time entries cannot be edited in the UI (only ✕). `PUT /api/timesheet/:id` exists; no client caller. | ⬜ **OPEN 🔒 OWNER** |
+| LR11 | T3 (Banking) | Banking "+ Add" (`openAddTxnModal`) only shows a toast "Add manual transaction" — no form. `saveBankTxn` (POST /api/banking) has no caller. A stub on a money path (Rule 3). | ⬜ **OPEN 🟠** |
+| LR12 | T1 / C12 (Audit page) | The Audit table has no user / actor column (Date · Table · Record ID · Action · Field · Old · New), so "who did it" is not visible; the API rows carry `actor_type` / `actor_id`. | ⬜ **OPEN 🟡** |
+| LR13 | C11 (Documents) | After an upload the cards stay "TOTAL FILES 0 · STORAGE USED 0 KB · ADDED THIS MONTH 0" with the file listed; size shows "93" with no unit (file is 91 bytes); `.txt` is not in the picker's accept list. | ⬜ **OPEN 🟡** |
+| LR14 | A2 (Entities) | Consolidated caption "No conversion · native currencies shown" while the Island Traders column is converted to $ ($1.2K = TT$8,000 ÷ 6.80); in the TTD view "INTERCOMPANY $0" keeps a bare "$". | ⬜ **OPEN 🟡** |
+| LR15 | A6 (Inventory) | Card "COGS THIS MONTH $390" — the P&L books that $390 in Aug '26 (Oct COGS $0). Rule 2 class. | ⬜ **OPEN 🟡** |
+| LR16 | C13 / B7 (Bank Rec) | Bank Rec shows no statement or book balance. Bank feed 54 lines; unmatched list 50 + matched pairs 1 → 3 debits (TRANSFER TO SAVINGS $500, PAPER SUPPLY CO $650, BANK FEE $35) appear in neither. Banking "TOTAL BALANCE $0" with a linked bank. | ⬜ **OPEN 🟡** — investigate. |
+| LR17 | T4 (security e-mail) | Audit shows `SECURITY_ALERT · sent · true · NEW_DEVICE_LOGIN` at the owner's 12:24 sign-in, while the retest file says e-mail is not configured for real users. | ⬜ **OPEN ❔ CONFIRM** — did an e-mail actually go out (Resend log)? |
+| LR18 | A10 / C11 (Templates) | "Retainer Agreement" (a quote template) previews with the heading "INVOICE"; sample FROM address "New York, NY 10001" instead of the business's address. | ⬜ **OPEN 🟡** |
+| LR19 | C7 (Budget) | Budget page shows the same annual figures for Month, Quarter and Year (ignores the period buttons). | ⬜ **OPEN 🟡** |
+| LR20 | C2 (Sales receipts) | Card "CARD SALES $50 · Via Stripe" for a manually recorded receipt. | ⬜ **OPEN 🟡** |
+| LR21 | A2 / A10 (Settings) | Industry select has no "Media & Creative" option although that is Northwind's stored value (select shows blank). `GET /api/settings` fires 5× back-to-back when Settings opens. | ⬜ **OPEN 🟡** |
+
+Not run (owner / access): **T4** failed-sign-in step (needs the owner — no private window, Cowork does not type passwords) · **C14** accountant portal (no accountant login) · **T6** skipped (outbound e-mail). Test records created: 21 `ZZ-LIVECHECK` records — list in the results file and `LAUNCH_STATUS.md` 1.6.
+
+---
+
 ## ✅ 2026-08-09 RECONCILIATION — verified-fixed rows (authoritative; supersedes stale headers below)
 
 A finding-by-finding reconciliation on 2026-08-09 found many row headers/bodies below are **badly stale** —

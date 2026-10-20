@@ -109,6 +109,11 @@ const r2 = n => Math.round((+n || 0) * 100) / 100;
     eq('Projects page: Beta row reads "2h logged", billed $300.00 of $2,000.00', /2h logged/.test(row('Bright')) && /\$300(\.00)?\s*\/\s*\$2,000(\.00)?(?!\d)/.test(row('Bright')), true, false);
     eq('Projects page: Revenue card = 500 + 300', /^\$800(\.00)?$/.test((d.getElementById('proj-revenue') || {}).textContent), true, false);
     eq('Projects page: Unbilled card = (1,000 − 500) + (2,000 − 300) = 2,200', /^\$2,200(\.00)?$/.test((d.getElementById('proj-unbilled') || {}).textContent), true, false);
+    // LC1b (owner decision 2026-10-20): no time is ever invoiced, so the labels name what the figures are.
+    const _card = id => { const v = d.getElementById(id); const mc = v && v.closest('.mc'); return mc ? [mc.querySelector('.mc-label').textContent.trim(), mc.querySelector('.mc-change').textContent.trim()] : null; };
+    eq('LC1b: the value card reads "Billable value — Logged time × rate"', _card('proj-revenue'), ['Billable value', 'Logged time × rate'], ['Revenue', 'From projects']);
+    eq('LC1b: the remainder card reads "Budget remaining — Budget − billable value"', _card('proj-unbilled'), ['Budget remaining', 'Budget − billable value'], ['Unbilled', 'Pending invoice']);
+    eq('LC1b: a project row reads "Billable value / Budget"', /Billable value \/ Budget/.test(row('Acme')) && !/Billed \/ Budget/.test(row('Acme')), true, false);
     if (!list) console.log('  (projects list empty)');
 
     // Log Time from the Timesheet page, picking Beta.

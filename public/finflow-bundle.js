@@ -4456,7 +4456,7 @@ function clearAIChat(){
   function renderProjectsList() {
     const l = document.getElementById('projects-list');
     if (!l) return;
-    // KPI cards: Active Projects · Billable Hours · Revenue · Unbilled
+    // KPI cards: Active Projects · Billable Hours · Billable value · Budget remaining (LC1b: time is never invoiced)
     const _pjKpi = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     _pjKpi('proj-active', _projects.filter(p => p.status === 'In Progress').length);
     const _tsAll = window.timesheetData || window.timesheet || [];
@@ -4484,7 +4484,7 @@ function clearAIChat(){
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <div style="text-align:right">
-              <div style="font-size:11px;color:var(--t3)">Billed / Budget</div>
+              <div style="font-size:11px;color:var(--t3)">Billable value / Budget</div>
               <div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${window._fmtMoneyNative(billed)} / ${window._fmtMoneyNative(budget)}</div>
             </div>
             <span class="badge ${colorMap[p.status] || 'b-blue'}">${e(p.status)}</span>

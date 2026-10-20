@@ -493,8 +493,9 @@ body.sidebar-open .mob-bottom-nav,body.sidebar-open .mobile-fab{display:none!imp
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.5rem;background:var(--bg1);border-bottom:1px solid var(--bd);flex-shrink:0;gap:8px;min-height:54px}
 .topbar-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto;overflow:hidden}   /* C25: a long title shortens (…) instead of running under the controls */
 .page-title{font-size:16px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;font-family:var(--font-display);letter-spacing:.03em;margin:0}
-.period-label{font-size:10.5px;color:var(--t3);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;align-self:flex-end;padding-bottom:1px}
-.topbar-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.period-label{font-size:10.5px;color:var(--t3);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;align-self:flex-end;padding-bottom:1px;min-width:0;overflow:hidden;text-overflow:ellipsis;flex-shrink:100}   /* FIX-5: shortens before the page title does */
+.topbar-right{display:flex;align-items:center;gap:6px;flex:0 100 auto;min-width:0;flex-wrap:wrap;justify-content:flex-end}   /* FIX-5: the controls (837px with the Owner pill) wrap to a second row when they do not fit, and give way before the
+   title does — flex-shrink:0 pushed .main sideways on every page from 769 to ~1,056px and squeezed the page title to 0px at 1,100–1,280px */
 /* BUTTONS */
 .btn{font-size:12px;padding:5px 12px;border-radius:var(--radius);cursor:pointer;font-family:var(--font);transition:all .13s;font-weight:500;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;border:none}
 .btn-ghost{border:1px solid var(--bd2);color:var(--t2);background:var(--bg2)}

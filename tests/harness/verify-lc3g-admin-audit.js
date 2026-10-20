@@ -12,6 +12,9 @@
  * before and after, logins incl. failures, the log append-only. Better: the customer's OWN audit trail shows the admin
  * change to their account (suspend, plan, delete), marked as made by FinFlow support.
  *
+ * LC3g-c: a failed admin sign-in is recorded BEFORE the 401 is sent (it was fire-and-forget: ~1 run in 15 read the log
+ * before the row landed — the same race in production could lose the row). Executed with a 300 ms injected write delay.
+ *
  * Real scratch Postgres, real server, real admin + user sessions, real routes. Each check names the field that changed
  * and both values (bug: no row, or a row with no IP / before / after).
  *
@@ -52,8 +55,13 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     const shape = r => r ? [!!r.ip, !!r.session_ref, r.outcome || null] : null;
 
     // ── sign-in ──
+    // LC3g-c (failure injection, Rule 14): the failed-login row is written 300 ms late. If the 401 goes out before the
+    // write finishes (fire-and-forget — the first LC3g version), the row is not there yet: deterministic RED.
+    await c.query(`CREATE OR REPLACE FUNCTION _lc3g_slow() RETURNS trigger AS $$ BEGIN IF NEW.action = 'failed_login' THEN PERFORM pg_sleep(0.3); END IF; RETURN NEW; END; $$ LANGUAGE plpgsql`);
+    await c.query(`CREATE TRIGGER _lc3g_slow BEFORE INSERT ON admin_log FOR EACH ROW EXECUTE FUNCTION _lc3g_slow()`);
     eq('a wrong admin password is refused', (await admin.post('/api/admin/login', { password: 'nope' })).status, 401);
-    eq('…and logged with the IP it came from', (await log('failed_login') || {}).ip || null, '198.51.100.7', null);
+    eq('…and logged with the IP it came from, BEFORE the refusal is sent (write delayed 300 ms)', (await log('failed_login') || {}).ip || null, '198.51.100.7', null);
+    await c.query(`DROP TRIGGER _lc3g_slow ON admin_log`);
     eq('admin sign-in succeeds', (await admin.post('/api/admin/login', { password: process.env.ADMIN_PASSWORD })).status, 200);
     const li = await log('admin_login');
     eq('a successful admin sign-in is logged (IP, session, outcome)', shape(li), [true, true, 'ok'], null);

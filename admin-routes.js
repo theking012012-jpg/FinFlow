@@ -63,8 +63,10 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // N89: failed admin logins are recorded HERE, by the server, from what it observed (reason + client
   // IP). The security log used to be filled by an unauthenticated client-callable endpoint, so anyone
   // could write arbitrary entries into it and a real attacker simply never called it.
-  const failedAdminLogin = (req, res, reason, body) => {
-    adminAudit(req, 'failed_login', 'security', null, { notes: String(reason + ' from ' + (req.ip || 'unknown')).slice(0, 500), outcome: 'refused' });   // LC3g
+  // LC3g-c: the refusal is recorded BEFORE the 401 goes out — a write left running could be lost (or be read before it
+  // landed). adminAudit never throws, so a log failure still cannot turn a refusal into a 500.
+  const failedAdminLogin = async (req, res, reason, body) => {
+    await adminAudit(req, 'failed_login', 'security', null, { notes: String(reason + ' from ' + (req.ip || 'unknown')).slice(0, 500), outcome: 'refused' });
     return res.status(401).json(body);
   };
   app.post('/api/admin/login', adminLoginLimiter, wrap(async (req, res) => {

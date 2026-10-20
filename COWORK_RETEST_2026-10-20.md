@@ -1,10 +1,21 @@
-# FinFlow — live retest of the 2026-10-20 release (for Cowork)
+# FinFlow — FULL live retest, 2026-10-20 release (for Cowork)
 
-**What this checks:** the fixes for the 2026-10-19 live check (`COWORK_FIX_HANDOFF.md`, FIX-1 to FIX-5) and the new
-audit-trail coverage, now live on production — plus a short regression of the earlier checks.
+> **This is a FULL retest of the live site — not a spot check.** Run **every** part, in this order:
+> 1. **This file:** Part R → Part F → Part T (the new release).
+> 2. **Then all of `COWORK_LIVE_CHECK.md`:** Part A → Part B → Part C, every check, exactly as written there (Part G
+>    below lists the few places where today's release changes the expected result).
+>
+> Do not skip a part because it passed last time. A check you cannot do is **BLOCKED** with the reason — never left out.
+
+**What this covers:** the fixes for the 2026-10-19 live check (FIX-1 to FIX-5), the new audit-trail coverage, and a
+complete rerun of the earlier live check (the 2026-10-13 audit reconciliations, flow tests, payroll, walls,
+multi-currency, and every area no audit had exercised).
 
 App: https://finflow-production-dab2.up.railway.app — the same test account as the 2026-10-19 live check (owner
 **Sam Owner**; businesses **Northwind Studio** (USD) and **Island Traders** (TTD)).
+
+**Login:** use the account login the owner gives you directly. This repository is public, so no password is written
+here. If you cannot sign in, stop and report **BLOCKED — login**; do not create a different account.
 
 **Ground rules, report format and the `ZZ-LIVECHECK` naming are exactly those of `COWORK_LIVE_CHECK.md`** (record what
 the screen shows; fix nothing; delete nothing; no emails, real payments, real banks or real credentials; DevTools
@@ -96,18 +107,26 @@ and Projects now shows P2 **2.5 h / $125.00 / $175.00**.
 
 ---
 
-## Part G — regression (from `COWORK_LIVE_CHECK.md`)
+## Part G — the complete earlier live check (`COWORK_LIVE_CHECK.md`, ALL of it)
 
-Run these checks exactly as written there: **A1** (hard reload ×2: 0 boot errors, no $0 cards), **B1** (P&L
-reconciles end to end), **B2** (receivables reconcile), **B5** (each action writes once — use new `ZZ-LIVECHECK`
-names), **B6** (payroll December run → owner salary in Personal → void removes it), **B7** (the wall), **B8** (Island
-Traders in TT$), **C15** (every page, every console; then ~390 px).
+Run **every** check in `COWORK_LIVE_CHECK.md` — **Part A (A0–A11), Part B (B1–B11), Part C (C1–C15)** — exactly as
+written there, using new `ZZ-LIVECHECK` names for anything you create. Report each one with its original number.
+
+Where today's release changes what to expect:
+- **C6 Time tracking:** the project now shows the time logged to it (it showed 0 h on 19 Oct). Expect the
+  same behaviour as F1.
+- **C12 Audit trail:** quotes, projects, time entries and budget changes now **do** appear (they were missing on
+  19 Oct), as in T1–T2. Any action from C1–C11 still missing from the Audit page is a FAIL — name it.
+- **"Full year total"** captions anywhere now read **"Year to date"** (F2); the figures are unchanged.
+- **C15 phone width:** also check ~800–1,000 px (F4) — no page may scroll sideways.
 
 ---
 
 ## Final summary (top of your report)
 
-- R: PASS / FAIL. F: n/6 (F1, F1b, F2, F3, F4 + the old project). T: n/8. G: n/8.
+- This file: R PASS / FAIL · F n/5 (F1, F1b, F2, F3, F4) · T n/8.
+- `COWORK_LIVE_CHECK.md`: A n/12 · B n/11 · C n/15 — the full rerun.
+- Total checks run out of 52 (R 1 + F 5 + T 8 + A 12 + B 11 + C 15); how many PASS / FAIL / SKIPPED / BLOCKED.
 - Every FAIL in one line, worst first, with the figure seen vs expected.
 - Every `ZZ-LIVECHECK` record created (type, name, amount) — for the owner to clean up.
 - Every red console error (full text + stack) with its step, and any full page reload.

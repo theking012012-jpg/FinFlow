@@ -5126,7 +5126,9 @@ async function _applyServerBooks(){
   let priorIdx = null;
   if(period==='month') priorIdx = (typeof currentMonthIdx!=='undefined' ? currentMonthIdx : _fyContext().curFyIdx) - 1;
   else if(period==='quarter') priorIdx = _fyContext().curFyIdx - 3;
-  const stale = () => seq!==_serverBooksSeq || !!window._displayCurrency || ((typeof currentPeriod!=='undefined'?currentPeriod:'year')!==period);
+  // LR3: …or the business changed while the fetch was in flight — the previous business's books must never land.
+  const _activeEid = () => { const a=(typeof ENTITIES!=='undefined'?ENTITIES:(window.ENTITIES||[])).find(e=>e.active); return a && a._dbId; };
+  const stale = () => seq!==_serverBooksSeq || !!window._displayCurrency || ((typeof currentPeriod!=='undefined'?currentPeriod:'year')!==period) || _activeEid()!==eid;
   try{
     const [cur, prior, year] = await Promise.all([
       fetch(q(period, mi), {credentials:'include'}).then(r=>r.ok?r.json():null),
@@ -6733,7 +6735,12 @@ setTimeout(()=>{
     if(rafId) cancelAnimationFrame(rafId);
     rafId=requestAnimationFrame(()=>{
       const w=entries[0].contentRect.width;
-      if(w>0&&Math.abs(w-lastW)>2){lastW=w;buildRiver(getPeriodData());}
+      // LR2 / LR3: buildRiver does not paint while the Dashboard is hidden (0 width), so a change made on another
+      // page — a new expense, a business switch — left the old river (or "Loading…") in place. Hiding reported width 0
+      // but kept lastW, so coming back at the SAME width repainted nothing until a full reload. Hidden → shown
+      // always repaints now, from the current data.
+      if(w===0){ lastW=0; return; }
+      if(Math.abs(w-lastW)>2){lastW=w;buildRiver(getPeriodData());}
     });
   });
   ro.observe(wrap);

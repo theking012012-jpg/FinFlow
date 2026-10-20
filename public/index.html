@@ -8162,7 +8162,8 @@ window.switchEntity=async function(idx){
   // F-ENT: the money-flow river is a rendered SVG with the PREVIOUS entity's figures + currency baked in
   // (e.g. -TT$210 lingering on a CAD entity). Resetting currencySymbol above does NOT re-render existing
   // SVG, so clear it now; buildRiver repaints with the new entity's data + currency once it loads.
-  try { var _rw=document.getElementById('river-wrap'); if(_rw) _rw.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Loading…</div>'; var _rs=document.getElementById('river-sub'); if(_rs) _rs.textContent='Where every dollar goes'; } catch(_e){}
+  try { window._serverBooks = null;   // LR3: the river must never repaint from the previous business's cached books
+    var _rw=document.getElementById('river-wrap'); if(_rw) _rw.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Loading…</div>'; var _rs=document.getElementById('river-sub'); if(_rs) _rs.textContent='Where every dollar goes'; } catch(_e){}
 
   // Refresh entity list UI
   renderEntities();

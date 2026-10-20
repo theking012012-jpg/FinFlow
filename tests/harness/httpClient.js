@@ -23,6 +23,9 @@ class HarnessHttp {
     // Optional CF-Connecting-IP — Cloudflare's single authoritative client IP. The CF-aware
     // IP-key limiters prefer it over XFF/req.ip, so a distinct cf gives a client its OWN bucket.
     this.cf = opts.cf || null;
+    // Optional User-Agent — a distinct browser / device per client (LC3d: the security log records the device, and a
+    // sign-in from a new device raises an alert). Omitted ⇒ fetch's own default, identical to the original behaviour.
+    this.ua = opts.ua || null;
   }
 
   _cookieHeader() {
@@ -49,6 +52,7 @@ class HarnessHttp {
     if (cookie) headers.Cookie = cookie;
     if (this.xff) headers['X-Forwarded-For'] = this.xff;
     if (this.cf) headers['CF-Connecting-IP'] = this.cf;
+    if (this.ua) headers['User-Agent'] = this.ua;
 
     const res = await fetch(this.baseUrl + urlPath, {
       method,

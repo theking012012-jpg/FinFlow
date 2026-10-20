@@ -6,7 +6,7 @@
  * The class LC3 / LC3b belonged to — a route that changes data and writes no audit row — shipped silently because
  * nothing noticed a NEW one. This guard enumerates every mutating route (server.js, accountant-routes.js,
  * admin-routes.js; tools/fix-2026-10-19/fix3-enumerate-audited-routes.js) and FAILS when one that writes no audit row is
- * neither EXEMPT (a stated reason it changes no books or access) nor a NUMBERED known gap (LC3g, the admin routes, closed
+ * neither EXEMPT (a stated reason it changes no books or access) nor a NUMBERED known gap (LC3g admin and LC3d sign-in / security, closed
  * 2026-10-20 — every admin action now writes the hardened admin_log via adminAudit) (an open finding with an
  * owner decision pending). It also fails when a listed route has started auditing (the list must be kept true).
  *
@@ -20,11 +20,12 @@ const { enumerate } = require(path.join(ROOT, 'tools', 'fix-2026-10-19', 'fix3-e
 // or, better, audited.
 const ALLOWED = {
   "EXEMPT": {
-    reason: "no stored change to books or access: a calculation, a suggestion, a what-if, the business in view, a session switch, a report, a draft, a log line",
+    reason: "no stored change to books or access: a calculation, a suggestion, a what-if, the business in view, a session switch, a report, a draft, a log line, a Stripe checkout page (the subscription changes only on Stripe's webhook)",
     routes: [
       "POST /api/ai",
       "POST /api/ai/scan",
       "POST /api/autocat-rules/ai-suggest",
+      "POST /api/stripe/checkout",
       "POST /api/cogs/calculate",
       "POST /api/csp-report",
       "POST /api/entities/:id/activate",
@@ -57,20 +58,6 @@ const ALLOWED = {
       "PUT /api/personal-bank",
       "PUT /api/personal-transactions/:id",
       "PUT /api/recurring-personal-transactions/:id",
-    ],
-  },
-  "LC3d": {
-    reason: "sign-in / security events \u2014 a security-log question, not the books trail",
-    routes: [
-      "DELETE /api/auth/account",
-      "POST /api/auth/forgot-password",
-      "POST /api/auth/logout",
-      "POST /api/auth/mfa/disable",
-      "POST /api/auth/mfa/enable",
-      "POST /api/auth/mfa/setup",
-      "POST /api/auth/register",
-      "POST /api/auth/reset-password",
-      "POST /api/stripe/checkout",
     ],
   },
   "LC3e": {

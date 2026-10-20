@@ -621,6 +621,7 @@ async function initDB() {
     await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS actor_id   INTEGER`);              // acting principal (userId or accountantId)
     await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS old_data   JSONB`);                // record-level before snapshot
     await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS new_data   JSONB`);                // record-level after snapshot
+    await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS user_agent TEXT`);                 // LC3d: the browser / device (+ migration 2026-10-20-audit-trail-user-agent.sql)
     // APPEND-ONLY: an accounting audit trail must be immutable. Block UPDATE/DELETE at the DATABASE so
     // no route, bug, or actor (not even a compromised app) can alter or erase a recorded change —
     // only INSERT is ever permitted.

@@ -28,7 +28,10 @@ const USER_SCOPED = [
   'credit_notes','payments_made','vendor_credits','items','timesheet','projects',
   'team_members','budget_targets','entities','journals','chart_of_accounts',
   'lock_settings','audit_log','documents','templates','autocat_rules',
-  'audit_trail','invoice_payments','bank_reconciliation','payroll_runs',
+  // audit_trail is deliberately NOT here (labelled 2026-10-20, LC3d): it is the append-only legal record and OUTLIVES the
+  // account by design (N18; server.js skips it; verify-account-delete asserts it is KEPT). It was listed here and passed
+  // only vacuously — this account had no audit rows until sign-up and deletion started recording themselves (LC3d).
+  'invoice_payments','bank_reconciliation','payroll_runs',
   'payroll_run_lines','inventory_movements','fx_rates','fx_transactions',
   'personal_accounts','snapshots','ledger_accounts','ledger_entries','ledger_lines','ai_usage',
 ];
@@ -83,6 +86,8 @@ const USER_SCOPED = [
       if (n > 0) leaked.push(`${t}=${n}`);
     }
     A('EVERY user-scoped table is empty after deletion (ledger + ai_usage included)', leaked.length === 0, 'leaked: ' + leaked.join(', '));
+    const _kept = (await c.query(`SELECT action FROM audit_trail WHERE user_id=$1 ORDER BY id`, [uid])).rows.map(r => r.action);
+    A('the audit trail is kept (N18), ending with the deletion itself', _kept[_kept.length - 1] === 'ACCOUNT_DELETED' && _kept.includes('SIGNUP'), JSON.stringify(_kept));
     const userGone = Number((await c.query(`SELECT COUNT(*)::int n FROM users WHERE id=$1`, [uid])).rows[0].n) === 0;
     A('the users row itself is gone', userGone);
 

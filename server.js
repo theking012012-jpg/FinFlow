@@ -11,6 +11,7 @@ const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity, runMigrations } = require('./database');
 const { establishSession } = require('./session-auth');
 const totp = require('./totp');
+const securityLog = require('./security-log');   // LC3d: security-log event names, device labels, alert e-mails
 const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js');
 // C24: customer-facing "not set up" message. It used to name the server's environment variables ("Add PLAID_CLIENT_ID
@@ -1181,6 +1182,7 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
     // (L1) Regenerate the session id at the privilege change so a pre-auth fixed cookie
     // cannot be promoted to an authenticated session.
     await establishSession(req, { userId, userRole: 'owner', userEmail: email.toLowerCase() });
+    await recordAudit(pool, { userId, table: 'users', recordId: userId, action: 'SIGNUP', req });   // LC3d
     const { rows: [_ru] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [userId]);
     const user = _ru ? rowToObj(_ru) : null;
     console.log('[Register] New user created, id:', userId);
@@ -1200,10 +1202,15 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       `SELECT * FROM users WHERE lower(data->>'email') = lower($1) ORDER BY id LIMIT 1`, [email]
     );
     const user = _lu ? rowToObj(_lu) : null;
+    // LC3d: a failed attempt on a REAL account is recorded on that account (its owner sees it); an unknown address is
+    // recorded with no account. Never the password or code — only the reason.
+    const _failed = reason => recordAudit(pool, { userId: user ? user.id : null, table: 'users', recordId: user ? user.id : null, action: 'LOGIN_FAILED', actorType: 'anonymous', req,
+      newData: user ? { reason } : { reason, email: String(email || '').slice(0, 120) } });
     if (user && _isBlockedUser(user)) {   // N88: suspended or soft-deleted (either stored shape)
+      await _failed('blocked');
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
-    if (!user || !bcrypt.compareSync(password, user.password)) { logAudit(req, 'LOGIN_FAILED', 'users', null, null, { email: String(email || '').slice(0, 120) }); return res.status(401).json({ error: 'Invalid email or password.' }); }
+    if (!user || !bcrypt.compareSync(password, user.password)) { await _failed(user ? 'wrong_password' : 'unknown_account'); return res.status(401).json({ error: 'Invalid email or password.' }); }
     // Owner MFA gate (mirrors the accountant flow): once the owner has enabled TOTP, a correct
     // password is NOT enough — a valid 6-digit code is required before the session is granted. The
     // deny returns {mfaRequired:true} so the login UI can reveal the code field. Byte-identical to
@@ -1212,11 +1219,13 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       const _mfaTok = req.body && req.body.token;
       let _mfaOk = false;
       if (_mfaTok) { try { _mfaOk = totp.verify(_mfaTok, totp.decSecret(user.mfa_secret)); } catch (_) { _mfaOk = false; } }
-      if (!_mfaOk) return res.status(401).json({ error: 'Enter your authenticator code to finish signing in.', mfaRequired: true });
+      if (!_mfaOk) { if (_mfaTok) await _failed('mfa_code'); return res.status(401).json({ error: 'Enter your authenticator code to finish signing in.', mfaRequired: true }); }   // LC3d: a wrong code (not the first, code-less step)
     }
     // (L1) Regenerate the session id on login (session-fixation hardening).
     await establishSession(req, { userId: user.id, userRole: user.role || 'owner', userEmail: user.email });
-    logAudit(req, 'LOGIN', 'users', user.id, null, null);   // audit LOGIN (ip captured) — feeds login-multi-IP anomaly
+    const _newDevice = await _isNewDevice(user.id, req);   // LC3d — checked BEFORE this sign-in is recorded
+    await recordAudit(pool, { userId: user.id, table: 'users', recordId: user.id, action: 'LOGIN', req });   // ip + device — feeds login-multi-IP anomaly
+    if (_newDevice) await securityAlert(req, user, 'NEW_DEVICE_LOGIN');
     // Track last login time
     await pool.query(
       `UPDATE users SET data = data || jsonb_build_object('last_login', $1::text) WHERE id = $2`,
@@ -1235,12 +1244,14 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', wrap(async (req, res) => {
+  const _lo = req.session && req.session.userId;
+  if (_lo) await recordAudit(pool, { userId: _lo, table: 'users', recordId: _lo, action: 'LOGOUT', req });   // LC3d — before the session is gone
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
     res.json({ ok: true });
   });
-});
+}));
 
 // ── OWNER MFA (TOTP) — enroll / enable / disable. Secret lives in users.data (JSONB, no migration),
 // stored ENCRYPTED via totp.encSecret. Mirrors the accountant MFA flow. The login gate above reads
@@ -1250,12 +1261,25 @@ app.get('/api/auth/mfa/status', requireAuth, wrap(async (req, res) => {
   res.json({ mfa_enabled: !!(rows[0] && rows[0].e === 'true') });
 }));
 
+// LC3d: the person's OWN recent security events (their sign-ins incl. failed attempts on their account, 2FA, password,
+// alerts) — what "Settings → Security" lists. Scoped to the PERSON signed in (session.userId), not the account they work
+// in: a team member sees their own sign-ins, never the owner's.
+app.get('/api/auth/security-activity', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT action, changed_at, ip_address, user_agent, new_data FROM audit_trail
+      WHERE user_id = $1 AND table_name = 'users' AND action = ANY($2::text[])
+      ORDER BY changed_at DESC, id DESC LIMIT 50`, [req.session.userId, securityLog.SECURITY_ACTIONS]);
+  res.json({ events: rows.map(r => ({ action: r.action, label: securityLog.LABELS[r.action] || r.action, at: r.changed_at, ip: r.ip_address || null,
+    device: securityLog.deviceLabel(r.user_agent), detail: r.new_data && (r.new_data.reason || r.new_data.event || r.new_data.step) || null })) });
+}));
+
 app.post('/api/auth/mfa/setup', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(`SELECT data->>'email' AS email, data->>'mfa_enabled' AS e FROM users WHERE id = $1`, [req.session.userId]);
   const u = rows[0];
   if (u && u.e === 'true') return res.status(400).json({ error: 'MFA is already enabled. Disable it first to re-enroll.' });
   const secret = totp.newSecret();
   await pool.query(`UPDATE users SET data = data || jsonb_build_object('mfa_pending_secret', $1::text) WHERE id = $2`, [totp.encSecret(secret), req.session.userId]);
+  await recordAudit(pool, { userId: req.session.userId, table: 'users', recordId: req.session.userId, action: 'MFA_SETUP_STARTED', req });   // LC3d (never the secret)
   res.json({ secret, otpauth: totp.otpauthUri(secret, (u && u.email) || 'account') });
 }));
 
@@ -1266,8 +1290,9 @@ app.post('/api/auth/mfa/enable', requireAuth, wrap(async (req, res) => {
   if (!penc) return res.status(400).json({ error: 'Start MFA setup first.' });
   let ok = false;
   try { ok = totp.verify(token, totp.decSecret(penc)); } catch (_) { ok = false; }
-  if (!ok) return res.status(400).json({ error: 'Invalid code — check your authenticator app and try again.' });
+  if (!ok) { await recordAudit(pool, { userId: req.session.userId, table: 'users', recordId: req.session.userId, action: 'MFA_CODE_REJECTED', newData: { step: 'enable' }, req }); return res.status(400).json({ error: 'Invalid code — check your authenticator app and try again.' }); }   // LC3d
   await pool.query(`UPDATE users SET data = (data - 'mfa_pending_secret') || jsonb_build_object('mfa_secret', $1::text, 'mfa_enabled', true) WHERE id = $2`, [penc, req.session.userId]);
+  await recordAudit(pool, { userId: req.session.userId, table: 'users', recordId: req.session.userId, action: 'MFA_ENABLED', req });   // LC3d
   res.json({ mfa_enabled: true });
 }));
 
@@ -1278,8 +1303,10 @@ app.post('/api/auth/mfa/disable', requireAuth, wrap(async (req, res) => {
   if (!u || u.e !== 'true') return res.status(400).json({ error: 'MFA is not enabled.' });
   let ok = false;
   try { ok = totp.verify(token, totp.decSecret(u.s)); } catch (_) { ok = false; }
-  if (!ok) return res.status(400).json({ error: 'Invalid code.' });
+  if (!ok) { await recordAudit(pool, { userId: req.session.userId, table: 'users', recordId: req.session.userId, action: 'MFA_CODE_REJECTED', newData: { step: 'disable' }, req }); return res.status(400).json({ error: 'Invalid code.' }); }   // LC3d
   await pool.query(`UPDATE users SET data = (data - 'mfa_secret' - 'mfa_pending_secret') || jsonb_build_object('mfa_enabled', false) WHERE id = $1`, [req.session.userId]);
+  await recordAudit(pool, { userId: req.session.userId, table: 'users', recordId: req.session.userId, action: 'MFA_DISABLED', req });   // LC3d
+  { const { rows: [_mu2] } = await pool.query(`SELECT * FROM users WHERE id = $1`, [req.session.userId]); if (_mu2) await securityAlert(req, rowToObj(_mu2), 'MFA_DISABLED'); }
   res.json({ mfa_enabled: false });
 }));
 
@@ -1302,6 +1329,7 @@ app.post('/api/auth/forgot-password', signupLimiter, async (req, res) => {
     // re-hashes the incoming token. Mirrors the invite-token flow (hashInviteToken).
     await pool.query(`DELETE FROM password_resets WHERE user_id = $1`, [user.id]);
     await db.insert('password_resets', { user_id: user.id, token: hashInviteToken(token), expires });
+    await recordAudit(pool, { userId: user.id, table: 'users', recordId: user.id, action: 'PASSWORD_RESET_REQUESTED', actorType: 'anonymous', req });   // LC3d (never the token)
 
     const resetUrl = `${appUrl()}/reset-password.html?token=${token}`;
 
@@ -1350,8 +1378,9 @@ app.post('/api/auth/reset-password', signupLimiter, async (req, res) => {
       `SELECT * FROM password_resets WHERE data->>'token' = $1 LIMIT 1`, [tokenHash]
     );
     const record = _pr ? rowToObj(_pr) : null;
-    if (!record) return res.status(400).json({ error: 'Invalid or expired reset link.' });
+    if (!record) { await recordAudit(pool, { table: 'users', action: 'PASSWORD_RESET_FAILED', actorType: 'anonymous', newData: { reason: 'unknown_link' }, req }); return res.status(400).json({ error: 'Invalid or expired reset link.' }); }   // LC3d
     if (new Date(record.expires) < new Date()) {
+      await recordAudit(pool, { userId: record.user_id, table: 'users', recordId: record.user_id, action: 'PASSWORD_RESET_FAILED', actorType: 'anonymous', newData: { reason: 'expired' }, req });   // LC3d
       await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [tokenHash]);
       return res.status(400).json({ error: 'This reset link has expired. Please request a new one.' });
     }
@@ -1361,6 +1390,8 @@ app.post('/api/auth/reset-password', signupLimiter, async (req, res) => {
     await db.updateById('users', record.user_id, { password: hash });
     await _bumpSessionEpoch(record.user_id);
     await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [tokenHash]);
+    await recordAudit(pool, { userId: record.user_id, table: 'users', recordId: record.user_id, action: 'PASSWORD_RESET', actorType: 'anonymous', req });   // LC3d
+    { const { rows: [_ru2] } = await pool.query(`SELECT * FROM users WHERE id = $1`, [record.user_id]); if (_ru2) await securityAlert(req, rowToObj(_ru2), 'PASSWORD_RESET'); }
 
     res.json({ ok: true });
   } catch (err) {
@@ -3191,7 +3222,8 @@ app.put('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
   // N6b: a password change ends every OTHER session; this one is re-issued (fresh id, current epoch).
   await db.updateById('users', req.session.userId, { password: hash });
   await _bumpSessionEpoch(req.session.userId);
-  logAudit(req, 'CHANGE_PASSWORD', 'users', req.session.userId, null, null);
+  await recordAudit(pool, { userId: req.session.userId, table: 'users', recordId: req.session.userId, action: 'CHANGE_PASSWORD', req });   // LC3d: + device
+  await securityAlert(req, user, 'CHANGE_PASSWORD');
   await establishSession(req, { userId: req.session.userId, userRole: req.session.userRole, userEmail: req.session.userEmail, entityId: req.session.entityId });
   res.json({ ok: true });
 }));
@@ -3476,6 +3508,7 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
     console.error('[account delete] failed, nothing deleted:', e.message);
     return res.status(500).json({ error: 'Account deletion failed — nothing was deleted. Please try again or contact support.' });
   } finally { client.release(); }
+  await recordAudit(pool, { userId: uid, table: 'users', recordId: uid, action: 'ACCOUNT_DELETED', req });   // LC3d: audit_trail outlives the account (N18)
   req.session.destroy(() => {});
   res.json({ ok: true });
 }));
@@ -9427,24 +9460,55 @@ app.post('/api/dlocal/webhook', async (req, res) => {
 // no route or bug can alter/erase a recorded change. `auditLog()` and `logAudit()` are thin
 // back-compat wrappers so existing call sites did not have to change while the two old tables merged
 // into one trail. A req-less caller (e.g. the F92 side-effect recalcs) is attributed to 'system'.
-async function recordAudit(pool, { userId = null, entityId = null, table, recordId = null, action, field = null, oldValue = null, newValue = null, oldData = null, newData = null, req = null }) {
+async function recordAudit(pool, { userId = null, entityId = null, table, recordId = null, action, field = null, oldValue = null, newValue = null, oldData = null, newData = null, req = null, actorType: actorOverride = null }) {
   try {
     let actorType = 'system', actorId = userId;
     if (req && req.session && req.session.accountantId) { actorType = 'accountant'; actorId = req.session.accountantId; }
     else if (req && req.session && req.session.userId)  { actorType = 'user';       actorId = req.session.userId; }
+    if (actorOverride) { actorType = actorOverride; if (actorOverride === 'anonymous') actorId = null; }   // LC3d: e.g. a failed sign-in
+    const _ua = req && typeof req.get === 'function' ? String(req.get('user-agent') || '').slice(0, 300) || null : null;   // LC3d
     await pool.query(
-      `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, old_data, new_data, actor_type, actor_id, ip_address)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, old_data, new_data, actor_type, actor_id, ip_address, user_agent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [userId, entityId, table, recordId, action, field,
        oldValue == null ? null : String(oldValue), newValue == null ? null : String(newValue),
        oldData ? JSON.stringify(oldData) : null, newData ? JSON.stringify(newData) : null,
-       actorType, actorId, req?.ip || null]
+       actorType, actorId, req?.ip || null, _ua]
     );
   } catch (e) { console.error('[audit] recordAudit failed:', e.message); }
 }
 
 // Back-compat wrapper (field-level shape). All existing auditLog(...) call sites keep working.
 async function auditLog(pool, opts) { return recordAudit(pool, opts); }
+
+// ── LC3d — security log helpers ─────────────────────────────────────────────────────────────────────────────────────
+// A sign-in is from a NEW DEVICE when the account has signed in / signed up before, but never from this IP with this
+// browser (180 days). Checked before the current sign-in is recorded. An account's very first device is not "new".
+async function _isNewDevice(userId, req) {
+  try {
+    const ua = String((req.get && req.get('user-agent')) || '').slice(0, 300) || null;
+    const { rows: [r] } = await pool.query(
+      `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE ip_address IS NOT DISTINCT FROM $2 AND user_agent IS NOT DISTINCT FROM $3)::int AS same
+         FROM audit_trail WHERE user_id = $1 AND action IN ('LOGIN','SIGNUP') AND changed_at > NOW() - INTERVAL '180 days'`,
+      [userId, req.ip || null, ua]);
+    return r.n > 0 && r.same === 0;
+  } catch (e) { console.error('[security] new-device check failed:', e.message); return false; }
+}
+// E-mail the account holder about a high-risk event, and RECORD the alert either way (sent, or why not) — an alert
+// that silently failed would look like an account nobody tampered with.
+async function securityAlert(req, user, event) {
+  const build = securityLog.ALERTS[event];
+  if (!build || !user) return;
+  const ctx = { name: user.name, ip: req.ip || null, device: securityLog.deviceLabel(req.get && req.get('user-agent')), at: new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC' };
+  let sent = false, reason = null;
+  if (!resendClient) reason = 'email_not_configured';
+  else if (!user.email) reason = 'no_email_address';
+  else {
+    try { const m = build(ctx); await resendClient.emails.send({ from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to: user.email, subject: m.subject, html: String(m.html) }); sent = true; }
+    catch (e) { reason = 'send_failed'; console.error('[security] alert e-mail failed:', event, e.message); }
+  }
+  await recordAudit(pool, { userId: user.id, table: 'users', recordId: user.id, action: 'SECURITY_ALERT', newData: { event, sent, ...(reason ? { reason } : {}) }, req });
+}
 
 app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
   const { table, action } = req.query;
@@ -13169,3 +13233,4 @@ module.exports.belvoTxnToRow = belvoTxnToRow;   // Belvo transaction -> feed-row
 module.exports.pickRate = pickRate;                 // FX-live - pair resolution: direct / inverse / cross-via-USD + date carry (test surface)
 module.exports._pickDirectRate = _pickDirectRate;   // FX-live - direct-pair carry-forward/backward matcher (test surface)
 module.exports.refreshLiveFxRates = refreshLiveFxRates;   // FX-live - USD-base feed upsert, manual-wins, idempotent-per-day (test surface)
+module.exports._setResendClientForTest = c => { resendClient = c; };   // LC3d: harness seam — a capturing fake Resend, never the network

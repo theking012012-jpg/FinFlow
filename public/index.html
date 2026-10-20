@@ -1731,6 +1731,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <option value="LOGIN">Sign-in</option>
                 <option value="LOGIN_FAILED">Failed sign-in</option>
                 <option value="CHANGE_PASSWORD">Password change</option>
+                <option value="SIGNUP,LOGIN,LOGIN_FAILED,LOGOUT,MFA_SETUP_STARTED,MFA_ENABLED,MFA_DISABLED,MFA_CODE_REJECTED,CHANGE_PASSWORD,PASSWORD_RESET_REQUESTED,PASSWORD_RESET,PASSWORD_RESET_FAILED,SECURITY_ALERT,ACCOUNT_DELETED">Security (sign-in, 2FA, password)</option>
                 <option value="CLIENT_ACTIVATE,CLIENT_DECLINE,CLIENT_REJECT,CLIENT_SUSPEND,MESSAGE,MESSAGE_ATTACH,NOTE_UPDATE,NOTIFY_CLIENT,PROPOSAL_SENT,TASK_ASSIGNED,CHECKLIST_UPDATE,FLAG,BILL_CLIENT">Accountant activity</option>
               </select>
               <button class="btn btn-ghost btn-sm" onclick="exportAuditCSV()">Export CSV</button>
@@ -4026,6 +4027,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <button class="btn btn-ghost" onclick="disableOwnerMfa()">Disable 2FA</button>
                 <div id="owner-mfa-disable-err" style="font-size:12px;color:var(--red);margin-top:.4rem;display:none"></div>
               </div>
+            </div>
+            <div class="settings-section" id="security-activity-section" style="margin-top:1rem">
+              <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><polyline points="8,4.5 8,8 10.5,9.5"/></svg>Recent security activity</div>
+              <div style="font-size:12px;color:var(--t3);margin-bottom:.6rem">Sign-ins (including failed attempts on your account), 2FA and password changes — with the IP and device each came from. We e-mail you when 2FA is turned off, your password changes or is reset, or a new device signs in. Not you? Change your password and turn on 2FA.</div>
+              <div id="security-activity-list" style="font-size:12px;color:var(--t2)">Loading…</div>
             </div>
             <div class="settings-section" style="margin-top:1rem">
               <div class="settings-title"><svg viewBox="0 0 16 16"><path d="M8 1v9"/><polyline points="4.5,6.5 8,10 11.5,6.5"/><path d="M2 13h12"/></svg>Your data</div>

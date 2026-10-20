@@ -71,13 +71,17 @@ async function main() {
 
     // 2) the real delete
     const auditBefore = await count('audit_trail');
+    const auditIdsBefore = (await c.query(`SELECT id FROM audit_trail WHERE user_id = $1 ORDER BY id`, [D.id])).rows.map(x => x.id);
     const r = await h1.request('DELETE', '/api/auth/account', { password: PW });
     A('delete with password → 200 (bug: 500)', r.status === 200, `status ${r.status}: ${r.text.slice(0, 120)}`);
     A('users row gone (bug: kept)', (await count('users', 'id')) === 0);
     for (const t of ['invoices', 'entities', 'api_keys', 'support_requests', 'accountant_clients', 'user_settings']) A(`  ${t}: 0 rows`, (await count(t)) === 0, 'n=' + await count(t));
     A('  membership in another account removed', Number((await c.query(`SELECT COUNT(*) n FROM team_members WHERE data->>'member_user_id'=$1`, [String(D.id)])).rows[0].n) === 0);
     A('  accountant profile itself untouched', Number((await c.query(`SELECT COUNT(*) n FROM accountants WHERE id=$1`, [accId])).rows[0].n) === 1);
-    A('control: audit_trail rows kept (append-only)', (await count('audit_trail')) === auditBefore && auditBefore > 0, `before=${auditBefore} after=${await count('audit_trail')}`);
+    // LC3d (2026-10-20, labelled expectation change): every row present before is still there, AND the deletion itself
+    // is recorded (ACCOUNT_DELETED) — so the count is before + 1, not before. Was `=== auditBefore`.
+    const _auditAfter = (await c.query(`SELECT id, action FROM audit_trail WHERE user_id = $1 ORDER BY id`, [D.id])).rows;
+    A('control: audit_trail rows kept (append-only) + the deletion recorded', auditBefore > 0 && auditIdsBefore.every(id => _auditAfter.some(x => x.id === id)) && _auditAfter.length === auditBefore + 1 && _auditAfter[_auditAfter.length - 1].action === 'ACCOUNT_DELETED', `before=${auditBefore} after=${_auditAfter.length} last=${(_auditAfter[_auditAfter.length - 1] || {}).action}`);
     A('second device logged out (bug: still in)', (await h2.get('/api/auth/me')).status === 401);
     A('login no longer works', !(await login('del-user@finflow.test')));
 

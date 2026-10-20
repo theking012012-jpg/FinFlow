@@ -1791,7 +1791,7 @@ function S(n,s=false){
 function sum(arr,s,e){return arr.slice(s,e).reduce((a,v)=>a+v,0)}
 function pct(a,b){if(!b)return 0;return Math.round((a-b)/Math.abs(b)*100)}
 function chg(cur,prev,invert=false){
-  if(prev==null)return{txt:'Full year total',cls:'neutral'};
+  if(prev==null)return{txt:'Year to date',cls:'neutral'};   // FIX-2: the year counts what is dated up to today (D2), not the whole year
   const p=pct(cur,prev);
   const good=invert?p<=0:p>=0;
   return{txt:(p>=0?'↑ ':'↓ ')+Math.abs(p)+'% vs prior period',cls:good?'up':'dn'};
@@ -1865,7 +1865,7 @@ function getPeriodData(){
       // F60: summed over the fiscal year, not EXP_RENT[0]*12 (see the quarter branch above).
       sal:sum(EXP_SAL,0,12),rent:sum(EXP_RENT,0,12),sw:sum(EXP_SW,0,12),mkt:sum(EXP_MKT,0,12),
       srcRC:0,srcTS:0,srcST:0,srcCO:0,
-      months:12, label:'Full Year · '+MONTH_FULL[0]+' – '+MONTH_FULL[11]
+      months:12, label:'Year to date · '+MONTH_FULL[0]+' – '+MONTH_FULL[(typeof _fyContext==='function'?_fyContext().curFyIdx:11)]   // FIX-2: up to today's fiscal month (D2)
     };
   }
 }
@@ -2063,7 +2063,7 @@ function _periodWindow(period, monthIdx){
   let label;
   if(kind==='month') label=_lbl(start);
   else if(kind==='quarter'){ const q=Math.floor(idx/3); label='Q'+(((q%4)+4)%4+1)+' · '+_lbl(start)+' – '+_lastLbl(end); }
-  else label='Fiscal Year · '+_lbl(start)+' – '+_lastLbl(end);
+  else label='Fiscal year to date · '+_lbl(start)+' – '+_lbl(today);   // FIX-2: inWin stops at today (D2), so the label does too
   return { inWin, elapsedMonths:rp.elapsedMonths, label, start, end };
 }
 window._periodWindow = _periodWindow;
@@ -2469,7 +2469,7 @@ function updateDashboard(d=getPeriodData()){
     _pRev = computeRevenue('quarter', _priorQ);
     _pExp = computeExpenseBreakdown('quarter', _priorQ).total;
     _pProfit = _pRev - _pExp;
-  } // year → null baseline → chg() shows the neutral "Full year total"
+  } // year → null baseline → chg() shows the neutral "Year to date"
   const rc=chg(_ddRev,_pRev);
   const ec=chg(_ddExp,_pExp,true);
   const pc=chg(_ddProfit,_pProfit);
@@ -4658,7 +4658,7 @@ function updateAI(d=getPeriodData()){
   const _profit = _rev - (parseFloat(window._cogsTotal)||0) - _exp;  // canonical Net (incl COGS)
   const margin = _rev > 0 ? Math.round(_profit/_rev*100) : 0;
   const insights=currentPeriod==='year'?[
-    (()=>{ const _gr=_fyGrowth(); return _gr!==null?`Full year revenue: ${S(_rev)} — ${_gr.pct>=0?"+":""}${_gr.pct}% growth, ${MONTH_FULL[_gr.to]} vs ${MONTH_FULL[_gr.from]}.`:`Full year revenue: ${S(_rev)} — not enough complete months yet to measure growth.`; })(),
+    (()=>{ const _gr=_fyGrowth(); return _gr!==null?`Year-to-date revenue: ${S(_rev)} — ${_gr.pct>=0?"+":""}${_gr.pct}% growth, ${MONTH_FULL[_gr.to]} vs ${MONTH_FULL[_gr.from]}.`:`Year-to-date revenue: ${S(_rev)} — not enough complete months yet to measure growth.`; })(),
     (()=>{ let _mi=0,_xi=0; for(let i=0;i<12;i++){ if(REV[i]>REV[_xi])_xi=i; if(REV[i]<REV[_mi])_mi=i; } return REV.some(v=>v>0)?`Best month: ${MONTH_FULL[_xi]} at ${S(REV[_xi])}. Weakest: ${MONTH_FULL[_mi]} at ${S(REV[_mi])}.`:`Add paid invoices to see your best and weakest months.`; })(),
     `Net profit margin: ${margin}%. Annual profit: ${S(_profit)}. Business is ${_profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
     _rev > 0 ? `Payroll-to-revenue: ${Math.round(((_bd&&_bd.payroll)||0)/_rev*100)}%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,

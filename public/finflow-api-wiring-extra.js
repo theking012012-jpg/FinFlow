@@ -331,7 +331,7 @@
       // Native symbol: these come out of the engines unconverted (F124), and the shared money()
       // helper routes through S(), which would stamp activeCurrency on an unconverted figure.
       const _m = n => (typeof window._fmtMoneyNative === 'function') ? window._fmtMoneyNative(n) : money(n);
-      const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year' };
+      const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year to date' };
 
       const mcs  = document.querySelectorAll('#page-reports .mc-val');
       const chgs = document.querySelectorAll('#page-reports .mc-change');
@@ -967,7 +967,7 @@
       // explicit "unattributed" row so Σ(rows) == Total, not a second revenue implementation. ────────
       if (name === 'Sales by Customer') {
         const period = (typeof currentPeriod !== 'undefined' && currentPeriod) ? currentPeriod : 'year';
-        const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year' };
+        const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year to date' };
         const w = (typeof window._periodWindow === 'function') ? window._periodWindow(period) : null;
         const REC = ['pending', 'overdue', 'partial', 'paid'];
         const byCust = {};
@@ -1356,7 +1356,7 @@
       // the shared global LEXICAL scope, not on `window` (see F125) — hence the bare read with a
       // typeof guard, the pattern already used for it in the dashboard wiring.
       const period = (typeof currentPeriod !== 'undefined' && currentPeriod) ? currentPeriod : 'year';
-      const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year' };
+      const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year to date' };
       if (typeof window.computeRevenue !== 'function' || typeof window.computeExpenseBreakdown !== 'function') {
         // Honest failure, never a fabricated total (class C6/C7): if the engines are not loaded
         // there is no figure to report, and a zero here would read as a business with no revenue.

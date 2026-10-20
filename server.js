@@ -1672,6 +1672,13 @@ async function logAudit(req, action, tableName, recordId, oldData, newData) {
   });
 }
 
+// FIX-3: one call for a JSONB record's create / edit / delete — the record before and after, on the record's own business,
+// attributed by recordAudit. The Audit page splits the pair into one line per changed field.
+const _auditRec = (req, table, action, oldRow, newRow) => {
+  const r = newRow || oldRow || {};
+  return recordAudit(pool, { userId: scopeId(req), entityId: r.entity_id == null ? null : r.entity_id, table, recordId: r.id || null, action, oldData: oldRow || null, newData: newRow || null, req });
+};
+
 // ── LOCK HELPER ───────────────────────────────────────────────────────────────
 // Single implementation in period-lock.js, shared with the accountant portal (N77).
 const _periodLock = require('./period-lock');
@@ -2929,6 +2936,7 @@ app.post('/api/projects', requireAuth, wrap(async (req, res) => {
     status:   validStatuses.includes(status) ? status : 'In Progress',
     progress: 0,
   });
+  await _auditRec(req, 'projects', 'CREATE', null, row);   // FIX-3
   res.status(201).json((await withProjectTime(scopeId(req), [row]))[0]);
 }));
 app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
@@ -2944,11 +2952,14 @@ app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
   if (b.progress != null) patch.progress = parseInt(b.progress);
   await db.updateById('projects', row.id, patch);
   const { rows: [_pjr] } = await pool.query(`SELECT * FROM projects WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_pjr) await _auditRec(req, 'projects', 'UPDATE', row, rowToObj(_pjr));   // FIX-3
   res.json(_pjr ? (await withProjectTime(scopeId(req), [rowToObj(_pjr)]))[0] : {});
 }));
 app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('projects', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _pold = await ownedBy('projects', req.params.id, scopeId(req));
+  if (!_pold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('projects', parseInt(req.params.id));
+  await _auditRec(req, 'projects', 'DELETE', _pold, null);   // FIX-3
   res.json({ ok: true });
 }));
 
@@ -3055,8 +3066,11 @@ app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   }
   if (existing) {
     await db.updateById('budget_targets', existing.id, { targets });
+    // FIX-3: the targets map itself is the audited record, so the Audit page shows one line per category changed.
+    await recordAudit(pool, { userId: scopeId(req), entityId: eid, table: 'budget_targets', recordId: existing.id, action: 'UPDATE', oldData: existing.targets || {}, newData: targets, req });
   } else {
-    await db.insert('budget_targets', { user_id: scopeId(req), entity_id: eid, targets });
+    const { row: _btNew } = await db.insert('budget_targets', { user_id: scopeId(req), entity_id: eid, targets });
+    await recordAudit(pool, { userId: scopeId(req), entityId: eid, table: 'budget_targets', recordId: _btNew.id, action: 'CREATE', newData: targets, req });   // FIX-3
   }
   res.json({ ok: true });
 }));
@@ -3957,6 +3971,7 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(_effAmount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('quotes', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client, num, amount: Number(_effAmount), expiry_date, status, notes, ...(_li.present ? { line_items: _li.line_items } : {}) });  // F150-class: request-scoped entity, not is_active
+  await _auditRec(req, 'quotes', 'CREATE', null, row);   // FIX-3
   res.json(row);
 }));
 app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
@@ -3978,10 +3993,13 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   if (b.status      != null) patch.status      = b.status;
   if (b.notes       != null) patch.notes       = b.notes;
   await db.updateById('quotes', Number(req.params.id), patch);
+  const { rows: [_qtn] } = await pool.query(`SELECT * FROM quotes WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_qtn) await _auditRec(req, 'quotes', 'UPDATE', row, rowToObj(_qtn));   // FIX-3
   res.json({ ok: true });
 }));
 app.delete('/api/quotes/:id', requireAuth, requireOwnedRow('quotes'), wrap(async (req, res) => {
-  await pool.query('DELETE FROM quotes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  const { rows: [_qtd] } = await pool.query('DELETE FROM quotes WHERE id = $1 AND user_id = $2 RETURNING *', [Number(req.params.id), scopeId(req)]);
+  if (_qtd) await _auditRec(req, 'quotes', 'DELETE', rowToObj(_qtd), null);   // FIX-3
   res.json({ ok: true });
 }));
 
@@ -5423,6 +5441,7 @@ app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
     billable: billable === 'Yes' ? 'Yes' : 'No',
     rate:     parseFloat(rate) || 0,
   });
+  await _auditRec(req, 'timesheet', 'CREATE', null, row);   // FIX-3
   res.status(201).json(row);
 }));
 app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
@@ -5445,11 +5464,14 @@ app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
   if (b.rate     != null) patch.rate     = parseFloat(b.rate);
   await db.updateById('timesheet', row.id, patch);
   const { rows: [_tsr] } = await pool.query(`SELECT * FROM timesheet WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_tsr) await _auditRec(req, 'timesheet', 'UPDATE', row, rowToObj(_tsr));   // FIX-3
   res.json(_tsr ? rowToObj(_tsr) : {});
 }));
 app.delete('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('timesheet', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _told = await ownedBy('timesheet', req.params.id, scopeId(req));
+  if (!_told) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('timesheet', parseInt(req.params.id));
+  await _auditRec(req, 'timesheet', 'DELETE', _told, null);   // FIX-3
   res.json({ ok: true });
 }));
 

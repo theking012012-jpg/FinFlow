@@ -34,7 +34,10 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     const el = d.getElementById('payroll-empty-state');
     const txt = el ? el.textContent.replace(/\s+/g, ' ') : '';
     eq('the "No payroll runs recorded" text is present', /No payroll runs recorded/.test(txt), true);
-    eq('…and has no "$" on a TTD business', (txt.match(/\$\S*/g) || []), [], ['$0']);
+    // A BARE "$" (not part of "TT$"). The roster line on the same card is written in the business's currency
+    // ("TT$3,000/month") — correct, and must not count (the first version of this check flagged it).
+    eq('…and has no bare "$" on a TTD business', (txt.match(/(?<!TT)\$\S*/g) || []), [], ['$0']);
+    eq('…while the roster line is in TT$', /TT\$3,000/.test(txt), true);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   finally { try { if (boot && boot.stop) await boot.stop(); } catch (_) {} }
   console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);

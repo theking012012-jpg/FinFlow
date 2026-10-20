@@ -477,7 +477,7 @@ async function submitPayrollRun(){
     if(data.error){notify('⚠ '+data.error,true);return;}
     _payrollSubmitToken=null;                      // intent resolved — next run mints fresh
     closeModal('run-payroll-modal');
-    notify('✓ Payroll run created — '+(data.period||data.run?.period||''));
+    notify(data.already_exists ? 'Payroll for '+(data.period||period)+' already exists — run #'+data.id+' ('+(data.status||'')+')' : '✓ Payroll run created — '+(data.period||data.run?.period||''));   // LR1: never "created" for an existing run
     loadPayrollRuns();
   }catch(e){ notify('Could not create payroll run',true); }   // keep _payrollSubmitToken for an idempotent retry (same token → 23505 → original)
   finally{ window._savingPayrollRun=false; if(_prBtn) _prBtn.disabled=false; }

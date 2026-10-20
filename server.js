@@ -10293,15 +10293,22 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
   } catch (e) {
     try { await _prc.query('ROLLBACK'); } catch (_) {}
     if (e.code === '23505') {
-      // Recover the ORIGINAL run: by token when the token index caught the dup, else by natural key
-      // (user_id, entity_id, period) for the prod-only period index. Return it + its lines, 200 —
-      // never a 500, never orphan lines against a run that was not created.
-      const { rows } = idem
-        ? await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [uid, idem])
-        : await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2 AND period=$3 ORDER BY id ASC LIMIT 1`, [uid, eid, period]);
-      if (rows[0]) {
-        const { rows: existingLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id=$1`, [rows[0].id]);
-        return res.status(200).json({ ...rows[0], lines: existingLines });
+      // Two unique indexes can refuse this INSERT: the token index (a retry of the SAME submit → return the original
+      // run) and idx_payroll_runs_uniq (one run per user / business / period → a run for this period already exists).
+      // LR1: the recovery looked up ONLY by token whenever one was sent — and the app always sends one — so a period
+      // collision found nothing and re-threw → 500. Now: the token first (a same-token retry hits both indexes, and
+      // Postgres does not say which it checked first), then the period.
+      const _tok = idem ? (await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [uid, idem])).rows[0] : null;
+      const byToken = !!_tok;
+      const ex = _tok || (await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND COALESCE(entity_id,0) = COALESCE($2::int,0) AND period=$3 ORDER BY id ASC LIMIT 1`, [uid, eid, period])).rows[0];
+      if (ex && !byToken && String(ex.status || '').toLowerCase() === 'voided') {
+        // The period's only run was voided. Whether a new run may then be created is an owner decision (LR1); until
+        // it is made the database allows one run per period, and the person is told so instead of getting a 500.
+        return res.status(409).json({ error: `${period} already has a voided payroll run (#${ex.id}). A period can have only one run, so a new one cannot be created for it.`, code: 'PERIOD_HAS_VOIDED_RUN', existing_run_id: ex.id });
+      }
+      if (ex) {
+        const { rows: existingLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id=$1`, [ex.id]);
+        return res.status(200).json({ ...ex, lines: existingLines, already_exists: !byToken });
       }
     }
     throw e;

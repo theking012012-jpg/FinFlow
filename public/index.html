@@ -6632,7 +6632,7 @@ async function loadAuditTrail(){
         <td style="padding:5px 8px;color:var(--t2);font-size:11px;white-space:nowrap">${esc(dStr)}</td>
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
-        <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span></td>
+        <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
         <td style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
         <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.old||'')}">${esc(f.old||'—')}</td>
         <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.new||'')}">${esc(f.new||'—')}</td>

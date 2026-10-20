@@ -515,6 +515,18 @@ async function initDB() {
         created_at  TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // LC3g: who / where / what changed / outcome on every admin action, and APPEND-ONLY like audit_trail.
+    // Mirrored by scripts/migrations/2026-10-20-admin-log-hardening.sql for databases created before it.
+    for (const col of ['ip TEXT', 'user_agent TEXT', 'session_ref TEXT', 'before_data JSONB', 'after_data JSONB', 'outcome TEXT']) {
+      await client.query(`ALTER TABLE admin_log ADD COLUMN IF NOT EXISTS ${col}`);
+    }
+    await client.query(`
+      CREATE OR REPLACE FUNCTION admin_log_immutable() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'admin_log is append-only: % is not permitted', TG_OP; END;
+      $$ LANGUAGE plpgsql`);
+    await client.query(`DROP TRIGGER IF EXISTS admin_log_no_mutate ON admin_log`);
+    await client.query(`CREATE TRIGGER admin_log_no_mutate BEFORE UPDATE OR DELETE ON admin_log
+      FOR EACH ROW EXECUTE FUNCTION admin_log_immutable()`);
 
     // ── VISITOR ANALYTICS (page-view tracking) ──────────────────────────────
     // One row per unique visitor (ip+user-agent hash) per UTC day. `views` counts

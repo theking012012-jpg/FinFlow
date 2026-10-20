@@ -6,7 +6,8 @@
  * The class LC3 / LC3b belonged to — a route that changes data and writes no audit row — shipped silently because
  * nothing noticed a NEW one. This guard enumerates every mutating route (server.js, accountant-routes.js,
  * admin-routes.js; tools/fix-2026-10-19/fix3-enumerate-audited-routes.js) and FAILS when one that writes no audit row is
- * neither EXEMPT (a stated reason it changes no books or access) nor a NUMBERED known gap (an open finding with an
+ * neither EXEMPT (a stated reason it changes no books or access) nor a NUMBERED known gap (LC3g, the admin routes, closed
+ * 2026-10-20 — every admin action now writes the hardened admin_log via adminAudit) (an open finding with an
  * owner decision pending). It also fails when a listed route has started auditing (the list must be kept true).
  *
  *   node tests/harness/verify-fix3b-audit-route-guard.js
@@ -144,28 +145,6 @@ const ALLOWED = {
       "POST /api/accountants/run-monthly-payouts",
       "POST /api/accountants/stripe-connect",
       "POST /api/accountants/verify-membership",
-    ],
-  },
-  "LC3g": {
-    reason: "admin routes (admin-routes.js) \u2014 separate review (admin actions on users / accountants)",
-    routes: [
-      "DELETE /api/admin/users/:id",
-      "POST /api/admin/accountants/:id/preferred",
-      "POST /api/admin/accountants/:id/preferred-partner",
-      "POST /api/admin/accountants/:id/verify",
-      "POST /api/admin/audit-anomalies/notify",
-      "POST /api/admin/broadcast",
-      "POST /api/admin/earnings/mark-paid",
-      "POST /api/admin/flags/:id/resolve",
-      "POST /api/admin/login",
-      "POST /api/admin/logout",
-      "POST /api/admin/operating-costs",
-      "POST /api/admin/reports/:id/dismiss",
-      "POST /api/admin/reports/:id/resolve",
-      "POST /api/admin/support/:id",
-      "POST /api/admin/users/:id/plan",
-      "POST /api/admin/users/:id/suspend",
-      "POST /api/admin/users/:id/unsuspend",
     ],
   },
 };

@@ -28,14 +28,43 @@ function requireAdmin(req, res, next) {
 
 module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
+  // ── LC3g: THE admin audit write ──────────────────────────────────────────────────────────────────────────────
+  // Every admin action goes through here: what, on what, before → after, outcome, and WHERE it came from (IP,
+  // browser, and a one-way fingerprint of the admin session — there is one shared admin password, so the session is
+  // the finest identity there is). admin_log is append-only at the database (admin_log_no_mutate). A failed write is
+  // reported loudly, never swallowed.
+  const _sessRef = req => (req.sessionID ? crypto.createHash('sha256').update(String(req.sessionID)).digest('hex').slice(0, 16) : null);
+  async function adminAudit(req, action, targetType, targetId, { notes = null, before = null, after = null, outcome = 'ok' } = {}) {
+    try {
+      await pool.query(
+        `INSERT INTO admin_log (action, target_type, target_id, notes, ip, user_agent, session_ref, before_data, after_data, outcome, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+        [action, targetType || null, targetId == null ? null : (parseInt(targetId, 10) || null), notes == null ? null : String(notes).slice(0, 1000),
+         req.ip || null, String((req.get && req.get('user-agent')) || '').slice(0, 300) || null, _sessRef(req),
+         before == null ? null : JSON.stringify(before), after == null ? null : JSON.stringify(after), outcome]);
+    } catch (e) { console.error('[admin] AUDIT WRITE FAILED for', action, targetType, targetId, ':', e.message); }
+  }
+  // LC3g (better than the standard): an admin change to a CUSTOMER's account also lands on that customer's own audit
+  // trail (actor 'admin'), so they can see what FinFlow support changed and when. Account-level (entity NULL, table
+  // 'users') — never business or personal records.
+  async function customerTrail(req, userId, oldData, newData) {
+    try {
+      await pool.query(
+        `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, old_data, new_data, actor_type, actor_id, ip_address)
+         VALUES ($1, NULL, 'users', $1, 'UPDATE', $2, $3, 'admin', NULL, $4)`,
+        [userId, oldData == null ? null : JSON.stringify(oldData), newData == null ? null : JSON.stringify(newData), req.ip || null]);
+    } catch (e) { console.error('[admin] customer trail write failed for user', userId, ':', e.message); }
+  }
+  const _userState = async id => (await pool.query(
+    `SELECT data->>'plan' AS plan, data->>'trial_ends' AS trial_ends, COALESCE(data->>'suspended', '') = 'true' AS suspended,
+            COALESCE(data->>'deleted', '') = 'true' AS deleted, data->>'email' AS email FROM users WHERE id = $1`, [id])).rows[0] || null;
+
   // ── ADMIN LOGIN ───────────────────────────────────────────────────────────
   // N89: failed admin logins are recorded HERE, by the server, from what it observed (reason + client
   // IP). The security log used to be filled by an unauthenticated client-callable endpoint, so anyone
   // could write arbitrary entries into it and a real attacker simply never called it.
   const failedAdminLogin = (req, res, reason, body) => {
-    pool.query(`INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('failed_login','security',$1,NOW())`,
-      [String(reason + ' from ' + (req.ip || 'unknown')).slice(0, 500)])
-      .catch(e => console.error('[admin] failed-login log write failed:', e.message));
+    adminAudit(req, 'failed_login', 'security', null, { notes: String(reason + ' from ' + (req.ip || 'unknown')).slice(0, 500), outcome: 'refused' });   // LC3g
     return res.status(401).json(body);
   };
   app.post('/api/admin/login', adminLoginLimiter, wrap(async (req, res) => {
@@ -62,13 +91,15 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       }
     }
     await require('./session-auth').establishSession(req, { isAdmin: true });   // N73: fresh session id
+    await adminAudit(req, 'admin_login', 'security', null, { notes: ADMIN_TOTP_SECRET && ADMIN_TOTP_SECRET.trim() ? 'password + MFA' : 'password only' });   // LC3g
     return res.json({ success: true });
   }));
 
-  app.post('/api/admin/logout', (req, res) => {
+  app.post('/api/admin/logout', wrap(async (req, res) => {
+    if (req.session.isAdmin) await adminAudit(req, 'admin_logout', 'security', null);   // LC3g — before the session loses its admin flag
     req.session.isAdmin = false;
     req.session.save(() => res.json({ ok: true }));
-  });
+  }));
 
   app.get('/api/admin/me', requireAdmin, (req, res) => res.json({ admin: true }));
 
@@ -87,7 +118,9 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     try {
       const over = {};
       if (req.query.window) over.windowMinutes = parseInt(req.query.window, 10);
-      res.json(await notifyAnomalies(pool, resendClient, { over }));
+      const _r = await notifyAnomalies(pool, resendClient, { over });
+      await adminAudit(req, 'audit_anomalies_notify', 'security', null, { after: _r });   // LC3g
+      res.json(_r);
     } catch (e) { console.error('[admin] audit-anomalies notify failed:', e.message); res.status(500).json({ error: 'Notify failed.' }); }
   });
 
@@ -207,18 +240,16 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       ? req.body.confirmedCredentials.trim().slice(0, 300)
       : null;
 
+    const _accId = (parseInt(req.params.id, 10) || 0);
+    const _accBefore = (await pool.query(`SELECT status, confirmed_credentials FROM accountants WHERE id = $1`, [_accId])).rows[0] || null;
     await pool.query(
       `UPDATE accountants SET status = $1, verified_at = $2,
          confirmed_credentials = COALESCE($3, confirmed_credentials), updated_at = NOW()
        WHERE id = $4`,
-      [newStatus, action === 'approve' || action === 'reinstate' ? new Date() : null, confirmed, (parseInt(req.params.id, 10) || 0)]
+      [newStatus, action === 'approve' || action === 'reinstate' ? new Date() : null, confirmed, _accId]
     );
-
-    // Log admin action
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1, 'accountant', $2, $3, NOW())`,
-      [`accountant_${action}`, (parseInt(req.params.id, 10) || 0), notes || '']
-    ).catch(() => {});
+    const _accAfter = (await pool.query(`SELECT status, confirmed_credentials FROM accountants WHERE id = $1`, [_accId])).rows[0] || null;
+    await adminAudit(req, `accountant_${action}`, 'accountant', _accId, { notes: notes || '', before: _accBefore, after: _accAfter });   // LC3g
 
     // Send email notification if Resend configured
     if (resendClient) {
@@ -290,6 +321,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       [id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Accountant not found.' });
+    await adminAudit(req, 'accountant_preferred_partner', 'accountant', id, { before: { preferred_partner: !result.rows[0].preferred_partner }, after: { preferred_partner: result.rows[0].preferred_partner } });   // LC3g
     return res.json({ success: true, preferred_partner: result.rows[0].preferred_partner });
   }));
 
@@ -303,6 +335,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       [id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Accountant not found.' });
+    await adminAudit(req, 'accountant_preferred_partner', 'accountant', id, { before: { preferred_partner: !rows[0].preferred_partner }, after: { preferred_partner: rows[0].preferred_partner } });   // LC3g
     res.json({ ok: true, preferred_partner: rows[0].preferred_partner });
   }));
 
@@ -342,9 +375,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       LEFT JOIN accountant_clients ac ON ac.user_id = u.id AND ac.status = 'active'
       LEFT JOIN accountants a ON a.id = ac.accountant_id
       ORDER BY u.created_at DESC LIMIT 10000`);
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('export_users_csv','users',$1,NOW())`,
-      ['Exported ' + r.rows.length + ' users to CSV']);
+    await adminAudit(req, 'export_users_csv', 'users', null, { notes: 'Exported ' + r.rows.length + ' users to CSV', after: { rows: r.rows.length } });   // LC3g
     const header = ['ID','Name','Email','Plan','Joined','Accountant'];
     const body = r.rows.map(u => [u.id, u.name||'', u.email||'', u.plan||'trial',
       u.created_at ? new Date(u.created_at).toISOString().slice(0,10) : '',
@@ -361,9 +392,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       FROM accountants a
       LEFT JOIN accountant_clients ac ON ac.accountant_id = a.id AND ac.status = 'active'
       GROUP BY a.id ORDER BY a.created_at DESC LIMIT 10000`);
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('export_accountants_csv','accountants',$1,NOW())`,
-      ['Exported ' + r.rows.length + ' accountants to CSV']);
+    await adminAudit(req, 'export_accountants_csv', 'accountants', null, { notes: 'Exported ' + r.rows.length + ' accountants to CSV', after: { rows: r.rows.length } });   // LC3g
     const header = ['ID','Name','Firm','Country','Status','Clients','Rating'];
     const body = r.rows.map(a => [a.id, ((a.first_name||'') + ' ' + (a.last_name||'')).trim(), a.firm||'', a.country||'',
       a.status||'', a.client_count||0, a.avg_rating ? parseFloat(a.avg_rating).toFixed(1) : ''].map(_csvEsc).join(','));
@@ -375,23 +404,27 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // Suspend / unsuspend user
   app.post('/api/admin/users/:id/suspend', requireAdmin, wrap(async (req, res) => {
     const suspend = req.body?.suspend === true || req.body?.suspend === 'true';
+    const _uid = (parseInt(req.params.id, 10) || 0);
+    const _b = await _userState(_uid);
     await pool.query(
       `UPDATE users SET data = data || $1 WHERE id = $2`,
-      [JSON.stringify({ suspended: suspend ? 'true' : 'false' }), (parseInt(req.params.id, 10) || 0)]
+      [JSON.stringify({ suspended: suspend ? 'true' : 'false' }), _uid]
     );
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, target_id, created_at) VALUES ($1, 'user', $2, NOW())`,
-      [suspend ? 'user_suspend' : 'user_reinstate', (parseInt(req.params.id, 10) || 0)]
-    ).catch(() => {});
+    if (_b) {   // LC3g
+      await adminAudit(req, suspend ? 'user_suspend' : 'user_reinstate', 'user', _uid, { before: { suspended: _b.suspended }, after: { suspended: suspend } });
+      await customerTrail(req, _uid, { suspended: _b.suspended }, { suspended: suspend });
+    }
     return res.json({ ok: true });
   }));
 
   app.post('/api/admin/users/:id/unsuspend', requireAdmin, wrap(async (req, res) => {
-    await pool.query(`UPDATE users SET data = jsonb_set(COALESCE(data,'{}'), '{suspended}', 'false') WHERE id = $1`, [(parseInt(req.params.id, 10) || 0)]);
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ('user_unsuspend', 'user', $1, 'Unsuspended by admin', NOW())`,
-      [(parseInt(req.params.id, 10) || 0)]
-    ).catch(() => {});
+    const _uid = (parseInt(req.params.id, 10) || 0);
+    const _b = await _userState(_uid);
+    await pool.query(`UPDATE users SET data = jsonb_set(COALESCE(data,'{}'), '{suspended}', 'false') WHERE id = $1`, [_uid]);
+    if (_b) {   // LC3g
+      await adminAudit(req, 'user_unsuspend', 'user', _uid, { before: { suspended: _b.suspended }, after: { suspended: false } });
+      await customerTrail(req, _uid, { suspended: _b.suspended }, { suspended: false });
+    }
     res.json({ ok: true });
   }));
 
@@ -404,6 +437,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     // end date, so a null end meant unlimited write access (the N4 class). An existing end is kept.
     if (!['trial', 'pro', 'business', 'scale'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
     const uidT = (parseInt(req.params.id, 10) || 0);
+    const _b = await _userState(uidT);
     if (plan === 'trial') {
       await pool.query(
         `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text, 'trial_ends', COALESCE(NULLIF(data->>'trial_ends', ''), $2::text)) WHERE id = $1`,
@@ -411,10 +445,11 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     } else {
       await pool.query(`UPDATE users SET data = data || $1 WHERE id = $2`, [JSON.stringify({ plan }), uidT]);
     }
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1, 'user', $2, $3, NOW())`,
-      ['user_plan_override', (parseInt(req.params.id, 10) || 0), `Set plan to ${plan}`]
-    ).catch(() => {});
+    const _a = await _userState(uidT);
+    if (_b && _a) {   // LC3g
+      await adminAudit(req, 'user_plan_override', 'user', uidT, { notes: `Set plan to ${plan}`, before: { plan: _b.plan, trial_ends: _b.trial_ends }, after: { plan: _a.plan, trial_ends: _a.trial_ends } });
+      await customerTrail(req, uidT, { plan: _b.plan }, { plan: _a.plan });
+    }
     return res.json({ success: true });
   }));
 
@@ -436,18 +471,24 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     // Non-destructive: keep the row as the moderation trail (was a hard DELETE, which erased history).
     // 'dismissed' = reviewed, no action warranted.
     const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
+    const _rid = (parseInt(req.params.id, 10) || 0);
+    const _rb = (await pool.query(`SELECT status, resolution FROM accountant_reports WHERE id = $1`, [_rid])).rows[0] || null;
     await pool.query(
       `UPDATE accountant_reports SET status='dismissed', resolved_at=NOW(), resolved_by='admin', resolution=$2 WHERE id=$1`,
-      [(parseInt(req.params.id, 10) || 0), note || null]);
+      [_rid, note || null]);
+    if (_rb) await adminAudit(req, 'report_dismiss', 'report', _rid, { before: _rb, after: { status: 'dismissed', resolution: note || null } });   // LC3g
     return res.json({ success: true });
   }));
 
   app.post('/api/admin/reports/:id/resolve', requireAdmin, wrap(async (req, res) => {
     // 'resolved' = reviewed AND acted on (e.g. accountant warned/suspended). Row retained for the trail.
     const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
+    const _rid = (parseInt(req.params.id, 10) || 0);
+    const _rb = (await pool.query(`SELECT status, resolution FROM accountant_reports WHERE id = $1`, [_rid])).rows[0] || null;
     await pool.query(
       `UPDATE accountant_reports SET status='resolved', resolved_at=NOW(), resolved_by='admin', resolution=$2 WHERE id=$1`,
-      [(parseInt(req.params.id, 10) || 0), note || null]);
+      [_rid, note || null]);
+    if (_rb) await adminAudit(req, 'report_resolve', 'report', _rid, { before: _rb, after: { status: 'resolved', resolution: note || null } });   // LC3g
     return res.json({ success: true });
   }));
 
@@ -479,15 +520,14 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   app.post('/api/admin/earnings/mark-paid', requireAdmin, wrap(async (req, res) => {
     const { ids } = req.body || {};
     if (!ids || !ids.length) return res.status(400).json({ error: 'No IDs provided.' });
+    const _eb = (await pool.query(`SELECT id, accountant_id, type, amount_cents, status FROM accountant_earnings WHERE id = ANY($1) ORDER BY id`, [ids])).rows;
     await pool.query(
       `UPDATE accountant_earnings SET status = 'paid' WHERE id = ANY($1)`,
       [ids]
     );
-    // Audit: a payout state change is a money action — log it like every other admin mutation.
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('earnings_mark_paid','earnings',$1,NOW())`,
-      ['Marked ' + ids.length + ' earning(s) paid: #' + ids.join(', #')]
-    );
+    // Audit: a payout state change is a money action — each payout's amount and prior status, before → after (LC3g).
+    await adminAudit(req, 'earnings_mark_paid', 'earnings', ids.length === 1 ? ids[0] : null, {
+      notes: 'Marked ' + ids.length + ' earning(s) paid: #' + ids.join(', #'), before: _eb, after: _eb.map(e => Object.assign({}, e, { status: 'paid' })) });
     return res.json({ success: true, updated: ids.length });
   }));
 
@@ -631,17 +671,14 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       .map(r => ({ label: String((r && r.label) || '').trim().slice(0, 60), monthly: Math.max(0, Number(r && r.monthly) || 0) }))
       .filter(r => r.label)
       .slice(0, 30);
+    const _ob = (await pool.query(`SELECT value FROM platform_settings WHERE key = 'operating_costs'`).catch(() => ({ rows: [] }))).rows[0];
     await pool.query(`
       INSERT INTO platform_settings (key, value, updated_at)
       VALUES ('operating_costs', $1::jsonb, NOW())
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
     `, [JSON.stringify(clean)]);
-    try {
-      await pool.query(
-        `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('operating_costs_update','settings',$1,NOW())`,
-        [`${clean.length} line(s), total $${clean.reduce((a,b)=>a+b.monthly,0).toFixed(2)}/mo`]
-      );
-    } catch (_) {}
+    await adminAudit(req, 'operating_costs_update', 'settings', null, {   // LC3g
+      notes: `${clean.length} line(s), total $${clean.reduce((a,b)=>a+b.monthly,0).toFixed(2)}/mo`, before: _ob ? _ob.value : null, after: clean });
     return res.json({ success: true, operating: clean });
   }));
 
@@ -677,14 +714,15 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // ── DELETE USER (soft) ────────────────────────────────────────────────────
   app.delete('/api/admin/users/:id', requireAdmin, wrap(async (req, res) => {
     const { id } = req.params;
+    const _b = await _userState(parseInt(id, 10) || 0);
     await pool.query(
       `UPDATE users SET data = jsonb_set(jsonb_set(data, '{deleted}', 'true'), '{email}', $1) WHERE id = $2`,
       [JSON.stringify(`deleted_${id}@deleted.com`), id]
     );
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ('user_delete','user',$1,'Soft deleted by admin',NOW())`,
-      [id]
-    ).catch(() => {});
+    if (_b) {   // LC3g: the address it had is kept on the admin log (the row's email is overwritten)
+      await adminAudit(req, 'user_delete', 'user', id, { notes: 'Soft deleted by admin', before: { email: _b.email, deleted: _b.deleted }, after: { email: `deleted_${id}@deleted.com`, deleted: true } });
+      await customerTrail(req, parseInt(id, 10), { deleted: _b.deleted }, { deleted: true });
+    }
     return res.json({ ok: true });
   }));
 
@@ -728,10 +766,13 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   }));
 
   app.post('/api/admin/flags/:id/resolve', requireAdmin, wrap(async (req, res) => {
+    const _fid = (parseInt(req.params.id, 10) || 0);
+    const _fb = (await pool.query(`SELECT status FROM flagged_transactions WHERE id = $1`, [_fid]).catch(() => ({ rows: [] }))).rows[0] || null;
     await pool.query(
       `UPDATE flagged_transactions SET status='resolved', resolved_at=NOW(), resolved_by='admin' WHERE id = $1`,
-      [(parseInt(req.params.id, 10) || 0)]
+      [_fid]
     );
+    if (_fb) await adminAudit(req, 'flag_resolve', 'flagged_transaction', _fid, { before: _fb, after: { status: 'resolved' } });   // LC3g
     return res.json({ success: true });
   }));
 
@@ -759,10 +800,8 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
     // No Resend key → honest "logged only", never a fake `sent`.
     if (!resendClient) {
-      await pool.query(
-        `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('broadcast','system',$1,NOW())`,
-        [`${audience} (LOGGED ONLY — email not configured; ${total} would receive): ${subject}`]
-      ).catch(() => {});
+      await adminAudit(req, 'broadcast', 'system', null, { notes: `${audience} (LOGGED ONLY — email not configured; ${total} would receive): ${subject}`,   // LC3g
+        after: { audience, subject, total, sent: 0, failed: 0, delivered: false } });
       return res.json({ ok: true, sent: 0, failed: 0, total, logged: true,
         message: `Email is not configured — nothing was sent. ${total} recipient(s) logged only.` });
     }
@@ -780,10 +819,8 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       for (const r of results) (r.status === 'fulfilled' ? sent++ : failed++);
     }
 
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('broadcast','system',$1,NOW())`,
-      [`${audience} (sent ${sent}/${total}, ${failed} failed): ${subject}`]
-    ).catch(() => {});
+    await adminAudit(req, 'broadcast', 'system', null, { notes: `${audience} (sent ${sent}/${total}, ${failed} failed): ${subject}`,   // LC3g
+      after: { audience, subject, total, sent, failed, delivered: true }, outcome: failed ? 'partial' : 'ok' });
     return res.json({ ok: true, sent, failed, total });
   }));
 
@@ -930,6 +967,8 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     if (status) { data.status = status; data.resolved_at = status === 'resolved' ? new Date().toISOString() : null; }
     if (response != null) data.response = response;
     await pool.query(`UPDATE support_requests SET data=$2 WHERE id=$1`, [id, data]);
+    await adminAudit(req, 'support_update', 'support_request', id, {   // LC3g
+      before: { status: cur.data && cur.data.status, response: (cur.data && cur.data.response) || null }, after: { status: data.status, response: data.response || null } });
 
     if (response && resendClient && data.email && process.env.EMAIL_FROM) {
       const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

@@ -1274,6 +1274,22 @@
     const SUGGESTED_CATS = ['Salaries','Rent','Software','Marketing','Travel','Meals','Office','Utilities','Other'];
     const esc = s => String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
 
+    // LR7: targets are STORED annual. Each row keeps its annual figure in data-bt-annual — the one source of truth; the
+    // Annual / Monthly toggle only changes what is DISPLAYED (annual or annual ÷ 12), and only typing changes the
+    // figure. It used to relabel the view without converting the rows, then multiply every row by 12 on save — and the
+    // modal is reused, so reopening it after picking Monthly did the same (Rent 60,000/yr saved as 720,000).
+    const _btPeriod = () => (document.getElementById('_budget-targets-modal') || {}).dataset?.period || 'annual';
+    const _btShow = annual => {
+      if (annual === '' || annual == null || !Number.isFinite(Number(annual))) return '';
+      const v = _btPeriod() === 'monthly' ? Number(annual) / 12 : Number(annual);
+      return String(Math.round(v * 100) / 100);
+    };
+    const _btRowHtml = (cat, annual) => `
+          <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat||'')}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
+          <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${esc(_btShow(annual))}" style="flex:1;font-size:12.5px;padding:5px 8px">
+          <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>`;
+    const _btAnnualAttr = annual => (annual === '' || annual == null || !Number.isFinite(Number(annual)) ? '' : String(Number(annual)));
+
     function _renderBudgetTargetRows(targets) {
       const rowsEl = document.getElementById('_budget-target-rows');
       if (!rowsEl) return;
@@ -1283,10 +1299,7 @@
         return;
       }
       rowsEl.innerHTML = entries.map(([cat, val]) => `
-        <div class="_bt-row" style="display:flex;align-items:center;gap:8px">
-          <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat)}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
-          <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${val||''}" style="flex:1;font-size:12.5px;padding:5px 8px">
-          <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>
+        <div class="_bt-row" data-bt-annual="${esc(_btAnnualAttr(val))}" style="display:flex;align-items:center;gap:8px">${_btRowHtml(cat, val)}
         </div>`).join('');
     }
 
@@ -1297,13 +1310,31 @@
       if (empty) empty.remove();
       const wrap = document.createElement('div');
       wrap.className = '_bt-row';
+      wrap.dataset.btAnnual = _btAnnualAttr(val);
       wrap.style.cssText = 'display:flex;align-items:center;gap:8px';
-      wrap.innerHTML = `
-        <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat||'')}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
-        <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${val||''}" style="flex:1;font-size:12.5px;padding:5px 8px">
-        <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>`;
+      wrap.innerHTML = _btRowHtml(cat, val);
       rowsEl.appendChild(wrap);
       wrap.querySelector('[data-bt-cat]').focus();
+    }
+
+    // Typing in an amount sets that row's annual figure from what is shown (×12 in the Monthly view).
+    function _btOnAmountInput(ev) {
+      const inp = ev.target;
+      if (!inp || !inp.matches || !inp.matches('[data-bt-amt]')) return;
+      const row = inp.closest('._bt-row');
+      if (!row) return;
+      const v = parseFloat(inp.value);
+      row.dataset.btAnnual = Number.isFinite(v) ? String(_btPeriod() === 'monthly' ? v * 12 : v) : '';
+    }
+    function _btSetPeriod(modal, period) {
+      modal.dataset.period = period;
+      modal.querySelectorAll('._bt-period').forEach(b => { b.style.fontWeight = b.dataset.period === period ? '600' : ''; });
+      const lbl = document.getElementById('_bt-period-label');
+      if (lbl) lbl.textContent = period;
+      modal.querySelectorAll('#_budget-target-rows ._bt-row').forEach(row => {
+        const amt = row.querySelector('[data-bt-amt]');
+        if (amt) amt.value = _btShow(row.dataset.btAnnual);
+      });
     }
     window._addBudgetTargetRow = _addBudgetTargetRow;
 
@@ -1346,17 +1377,11 @@
           </div>`;
         document.body.appendChild(existing);
 
-        // Wire period toggle
+        // Wire period toggle — re-displays the rows; never changes a stored figure (LR7)
         existing.querySelectorAll('._bt-period').forEach(btn => {
-          btn.onclick = () => {
-            existing.querySelectorAll('._bt-period').forEach(b => b.style.fontWeight = '');
-            btn.style.fontWeight = '600';
-            existing.dataset.period = btn.dataset.period;
-            const lbl = document.getElementById('_bt-period-label');
-            if (lbl) lbl.textContent = btn.dataset.period;
-          };
+          btn.onclick = () => _btSetPeriod(existing, btn.dataset.period);
         });
-        existing.dataset.period = 'annual';
+        document.getElementById('_budget-target-rows').addEventListener('input', _btOnAmountInput);
 
         // Wire suggested category chips
         document.getElementById('_bt-suggested').innerHTML = SUGGESTED_CATS.map(cat =>
@@ -1364,21 +1389,22 @@
         ).join(' ');
       }
 
+      existing.dataset.period = 'annual';   // LR7: every open starts in the stored (annual) view
       _renderBudgetTargetRows(currentTargets);
+      _btSetPeriod(existing, 'annual');
       existing.classList.remove('hidden');
     };
 
     window._saveBudgetTargets = async function () {
       const modal = document.getElementById('_budget-targets-modal');
-      const period = (modal && modal.dataset.period) || 'annual';
       const rows = document.querySelectorAll('#_budget-target-rows ._bt-row');
       const targets = {};
       rows.forEach(row => {
         const cat = row.querySelector('[data-bt-cat]')?.value?.trim();
-        const v   = parseFloat(row.querySelector('[data-bt-amt]')?.value);
+        // LR7: the row's annual figure — never the displayed number × 12
+        const v   = parseFloat(row.dataset.btAnnual);
         if (!cat || !(v > 0)) return;
-        // Store annual values in DB; convert monthly→annual on save
-        targets[cat] = period === 'monthly' ? Math.round(v * 12) : Math.round(v);
+        targets[cat] = Math.round(v);
       });
       try {
         await api('PUT', '/api/budget-targets', { targets });

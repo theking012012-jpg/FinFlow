@@ -5,7 +5,60 @@
 
 ---
 
-## ⚡ UPDATE 2026-10-11 (latest — read this first; kept current after every commit)
+## ⚡ UPDATE 2026-10-20 (latest — read this first)
+
+**Read `CLAUDE.md` first.** Then `LAUNCH_STATUS.md` (what stands between today and launch) and the LC rows in
+`AUDIT_MASTER.md` (evidence for each fix).
+
+### Where things are
+
+- `main` = branch `claude/laughing-hawking-lkvv38` @ the 2026-10-20 docs commit (fast-forward from `14709a6`, owner
+  instruction 2026-10-20 "push to main and have Railway redeploy"). Railway auto-deploys `main`.
+- The last owner sweep is **557/557 ×3 on `14709a6`**. The 15 commits after it have NOT had the owner's 3× sweep —
+  that is the first thing to do (`LAUNCH_STATUS.md` 0.1). Command and capture tip: the 2026-10-11 section below.
+- Uncommitted on the agent's working copy only: `personal-history.js` (LC3c draft, not deployed, not wired in).
+
+### Done since 2026-10-19 (Cowork live check → `COWORK_FIX_HANDOFF.md` on branch `audit/live-2026-10-19`)
+
+| Row | What was wrong | Fix (commit) |
+|---|---|---|
+| LC1 / FIX-1 | Time logged to a project never counted on it (free-text name, no id). | `project_id` on entries; project hours / billed derived from linked entries (`c0957a3`). |
+| LC1b | Projects page called billable time "Billed" / "Revenue"; nothing is invoiced from time. | Labels name what the figures are (`3419b94`). |
+| LC1d | No `VERIFICATION.md` check for any project / time figure. | A10, 7 checks, owner values (`d628344`). |
+| LC2 / FIX-2 | "Full year total" caption on figures that are year-to-date (D2: nothing after today). | Relabelled "Year to date" — owner decision; numbers unchanged (`33ade9b`). |
+| LC2b | Non-January fiscal year: period labels kept January months after a reload. | Labels rebuilt when the fiscal months change (`2a8785a`). |
+| LC3 / FIX-3 | Quotes, projects, time, budget left no audit row. | Audited + filter options (`5505e9e`). |
+| LC3b | The class: 152 mutating routes wrote no audit row. | 32 money / access routes audited + structural guard (`cb1c809`); then LC3d–g below. |
+| LC3g (+ -c) | Admin actions: thin, editable log; 7 actions unlogged; customers never saw admin changes. | Append-only `admin_log` with who / where / before → after; customer's own trail shows "FinFlow support" (`170ab65`, `b09dccc`). |
+| LC3d | Sign-in / 2FA / password events mostly unrecorded; failed sign-ins stored with no account. | Full security log + Settings view + e-mail alerts (`70fc8f8`). |
+| LC3f | Client side of the accountant relationship unrecorded; accountant account events unrecorded. | Both sides on the client's trail (`1b41b86`). |
+| LC3e | Connecting / disconnecting outside services left no record. | Recorded at the one connection write path; never a credential; personal never on the business trail (`ad228ab`). |
+| LC4 / FIX-4 | Record Payment overpay warning always visible. | `.hidden` rule (`6ceaec0`). |
+| LC5 / FIX-5 | Pages slid sideways at 769–1,056 px; titles squeezed to 0 px. | Top bar wraps (`4bd7a47`). |
+
+Every fix: its harness written first, RED on the old code, GREEN on the fix, related harnesses re-run (counts in each
+AUDIT_MASTER row). Labelled UNEXECUTED where a provider is needed: the OAuth callbacks (LC3e), the Stripe payout-account
+link (LC3f), the payment-link audit (LC3b).
+
+### Outstanding
+
+**Agent (next):** LC3c — the separate personal history (owner decision 2026-10-20). Design and full scope in the
+`AUDIT_MASTER.md` LC3c row; the guard still lists its 17 routes as the one known gap.
+
+**Owner:**
+1. Full sweep ×3 on `main` (`LAUNCH_STATUS.md` 0.1), then the post-deploy check (0.4).
+2. Confirm in the Railway log that the 2026-10-20 schema changes applied (0.3).
+3. Rotate the database password (1.1 — still open, the hard blocker).
+4. Configure Resend (1.2) — the new security alerts e-mail only once it is set.
+5. Decisions: LC1c old time entries (3.4) · LC3d-b retention of a deleted account's security events (3.5, legal) ·
+   LC3e-c a business service connected before any business exists (3.6) · LC3g-b named admin accounts, only if needed (3.7).
+6. Still open from before: LA2's live confirmation only (fixed and verified in real Chromium; on production, a hard
+   reload should log 0 "deferred render hook threw"). LA7 and LA11 are closed (`AUDIT_MASTER.md`); the older sections
+   below still call them open — they predate that.
+
+---
+
+## UPDATE 2026-10-11 (kept for history)
 
 **Read `CLAUDE.md` first.** Its rules are binding. This file says where the work stands and what to do next.
 

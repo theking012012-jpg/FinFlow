@@ -1,8 +1,10 @@
 # FinFlow — Launch Checklist (authoritative)
 
-**Rewritten:** 2026-10-19 · **Code at write:** branch `claude/laughing-hawking-lkvv38` @ `14709a6` (50 commits ahead of
-`main` @ `98d5d69`, not merged yet) · **Replaces** the 2026-10-05 version of this file (see git history at `47a026c`),
-which predated the 2026-10-09 money audit and the 2026-10-13 live audit.
+**Rewritten:** 2026-10-19 · **Updated:** 2026-10-20 — release of the 2026-10-19 live-check fixes (FIX-1…5) and the
+audit-trail coverage work (LC3b, LC3d, LC3e, LC3f, LC3g): branch `claude/laughing-hawking-lkvv38` @ `ad228ab` + this
+docs commit, fast-forwarded onto `main` (which was `14709a6`, the commit the 557 ×3 sweep ran on) · **Replaces** the
+2026-10-05 version of this file (see git history at `47a026c`), which predated the 2026-10-09 money audit and the
+2026-10-13 live audit.
 
 This is the single list of what stands between today and going public. Work it top to bottom.
 
@@ -23,12 +25,34 @@ This is the single list of what stands between today and going public. Work it t
 
 ## 0. Finish the release in flight
 
+**Previous release** (live audit 2026-10-13, LA1–LA23): swept **557/557 GREEN ×3** on `14709a6` (owner, 2026-10-19) and
+merged to `main` — DONE.
+
+**This release (2026-10-20)** — 15 commits after `14709a6`, owner instruction 2026-10-20 "push to main and have Railway
+redeploy":
+
+| Commit | What reaches production |
+|---|---|
+| `c0957a3` FIX-1 | Time entries link to a project (`project_id`); project hours / billed are derived from the linked entries. |
+| `5505e9e` FIX-3 | Quotes, projects, time entries, budget targets write audit rows; Audit filter options. |
+| `6ceaec0` FIX-4 | The `hidden` class hides any element (Record Payment "exceeds balance" warning; Stock In supplier fields). |
+| `4bd7a47` FIX-5 | Top-bar controls wrap — no page slides sideways at 769–1,056 px; page title never squeezed to 0 px. |
+| `3419b94` LC1b | Projects labels name what the figures are (billable value, not "Billed"). |
+| `cb1c809` FIX-3b | 32 money / access routes write audit rows; structural guard against a new unaudited route. |
+| `33ade9b` FIX-2 | "Full year total" → "Year to date" (figures unchanged). |
+| `2a8785a` LC2b | Period labels follow a non-January fiscal year after a page load. |
+| `d628344` LC1d | `VERIFICATION.md` A10 Projects & time (owner values). |
+| `170ab65` + `b09dccc` LC3g | Every admin action on an append-only, attributed `admin_log`; a customer sees "FinFlow support" changes on their own Audit page. |
+| `70fc8f8` LC3d | Security log: every sign-in / 2FA / password event (success and failure) with IP + device; Settings → "Recent security activity"; e-mail alerts (2FA off, password changed / reset, new device). |
+| `1b41b86` LC3f | Both sides of the accountant relationship on the client's trail; accountant account events. |
+| `ad228ab` LC3e | Every connect / disconnect of an outside service, "books into" changes, bank-feed syncs (business only, never a credential). |
+
 | # | Step | Status | Evidence / how to confirm |
 |---|---|---|---|
-| 0.1 | Full sweep 3× on the branch | ✅ VERIFIED | **557/557 GREEN ×3** on `14709a6` (owner's PowerShell run, 2026-10-19; all three `SWEEP COMPLETE` lines captured). Later commits on the branch are docs only. |
-| 0.2 | Merge the branch into `main` | ⬜ OPEN | Fast-forward: `main` has no commits the branch lacks (checked 2026-10-19). Railway deploys `main`. |
-| 0.3 | Migrations run on first boot | ⬜ OPEN | `2026-10-16-payroll-runs-jurisdiction-no-default.sql` (schema) and `…-clear-tt.sql` (data, owner-approved). Railway log shows `[migrate] applied …`. |
-| 0.4 | Post-deploy live check | ⬜ OPEN | `COWORK_LIVE_CHECK.md` Part A (today's fixes live) — e.g. 0 `deferred render hook threw` on hard reload, no `$0` KPI cards. |
+| 0.1 | Full sweep 3× on this release | ⬜ OPEN (owner) | NOT run by the owner on these 15 commits. Each fix: its harness RED on the old code → GREEN; related re-runs GREEN (LC3g 43 harnesses 583/0 · LC3d 265 harnesses 3,363 passed — the one failure a test contradiction, corrected · LC3f 80 → 1,117/0 · LC3e 90 → 1,196/0). The agent started one sweep (572 harnesses, ~3 h) at push time on the same code; its result is recorded in `HANDOVER.md` when it finishes. Run the 3× sweep on `main` as soon as possible. |
+| 0.2 | Merge to `main` | ✅ DONE 2026-10-20 | Fast-forward (`main` had no commits the branch lacked). Railway deploys `main`. |
+| 0.3 | Schema changes apply on first boot | ⬜ CONFIRM | Applied by `initDB()` at boot (`SKIP_INIT_DDL` is not set — §2.3) and mirrored by `scripts/migrations/2026-10-20-admin-log-hardening.sql` and `…-audit-trail-user-agent.sql`: `admin_log` gains ip / user_agent / session_ref / before_data / after_data / outcome + append-only trigger `admin_log_no_mutate`; `audit_trail` gains `user_agent`. Schema only, no data changed. Railway log: `[migrate] applied …`, no `[audit] recordAudit failed`. |
+| 0.4 | Post-deploy live check | ⬜ OPEN | (a) Time tracking: log hours to a project → the project row shows them. (b) Audit page: a new quote / time entry / budget save appears; filter "Connected services", "Security". (c) Settings → Security: "Recent security activity" lists this sign-in with the device. (d) Record Payment: the overpay warning shows only above the balance. (e) At ~800–1,000 px wide no page scrolls sideways. (f) Year captions read "Year to date". (g) Alerts e-mail only once Resend is configured (1.2). |
 
 ---
 
@@ -69,6 +93,10 @@ This is the single list of what stands between today and going public. Work it t
 | 3.1 | Which integrations are live on day one | 🔒 OWNER | Each connector is dark (clean "not set up") until keyed. Some need the provider's approval and take time: Plaid production, QuickBooks / Xero app review. Suggestion: launch with Stripe + Plaid + statement import; label the rest "coming soon". Keys: Plaid `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=production` · Belvo `BELVO_SECRET_ID`, `BELVO_SECRET_PASSWORD`, `BELVO_ENV` · OAuth connectors (QuickBooks, Xero, Zoho, Square, PayPal, Coinbase, Shopify): client id + secret each · Finch `FINCH_*` · Codat `CODAT_API_KEY` · optional `FINNHUB_API_KEY`, `COINGECKO_API_KEY`. WiPay / WooCommerce take per-user credentials in-app (no server keys). |
 | 3.2 | Expired trial: read-only (current) vs hard-lock vs grace period | 🔒 OWNER | Read-only is built and verified (F132, `f130-trial-expired-paywall`). F130 left the policy open; confirm read-only is the launch policy. |
 | 3.3 | Pick the account's reporting currency | 🔒 OWNER (after 0.2) | New Settings field (LA21). Until chosen, "All entities" uses the oldest business's currency. |
+| 3.4 | Old time entries with no project (LC1c) | 🔒 OWNER | Entries logged before FIX-1 count on no project. Run the read-only `tools/fix-2026-10-19/fix1-unlinked-time-entries.js` against production, then decide: link the exact-name matches (its own commit, Rule 8), or leave them. |
+| 3.5 | How long a deleted account's security events are kept (LC3d-b) | 🔒 OWNER / legal | The audit trail outlives a deleted account (legal record) and now holds sign-in IPs and devices. Part of 2.6. |
+| 3.6 | A business service connected with no business yet (LC3e-c) | 🔒 OWNER | Record it account-level, or require a business before connecting. |
+| 3.7 | Named admin accounts (LC3g-b) | 🔒 OWNER | One shared admin login today; the admin log tells sessions apart, not people. Only needed if anyone besides the owner gets admin. |
 
 ---
 
@@ -87,6 +115,9 @@ This is the single list of what stands between today and going public. Work it t
 
 | Area | Status | Evidence |
 |---|---|---|
+| Live check 2026-10-19 — FIX-1…5 (rows LC1–LC5) | ✅ FIXED, deployed 2026-10-20 (§0) | `AUDIT_MASTER.md` LC rows; each RED → GREEN. FIX-2 = relabel (owner decision: "Year to date"). Open from it: LC1c (data, 3.4). |
+| Audit-trail coverage — every route that changes data (LC3b–LC3g) | ✅ FIXED except LC3c, deployed 2026-10-20 | Guard `verify-fix3b-audit-route-guard` (structural): 259 routes — 204 audited, 38 exempt with a stated reason, 17 known gap = **LC3c** (personal side). GET routes that write are checked too (LC3e-b). |
+| LC3c — separate personal history | 🔄 IN PROGRESS (not deployed) | Owner decision 2026-10-20. Design + scope in `AUDIT_MASTER.md` LC3c. |
 | Live audit 2026-10-13 — 23 rows (LA1–LA23) | ✅ VERIFIED closed (20 fixed, LA11/LA12/LA22 explained or decided) | `AUDIT_MASTER.md` "LIVE AUDIT 2026-10-13" table; each fix has a harness RED on the old code, GREEN on the fix. B2 withdrawn after a live repro (crossing works). |
 | Money audit 2026-10-09 (M-rows) | ✅ VERIFIED per `MONEY_AUDIT_2026-10-09.md` | Rounds 1–3 fixed with harnesses (e.g. M53, M62 green in the 555 sweep). |
 | Full sweep | ✅ 557/557 ×3 on `14709a6` (2026-10-19) | `HANDOVER.md`. |

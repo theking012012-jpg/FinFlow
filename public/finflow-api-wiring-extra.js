@@ -126,13 +126,19 @@
     el.innerHTML = _tsData.map(t => `
       <div style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px 36px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
         <span style="font-weight:500">${e(t.employee)}</span>
-        <span style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(t.project || '—')}</span>
+        <span style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(_tsProjectLabel(t) || '—')}</span>
         <span style="color:var(--t2)">${e(t.date || '—')}</span>
         <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
         <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
         <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
       </div>`).join('');
+  }
+
+  // FIX-1: a linked entry shows its project's CURRENT name; an unlinked one its free-text label.
+  function _tsProjectLabel(t) {
+    const p = t.project_id != null ? (window.projects || []).find(x => x.id === t.project_id) : null;
+    return p ? p.name : t.project;
   }
 
   function updateTimesheetMetrics() {
@@ -178,7 +184,10 @@
       </div>
       <div class="field-group">
         <div class="field-wrap"><label class="field-label">Employee *</label><input class="finput" id="ts-employee" placeholder="Name or team member"></div>
-        <div class="field-wrap"><label class="field-label">Project / Client</label><input class="finput" id="ts-project" placeholder="Project or client name"></div>
+        <div class="field-wrap"><label class="field-label">Project</label><select class="finput" id="ts-project-id"></select></div>
+      </div>
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label">Label (if no project)</label><input class="finput" id="ts-project" placeholder="e.g. client or task — not counted on a project"></div>
       </div>
       <div class="field-group">
         <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="ts-date" type="date"></div>
@@ -197,10 +206,24 @@
     return modal;
   }
 
+  // FIX-1: the project picker lists this business's projects (time logged to one counts on that project).
+  function _fillTsProjects() {
+    const sel = document.getElementById('ts-project-id');
+    if (!sel) return;
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">— No project —</option>' +
+      (window.projects || []).slice().sort((x, y) => String(x.name).localeCompare(String(y.name)))
+        .map(p => `<option value="${p.id}">${e(p.name)}</option>`).join('');
+    if (keep && sel.querySelector(`option[value="${keep}"]`)) sel.value = keep;
+  }
+
   window.openLogTimeModal = function () {
     const modal = buildTimesheetModal();
     document.getElementById('ts-employee').value = '';
     document.getElementById('ts-project').value  = '';
+    document.getElementById('ts-project-id').value = '';
+    _fillTsProjects();
+    if (!_projectsFetched) loadProjects().then(_fillTsProjects).catch(() => {});
     document.getElementById('ts-date').value     = today();
     document.getElementById('ts-hours').value    = '';
     document.getElementById('ts-rate').value     = '';
@@ -214,11 +237,12 @@
     if (!employee) { tip('Employee name required', true); return; }
     if (!hours || hours <= 0) { tip('Valid hours required', true); return; }
     const project  = document.getElementById('ts-project')?.value?.trim()  || '';
+    const project_id = parseInt(document.getElementById('ts-project-id')?.value, 10) || null;
     const date     = document.getElementById('ts-date')?.value             || today();
     const billable = document.getElementById('ts-billable')?.value         || 'Yes';
     const rate     = parseFloat(document.getElementById('ts-rate')?.value) || 0;
     try {
-      const saved = await api('POST', '/api/timesheet', { employee, project, date, hours, billable, rate });
+      const saved = await api('POST', '/api/timesheet', { employee, project, project_id, date, hours, billable, rate });
       _tsData.unshift(saved.row || saved);
       window.timesheet = _tsData;
       document.getElementById('ts-log-modal')?.classList.add('hidden');
@@ -226,6 +250,7 @@
       updateTimesheetMetrics();
       tip('Time entry saved ✦');
       loadTimesheet().catch(()=>{});
+      loadProjects().catch(()=>{});   // FIX-1: the project's hours / billed come from its entries
       window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not save — ' + err.message, true); }
@@ -239,6 +264,7 @@
       renderTimesheetList();
       updateTimesheetMetrics();
       tip('Entry deleted');
+      loadProjects().catch(()=>{});   // FIX-1
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not delete — ' + err.message, true); }
   };

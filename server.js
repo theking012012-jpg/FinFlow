@@ -1601,7 +1601,7 @@ function userFilter(userId, entityId) {
 // expense twice minutes apart). `textMatch`/`numMatch` are keyed by JSONB field
 // name; keys are code-controlled constants (never user input); values are bound
 // parameters. entity_id uses IS NOT DISTINCT FROM so NULL matches NULL.
-async function findRecentDuplicate(table, userId, entityId, { textMatch = {}, numMatch = {} }, windowSec = 5) {
+async function findRecentDuplicate(table, userId, entityId, { textMatch = {}, numMatch = {}, nullMatch = [] }, windowSec = 5) {
   const w = parseInt(windowSec) || 5;
   const conds = ['user_id = $1', 'entity_id IS NOT DISTINCT FROM $2', `created_at > NOW() - INTERVAL '${w} seconds'`];
   const params = [userId, entityId];
@@ -1618,6 +1618,8 @@ async function findRecentDuplicate(table, userId, entityId, { textMatch = {}, nu
     params.push(Number(v) || 0);
     i++;
   }
+  // FIX-1: keys that must be ABSENT on the matching row (e.g. an unlinked time entry must not match a linked one).
+  for (const k of nullMatch) conds.push(`data->>'${k}' IS NULL`);
   const { rows } = await pool.query(
     `SELECT * FROM ${table} WHERE ${conds.join(' AND ')} ORDER BY id DESC LIMIT 1`,
     params
@@ -2882,10 +2884,30 @@ app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
+// FIX-1: a project's hours and billed are DERIVED from the time entries linked to it (timesheet.project_id) — never
+// stored. hours = Σ hours of linked entries; billed = Σ hours × rate of linked BILLABLE entries. The join also requires
+// the entry's business to be the project's business (the link is validated on write; this keeps a stray row out).
+async function withProjectTime(userId, projects) {
+  if (!projects.length) return projects;
+  const { rows } = await pool.query(
+    `SELECT pid, entity_id,
+            COALESCE(SUM((data->>'hours')::numeric), 0) AS hours,
+            COALESCE(SUM(CASE WHEN data->>'billable' = 'Yes' THEN (data->>'hours')::numeric * COALESCE((data->>'rate')::numeric, 0) ELSE 0 END), 0) AS billed
+       FROM (SELECT entity_id, data, CASE WHEN data->>'project_id' ~ '^[0-9]{1,9}$' THEN (data->>'project_id')::int END AS pid
+               FROM timesheet WHERE user_id = $1) t
+      WHERE pid = ANY($2::int[])
+      GROUP BY 1, 2`,
+    [userId, projects.map(p => p.id)]);
+  const r2 = n => Math.round(Number(n) * 100) / 100;
+  return projects.map(p => {
+    const t = rows.find(x => x.pid === p.id && (x.entity_id == null ? null : Number(x.entity_id)) === (p.entity_id == null ? null : Number(p.entity_id)));
+    return Object.assign({}, p, { hours: t ? r2(t.hours) : 0, billed: t ? r2(t.billed) : 0 });
+  });
+}
 app.get('/api/projects', requireAuth, wrap(async (req, res) => {
   try {
     const rows = await db.allByUser('projects', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id);
-    res.json(rows);
+    res.json(await withProjectTime(scopeId(req), rows));
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/projects] failed for user', scopeId(req), ':', e.code, e.message);
@@ -2904,12 +2926,10 @@ app.post('/api/projects', requireAuth, wrap(async (req, res) => {
     name:     name.trim().slice(0, 200),
     client:   client.trim().slice(0, 200),
     budget:   parseFloat(budget) || 0,
-    billed:   0,
-    hours:    0,
     status:   validStatuses.includes(status) ? status : 'In Progress',
     progress: 0,
   });
-  res.status(201).json(row);
+  res.status(201).json((await withProjectTime(scopeId(req), [row]))[0]);
 }));
 app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('projects', req.params.id, scopeId(req));
@@ -2919,13 +2939,12 @@ app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
   if (b.name     != null) patch.name     = b.name.trim().slice(0, 200);
   if (b.client   != null) patch.client   = b.client.trim().slice(0, 200);
   if (b.budget   != null) patch.budget   = parseFloat(b.budget) || 0;
-  if (b.billed   != null) patch.billed   = parseFloat(b.billed) || 0;
-  if (b.hours    != null) patch.hours    = parseFloat(b.hours) || 0;
+  // hours / billed are derived from the linked time entries (FIX-1) — not writable.
   if (b.status   != null) patch.status   = b.status;
   if (b.progress != null) patch.progress = parseInt(b.progress);
   await db.updateById('projects', row.id, patch);
   const { rows: [_pjr] } = await pool.query(`SELECT * FROM projects WHERE id = $1 LIMIT 1`, [row.id]);
-  res.json(_pjr ? rowToObj(_pjr) : {});
+  res.json(_pjr ? (await withProjectTime(scopeId(req), [rowToObj(_pjr)]))[0] : {});
 }));
 app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('projects', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
@@ -5372,16 +5391,33 @@ app.delete('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credi
 app.get('/api/timesheet', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('timesheet', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
+// FIX-1: a time entry links to a project by id. The project must belong to this account AND this business; its name
+// becomes the entry's label. No id → the free-text `project` stays an unlinked label (counted on no project).
+async function timesheetProject(req, projectId, entityId) {
+  if (projectId == null || projectId === '') return { project: null };
+  const id = Number(projectId);
+  const p = Number.isInteger(id) && id > 0 ? await ownedBy('projects', id, scopeId(req)) : null;
+  if (!p || (p.entity_id == null ? null : Number(p.entity_id)) !== (entityId == null ? null : Number(entityId))) return { error: 'Project not found in this business.' };
+  return { project: p };
+}
 app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
-  const { employee, project = '', date, hours, billable = 'Yes', rate = 0 } = req.body || {};
+  const { employee, project = '', project_id = null, date, hours, billable = 'Yes', rate = 0 } = req.body || {};
   if (!employee || hours == null) return res.status(400).json({ error: 'employee and hours required' });
-  const _dup = await findRecentDuplicate('timesheet', scopeId(req), req.entityId || null, { textMatch: { employee: employee.trim().slice(0,100), project: project.trim().slice(0,200) }, numMatch: { hours: parseFloat(hours)||0 } });
+  const _lp = await timesheetProject(req, project_id, req.entityId || null);
+  if (_lp.error) return res.status(400).json({ error: _lp.error });
+  const label = _lp.project ? String(_lp.project.name || '') : String(project || '');
+  const _dup = await findRecentDuplicate('timesheet', scopeId(req), req.entityId || null, {
+    textMatch: { employee: employee.trim().slice(0,100), project: label.trim().slice(0,200) },
+    numMatch: Object.assign({ hours: parseFloat(hours)||0 }, _lp.project ? { project_id: _lp.project.id } : {}),
+    nullMatch: _lp.project ? [] : ['project_id'],
+  });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('timesheet', {
     user_id:  scopeId(req),
     entity_id: req.entityId || null,
     employee: employee.trim().slice(0, 100),
-    project:  project.trim().slice(0, 200),
+    project:  label.trim().slice(0, 200),
+    ...(_lp.project ? { project_id: _lp.project.id } : {}),
     date:     date || await entityTodayYmd(req.entityId || null),
     hours:    parseFloat(hours) || 0,
     billable: billable === 'Yes' ? 'Yes' : 'No',
@@ -5396,6 +5432,13 @@ app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
   const patch = {};
   if (b.employee != null) patch.employee = b.employee;
   if (b.project  != null) patch.project  = b.project;
+  if (b.project_id !== undefined) {
+    // Link, move or unlink (null). Linking takes the project's name as the label.
+    const _lp = await timesheetProject(req, b.project_id, row.entity_id);   // the entry's own business
+    if (_lp.error) return res.status(400).json({ error: _lp.error });
+    patch.project_id = _lp.project ? _lp.project.id : null;
+    if (_lp.project) patch.project = String(_lp.project.name || '').slice(0, 200);
+  }
   if (b.date     != null) patch.date     = b.date;
   if (b.hours    != null) patch.hours    = parseFloat(b.hours);
   if (b.billable != null) patch.billable = b.billable;

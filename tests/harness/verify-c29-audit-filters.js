@@ -20,7 +20,7 @@ const ROOT = path.join(__dirname, '..', '..');
 
 function written() {
   // Every audit_trail write goes through recordAudit (one INSERT). Callers: recordAudit / auditLog (server.js),
-  // _audit (accountant-routes.js alias), logAudit(req, ACTION, TABLE, …) (server.js). Object-literal bodies are
+  // _audit (accountant-routes.js alias), logAudit(req, ACTION, TABLE, …) (server.js), _auditRec(req, TABLE, ACTION, …) (server.js, FIX-3). Object-literal bodies are
   // brace-matched, since they nest (newData: { … }).
   const tables = new Set(), actions = new Set();
   for (const f of ['server.js', 'accountant-routes.js']) {
@@ -35,6 +35,8 @@ function written() {
     for (const m of s.matchAll(/\blogAudit\(req,\s*(?:'([A-Z_]+)'|[^,]*\?\s*'([A-Z_]+)'\s*:\s*'([A-Z_]+)'),\s*'([a-z_]+)'/g)) {
       [m[1], m[2], m[3]].filter(Boolean).forEach(a => actions.add(a)); tables.add(m[4]);
     }
+    // FIX-3: _auditRec(req, TABLE, ACTION, old, new) — the JSONB-record wrapper over recordAudit (server.js).
+    for (const m of s.matchAll(/\b_auditRec\(req,\s*'([a-z_]+)',\s*'([A-Z_]+)'/g)) { tables.add(m[1]); actions.add(m[2]); }
   }
   tables.delete('accountants');   // user_id NULL — never on an owner's trail
   return { tables: [...tables].sort(), actions: [...actions].sort() };

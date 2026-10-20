@@ -2504,6 +2504,7 @@ app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
   await db.updateById('inventory', row.id, { last_restock_qty: qty, last_restock_at: _now });
   await recordStockMovement({ userId: scopeId(req), item: row, entityId: req.entityId || null, type: 'purchase', qty, unitCost: _rsCost, reference: 'Restock' });
   const { rows: [_rstk] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_rstk) await _auditRec(req, 'inventory', 'UPDATE', row, rowToObj(_rstk));   // FIX-3b
   res.json(_rstk ? rowToObj(_rstk) : {});
 }));
 app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
@@ -3594,6 +3595,7 @@ app.delete('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wra
   const _jrow = await ownedBy('journals', req.params.id, scopeId(req));
   if (!_jrow) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('journals', parseInt(req.params.id));
+  await _auditRec(req, 'journals', 'DELETE', _jrow, null);   // FIX-3b
   // FIX: deleting a POSTED journal must reverse it out of the ledger (mirror-image), else the GL
   // keeps a phantom entry. Best-effort; idempotent on 'reverse:journal:<id>'.
   if (String(_jrow.status).toLowerCase() === 'posted') {
@@ -3723,8 +3725,10 @@ app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
   res.send(buf);
 }));
 app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('documents', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _dold = await ownedBy('documents', req.params.id, scopeId(req));
+  if (!_dold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('documents', parseInt(req.params.id));
+  { const { file_data: _fd, ..._dmeta } = _dold; await _auditRec(req, 'documents', 'DELETE', _dmeta, null); }   // FIX-3b: the record, not the file bytes
   res.json({ ok: true });
 }));
 
@@ -3736,6 +3740,7 @@ app.post('/api/templates', requireAuth, wrap(async (req, res) => {
   const { name, type = 'invoice', preview = '', is_default = 0, accent_color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required.' });
   const { row } = await db.insert('templates', { user_id: scopeId(req), entity_id: req.entityId || null, name: name.slice(0,200), type, preview, is_default: is_default ? 1 : 0, accent_color });
+  await _auditRec(req, 'templates', 'CREATE', null, row);   // FIX-3b
   res.status(201).json(row);
 }));
 app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {
@@ -3749,11 +3754,14 @@ app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {
   if (b.accent_color != null) patch.accent_color = b.accent_color;
   await db.updateById('templates', row.id, patch);
   const { rows: [_tmpr] } = await pool.query(`SELECT * FROM templates WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_tmpr) await _auditRec(req, 'templates', 'UPDATE', row, rowToObj(_tmpr));   // FIX-3b
   res.json(_tmpr ? rowToObj(_tmpr) : {});
 }));
 app.delete('/api/templates/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('templates', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _tpold = await ownedBy('templates', req.params.id, scopeId(req));
+  if (!_tpold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('templates', parseInt(req.params.id));
+  await _auditRec(req, 'templates', 'DELETE', _tpold, null);   // FIX-3b
   res.json({ ok: true });
 }));
 
@@ -3765,6 +3773,7 @@ app.post('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
   const { keyword, match_type = 'description', category, enabled = 1 } = req.body || {};
   if (!keyword || !category) return res.status(400).json({ error: 'keyword and category required.' });
   const { row } = await db.insert('autocat_rules', { user_id: scopeId(req), keyword: keyword.toLowerCase().slice(0,100), match_type, category, enabled: enabled ? 1 : 0 });
+  await _auditRec(req, 'autocat_rules', 'CREATE', null, row);   // FIX-3b
   res.status(201).json(row);
 }));
 app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
@@ -3778,11 +3787,14 @@ app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
   if (b.enabled    != null) patch.enabled    = b.enabled ? 1 : 0;
   await db.updateById('autocat_rules', row.id, patch);
   const { rows: [_acr] } = await pool.query(`SELECT * FROM autocat_rules WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_acr) await _auditRec(req, 'autocat_rules', 'UPDATE', row, rowToObj(_acr));   // FIX-3b
   res.json(_acr ? rowToObj(_acr) : {});
 }));
 app.delete('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('autocat_rules', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _arold = await ownedBy('autocat_rules', req.params.id, scopeId(req));
+  if (!_arold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('autocat_rules', parseInt(req.params.id));
+  await _auditRec(req, 'autocat_rules', 'DELETE', _arold, null);   // FIX-3b
   res.json({ ok: true });
 }));
 app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
@@ -3797,6 +3809,7 @@ app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
         : (exp.description || '').toLowerCase();
       if (haystack.includes(rule.keyword)) {
         await db.updateById('expenses', exp.id, { category: rule.category });
+        await _auditRec(req, 'expenses', 'UPDATE', exp, Object.assign({}, exp, { category: rule.category }));   // FIX-3b: a rule re-categorised this expense
         updated++;
         break;
       }
@@ -4775,6 +4788,7 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('recurring_bills', scopeId(req), req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_bills', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  await _auditRec(req, 'recurring_bills', 'CREATE', null, row);   // FIX-3b
   res.json(row);
 }));
 app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
@@ -4791,10 +4805,12 @@ app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
   if (next_run != null) patch.next_run = next_run;
   if (status != null) patch.status = status;
   await db.updateById('recurring_bills', Number(req.params.id), patch);
+  { const { rows: [_rbn] } = await pool.query(`SELECT * FROM recurring_bills WHERE id = $1 LIMIT 1`, [_rblr.id]); if (_rbn) await _auditRec(req, 'recurring_bills', 'UPDATE', rowToObj(_rblr), rowToObj(_rbn)); }   // FIX-3b
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-bills/:id', requireAuth, requireOwnedRow('recurring_bills'), wrap(async (req, res) => {
-  await pool.query('DELETE FROM recurring_bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  const { rows: [_rbd] } = await pool.query('DELETE FROM recurring_bills WHERE id = $1 AND user_id = $2 RETURNING *', [Number(req.params.id), scopeId(req)]);
+  if (_rbd) await _auditRec(req, 'recurring_bills', 'DELETE', rowToObj(_rbd), null);   // FIX-3b
   res.json({ ok: true });
 }));
 
@@ -4884,6 +4900,7 @@ app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('recurring_invoices', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_invoices', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  await _auditRec(req, 'recurring_invoices', 'CREATE', null, row);   // FIX-3b
   res.json(row);
 }));
 app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
@@ -4901,10 +4918,12 @@ app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
   if (status != null) patch.status = status;
   if (end_date != null) patch.end_date = end_date;
   await db.updateById('recurring_invoices', Number(req.params.id), patch);
+  { const { rows: [_rin] } = await pool.query(`SELECT * FROM recurring_invoices WHERE id = $1 LIMIT 1`, [_rinvr.id]); if (_rin) await _auditRec(req, 'recurring_invoices', 'UPDATE', rowToObj(_rinvr), rowToObj(_rin)); }   // FIX-3b
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-invoices/:id', requireAuth, requireOwnedRow('recurring_invoices'), wrap(async (req, res) => {
-  await pool.query('DELETE FROM recurring_invoices WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  const { rows: [_rid] } = await pool.query('DELETE FROM recurring_invoices WHERE id = $1 AND user_id = $2 RETURNING *', [Number(req.params.id), scopeId(req)]);
+  if (_rid) await _auditRec(req, 'recurring_invoices', 'DELETE', rowToObj(_rid), null);   // FIX-3b
   res.json({ ok: true });
 }));
 
@@ -6507,6 +6526,7 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
     category: cat || 'Other', source: 'banking',
     ...(_pCur ? { currency: _pCur } : {}),
   });
+  if (_bc.eid != null) await _auditRec(req, 'bank_lines', 'CREATE', null, row);   // FIX-3b — business lines only (a personal line never reaches the business trail)
   res.status(201).json(row);
 }));
 app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
@@ -6516,6 +6536,7 @@ app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
   // when no business is in view. Never a personal transaction from a business, never another business's line.
   if (!_bl || _bl.source !== 'banking' || (_bl.entity_id == null ? null : _bl.entity_id) !== _bc.eid) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('personal_transactions', parseInt(req.params.id));
+  if (_bl.entity_id != null) await _auditRec(req, 'bank_lines', 'DELETE', _bl, null);   // FIX-3b — business lines only
   res.json({ ok: true });
 }));
 
@@ -6780,12 +6801,13 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
     const { rows: [dup] } = await pool.query(
       `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'import_key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, key, eid]);
     if (dup) { skipped++; continue; }
-    await db.insert('personal_transactions', {
+    const { row: _impRow } = await db.insert('personal_transactions', {
       user_id: uid, entity_id: eid,
       description: t.description, amount: t.amount, ..._bankTx(personal, t.tx_type === 'debit'), tx_date: t.tx_date,
       category: 'Uncategorized', source: 'banking', import_key: key,
       ...(_pCur ? { currency: _pCur } : {}),
     });
+    if (eid != null) await _auditRec(req, 'bank_lines', 'CREATE', null, _impRow);   // FIX-3b — business lines only
     imported++;
   }
   res.status(201).json({ ok: true, imported, skipped, total: txns.length,
@@ -6799,12 +6821,14 @@ app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
 }));
 app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   const { rows: [_mrre] } = await pool.query(
-    `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'mrr_data' LIMIT 1`,
+    `SELECT id, data->>'value' AS value FROM user_settings WHERE user_id = $1 AND data->>'key' = 'mrr_data' LIMIT 1`,
     [scopeId(req)]
   );
   const data = JSON.stringify(req.body || {});
   if (_mrre) await db.updateById('user_settings', _mrre.id, { value: data });
   else await db.insert('user_settings', { user_id: scopeId(req), key: 'mrr_data', value: data });
+  { let _old = null; try { _old = _mrre && _mrre.value ? JSON.parse(_mrre.value) : null; } catch (_) {}   // FIX-3b
+    await recordAudit(pool, { userId: scopeId(req), entityId: null, table: 'settings', recordId: _mrre ? _mrre.id : null, action: _mrre ? 'UPDATE' : 'CREATE', oldData: _old, newData: req.body || {}, req }); }
   res.json({ ok: true });
 }));
 
@@ -6820,11 +6844,14 @@ app.get('/api/permissions', requireAuth, wrap(async (req, res) => {
 app.post('/api/permissions', requireAuth, requirePerm('permissions:manage'), wrap(async (req, res) => {
   const data = JSON.stringify(req.body || []);
   const { rows: [_perme] } = await pool.query(
-    `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
+    `SELECT id, data->>'value' AS value FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
     [scopeId(req)]
   );
   if (_perme) await db.updateById('user_settings', _perme.id, { value: data });
   else await db.insert('user_settings', { user_id: scopeId(req), key: 'permissions', value: data });
+  // FIX-3b: the role table decides who may do what — every save is on the trail (before → after).
+  { let _old = null; try { _old = _perme && _perme.value ? JSON.parse(_perme.value) : null; } catch (_) {}
+    await recordAudit(pool, { userId: scopeId(req), entityId: null, table: 'permissions', recordId: _perme ? _perme.id : null, action: 'UPDATE', oldData: _old, newData: req.body || [], req }); }
   res.json({ ok: true });
 }));
 
@@ -9332,6 +9359,7 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
     const url = await createPaymentLink(provider, conn, { amount, currency, email: _email, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: _country });
     if (!url) throw new Error('Provider returned no URL.');
     await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider, payment_link_amount: amount });   // the exact total this link charges (WiPay hash input)
+    await _auditRec(req, 'invoices', 'UPDATE', inv, Object.assign({}, inv, { payment_link: url, payment_provider: provider, payment_link_amount: amount }));   // FIX-3b (UNEXECUTED: needs a live processor)
     res.status(201).json({ ok: true, provider, payment_link: url });
   } catch (e) { console.error('[payment-link]', provider, e.message); res.status(e.status === 400 ? 400 : 502).json({ error: 'Could not create a payment link: ' + e.message, provider }); }
 }));
@@ -9762,6 +9790,7 @@ app.delete('/api/invoice-payments/:id', requireAuth, lockGuard(LOCK_SPECS.invoic
     [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'invoice_payments', recordId: rows[0].id, action: 'DELETE', oldData: rows[0], req });   // FIX-3b
   await recalcInvoiceStatus(pool, rows[0].invoice_id, scopeId(req));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
@@ -9828,6 +9857,7 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
      VALUES ($1,$2,$3,$4) RETURNING *`,
     [scopeId(req), req.entityId || null, parseInt(banking_id), parseInt(invoice_payment_id)]
   );
+  await _auditRec(req, 'bank_reconciliation', 'CREATE', null, rows[0]);   // FIX-3b
   res.status(201).json(rows[0]);
 }));
 
@@ -9953,6 +9983,7 @@ app.post('/api/bank-reconciliation/ignore', requireAuth, wrap(async (req, res) =
   const row = g.row;
   if (row.reconcile_state) return res.json({ ok: true, duplicate: true, reconcile_state: row.reconcile_state });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'ignored' });
+  await _auditRec(req, 'bank_lines', 'UPDATE', row, Object.assign({}, row, { reconcile_state: 'ignored' }));   // FIX-3b
   res.json({ ok: true, ignored: true });
 }));
 
@@ -10010,6 +10041,7 @@ app.post('/api/bank-reconciliation/match-batch', requireAuth, wrap(async (req, r
       rows = (await client.query(`INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id) VALUES ${vals.join(',')} RETURNING *`, params)).rows;
     }
     await client.query('COMMIT');
+    for (const _br of rows) await _auditRec(req, 'bank_reconciliation', 'CREATE', null, _br);   // FIX-3b
     res.status(201).json({ matched: rows.length, skipped: skipped.length, rows });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch (_) {}
@@ -10027,6 +10059,7 @@ app.delete('/api/bank-reconciliation/:id', requireAuth, wrap(async (req, res) =>
     [parseInt(req.params.id), scopeId(req), req.entityId == null ? -1 : req.entityId]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  await _auditRec(req, 'bank_reconciliation', 'DELETE', rows[0], null);   // FIX-3b
   res.json({ ok: true });
 }));
 
@@ -12519,16 +12552,18 @@ app.post('/api/fx-rates', requireAuth, wrap(async (req, res) => {
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
     [scopeId(req), req.entityId || null, _from, _to, _rate, _date]
   );
+  await _auditRec(req, 'fx_rates', 'CREATE', null, row);   // FIX-3b
   res.status(201).json(row);
 }));
 
 app.delete('/api/fx-rates/:id', requireAuth, wrap(async (req, res) => {
   const id = parseInt(req.params.id);
   if (!id) return res.status(400).json({ error: 'invalid id' });
-  const { rowCount } = await pool.query(
-    `DELETE FROM fx_rates WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]
+  const { rows: [_fxd] } = await pool.query(
+    `DELETE FROM fx_rates WHERE id=$1 AND user_id=$2 RETURNING *`, [id, scopeId(req)]
   );
-  if (!rowCount) return res.status(404).json({ error: 'not found' });
+  if (!_fxd) return res.status(404).json({ error: 'not found' });
+  await _auditRec(req, 'fx_rates', 'DELETE', _fxd, null);   // FIX-3b
   res.json({ ok: true });
 }));
 
@@ -12575,6 +12610,7 @@ app.post('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
     [scopeId(req), req.entityId || null, reference_id || null, reference_type || null,
      foreign_currency.toUpperCase(), fAmt, baseAmount, rate, baseCur]
   );
+  await _auditRec(req, 'fx_transactions', 'CREATE', null, row);   // FIX-3b
   res.status(201).json(row);
 }));
 
@@ -12597,6 +12633,7 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
     [settlementRate, realisedGL, tx.id, new Date()]
   );
   if (!updated) return res.status(409).json({ error: 'This position is already settled.', code: 'ALREADY_SETTLED' });
+  await _auditRec(req, 'fx_transactions', 'UPDATE', tx, updated);   // FIX-3b
   // GL Phase 2 (dual-write shadow): settling an FX position REALISES a gain/loss. 7000 (FX Gain/Loss)
   // is an expense-type account (a loss debits it, a gain credits it — a gain reads as negative
   // expense), Cash (1000) is the settlement contra. computeBooks does NOT fold FX into netProfit (the
@@ -12659,6 +12696,8 @@ app.post('/api/gl/backfill', requireAuth, wrap(async (req, res) => {
     const reconciled = Math.abs(f.incomeStatement.income - books.revenue) < 0.01 && Math.abs(glExpNonFx - (books.cogs + books.opex)) < 0.01;
     recon.push({ entityId: e.id, name: e.name, trialBalanced: f.trialBalance.balanced, balanceSheetBalanced: f.balanceSheet.balanced, glRevenue: f.incomeStatement.income, oracleRevenue: books.revenue, glExpensesExFx: glExpNonFx, oracleCogsOpex: Math.round((books.cogs + books.opex) * 100) / 100, reconciled });
   }
+  if (!dry) await recordAudit(pool, { userId: scopeId(req), entityId: entityId == null ? null : entityId, table: 'ledger_entries', action: 'RECALC', req,   // FIX-3b: a ledger rebuild is on the trail
+    newData: Object.assign({ reset, entity_id: entityId }, Object.fromEntries(Object.entries(report || {}).filter(([, v]) => v == null || typeof v !== 'object'))) });
   res.json({ dryRun: dry, entityId, ...report, reconciliation: recon });
 }));
 

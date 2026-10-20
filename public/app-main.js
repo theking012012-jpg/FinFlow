@@ -1374,6 +1374,15 @@ function computeMonthFull(){
 }
 var MONTH_FULL=computeMonthFull();
 var MONTHS=MONTH_FULL.map(function(m){return m.split(' ')[0];});
+// LC2b: ONE place that rebuilds the fiscal month list AND repaints every label derived from it (header, AI, month nav).
+// It used to rebuild in loadEntityData / saveSettings without repainting, so a non-January business kept the January
+// months in its period label after a load. Called whenever the fiscal-year start may have changed.
+function _ffFiscalMonthsChanged(){
+  MONTH_FULL=computeMonthFull();
+  MONTHS=MONTH_FULL.map(function(m){return m.split(' ')[0];});
+  if(typeof _ffSyncPeriodLabels==='function') _ffSyncPeriodLabels();
+}
+window._ffFiscalMonthsChanged=_ffFiscalMonthsChanged;
 // ══════════════════════════════════════════════════════════════
 // ENTITY DATA — each entity has its own financials, invoices,
 // expenses, payroll, customers & inventory
@@ -1661,8 +1670,7 @@ async function loadEntityData(idx){
       try{ window._dashSetState('error'); }catch(_){}
     }
   } finally {
-    MONTH_FULL=computeMonthFull();
-    MONTHS=MONTH_FULL.map(function(m){return m.split(' ')[0];});
+    _ffFiscalMonthsChanged();   // LC2b: rebuild + repaint the period labels
     _loadEntityDataRunning=false;
     // F151: active entity's data loaded → SCHEDULE the reveal (debounced). updateDashboard reschedules
     // it on every subsequent render, so the splash lifts only once the numbers stop changing.
@@ -5266,8 +5274,8 @@ async function saveSettings(){
     // A fiscal-year change must re-sync the computed month range everywhere (header,
     // month nav, chart, AI) — otherwise MONTH_FULL only recomputes on the next entity
     // load, so the header/chart lag until then.
-    if(typeof computeMonthFull==='function'){ MONTH_FULL=computeMonthFull(); MONTHS=MONTH_FULL.map(m=>m.split(' ')[0]); }
-    if(typeof refreshAllPeriodData==='function') refreshAllPeriodData(); else _ffSyncPeriodLabels();
+    _ffFiscalMonthsChanged();   // LC2b
+    if(typeof refreshAllPeriodData==='function') refreshAllPeriodData();
   } catch(e) { notify('Failed to save settings'); }
 }
 

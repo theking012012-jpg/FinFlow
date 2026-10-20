@@ -391,6 +391,7 @@
         setField('s-website',  s.website);
         setField('s-tax-id',   s.tax_id);
         setField('s-fy',       s.fiscal_year);
+        if (typeof window._ffFiscalMonthsChanged === 'function') window._ffFiscalMonthsChanged();   // LC2b: the fiscal year just arrived — rebuild the months and repaint their labels
         // F196 Tier 2: the account blob above is ONE row per account, so on a multi-entity account it
         // labels every entity with the same business. Cache it as the FALLBACK, then overlay the
         // ACTIVE entity's own profile on top. Cached (rather than re-fetched) so an entity switch can

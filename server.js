@@ -7374,11 +7374,16 @@ app.post('/api/connections', requireAuth, requirePerm('bank:manage'), wrap(async
     const data = JSON.stringify(req.body || {});
     const eid = req.entityId == null ? null : req.entityId;
     const { rows: [_conne] } = await pool.query(
-      `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
+      `SELECT id, data->>'value' AS value FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
       [scopeId(req), eid]
     );
     if (_conne) await db.updateById('user_settings', _conne.id, { value: data });
     else await db.insert('user_settings', { user_id: scopeId(req), entity_id: eid, key: 'connections', value: data });
+    // LC3e: a business's toggles, before → after. Personal's own toggles (entity NULL) stay off the business trail.
+    if (eid != null) {
+      let before = {}; try { before = _conne && _conne.value ? JSON.parse(_conne.value) : {}; } catch (_) {}
+      await recordAudit(pool, { userId: scopeId(req), entityId: eid, table: 'settings', recordId: _conne ? _conne.id : null, action: 'UPDATE', oldData: before, newData: req.body || {}, req });
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error('[POST /api/connections]', e.message);
@@ -7477,9 +7482,16 @@ async function _getPlaidItemsE(uid, entityId, fallback = false) {
 // concurrent link or unlink wrote its stale list over it — the new bank vanished or the cursor rolled back.
 // `mutate(current)` receives the value as it is NOW (under a per-blob advisory lock + row lock, inside one
 // transaction) and returns the new value.
-async function _mutateSettingsBlob(uid, key, entityId, mutate) {
+//
+// LC3e: it is also the ONE place a third-party connection is granted or revoked, so it is where that is recorded.
+// Pass the request (`req`) so the record carries who and from where. Only a change of CONNECTION STATE is recorded —
+// connected / disconnected / a different account / a different "books into" — never a token refresh or a sync stamp,
+// and never a credential (only provider, account label, books). A blob with no business (entity NULL: Personal's bank,
+// or an account with no business yet) is never written to the business trail — the wall (LC3c keeps Personal's own).
+async function _mutateSettingsBlob(uid, key, entityId, mutate, req = null) {
   const eid = entityId == null ? null : entityId;
   const client = await pool.connect();
+  let released = false;
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['settings:' + uid + ':' + key + ':' + (eid == null ? '' : eid)]);
@@ -7491,11 +7503,39 @@ async function _mutateSettingsBlob(uid, key, entityId, mutate) {
     if (r) await client.query(`UPDATE user_settings SET data = data || jsonb_build_object('value', $2::text), updated_at = NOW() WHERE id = $1`, [r.id, data]);
     else await client.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())`, [uid, eid, { key, value: data }]);
     await client.query('COMMIT');
+    client.release(); released = true;
+    // LC3e: after COMMIT — a refused write records nothing; a failure to record never turns a saved change into an error.
+    try { await _auditConnChange(uid, key, eid, cur, next, req); } catch (e) { console.error('[audit] connection change not recorded:', key, e.message); }
     return next;
-  } catch (e) { try { await client.query('ROLLBACK'); } catch (_) {} throw e; }
-  finally { client.release(); }
+  } catch (e) { if (!released) { try { await client.query('ROLLBACK'); } catch (_) {} } throw e; }
+  finally { if (!released) client.release(); }
 }
-const _mutatePlaidItemsE = (uid, entityId, fn) => _mutateSettingsBlob(uid, 'plaid_items', entityId, cur => fn(Array.isArray(cur) ? cur : []));
+// LC3e — what a connection blob says about access, with every secret left out.
+const _CONN_MARKERS = ['access_token', 'account', 'stripe_user_id', 'account_number', 'company_id', 'connected', 'consumer_key'];
+const _connLinks = v => (Array.isArray(v) ? v : (v && Array.isArray(v.links) ? v.links : null));
+const _connState = v => {
+  const links = _connLinks(v);
+  if (links) return { links: new Map(links.map(l => [String(l.item_id || l.link || ''), l.institution_name || l.institution || null])) };
+  if (!v || typeof v !== 'object' || !_CONN_MARKERS.some(f => v[f])) return null;
+  return { account: v.account || v.account_number || v.store_url || v.stripe_user_id || v.company_id || v.provider_name || null, books: v.books || null };
+};
+async function _auditConnChange(uid, key, eid, before, after, req) {
+  if (eid == null || !(key === 'plaid_items' || /_conn$/.test(key))) return;
+  const provider = key === 'plaid_items' ? 'plaid' : key.replace(/_conn$/, '');
+  const b = _connState(before), a = _connState(after);
+  const rec = (action, oldData, newData) => recordAudit(pool, { userId: uid, entityId: eid, table: 'integrations', action, oldData, newData, req });
+  if ((b && b.links) || (a && a.links)) {
+    const was = (b && b.links) || new Map(), now = (a && a.links) || new Map();
+    for (const [id, label] of was) if (!now.has(id)) await rec('INTEGRATION_DISCONNECTED', { provider, account: label }, null);
+    for (const [id, label] of now) if (!was.has(id)) await rec('INTEGRATION_CONNECTED', null, { provider, account: label });
+    return;
+  }
+  if (!b && a) return rec('INTEGRATION_CONNECTED', null, { provider, account: a.account, books: a.books || undefined });
+  if (b && !a) return rec('INTEGRATION_DISCONNECTED', { provider, account: b.account }, null);
+  if (b && a && b.account !== a.account) return rec('INTEGRATION_CONNECTED', { provider, account: b.account }, { provider, account: a.account });
+  if (b && a && JSON.stringify(b.books) !== JSON.stringify(a.books)) return rec('UPDATE', { provider, account: b.account, books: b.books }, { provider, account: a.account, books: a.books });
+}
+const _mutatePlaidItemsE = (uid, entityId, fn, req) => _mutateSettingsBlob(uid, 'plaid_items', entityId, cur => fn(Array.isArray(cur) ? cur : []), req);
 const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_name, linked_at: i.linked_at });
 
 // GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
@@ -7545,7 +7585,7 @@ app.post('/api/plaid/exchange', requireAuth, _bankPerm, wrap(async (req, res) =>
     } catch (_) { /* institution name is best-effort; the link still succeeds */ }
     const { uid, eid } = _bankCtx(req);   // M60
     const _newItem = { item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null };
-    const next = await _mutatePlaidItemsE(uid, eid, cur => cur.filter(it => it.item_id !== ex.item_id).concat([_newItem]));   // N45: idempotent re-link, atomic
+    const next = await _mutatePlaidItemsE(uid, eid, cur => cur.filter(it => it.item_id !== ex.item_id).concat([_newItem]), req);   // N45: idempotent re-link, atomic
     res.status(201).json({ ok: true, institution_name: institution, item_id: ex.item_id, items: next.map(_publicItem) });
   } catch (e) {
     console.error('[plaid exchange]', e.message, e.plaid || '');
@@ -7563,7 +7603,7 @@ app.post('/api/plaid/unlink', requireAuth, _bankPerm, wrap(async (req, res) => {
   const target = items.find(it => it.item_id === itemId);
   if (!target) return res.status(404).json({ error: 'No such linked bank.' });
   if (plaidConfigured()) { try { await plaidCall('/item/remove', { access_token: decTok(target.access_token) }); } catch (_) {} }
-  const _left = await _mutatePlaidItemsE(uid, eid, cur => cur.filter(it => it.item_id !== itemId));   // N45: atomic
+  const _left = await _mutatePlaidItemsE(uid, eid, cur => cur.filter(it => it.item_id !== itemId), req);   // N45: atomic
   res.json({ ok: true, items: _left.map(_publicItem) });
 }));
 
@@ -7635,6 +7675,9 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   // while the sync ran is kept / stays removed.
   const _cursors = new Map(items.map(it => [it.item_id, it.cursor]));
   await _mutatePlaidItemsE(uid, eid, cur => cur.map(it => (_cursors.has(it.item_id) ? Object.assign({}, it, { cursor: _cursors.get(it.item_id) }) : it)));
+  // LC3e: a business's bank feed changed — one summary row (counts, never a transaction). Personal's feed stays off it.
+  if (eid != null && (added + modified + removed + flagged) > 0)
+    await recordAudit(pool, { userId: uid, entityId: eid, table: 'integrations', action: 'INTEGRATION_SYNC', newData: { provider: 'plaid', added, modified, removed, flagged }, req });
   res.json({ ok: true, added, modified, removed, flagged });
 }));
 
@@ -7714,9 +7757,9 @@ const _providerBlobE = async (uid, key, entityId, fallback = false) => {
 // blob (a fresh link); a function receives the blob AS STORED NOW and returns the next one, so a merge (token
 // refresh, sync stamp, company link, books binding) lands on the current blob — not on a copy read earlier in the
 // request, which used to overwrite anything written in between (e.g. a reconnect in another tab lost its token).
-const _saveProviderBlobE = (uid, key, valueOrFn, entityId) =>
+const _saveProviderBlobE = (uid, key, valueOrFn, entityId, req = null) =>
   _mutateSettingsBlob(uid, key, entityId == null ? null : entityId,
-    cur => (typeof valueOrFn === 'function' ? valueOrFn(cur && typeof cur === 'object' ? cur : {}) : valueOrFn));
+    cur => (typeof valueOrFn === 'function' ? valueOrFn(cur && typeof cur === 'object' ? cur : {}) : valueOrFn), req);
 
 // ════════════════════════════════════════════════════════════════════════════════
 // SHARED OAUTH2 CONNECTOR DRIVER — registerOAuthConnector(spec)
@@ -7871,7 +7914,7 @@ function registerOAuthConnector(spec) {
         expires_at: expiryOf(t, null),
         connected_at: new Date().toISOString(),
         token_url: tokenUrl,
-      }, extra), flow.entityId != null ? flow.entityId : req.entityId);
+      }, extra), flow.entityId != null ? flow.entityId : req.entityId, req);
       return done(spec.label + ' connected ✓ You can close this window.');
     } catch (e) { console.error('[' + spec.key + ' callback]', e.message); return done('Could not link ' + spec.label + ': ' + e.message); }
   }));
@@ -7893,7 +7936,7 @@ function registerOAuthConnector(spec) {
     const uid = scopeId(req);
     const { id, value } = await _providerBlobE(uid, blobKey, req.entityId, false);
     if (!value || !(value.account || value.access_token)) return res.status(404).json({ error: 'No linked ' + spec.label + ' account for this business.' });
-    if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+    if (id) await _saveProviderBlobE(uid, blobKey, {}, req.entityId, req);   // LC3e: through the recorded write path
     res.json({ ok: true });
   }));
 }
@@ -7982,7 +8025,7 @@ app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(a
     let providerName = null;
     try { const intro = await finchCall('/introspect', j.access_token); providerName = (intro && (intro.payroll_provider_id || intro.provider_id)) || null; } catch (_) {}
     const uid = scopeId(req);
-    await _saveProviderBlobE(uid, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null }, flow.entityId != null ? flow.entityId : req.entityId);
+    await _saveProviderBlobE(uid, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null }, flow.entityId != null ? flow.entityId : req.entityId, req);
     return done('Payroll connected ✓ You can close this window.');
   } catch (e) { console.error('[finch callback]', e.message, e.provider || ''); return done('Could not link payroll: ' + e.message); }
 }));
@@ -8005,7 +8048,7 @@ app.post('/api/finch/disconnect', requireAuth, requirePerm('payroll:write'), wra
   const uid = scopeId(req);
   const { id, value } = await _providerBlobE(uid, 'finch_conn', req.entityId, false);
   if (!value) return res.status(404).json({ error: 'No linked payroll.' });
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  if (id) await _saveProviderBlobE(uid, 'finch_conn', {}, req.entityId, req);   // LC3e
   res.json({ ok: true });
 }));
 
@@ -8059,7 +8102,7 @@ app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(as
       company = await codatCall(`/companies/${companyId}`);
     }
     const linkUrl = (company.redirect) || (company.links && company.links.self) || null;
-    await _saveProviderBlobE(uid, 'codat_conn', cur => Object.assign({}, cur, { company_id: companyId, linked_at: new Date().toISOString() }), req.entityId);   // N45b
+    await _saveProviderBlobE(uid, 'codat_conn', cur => Object.assign({}, cur, { company_id: companyId, linked_at: new Date().toISOString() }), req.entityId, req);   // N45b
     if (!linkUrl) return res.status(502).json({ error: 'Codat did not return a link URL.' });
     res.json({ link_url: linkUrl, company_id: companyId });
   } catch (e) { console.error('[codat link-url]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start accounting linking: ' + e.message }); }
@@ -8069,7 +8112,7 @@ app.post('/api/codat/disconnect', requireAuth, requirePerm('books:write'), wrap(
   const uid = scopeId(req);
   const { id, value } = await _providerBlobE(uid, 'codat_conn', req.entityId, false);
   if (!value) return res.status(404).json({ error: 'No linked accounting platform.' });
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  if (id) await _saveProviderBlobE(uid, 'codat_conn', {}, req.entityId, req);   // LC3e
   res.json({ ok: true });
 }));
 
@@ -8414,7 +8457,7 @@ app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(as
     let j = {}; try { j = await resp.json(); } catch (_) {}
     if (!resp.ok || !j.stripe_user_id) throw new Error(j.error_description || j.error || ('Stripe OAuth HTTP ' + resp.status));
     const uid = scopeId(req);
-    await _saveProviderBlobE(uid, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: (flow.entityId != null ? flow.entityId : req.entityId) || null } }, flow.entityId != null ? flow.entityId : req.entityId);
+    await _saveProviderBlobE(uid, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: (flow.entityId != null ? flow.entityId : req.entityId) || null } }, flow.entityId != null ? flow.entityId : req.entityId, req);
     return done('Stripe connected ✓ You can close this window.');
   } catch (e) { console.error('[stripe connect callback]', e.message); return done('Could not link Stripe: ' + e.message); }
 }));
@@ -8431,7 +8474,7 @@ app.post('/api/stripe/disconnect', requireAuth, requirePerm('bank:manage'), wrap
       });
     } catch (_) {}
   }
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  if (id) await _saveProviderBlobE(uid, 'stripe_conn', {}, req.entityId, req);   // LC3e
   res.json({ ok: true });
 }));
 
@@ -8477,7 +8520,7 @@ app.post('/api/stripe/binding', requireAuth, requirePerm('bank:manage'), wrap(as
     if (!owned.rows[0]) return res.status(403).json({ error: 'Business not found.' });
     entity_id = _e;
   }
-  await _saveProviderBlobE(uid, 'stripe_conn', cur => Object.assign({}, cur, { books: { scope, entity_id } }), req.entityId);   // N45b
+  await _saveProviderBlobE(uid, 'stripe_conn', cur => Object.assign({}, cur, { books: { scope, entity_id } }), req.entityId, req);   // N45b
   res.json({ ok: true, books: { scope, entity_id } });
 }));
 
@@ -8910,7 +8953,7 @@ app.post('/api/belvo/exchange', requireAuth, _bankPerm, wrap(async (req, res) =>
     const _nb = await _mutateSettingsBlob(uid, 'belvo_conn', entityId, cur => {   // N45: atomic append
       const links = (cur && cur.links) || [];
       return Object.assign({}, cur || {}, { links: links.filter(l => l.link !== link).concat([{ link, institution, linked_at: new Date().toISOString() }]) });
-    });
+    }, req);
     const next = _nb.links;
     res.status(201).json({ ok: true, institution, institutions: next.map(l => l.institution).filter(Boolean) });
   } catch (e) { console.error('[belvo exchange]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not link bank: ' + e.message }); }
@@ -8922,7 +8965,7 @@ app.post('/api/belvo/disconnect', requireAuth, _bankPerm, wrap(async (req, res) 
   const { id, value } = await _providerBlobE(uid, 'belvo_conn', eid, false);
   if (!value || !((value.links || []).length)) return res.status(404).json({ error: 'No linked LatAm bank.' });
   if (belvoConfigured()) { for (const l of value.links) { try { await belvoCall('/api/links/' + encodeURIComponent(l.link) + '/', { method: 'DELETE' }); } catch (_) {} } }
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({ links: [] }) });
+  if (id) await _saveProviderBlobE(uid, 'belvo_conn', { links: [] }, eid, req);   // LC3e
   res.json({ ok: true });
 }));
 
@@ -8960,6 +9003,8 @@ app.post('/api/belvo/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
       }
     } catch (e) { console.error('[belvo sync]', e.message, e.provider || ''); }
   }
+  if (eid != null && added > 0)   // LC3e: as Plaid — a business's feed only, counts only
+    await recordAudit(pool, { userId: uid, entityId: eid, table: 'integrations', action: 'INTEGRATION_SYNC', newData: { provider: 'belvo', added }, req });
   res.json({ ok: true, accounts, added });
 }));
 
@@ -8979,7 +9024,7 @@ app.post('/api/wipay/connect', requireAuth, requirePerm('bank:manage'), wrap(asy
   if (!account || !apiKey) return res.status(400).json({ error: 'WiPay account number and API key are required.' });
   if (!ALLOWED.includes(country)) return res.status(400).json({ error: 'country must be one of ' + ALLOWED.join(', ') + '.' });
   const uid = scopeId(req);
-  await _saveProviderBlobE(uid, 'wipay_conn', { account_number: account, api_key: encTok(apiKey), country, linked_at: new Date().toISOString() }, req.entityId);
+  await _saveProviderBlobE(uid, 'wipay_conn', { account_number: account, api_key: encTok(apiKey), country, linked_at: new Date().toISOString() }, req.entityId, req);
   res.status(201).json({ ok: true, account, country });
 }));
 
@@ -8987,7 +9032,7 @@ app.post('/api/wipay/disconnect', requireAuth, requirePerm('bank:manage'), wrap(
   const uid = scopeId(req);
   const { id, value } = await _providerBlobE(uid, 'wipay_conn', req.entityId, false);
   if (!value || !value.account_number) return res.status(404).json({ error: 'No WiPay account connected.' });
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  if (id) await _saveProviderBlobE(uid, 'wipay_conn', {}, req.entityId, req);   // LC3e
   res.json({ ok: true });
 }));
 
@@ -9016,14 +9061,14 @@ for (const [ckey, cfg] of Object.entries(CRED_CONNECTORS)) {
     const stored = { connected: true, provider: cfg.label, linked_at: new Date().toISOString() };
     for (const f of cfg.fields) stored[f] = encTok(String(body[f]).trim());  // every credential encrypted at rest
     const uid = scopeId(req);
-    await _saveProviderBlobE(uid, blobKey, stored, req.entityId);
+    await _saveProviderBlobE(uid, blobKey, stored, req.entityId, req);
     res.status(201).json({ ok: true, provider: cfg.label });
   }));
   app.post(`/api/${ckey}/disconnect`, requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
     const uid = scopeId(req);
     const { id, value } = await _providerBlobE(uid, blobKey, req.entityId, false);
     if (!value || !value.connected) return res.status(404).json({ error: `No ${cfg.label} account connected.` });
-    if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+    if (id) await _saveProviderBlobE(uid, blobKey, {}, req.entityId, req);   // LC3e
     res.json({ ok: true });
   }));
 }
@@ -9240,13 +9285,13 @@ app.post('/api/woocommerce/connect', requireAuth, requirePerm('bank:manage'), wr
   if (!store || !ck || !cs) return res.status(400).json({ error: 'WooCommerce requires a store URL (https://…), consumer_key and consumer_secret.' });
   try { await _safeEgress.checkUrl(store); }
   catch (e) { return res.status(400).json({ error: 'WooCommerce store URL rejected: ' + e.message + '.', code: 'BAD_STORE_URL' }); }
-  await _saveProviderBlobE(scopeId(req), 'woocommerce_conn', { connected: true, provider: 'WooCommerce', store_url: store, consumer_key: encTok(ck), consumer_secret: encTok(cs), linked_at: new Date().toISOString() }, req.entityId);
+  await _saveProviderBlobE(scopeId(req), 'woocommerce_conn', { connected: true, provider: 'WooCommerce', store_url: store, consumer_key: encTok(ck), consumer_secret: encTok(cs), linked_at: new Date().toISOString() }, req.entityId, req);
   res.status(201).json({ ok: true, store });
 }));
 app.post('/api/woocommerce/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   const { id, value } = await _providerBlobE(scopeId(req), 'woocommerce_conn', req.entityId, false);
   if (!value || !value.connected) return res.status(404).json({ error: 'No WooCommerce store connected.' });
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  if (id) await _saveProviderBlobE(scopeId(req), 'woocommerce_conn', {}, req.entityId, req);   // LC3e
   res.json({ ok: true });
 }));
 app.post('/api/woocommerce/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
@@ -9271,7 +9316,8 @@ app.post('/api/integration-requests', requireAuth, wrap(async (req, res) => {
   const { rows: [existing] } = await pool.query(
     `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'='integration_request' AND data->>'value'=$2 LIMIT 1`, [uid, name]);
   if (existing) return res.json({ ok: true, requested: false, note: 'Already recorded.' });
-  await db.insert('user_settings', { user_id: uid, key: 'integration_request', value: name, requested_at: new Date().toISOString() });
+  const { row: _ir } = await db.insert('user_settings', { user_id: uid, key: 'integration_request', value: name, requested_at: new Date().toISOString() });
+  await recordAudit(pool, { userId: uid, entityId: req.entityId == null ? null : req.entityId, table: 'support_requests', recordId: _ir && _ir.id || null, action: 'CREATE', newData: { integration: name }, req });   // LC3e
   res.status(201).json({ ok: true, requested: true });
 }));
 app.get('/api/integration-requests', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {

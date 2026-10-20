@@ -6092,6 +6092,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
      VALUES ($1, $2, 'client', $3) RETURNING id, created_at`,
     [link.rows[0].accountant_id, scopeId(req), content]
   );
+  await recordAudit(pool, { userId: scopeId(req), table: 'accountant_messages', recordId: rows[0].id, action: 'MESSAGE', newData: { sender: 'client', accountant_id: link.rows[0].accountant_id }, req });   // LC3f — that one was sent, never its text
   res.json({ ok: true, id: rows[0].id });
 }));
 

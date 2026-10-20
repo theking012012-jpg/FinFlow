@@ -6,7 +6,7 @@
  * The class LC3 / LC3b belonged to — a route that changes data and writes no audit row — shipped silently because
  * nothing noticed a NEW one. This guard enumerates every mutating route (server.js, accountant-routes.js,
  * admin-routes.js; tools/fix-2026-10-19/fix3-enumerate-audited-routes.js) and FAILS when one that writes no audit row is
- * neither EXEMPT (a stated reason it changes no books or access) nor a NUMBERED known gap (LC3g admin and LC3d sign-in / security, closed
+ * neither EXEMPT (a stated reason it changes no books or access) nor a NUMBERED known gap (LC3g admin, LC3d sign-in / security and LC3f accountant portal, closed
  * 2026-10-20 — every admin action now writes the hardened admin_log via adminAudit) (an open finding with an
  * owner decision pending). It also fails when a listed route has started auditing (the list must be kept true).
  *
@@ -20,8 +20,18 @@ const { enumerate } = require(path.join(ROOT, 'tools', 'fix-2026-10-19', 'fix3-e
 // or, better, audited.
 const ALLOWED = {
   "EXEMPT": {
-    reason: "no stored change to books or access: a calculation, a suggestion, a what-if, the business in view, a session switch, a report, a draft, a log line, a Stripe checkout page (the subscription changes only on Stripe's webhook)",
+    reason: "no stored change to books or access: a calculation, a suggestion, a what-if, the business in view, a session switch, a report, a draft, a log line, a Stripe checkout page (the subscription changes only on Stripe's webhook); accountant routes that are disabled (record-commission 410, reactivate-client 403), a live 'typing' signal, a résumé / membership check or AI read that stores nothing, and the three consent routes that audit INSIDE _activateLink (CLIENT_ACTIVATE)",
     routes: [
+      "POST /api/accountants/record-commission",
+      "POST /api/accountants/reactivate-client",
+      "POST /api/accountants/clients/:userId/typing",
+      "POST /api/accountants/my-accountant/typing",
+      "POST /api/accountants/extract-resume",
+      "POST /api/accountants/verify-membership",
+      "POST /api/accountants/clients/:userId/ai-insights",
+      "POST /api/accountants/my-accountant/approve",
+      "POST /api/accountants/approve-request",
+      "POST /api/accountants/activate-client",
       "POST /api/ai",
       "POST /api/ai/scan",
       "POST /api/autocat-rules/ai-suggest",
@@ -97,41 +107,6 @@ const ALLOWED = {
       "POST /api/woocommerce/connect",
       "POST /api/woocommerce/disconnect",
       "POST /api/woocommerce/sync",
-    ],
-  },
-  "LC3f": {
-    reason: "accountant portal routes (accountant-routes.js) \u2014 separate review",
-    routes: [
-      "DELETE /api/accountants/deadlines/:id",
-      "DELETE /api/accountants/tasks/:id",
-      "POST /api/accountant-messages",
-      "POST /api/accountants/activate-client",
-      "POST /api/accountants/approve-request",
-      "POST /api/accountants/clients/:userId/ai-insights",
-      "POST /api/accountants/clients/:userId/typing",
-      "POST /api/accountants/deadlines",
-      "POST /api/accountants/extract-resume",
-      "POST /api/accountants/kyc/start",
-      "POST /api/accountants/logout",
-      "POST /api/accountants/mfa/disable",
-      "POST /api/accountants/mfa/enable",
-      "POST /api/accountants/mfa/setup",
-      "POST /api/accountants/my-accountant/approve",
-      "POST /api/accountants/my-accountant/attach",
-      "POST /api/accountants/my-accountant/messages",
-      "POST /api/accountants/my-accountant/proposals/:id/respond",
-      "POST /api/accountants/my-accountant/tasks/:id/done",
-      "POST /api/accountants/my-accountant/typing",
-      "POST /api/accountants/proposals/:id/withdraw",
-      "POST /api/accountants/reactivate-client",
-      "POST /api/accountants/record-commission",
-      "POST /api/accountants/register",
-      "POST /api/accountants/report",
-      "POST /api/accountants/request-access",
-      "POST /api/accountants/review",
-      "POST /api/accountants/run-monthly-payouts",
-      "POST /api/accountants/stripe-connect",
-      "POST /api/accountants/verify-membership",
     ],
   },
 };

@@ -576,6 +576,7 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
       // F16: NO session at signup. The application is 'pending' until an admin
       // approves it — no session, no access, not listed. A pre-approval session
       // was the hole that let unverified accountants straight into the portal.
+      await _audit(pool, { userId: null, table: 'accountants', recordId: accountantId, action: 'SIGNUP', actorType: 'anonymous', req });   // LC3f
       return res.status(201).json({
         success: true,
         accountantId,
@@ -726,7 +727,10 @@ If you cannot find a field, use null. Be concise.`;
       const token = (req.body && req.body.token) ? String(req.body.token) : '';
       let ok = false;
       if (token) { try { ok = totp.verify(token, totp.decSecret(acc.mfa_secret)); } catch (_) { ok = false; } }
-      if (!ok) return res.status(401).json({ error: token ? 'Invalid authenticator code.' : 'Authenticator code required.', mfaRequired: true });
+      if (!ok) {
+        if (token) await _audit(pool, { userId: null, table: 'accountants', recordId: acc.id, action: 'LOGIN_FAILED', actorType: 'anonymous', newData: { reason: 'mfa_code' }, req });   // LC3f (never the code)
+        return res.status(401).json({ error: token ? 'Invalid authenticator code.' : 'Authenticator code required.', mfaRequired: true });
+      }
     }
 
     // N73: fresh session id, accountant identity ONLY (any user id held by this browser is dropped).
@@ -1477,6 +1481,7 @@ If you cannot find a field, use null. Be concise.`;
       `);
       payoutsSkipped = parseInt(skippedResult.rows[0].count) || 0;
 
+      await _audit(pool, { userId: null, table: 'accountant_earnings', action: 'PAYOUT_RUN', newData: { created: payoutsCreated, skipped: payoutsSkipped }, req });   // LC3f: the system's monthly run
       return res.json({ success: true, payoutsCreated, payoutsSkipped });
     } finally {
       client.release();
@@ -1805,9 +1810,11 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   }));
 
   // ── ACCOUNTANT LOGOUT ─────────────────────────────────────────────────────
-  app.post('/api/accountants/logout', (req, res) => {
+  app.post('/api/accountants/logout', wrap(async (req, res) => {
+    const _a = req.session && req.session.accountantId;
+    if (_a) await _audit(pool, { userId: null, table: 'accountants', recordId: _a, action: 'LOGOUT', req });   // LC3f — before the session is gone
     req.session.destroy(() => res.json({ ok: true }));
-  });
+  }));
 
   // ── SUBMIT REVIEW (only after completed FinFlow payment) ─────────────────
   app.post('/api/accountants/review', wrap(async (req, res) => {
@@ -1829,6 +1836,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       VALUES ($1, $2, $3, $4, NOW())
       ON CONFLICT (accountant_id, client_id) DO UPDATE SET rating = $3, comment = $4, created_at = NOW()
     `, [accountantId, req.session.userId, rating, (comment || '').trim().slice(0, 500)]);
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_reviews', action: 'REVIEW', newData: { accountant_id: Number(accountantId), rating: Number(rating) }, req });   // LC3f
 
     // Recalculate average rating — ROUND to 2dp; COALESCE keeps current value if subquery returns NULL
     await pool.query(`
@@ -1867,6 +1875,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       INSERT INTO accountant_reports (accountant_id, reporter_id, reason, category, status, created_at)
       VALUES ($1, $2, $3, $4, 'open', NOW())
     `, [accountantId, req.session.userId, reason.trim().slice(0, 1000), _rptCat]);
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_reports', action: 'REPORT', newData: { accountant_id: Number(accountantId), category: _rptCat }, req });   // LC3f (the reason stays on the report itself)
 
     return res.json({ success: true });
   }));
@@ -1913,6 +1922,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       return res.status(502).json({ error: 'Could not start identity verification: ' + e.message });
     }
     await pool.query(`UPDATE accountants SET kyc_session_id = $1, kyc_status = 'pending' WHERE id = $2`, [session.id, accId]);
+    await _audit(pool, { userId: null, table: 'accountants', recordId: accId, action: 'KYC_STARTED', req });   // LC3f
     res.json({ id: session.id, client_secret: session.client_secret, url: session.url, status: 'pending' });
   }));
 
@@ -1936,6 +1946,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (acc && acc.mfa_enabled) return res.status(400).json({ error: 'MFA is already enabled. Disable it first to re-enroll.' });
     const secret = totp.newSecret();
     await pool.query('UPDATE accountants SET mfa_pending_secret = $1 WHERE id = $2', [totp.encSecret(secret), req.session.accountantId]);
+    await _audit(pool, { userId: null, table: 'accountants', recordId: req.session.accountantId, action: 'MFA_SETUP_STARTED', req });   // LC3f (never the secret)
     res.json({ secret, otpauth: totp.otpauthUri(secret, (acc && acc.email) || 'account') });
   }));
 
@@ -1946,8 +1957,9 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!penc) return res.status(400).json({ error: 'Start MFA setup first.' });
     let ok = false;
     try { ok = totp.verify(token, totp.decSecret(penc)); } catch (_) { ok = false; }
-    if (!ok) return res.status(400).json({ error: 'Invalid code — check your authenticator app and try again.' });
+    if (!ok) { await _audit(pool, { userId: null, table: 'accountants', recordId: req.session.accountantId, action: 'MFA_CODE_REJECTED', newData: { step: 'enable' }, req }); return res.status(400).json({ error: 'Invalid code — check your authenticator app and try again.' }); }   // LC3f
     await pool.query('UPDATE accountants SET mfa_secret = mfa_pending_secret, mfa_pending_secret = NULL, mfa_enabled = TRUE WHERE id = $1', [req.session.accountantId]);
+    await _audit(pool, { userId: null, table: 'accountants', recordId: req.session.accountantId, action: 'MFA_ENABLED', req });   // LC3f
     res.json({ mfa_enabled: true });
   }));
 
@@ -1958,8 +1970,9 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!acc || !acc.mfa_enabled) return res.status(400).json({ error: 'MFA is not enabled.' });
     let ok = false;
     try { ok = totp.verify(token, totp.decSecret(acc.mfa_secret)); } catch (_) { ok = false; }
-    if (!ok) return res.status(400).json({ error: 'Invalid code.' });
+    if (!ok) { await _audit(pool, { userId: null, table: 'accountants', recordId: req.session.accountantId, action: 'MFA_CODE_REJECTED', newData: { step: 'disable' }, req }); return res.status(400).json({ error: 'Invalid code.' }); }   // LC3f
     await pool.query('UPDATE accountants SET mfa_enabled = FALSE, mfa_secret = NULL, mfa_pending_secret = NULL WHERE id = $1', [req.session.accountantId]);
+    await _audit(pool, { userId: null, table: 'accountants', recordId: req.session.accountantId, action: 'MFA_DISABLED', req });   // LC3f
     res.json({ mfa_enabled: false });
   }));
 
@@ -2106,6 +2119,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        VALUES ($1, $2, $3, 'client', NOW()) RETURNING id, message AS content, sender, created_at`,
       [accId, req.session.userId, content]
     );
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_messages', recordId: row.rows[0].id, action: 'MESSAGE', newData: { sender: 'client', accountant_id: accId }, req });   // LC3f — that one was sent, never its text
     _chatBroadcast(_convKey(accId, req.session.userId), 'message',
       { ...row.rows[0], sender_name: 'Client' });
     _notifyOfflineMessage({ recipientSide: 'accountant', accountantId: accId, userId: req.session.userId, preview: content });
@@ -2149,6 +2163,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        VALUES ($1,$2,$3,'client',NOW(),$4,$5,$6,$7) RETURNING id, message AS content, sender, created_at, att_name, att_mime, att_size`,
       [accId, req.session.userId, caption, a.name, a.mime, a.size, a.b64]
     );
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_messages', recordId: row.rows[0].id, action: 'MESSAGE_ATTACH', newData: { sender: 'client', accountant_id: accId, file: a.name, size: a.size }, req });   // LC3f
     _chatBroadcast(_convKey(accId, req.session.userId), 'message', { ...row.rows[0], sender_name: 'Client' });
     _notifyOfflineMessage({ recipientSide: 'accountant', accountantId: accId, userId: req.session.userId, preview: '📎 ' + a.name });
     res.json(row.rows[0]);
@@ -2228,8 +2243,9 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.post('/api/accountants/proposals/:id/withdraw', requireAccountant, wrap(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad id.' });
-    const r = await pool.query(`UPDATE accountant_proposals SET status='withdrawn' WHERE id=$1 AND accountant_id=$2 AND status='pending' RETURNING id`, [id, req.session.accountantId]);
+    const r = await pool.query(`UPDATE accountant_proposals SET status='withdrawn' WHERE id=$1 AND accountant_id=$2 AND status='pending' RETURNING id, user_id, title, fee_cents, currency`, [id, req.session.accountantId]);
     if (!r.rows[0]) return res.status(404).json({ error: 'No pending proposal to withdraw.' });
+    await _audit(pool, { userId: r.rows[0].user_id, table: 'accountant_proposals', recordId: id, action: 'PROPOSAL_WITHDRAWN', oldValue: 'pending', newValue: 'withdrawn', newData: { title: r.rows[0].title, fee_cents: r.rows[0].fee_cents, currency: r.rows[0].currency }, req });   // LC3f — on the client's trail
     res.json({ ok: true, id });
   }));
 
@@ -2258,9 +2274,11 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const stampCol = action === 'accept' ? 'accepted_at' : 'declined_at';
     const r = await pool.query(
       `UPDATE accountant_proposals SET status=$2, ${stampCol}=NOW() WHERE id=$1 AND user_id=$3 AND status='pending'
-       RETURNING id,status,accepted_at,declined_at`,
+       RETURNING id,status,accepted_at,declined_at,title,fee_cents,currency,accountant_id`,
       [id, newStatus, req.session.userId]);
     if (!r.rows[0]) return res.status(409).json({ error: 'This proposal is no longer pending.' });
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_proposals', recordId: id, action: action === 'accept' ? 'PROPOSAL_ACCEPTED' : 'PROPOSAL_DECLINED', oldValue: 'pending', newValue: newStatus,   // LC3f — consent to paid work
+      newData: { title: r.rows[0].title, fee_cents: r.rows[0].fee_cents, currency: r.rows[0].currency, accountant_id: r.rows[0].accountant_id }, req });
     res.json({ ok: true, ...r.rows[0] });
   }));
 
@@ -2299,8 +2317,9 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.delete('/api/accountants/tasks/:id', requireAccountant, wrap(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad id.' });
-    const r = await pool.query(`DELETE FROM accountant_tasks WHERE id=$1 AND accountant_id=$2 RETURNING id`, [id, req.session.accountantId]);
+    const r = await pool.query(`DELETE FROM accountant_tasks WHERE id=$1 AND accountant_id=$2 RETURNING *`, [id, req.session.accountantId]);
     if (!r.rows[0]) return res.status(404).json({ error: 'Task not found.' });
+    await _audit(pool, { userId: r.rows[0].user_id, table: 'accountant_tasks', recordId: id, action: 'TASK_DELETED', oldData: { title: r.rows[0].title, status: r.rows[0].status, due_date: r.rows[0].due_date }, req });   // LC3f — on the client's trail
     res.json({ ok: true, id });
   }));
 
@@ -2323,9 +2342,10 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const done = !(req.body && req.body.done === false);   // default → mark done; {done:false} → reopen
     const r = await pool.query(
       `UPDATE accountant_tasks SET status=$2, done_at=$3 WHERE id=$1 AND user_id=$4
-       RETURNING id,status,done_at`,
+       RETURNING id,status,done_at,title`,
       [id, done ? 'done' : 'open', done ? new Date() : null, req.session.userId]);
     if (!r.rows[0]) return res.status(404).json({ error: 'Task not found.' });
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_tasks', recordId: id, action: done ? 'TASK_DONE' : 'TASK_REOPENED', newData: { title: r.rows[0].title }, req });   // LC3f
     res.json({ ok: true, ...r.rows[0] });
   }));
 
@@ -2402,6 +2422,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       VALUES ($1, $2, 'pending', 0, 'client', '{"entities":{},"personal":"none"}'::jsonb)   -- C6: nothing until the owner grants it
       ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'pending', requested_by = 'client'
     `, [accountantId, req.session.userId]);
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', action: 'ACCESS_REQUESTED', newData: { accountant_id: Number(accountantId) }, req });   // LC3f
 
     // Notify accountant by email
     const [userRes, accRes] = await Promise.all([
@@ -2547,6 +2568,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         });
         stripeAccountId = stripeAcct.id;
         await pool.query('UPDATE accountants SET stripe_account_id = $1 WHERE id = $2', [stripeAccountId, acct.id]);
+        await _audit(pool, { userId: null, table: 'accountants', recordId: acct.id, action: 'PAYOUT_ACCOUNT_LINKED', newData: { stripe_account_id: stripeAccountId }, req });   // LC3f (UNEXECUTED: needs Stripe)
       }
       const base = appUrl();
       const accountLink = await stripe.accountLinks.create({
@@ -2684,15 +2706,17 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        VALUES ($1, $2, $3, $4) RETURNING *`,
       [req.session.accountantId, client_name, filing_type, due_date]
     );
+    await _audit(pool, { userId: null, table: 'accountant_deadlines', recordId: result.rows[0].id, action: 'CREATE', newData: { filing_type, due_date }, req });   // LC3f — the accountant's own planner
     return res.status(201).json(result.rows[0]);
   }));
 
   app.delete('/api/accountants/deadlines/:id', requireAccountant, wrap(async (req, res) => {
     if (!/^[1-9][0-9]*$/.test(String(req.params.id))) return res.status(400).json({ error: 'Invalid id.' });
-    await pool.query(
-      `DELETE FROM accountant_deadlines WHERE id = $1 AND accountant_id = $2`,
+    const { rows: [_dd] } = await pool.query(
+      `DELETE FROM accountant_deadlines WHERE id = $1 AND accountant_id = $2 RETURNING *`,
       [req.params.id, req.session.accountantId]
     );
+    if (_dd) await _audit(pool, { userId: null, table: 'accountant_deadlines', recordId: _dd.id, action: 'DELETE', oldData: { filing_type: _dd.filing_type, due_date: _dd.due_date }, req });   // LC3f
     return res.json({ ok: true });
   }));
 

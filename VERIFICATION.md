@@ -13,8 +13,8 @@ not from what someone notices, and it does not grow while work is in progress.
 
 **Issues are not enumerable. Checks are. Run the checks; the failures are the issue list.**
 
-- **Part A — Figures:** **108** checks. Every number the app displays, per period view.
-  *(A1 15 + A2 6 + A3 3 + A4 3 + A5 18 + A6 18 + A7 23 + A8 18 + A9 4 = 108. Was "~84" with an A7
+- **Part A — Figures:** **115** checks. Every number the app displays, per period view.
+  *(A1 15 + A2 6 + A3 3 + A4 3 + A5 18 + A6 18 + A7 23 + A8 18 + A9 4 + A10 7 = 115; A10 added 2026-10-20 (LC1d). Earlier: Was "~84" with an A7
   header reading 21 against 23 enumerated rows — corrected under **F81**; then **A8 VIEWER
   INDEPENDENCE** added at 6 and widened to 18 (timezone 6 + fiscal-year 6 + display-currency 6);
   then **A9 future-dated exclusion** added at 4 under decision **D2**. "Done = every check green"
@@ -607,6 +607,31 @@ A9 assertions come with the client probe.
 > Rule-14 control executed: deleting the `> _today` clause turns A9.1 → 13,800, A9.2 → 9,000,
 > A9.1Δ → +7,777. Cash-flow applies no per-row D2 (documented known limitation; the seed has no
 > future cash event).
+
+## A10 · Projects & time — 7
+
+Added 2026-10-20 (**LC1d**). Before FIX-1 a time entry named its project only as free text and no project figure was
+computed from time at all, so every figure below read 0 and none was on this list. **Expected values are the owner's**
+(supplied 2026-10-20), seeded exactly by `verify-a10-projects-time.js` (dated this month):
+
+- **Project A**, budget 1,000 — 2h @ 100 **billable** + 1.5h @ 100 **non-billable**
+- **Project B**, budget 2,000 — 4h @ 150 **billable**
+
+Definitions (LC1b): *hours logged* = all linked hours; *billable value* = hours × rate of billable linked entries (no time
+is invoiced, so it is not revenue); *budget remaining* = Σ max(0, budget − billable value).
+
+| # | Check | Expected | Result |
+|---|---|---|---|
+| A10.1 | Project A — hours logged (API and row) | 3.5 | PASS (2026-10-20) — `verify-a10-projects-time.js` |
+| A10.2 | Project A — billable value (API and row) | 200 (not 350: the non-billable 1.5h is excluded) | PASS (2026-10-20) |
+| A10.3 | Project B — hours logged | 4 | PASS (2026-10-20) |
+| A10.4 | Project B — billable value | 600 | PASS (2026-10-20) |
+| A10.5 | Projects card — Billable value | 800 | PASS (2026-10-20) |
+| A10.6 | Projects card — Budget remaining | 2,200 | PASS (2026-10-20) |
+| A10.7 | Projects card — Billable Hours, this month | 6 (2 + 4; arithmetic on the owner's example, not separately supplied) | PASS (2026-10-20) |
+
+> Executed both ways: the current code → 9/0 (the 7 checks, plus both rows read on the rendered page); the code before
+> FIX-1 (`c193e2c`) → 8 failed (every project figure 0; only A10.7, which never depended on the project link, passed).
 
 ---
 

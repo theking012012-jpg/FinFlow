@@ -12,6 +12,14 @@ delete process.env.ADMIN_TOTP_SECRET;
 const { bootSpaInJsdom } = require('./jsdomBoot.js');
 const { HarnessHttp } = require('./httpClient.js');
 
+// LR12: the Audit table gained a "By" column — read cells by HEADER, not position, in the fixed order
+// Date · Table · Record ID · Action · Field · Old Value · New Value (a new column can never shift these again).
+const _auditRowsByHeader = d => {
+  const heads = Array.from(d.getElementById('audit-trail-body').closest('table').querySelectorAll('thead th')).map(th => th.textContent.trim());
+  const at = ['Date', 'Table', 'Record ID', 'Action', 'Field', 'Old Value', 'New Value'].map(h => heads.indexOf(h));
+  return Array.from(d.querySelectorAll('#audit-trail-body tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim()))
+    .filter(r => r.length > 1).map(r => at.map(i => (i >= 0 ? r[i] : undefined)));
+};
 let pass = 0, fail = 0;
 const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e); ok ? pass++ : fail++;
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}  [measured ${JSON.stringify(m)}, correct ${JSON.stringify(e)}${bug !== undefined ? ', bug gives ' + JSON.stringify(bug) : ''}]`); };
@@ -36,7 +44,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     await settle(10, 40);
     d.getElementById('audit-filter-table').value = Array.from(d.getElementById('audit-filter-table').options).find(o => o.value.split(',').includes('users')).value;
     await w.loadAuditTrail(); await settle(5, 30);
-    const rows = Array.from(d.querySelectorAll('#audit-trail-body tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim())).filter(r => r.length > 1);
+    const rows = _auditRowsByHeader(d);
     const plan = rows.find(r => r[4] === 'plan');
     eq('the plan change is listed: trial → business', plan ? [plan[5], plan[6]] : null, ['trial', 'business'], null);
     eq('…marked as made by FinFlow support', plan ? /FinFlow support/.test(plan[3]) : null, true, false);

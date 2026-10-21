@@ -3745,21 +3745,37 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
   const ACCOUNT_LEVEL_TABLES = ['entities', 'users'];
   const { limit = 500, type } = req.query;
   const params = [scopeId(req)];
-  let q = `SELECT id, user_id, entity_id, table_name, record_id, action, field_name,
-                  old_value, new_value, old_data, new_data, actor_type, actor_id, changed_at AS created_at
-             FROM audit_trail WHERE user_id = $1`;
+  // LR12: each row names WHO made the change (actor_label). A person is named by their name (else e-mail); an
+  // accountant as "Accountant · <name>"; FinFlow support never by identity. Only the label leaves the server.
+  let q = `SELECT t.id, t.user_id, t.entity_id, t.table_name, t.record_id, t.action, t.field_name,
+                  t.old_value, t.new_value, t.old_data, t.new_data, t.actor_type, t.actor_id, t.changed_at AS created_at,
+                  u.data->>'name' AS _actor_name, u.data->>'email' AS _actor_email,
+                  NULLIF(TRIM(COALESCE(a.first_name,'') || ' ' || COALESCE(a.last_name,'')), '') AS _acct_name
+             FROM audit_trail t
+             LEFT JOIN users u       ON t.actor_type = 'user'       AND u.id = t.actor_id
+             LEFT JOIN accountants a ON t.actor_type = 'accountant' AND a.id = t.actor_id
+            WHERE t.user_id = $1`;
   if (req.entityId != null) {
     params.push(req.entityId);
     const _al = ACCOUNT_LEVEL_TABLES.map(t => `'${t}'`).join(',');
-    q += ` AND (entity_id IS NULL OR entity_id = $${params.length} OR table_name IN (${_al}))`;
+    q += ` AND (t.entity_id IS NULL OR t.entity_id = $${params.length} OR t.table_name IN (${_al}))`;
   }
   // C29: a filter is a GROUP of tables (e.g. Payments = invoice_payments,payments_received), comma-separated. It
   // used to be one exact name, and the page asked for names nothing writes ("payroll" — runs log as payroll_runs).
-  if (type && type !== 'all') { params.push(String(type).split(',').map(t => t.trim()).filter(Boolean)); q += ` AND table_name = ANY($${params.length})`; }
+  if (type && type !== 'all') { params.push(String(type).split(',').map(t => t.trim()).filter(Boolean)); q += ` AND t.table_name = ANY($${params.length})`; }
   const lim = Math.min(Math.max(parseInt(limit) || 500, 1), 10000);
-  q += ` ORDER BY changed_at DESC LIMIT ${lim}`;
+  q += ` ORDER BY t.changed_at DESC LIMIT ${lim}`;
   const { rows } = await pool.query(q, params);
-  res.json({ total: rows.length, rows });
+  const _label = r => {
+    switch (r.actor_type) {
+      case 'user':       return (r._actor_name && r._actor_name.trim()) || r._actor_email || (r.actor_id != null ? 'User #' + r.actor_id : 'User');
+      case 'accountant': return 'Accountant' + (r._acct_name ? ' · ' + r._acct_name : '');
+      case 'admin':      return 'FinFlow support';
+      case 'anonymous':  return 'Not signed in';
+      default:           return 'System';
+    }
+  };
+  res.json({ total: rows.length, rows: rows.map(({ _actor_name, _actor_email, _acct_name, ...r }) => ({ ...r, actor_label: _label({ ...r, _actor_name, _actor_email, _acct_name }) })) });
 }));
 
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────

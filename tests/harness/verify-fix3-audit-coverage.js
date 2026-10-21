@@ -17,6 +17,14 @@
 require('./clock.js');
 const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
+// LR12: the Audit table gained a "By" column — read cells by HEADER, not position, in the fixed order
+// Date · Table · Record ID · Action · Field · Old Value · New Value (a new column can never shift these again).
+const _auditRowsByHeader = d => {
+  const heads = Array.from(d.getElementById('audit-trail-body').closest('table').querySelectorAll('thead th')).map(th => th.textContent.trim());
+  const at = ['Date', 'Table', 'Record ID', 'Action', 'Field', 'Old Value', 'New Value'].map(h => heads.indexOf(h));
+  return Array.from(d.querySelectorAll('#audit-trail-body tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim()))
+    .filter(r => r.length > 1).map(r => at.map(i => (i >= 0 ? r[i] : undefined)));
+};
 let pass = 0, fail = 0;
 const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e); ok ? pass++ : fail++;
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}  [measured ${JSON.stringify(m)}, correct ${JSON.stringify(e)}${bug !== undefined ? ', bug gives ' + JSON.stringify(bug) : ''}]`); };
@@ -85,7 +93,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     eq('Audit filter has Quotes / Projects & time / Budget', [opt('Quotes'), opt('Projects & time'), opt('Budget')], ['quotes', 'projects,timesheet', 'budget_targets'], [null, null, null]);
     const rows = async v => { d.getElementById('audit-filter-table').value = v; d.getElementById('audit-filter-action').value = 'all';
       await w.loadAuditTrail(); await settle(5, 30);
-      return Array.from(d.querySelectorAll('#audit-trail-body tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim())).filter(r => r.length > 1); };
+      return _auditRowsByHeader(d); };
     if (opt('Budget')) {
       const b = await rows(opt('Budget'));
       const upd = b.filter(r => r[3] === 'UPDATE').map(r => r[4]);

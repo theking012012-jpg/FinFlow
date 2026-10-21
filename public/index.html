@@ -1748,11 +1748,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Table</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Record ID</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Action</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600">By</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Field</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Old Value</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">New Value</th>
               </tr></thead>
-              <tbody id="audit-trail-body"><tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr></tbody>
+              <tbody id="audit-trail-body"><tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -6646,7 +6647,7 @@ async function loadAuditTrail(){
       if(lastActEl)lastActEl.textContent=events[0].action||'—';
     }
     if(!events.length){
-      tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
+      tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
       return;
     }
     const actionBadge={CREATE:'b-green',UPDATE:'b-amber',DELETE:'b-red'};
@@ -6659,24 +6660,25 @@ async function loadAuditTrail(){
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
         <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
+        <td style="padding:5px 8px;color:var(--t2);white-space:nowrap">${esc(r.actor_label||'—')}</td>
         <td style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
         <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.old||'')}">${esc(f.old||'—')}</td>
         <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.new||'')}">${esc(f.new||'—')}</td>
       </tr>`).join('');
     }).join('');
   }catch(e){
-    tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
   }
 }
 
 function exportAuditCSV(){
   const rows=document.querySelectorAll('#audit-trail-body tr');
   if(!rows.length)return;
-  const headers=['Date','Table','Record ID','Action','Field','Old Value','New Value'];
+  const headers=['Date','Table','Record ID','Action','By','Field','Old Value','New Value'];   // LR12: who made it
   const lines=[headers.join(',')];
   rows.forEach(tr=>{
     const cells=tr.querySelectorAll('td');
-    if(cells.length<7)return;
+    if(cells.length<8)return;
     const row=Array.from(cells).map(td=>'"'+td.textContent.replace(/"/g,'""')+'"');
     lines.push(row.join(','));
   });

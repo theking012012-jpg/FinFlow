@@ -5611,6 +5611,7 @@ async function loadBankingFromDB(){
         _iso,   // raw YYYY-MM-DD for month filtering (display `date` below is localized)
         date: _iso ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(_iso) : _iso) : 'Today',   // F195: TZ-safe calendar date
         cat: r.category||'Other',
+        manual: r.manual===true||r.manual==='true',   // LR11: typed by a person, not sent by the bank
       };
     });
     if(typeof renderBanking==='function') renderBanking();
@@ -5622,21 +5623,30 @@ async function loadBankingFromDB(){
   }
 }
 
-async function saveBankTxn(desc, amount, type, cat){
+// LR11: one manual bank line. `entry` = {desc, amount, type:'credit'|'debit', cat, date, idempotency_key, confirm_duplicate}.
+// The server validates everything again, refuses a locked period, books a retried submit once (idempotency key)
+// and returns 409 POSSIBLE_DUPLICATE when the bank feed already has the same money — the person then confirms.
+// Returns { ok, duplicate } so the form can ask; never throws.
+async function saveBankTxn(entry){
+  const e = entry || {};
   // F46: reject an unknown tx_type here instead of letting it fall through to 'debit' server-side
   // (which would silently book an inflow as an outflow). Only 'credit'/'debit' are valid.
-  if(type != null && type !== 'credit' && type !== 'debit'){
+  if(e.type != null && e.type !== 'credit' && e.type !== 'debit'){
     if(typeof notify==='function') notify("Transaction type must be 'credit' or 'debit'", true);
-    return;
+    return { ok:false };
   }
   try {
     const res = await fetch('/api/banking',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({desc, amount, type, cat, date:todayLocal()})});
-    if(!res.ok){ const d=await res.json().catch(()=>({})); throw new Error(d.error||'Save failed'); }
+      body:JSON.stringify({desc:e.desc, amount:e.amount, type:e.type, cat:e.cat, date:e.date||todayLocal(), idempotency_key:e.idempotency_key, confirm_duplicate:!!e.confirm_duplicate})});
+    const d = await res.json().catch(()=>({}));
+    if(res.status===409 && d.code==='POSSIBLE_DUPLICATE') return { ok:false, duplicate:d };
+    if(!res.ok) throw new Error(d.error||'Save failed');
     await loadBankingFromDB();
     window.finflow?.refresh(['banking','dashboard','reports']);
-  } catch(e){ if(typeof notify==='function') notify('Error saving transaction — '+(e.message||''), true); }
+    return { ok:true, row:d };
+  } catch(err){ if(typeof notify==='function') notify('Error saving transaction — '+(err.message||''), true); return { ok:false }; }
 }
+window.saveBankTxn = saveBankTxn;
 function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
   const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
@@ -5668,13 +5678,55 @@ function renderBanking(){
     <div class="tx-row">
       <div class="tx-left">
         <div class="tx-icon" style="background:${t.type==='credit'?'var(--green-bg)':'var(--red-bg)'};color:${t.type==='credit'?'var(--green)':'var(--red)'}"><svg viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="${t.type==='credit'?'4,9 8,13 12,9':'4,7 8,3 12,7'}"/></svg></div>
-        <div><div class="tx-name">${esc(t.desc||'')}</div><div class="tx-cat">${esc(t.cat||'')} · ${esc(t.date||'')}</div></div>
+        <div><div class="tx-name">${esc(t.desc||'')}</div><div class="tx-cat">${esc(t.cat||'')} · ${esc(t.date||'')}${t.manual?' · <span class="badge b-amber" style="font-size:9px">Manual</span>':''}</div></div>
       </div>
       <span class="tx-amt" style="color:${t.type==='credit'?'var(--green)':'var(--red)'}">${t.type==='credit'?'+':''}${S(t.amount)}</span>
     </div>`).join('');
 }
 function openAddAccountModal(){notify('Connect or add a bank account');}
-function openAddTxnModal(){notify('Add manual transaction');}
+// LR11: the Banking "+ Add" form (was a toast with no form — a stub on a money path, Rule 3).
+function openAddTxnModal(){
+  let m=document.getElementById('_bank-add-modal');
+  if(!m){
+    m=document.createElement('div'); m.id='_bank-add-modal'; m.className='modal-overlay hidden';
+    m.innerHTML=`<div class="modal" style="max-width:420px">
+      <div class="modal-header"><div><div class="modal-title">Add bank transaction</div><div class="modal-sub">Typed by you — marked "Manual", not confirmed by your bank</div></div>
+        <button class="modal-close" onclick="document.getElementById('_bank-add-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+      <div style="display:flex;gap:6px;margin:4px 0 10px">
+        <button type="button" class="btn btn-ghost btn-sm _bk-dir" data-dir="debit" style="font-weight:600">Money out</button>
+        <button type="button" class="btn btn-ghost btn-sm _bk-dir" data-dir="credit">Money in</button></div>
+      <div class="field-wrap"><label class="field-label" for="_bk-desc">Description</label><input class="finput" id="_bk-desc" maxlength="300" placeholder="e.g. Cash deposit"></div>
+      <div class="field-wrap"><label class="field-label" for="_bk-amt">Amount</label><input class="finput" id="_bk-amt" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="_bk-date">Date</label><input class="finput" id="_bk-date" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="_bk-cat">Category</label><input class="finput" id="_bk-cat" maxlength="80" placeholder="Other"></div>
+      <div id="_bk-err" style="color:var(--red);font-size:12px;min-height:16px;margin-top:6px"></div>
+      <div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById('_bank-add-modal').classList.add('hidden')">Cancel</button>
+        <button class="btn btn-primary" id="_bk-save" onclick="_bankAddSubmit()">Add transaction</button></div></div>`;
+    document.body.appendChild(m);
+    m.querySelectorAll('._bk-dir').forEach(b=>b.onclick=()=>{ m.dataset.dir=b.dataset.dir; m.querySelectorAll('._bk-dir').forEach(x=>x.style.fontWeight=x===b?'600':''); });
+  }
+  m.dataset.dir='debit'; m.querySelectorAll('._bk-dir').forEach(x=>x.style.fontWeight=x.dataset.dir==='debit'?'600':'');
+  m.dataset.key=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('bk_'+Date.now()+'_'+Math.random().toString(36).slice(2));   // one key per form opening (Rule 9)
+  ['_bk-desc','_bk-amt','_bk-cat'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  const dt=document.getElementById('_bk-date'); if(dt) dt.value=(typeof _entityToday==='function'?_entityToday():todayLocal());
+  const er=document.getElementById('_bk-err'); if(er) er.textContent='';
+  m.classList.remove('hidden');
+}
+async function _bankAddSubmit(confirmDup){
+  const m=document.getElementById('_bank-add-modal'); if(!m) return;
+  const er=document.getElementById('_bk-err'), btn=document.getElementById('_bk-save');
+  const desc=(document.getElementById('_bk-desc').value||'').trim(), amount=parseFloat(document.getElementById('_bk-amt').value);
+  if(!desc){ er.textContent='Enter a description.'; return; }
+  if(!(amount>0)){ er.textContent='Enter an amount above zero — choose Money in or Money out for the direction.'; return; }
+  if(btn) btn.disabled=true;
+  try{
+    const r=await saveBankTxn({ desc, amount, type:m.dataset.dir||'debit', cat:(document.getElementById('_bk-cat').value||'').trim()||'Other',
+      date:document.getElementById('_bk-date').value||undefined, idempotency_key:m.dataset.key, confirm_duplicate:!!confirmDup });
+    if(r.duplicate){ if(window.confirm(r.duplicate.error)) return _bankAddSubmit(true); er.textContent='Not added — it matches a line your bank already sent.'; return; }
+    if(r.ok){ m.classList.add('hidden'); if(typeof notify==='function') notify('✓ Bank transaction added (manual)'); }
+  } finally { if(btn) btn.disabled=false; }
+}
+window.openAddTxnModal=openAddTxnModal; window._bankAddSubmit=_bankAddSubmit;
 
 // ════════════════════════════════════════════
 // QUOTES, RECEIPTS, PAYMENTS RECEIVED, RECURRING INVOICES, CREDIT NOTES

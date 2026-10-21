@@ -6535,31 +6535,70 @@ app.get('/api/banking', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56
-  const { desc, amount, type, date, cat } = req.body || {};
-  if (!desc || amount == null) return res.status(400).json({ error: 'desc and amount required.' });
+  const { desc, amount, type, date, cat, confirm_duplicate } = req.body || {};
+  // LR11 (owner decision 2026-10-21): a manual bank line is checked here, on the server, not only in the form.
+  const _desc = String(desc == null ? '' : desc).trim().slice(0, 300);
+  if (!_desc || amount == null) return res.status(400).json({ error: 'desc and amount required.' });
+  const _amt = Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(_amt) || _amt <= 0 || _amt > 1e11) return res.status(400).json({ error: 'amount must be a positive number (choose money in or money out for the direction).', code: 'BAD_AMOUNT' });
   // F46: allowlist tx_type. An EXPLICIT unknown value (e.g. a typo, or a credit sent as anything but
   // 'credit') must 400 — not silently fall through to 'debit' and book an inflow as an outflow. A
   // null/omitted type keeps the legacy-compatible 'debit' default below.
   const TX_TYPES = ['credit', 'debit'];
   if (type != null && !TX_TYPES.includes(type)) return res.status(400).json({ error: "tx_type must be 'credit' or 'debit'." });
-  // B8/C1: dedupe guard — personal_transactions is a JSONB table, so the JSONB matcher applies.
+  // A calendar date (Rule 10) that really exists — '2026-02-30' is refused, never rolled into March.
+  if (date != null && date !== '' && !(/^\d{4}-\d{2}-\d{2}$/.test(String(date)) && new Date(String(date) + 'T00:00:00Z').toISOString().slice(0, 10) === String(date)))
+    return res.status(400).json({ error: 'date must be a real calendar date (YYYY-MM-DD).', code: 'BAD_DATE' });
+  const idem = typeof req.body?.idempotency_key === 'string' && req.body.idempotency_key ? req.body.idempotency_key.slice(0, 64) : null;
   const _bc = _bankCtx(req);   // M60
   // M62: a line that lands in Personal books in the person's bank currency; none known → refused, never read as USD.
   const _pCur = _bc.eid == null ? await _persBankCurrency(_bc.uid) : null;
   if (_bc.eid == null && !_pCur) return res.status(400).json({ error: "Set your bank's currency (or its country) on the Your bank card first.", code: 'NO_BANK_CURRENCY' });
-  const _bDup = await findRecentDuplicate('personal_transactions', _bc.uid, _bc.eid,
-    { textMatch: { description: String(desc) }, numMatch: { amount: parseFloat(amount) || 0 } });
-  if (_bDup) return res.status(201).json(_bDup);
-  const { row } = await db.insert('personal_transactions', {
-    user_id: _bc.uid,
-    entity_id: _bc.eid,
-    description: desc, amount: parseFloat(amount) || 0,
-    // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
-    // (legacy rows written as type/date are still read via fallback below and on GET).
-    ..._bankTx(_bc.personal, (type || 'debit') === 'debit'), tx_date: date || (_bc.personal ? new Date().toISOString().slice(0, 10) : await entityTodayYmd(req.entityId)),
-    category: cat || 'Other', source: 'banking',
-    ...(_pCur ? { currency: _pCur } : {}),
-  });
+  const _ymd = date || (_bc.personal ? new Date().toISOString().slice(0, 10) : await entityTodayYmd(req.entityId));
+  // LR11: a business line never lands in a locked period (the accountant's closed months).
+  if (_bc.eid != null && await refuseIfLocked(res, _bc.uid, _bc.eid, _ymd)) return;
+  const _isOut = (type || 'debit') === 'debit';
+  const _txType = _bankTx(_bc.personal, _isOut).tx_type;
+  // Rule 9: the same submit twice (double-click, retry) books once — by its idempotency key (unique index
+  // idx_personal_tx_idem_key); without a key, the legacy short-window matcher still applies.
+  const _byKey = async () => idem ? (await pool.query(
+    `SELECT * FROM personal_transactions WHERE user_id=$1 AND data->>'idempotency_key'=$2 LIMIT 1`, [_bc.uid, idem])).rows[0] : null;
+  const _prior = await _byKey();
+  if (_prior) return res.status(200).json(rowToObj(_prior));
+  if (!idem) {
+    const _bDup = await findRecentDuplicate('personal_transactions', _bc.uid, _bc.eid, { textMatch: { description: _desc }, numMatch: { amount: _amt } });
+    if (_bDup) return res.status(201).json(_bDup);
+  }
+  // LR11: a line the BANK already sent (same direction and amount within 3 days, from the feed — not typed) is
+  // probably this one; adding it again would count the money twice. Refused until the person confirms.
+  if (!confirm_duplicate) {
+    const _shift = n => new Date(Date.parse(_ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+    const { rows: [_m] } = await pool.query(
+      `SELECT id, data->>'description' AS description, data->>'tx_date' AS tx_date FROM personal_transactions
+        WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2 AND data->>'source'='banking' AND COALESCE(data->>'manual','') <> 'true'
+          AND data->>'tx_type' = $3 AND data->>'amount' ~ '^-?[0-9]+(\\.[0-9]+)?$' AND (data->>'amount')::numeric = $4
+          AND data->>'tx_date' BETWEEN $5 AND $6 ORDER BY id DESC LIMIT 1`,
+      [_bc.uid, _bc.eid, _txType, _amt, _shift(-3), _shift(3)]);
+    if (_m) return res.status(409).json({ error: `Your bank feed already has ${_isOut ? 'money out' : 'money in'} of this amount on ${_m.tx_date} ("${String(_m.description || '').slice(0, 80)}"). Add it anyway?`, code: 'POSSIBLE_DUPLICATE', match: { id: _m.id, description: _m.description, date: _m.tx_date } });
+  }
+  let row;
+  try {
+    ({ row } = await db.insert('personal_transactions', {
+      user_id: _bc.uid,
+      entity_id: _bc.eid,
+      description: _desc, amount: _amt,
+      // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
+      // (legacy rows written as type/date are still read via fallback below and on GET).
+      ..._bankTx(_bc.personal, _isOut), tx_date: _ymd,
+      category: String(cat || 'Other').slice(0, 80), source: 'banking',
+      manual: true,   // LR11: typed by a person, not confirmed by the bank — shown as "Manual"
+      ...(idem ? { idempotency_key: idem } : {}),
+      ...(_pCur ? { currency: _pCur } : {}),
+    }));
+  } catch (e) {
+    if (e && e.code === '23505' && idem) { const _w = await _byKey(); if (_w) return res.status(200).json(rowToObj(_w)); }
+    throw e;
+  }
   if (_bc.eid != null) await _auditRec(req, 'bank_lines', 'CREATE', null, row);   // FIX-3b — business lines only (a personal line never reaches the business trail)
   res.status(201).json(row);
 }));

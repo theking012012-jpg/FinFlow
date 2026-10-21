@@ -3780,6 +3780,7 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
 
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────
 const MAX_DOC_SIZE = 5 * 1024 * 1024; // 5MB in bytes before base64 (~3.75MB actual)
+const DOC_TYPES = new Set(['invoice', 'receipt', 'contract', 'quote', 'report', 'other']);   // LR13: the upload picker's list
 app.get('/api/documents', requireAuth, wrap(async (req, res) => {
   const rows = await db.allByUser('documents', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id);
   // Strip file_data from list responses to keep payload small
@@ -3787,13 +3788,14 @@ app.get('/api/documents', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/documents', requireAuth, wrap(async (req, res) => {
   const { name, type = 'other', file_data, media_type = 'application/octet-stream' } = req.body || {};
-  if (!name || !file_data) return res.status(400).json({ error: 'name and file_data required.' });
-  const bytes = Math.ceil(file_data.length * 0.75); // approximate decoded size
+  if (!name || !file_data || typeof file_data !== 'string') return res.status(400).json({ error: 'name and file_data required.' });
+  const bytes = Buffer.byteLength(file_data, 'base64');   // LR13: the EXACT decoded size (it was length × 0.75 — 93 for a 91-byte file)
+  const _dtype = DOC_TYPES.has(String(type)) ? String(type) : 'other';   // LR13: the picker's types only — never free text
   if (bytes > MAX_DOC_SIZE) return res.status(413).json({ error: 'File too large. Maximum size is 5 MB.' });
   const { row } = await db.insert('documents', {
     user_id: scopeId(req),
     entity_id: req.entityId || null,
-    name: name.slice(0,255), type, media_type,
+    name: String(name).slice(0,255), type: _dtype, media_type,
     size: bytes, file_data, uploaded_at: new Date().toISOString(),
   });
   const { file_data: _fd, ...meta } = row;

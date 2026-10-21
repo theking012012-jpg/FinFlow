@@ -6064,21 +6064,43 @@ async function renderDocuments(){
     const res=await fetch('/api/documents',{credentials:'include'});
     if(!res.ok)throw new Error();
     _docsCache=await res.json();
-  }catch(e){_docsCache=[];}
+    _paintDocCards(_docsCache);
+  }catch(e){_docsCache=[]; _paintDocCards(null);}   // a failed load reads "—", never a made-up 0
   const filtered=docsFilter==='all'?_docsCache:_docsCache.filter(d=>d.type===docsFilter);
   if(!filtered.length){l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No documents yet. Click Upload to add your first file.</div>';return;}
   l.innerHTML=filtered.map(d=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:32px;height:32px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:14px">${(d.name||'').endsWith('.pdf')?'📄':'📊'}</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(d.name||'')}</div><div style="font-size:11px;color:var(--t3)">${d.size||''} · ${d.uploaded_at?d.uploaded_at.slice(0,10):''} · ${d.type||''}</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(d.name||'')}</div><div style="font-size:11px;color:var(--t3)">${esc(_fmtDocSize(d.size))} · ${d.uploaded_at?esc(String(d.uploaded_at).slice(0,10)):''} · ${esc(d.type||'')}</div></div>
       </div>
       <div style="display:flex;gap:6px">
-        <span class="badge b-blue">${d.type||'file'}</span>
+        <span class="badge b-blue">${esc(d.type||'file')}</span>
         <button class="btn btn-ghost btn-sm" onclick="downloadDoc(${d.id})" title="Download">↓</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteDoc(${d.id})" title="Delete">✕</button>
       </div>
     </div>`).join('');
+}
+// LR13: a document's size is stored in BYTES — always shown with its unit (it printed a bare "93").
+function _fmtDocSize(n){
+  const b = Number(n);
+  if(!isFinite(b) || n === '' || n == null) return String(n == null ? '' : n);
+  if(b < 1024) return b + ' B';
+  if(b < 1024*1024) return (b/1024).toFixed(b < 10*1024 ? 1 : 0) + ' KB';
+  return (b/1024/1024).toFixed(1) + ' MB';
+}
+// LR13: the ONE writer of the Documents cards, from the list this page just fetched (all documents, whatever the
+// filter). They were painted by a wrapper that read window._docsCache — never set (this file's _docsCache is a
+// script-scoped let) — so every card stayed 0 with files listed.
+function _paintDocCards(docs){
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  if(!docs){ ['docs-count','docs-storage','docs-added'].forEach(id=>set(id,'—')); return; }
+  const all=docs;
+  set('docs-count', all.length);
+  set('docs-storage', _fmtDocSize(all.reduce((s,d)=>s+(Number(d.size)||0),0)));
+  // "this month" by the business's calendar month; uploaded_at is a genuine timestamp → its calendar date (F87).
+  const ym=_entityToday().slice(0,7);
+  set('docs-added', all.filter(d=>{ const u=d.uploaded_at?window.FinFlowDates._toYmd(d.uploaded_at):null; return u!=null && u.slice(0,7)===ym; }).length);
 }
 function filterDocs(f){docsFilter=f;renderDocuments();}
 async function downloadDoc(id){window.open('/api/documents/'+id+'/download','_blank');}
@@ -6096,7 +6118,7 @@ function openUploadModal(){
     m.innerHTML=`<div class="modal" style="width:420px">
       <div class="modal-header"><span class="modal-title">Upload Document</span><button class="modal-close" onclick="closeModal('doc-upload-modal')">✕</button></div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
-        <div><label class="field-label">File (max 5 MB)</label><input type="file" id="doc-file-input" class="finput" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv,.docx"></div>
+        <div><label class="field-label">File (max 5 MB)</label><input type="file" id="doc-file-input" class="finput" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv,.docx,.txt"></div>
         <div><label class="field-label">Document type</label>
           <select id="doc-type-input" class="finput"><option>invoice</option><option>receipt</option><option>contract</option><option>quote</option><option>report</option><option>other</option></select></div>
         <div><label class="field-label">Notes (optional)</label><input id="doc-notes-input" class="finput" placeholder="e.g. Linked to INV-0042"></div>

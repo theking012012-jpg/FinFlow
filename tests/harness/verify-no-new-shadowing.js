@@ -3,8 +3,8 @@
  * verify-no-new-shadowing.js — L27 (prior audit F75; CLAUDE.md failure #1). [STRUCTURAL — labelled: an absence of
  * NEW shadowing cannot be expressed as a value.] When public/app-main.js defines `function NAME` and a wiring file
  * (bundled AFTER app-main) assigns `window.NAME = …`, the wiring copy wins at runtime and an edit to the app-main
- * copy has zero effect — two past "fixes" shipped that way and never rendered. 26 such pairs exist today
- * (19 replacements + 7 wrappers that call the saved original). Nothing stopped a new one.
+ * copy has zero effect — two past "fixes" shipped that way and never rendered. 25 such pairs exist today
+ * (19 replacements + 6 wrappers that call the saved original). Nothing stopped a new one.
  *
  * This harness recomputes the set of shadowed NAMES from source and fails on any name NOT on the reviewed list
  * below. Removing a shadow is always fine (shrink the list). Adding one requires adding it here, in review, with
@@ -23,12 +23,14 @@ const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  [STRUCTURAL] ' + n)
 
 // Reviewed 2026-10-07 (L27). R = replacement (app-main copy is DEAD), W = wrapper (calls the saved original).
 // 2026-10-14 LA7: updateInvoices removed — its dead app-main copy (pre-F56 Outstanding formula) was deleted.
+// 2026-10-21 LR13: renderDocuments wrapper removed (it read window._docsCache, never set) — the cards are painted by
+// app-main's renderDocuments itself.
 const REVIEWED = {
   deleteCustomer: 'R', saveCustomer: 'R', saveSettings: 'R', saveInvoice: 'R', renderInvoices: 'R', renderInventory: 'R',
   renderPayroll: 'R', restockItem: 'R', openProductModal: 'R', saveProduct: 'R', openLogTimeModal: 'R',
   openNewProjectModal: 'R', renderTimesheet: 'R', saveJournalEntry: 'R', loadPersistedData: 'R',
   persistAll: 'R', renderExpenses: 'R', saveExpense: 'R', saveHolding: 'R',
-  closeModal: 'W', renderDocuments: 'W', renderProjects: 'W', renderReports: 'W', saveOwnerPayroll: 'W',
+  closeModal: 'W', renderProjects: 'W', renderReports: 'W', saveOwnerPayroll: 'W',
   updateDashboard: 'W', showPage: 'W',
 };
 
@@ -72,7 +74,7 @@ const unknownOf = found => Object.keys(found).filter(n => !(n in REVIEWED));
       'defs has computeRevenue=' + defs.has('computeRevenue') + ' unknown=' + unknownOf(inj).join(','));
     const inj2 = shadows(defs, wiring.concat([['finflow-api-wiring-INJECTED.js', 'window.updateCashflow = () => 0;']]));
     A('self-test: an injected `window.updateCashflow = …` is reported as NEW', unknownOf(inj2).includes('updateCashflow'), unknownOf(inj2).join(','));
-    A('current count is 26 (19 replacements + 7 wrappers; reviewed 2026-10-07, LA7 removed updateInvoices 2026-10-14)', n === 26, 'n=' + n);
+    A('current count is 25 (19 replacements + 6 wrappers; reviewed 2026-10-07, LA7 removed updateInvoices 2026-10-14, LR13 renderDocuments 2026-10-21)', n === 25, 'n=' + n);
   } catch (e) { fail++; console.log('  FATAL: ' + (e && e.stack || e)); }
   console.log('\n' + '-'.repeat(78));
   console.log(fail ? ('  ' + fail + ' FAILED — ' + pass + ' passed, ' + fail + ' failed') : ('  ALL GREEN — ' + pass + ' passed, 0 failed  (no new shadowing)'));

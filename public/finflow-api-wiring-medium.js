@@ -1146,31 +1146,8 @@
       }
     };
 
-    // ── Document KPI cards: update after renderDocuments() ────────────
-    const _medOrigRenderDocuments = window.renderDocuments;
-    if (typeof _medOrigRenderDocuments === 'function') {
-      window.renderDocuments = async function () {
-        await _medOrigRenderDocuments();
-        const cache = window._docsCache || [];
-        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-        set('docs-count', cache.length);
-        const totalKB = cache.reduce((s, d) => {
-          const kb = parseFloat((d.size || '').replace(/[^0-9.]/g, '')) || 0;
-          return s + kb;
-        }, 0);
-        set('docs-storage', totalKB >= 1024 ? (totalKB / 1024).toFixed(1) + ' MB' : Math.round(totalKB) + ' KB');
-        // F87-class: "this month" by canonical UTC calendar month, not viewer-local
-        // getMonth/getFullYear. uploaded_at is a genuine timestamp → phase-1 resolves it in UTC
-        // (entity-timezone resolution for genuine timestamps is the unbuilt phase-2 hook).
-        const _docToday = (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date()));
-        const thisMonth = cache.filter(d => {
-          if (!d.uploaded_at) return false;
-          const _u = window.FinFlowDates._toYmd(d.uploaded_at);
-          return _u != null && _u.slice(0, 7) === _docToday.slice(0, 7);
-        });
-        set('docs-added', thisMonth.length);
-      };
-    }
+    // LR13: the Documents cards are painted by renderDocuments itself (app-main.js _paintDocCards). The wrapper that
+    // stood here read window._docsCache, which nothing sets, so every card read 0 — removed (one writer).
 
     // ── Timesheet title: set to current month dynamically ─────────────
     function _setTimesheetTitle() {

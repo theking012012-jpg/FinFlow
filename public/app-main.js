@@ -6247,7 +6247,17 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   // F196: the issuing ENTITY's name wins over the account-wide settings business_name.
   const _activeEnt = (window.ENTITIES || []).find(e => e && e.active);
   const bizName = (_activeEnt && _activeEnt.name) || document.getElementById('s-biz-name')?.value || 'FinFlow Inc.';
-  const bizEmail = document.getElementById('s-email')?.value || '';
+  // LR18: the From block is the ISSUING business's own letterhead — its profile, else the Business-profile fields
+  // (which hold the active business's values, account blob as fallback). It read the USER's own e-mail (s-email) and
+  // printed a made-up "New York, NY 10001" for every business.
+  const _prof = (_activeEnt && _activeEnt.profile) || {};
+  const bizEmail = _prof.email || document.getElementById('s-biz-email')?.value || '';
+  const bizAddress = _prof.address || document.getElementById('s-address')?.value || '';
+  const _fromLines = [bizEmail, bizAddress].map(v => String(v||'').trim()).filter(Boolean).map(v => esc(v).replace(/\n/g,'<br>')).join('<br>');
+  // LR18: a Quote template previews as a QUOTE (it read "INVOICE", "#INV-…", "Bill to", "Due within 30 days").
+  const _isQuote = String(t.type||'').toLowerCase() === 'quote';
+  const _docTitle = _isQuote ? 'QUOTE' : 'INVOICE';
+  const _docNo = _isQuote ? '#Q-1042' : '#INV-1042';
   const poweredBy = settings.poweredBy !== false;
   const logoHTML = logoDataURL
     ? `<img src="${logoDataURL}" style="max-height:52px;max-width:160px;object-fit:contain">`
@@ -6283,7 +6293,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #eee}
     .total{font-size:15px;font-weight:700;border-top:2px dashed #ccc;padding-top:8px;margin-top:4px}
     </style></head><body>
-    <div class="hdr">${logoHTML}<div style="margin-top:8px;font-size:10px;color:#888">${bizEmail}</div>
+    <div class="hdr">${logoHTML}<div style="margin-top:8px;font-size:10px;color:#888">${esc(bizEmail)}</div>
     <div style="margin-top:8px;font-size:11px;font-weight:700">RECEIPT #INV-1042</div>
     <div style="font-size:10px;color:#888">April 28, 2026 · TechCorp Inc.</div></div>
     ${items.map(i=>`<div class="row"><span>${esc(i.desc)}</span><span>${_sym}${i.total.toLocaleString()}</span></div>`).join('')}
@@ -6302,23 +6312,23 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   ${t.id==='minimal'
     ? `<div style="background:${acc};padding:28px 32px;margin:-48px -48px 36px;display:flex;align-items:center;justify-content:space-between">
         <div>${logoHTML}</div>
-        <div style="text-align:right;color:#fff"><div style="font-size:24px;font-weight:800;letter-spacing:-.02em">INVOICE</div><div style="opacity:.8;font-size:13px">#INV-1042</div></div>
+        <div style="text-align:right;color:#fff"><div style="font-size:24px;font-weight:800;letter-spacing:-.02em">${_docTitle}</div><div style="opacity:.8;font-size:13px">${_docNo}</div></div>
        </div>`
     : `<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px">
         <div>${logoHTML}</div>
         <div style="text-align:right">
-          <div style="font-size:28px;font-weight:300;color:${acc};letter-spacing:.04em;font-style:italic">INVOICE</div>
-          <div style="font-size:12px;color:#888;margin-top:4px">#INV-1042 · April 28, 2026</div>
+          <div style="font-size:28px;font-weight:300;color:${acc};letter-spacing:.04em;font-style:italic">${_docTitle}</div>
+          <div style="font-size:12px;color:#888;margin-top:4px">${_docNo} · April 28, 2026</div>
         </div>
        </div>`}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px">
     <div>
       <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">From</div>
       <div style="font-weight:600;font-size:14px">${esc(bizName)}</div>
-      <div style="color:#888;font-size:12px;margin-top:4px">${bizEmail}<br>New York, NY 10001</div>
+      <div style="color:#888;font-size:12px;margin-top:4px">${_fromLines}</div>
     </div>
     <div>
-      <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Bill to</div>
+      <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${_isQuote ? 'Prepared for' : 'Bill to'}</div>
       <div style="font-weight:600;font-size:14px">TechCorp Inc.</div>
       <div style="color:#888;font-size:12px;margin-top:4px">accounts@techcorp.io<br>San Francisco, CA 94102</div>
     </div>
@@ -6335,7 +6345,9 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     </div>
   </div>
   <div style="margin-top:36px;padding:16px;background:#f9f9f9;border-radius:6px;font-size:12px;color:#888">
-    <strong style="color:#333">Payment terms:</strong> Due within 30 days · Bank transfer or card accepted via client portal
+    ${_isQuote
+      ? '<strong style="color:#333">Valid for:</strong> 30 days · Accepting this quote turns it into an invoice'
+      : '<strong style="color:#333">Payment terms:</strong> Due within 30 days · Bank transfer or card accepted via client portal'}
   </div>
   ${poweredByHTML}
   </body></html>`;
@@ -6351,6 +6363,8 @@ window.openTemplatePreview = function(id){
     poweredBy: getTemplateSetting(id,'poweredBy', true),
   };
   const html = buildInvoiceHTML(id, logo, settings);
+  // LR18 (LR25 class): html goes into a srcdoc ATTRIBUTE, which is entity-decoded once before the frame parses it —
+  // so "&" must be escaped as well as '"', or an escaped "&lt;b&gt;" in the document turns back into live markup.
 
   const existing = document.getElementById('tmpl-preview-overlay');
   if(existing) existing.remove();
@@ -6369,7 +6383,7 @@ window.openTemplatePreview = function(id){
         </div>
       </div>
       <div style="flex:1;overflow:auto;background:#e8e8e8;padding:16px">
-        <iframe id="tmpl-preview-frame" title="Invoice template preview" style="width:100%;min-height:700px;border:none;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.2);background:#fff" srcdoc="${html.replace(/"/g,'&quot;')}"></iframe>
+        <iframe id="tmpl-preview-frame" title="Invoice template preview" style="width:100%;min-height:700px;border:none;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.2);background:#fff" srcdoc="${html.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"></iframe>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -6471,7 +6485,7 @@ window.openTemplateEditor = function(id){
         <div style="background:#e8e8e8;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
           <div style="font-size:11px;color:#888;text-align:center">Live preview — updates as you edit</div>
           <iframe id="tmpl-edit-preview-${id}" title="Invoice template edit preview" style="width:100%;min-height:640px;border:none;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.2);background:#fff"
-            srcdoc="${buildInvoiceHTML(id, currentLogo, {accentColor:currentColor,poweredBy:currentPoweredBy}).replace(/"/g,'&quot;')}"></iframe>
+            srcdoc="${buildInvoiceHTML(id, currentLogo, {accentColor:currentColor,poweredBy:currentPoweredBy}).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"></iframe>
         </div>
       </div>
     </div>`;

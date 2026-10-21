@@ -5,7 +5,41 @@
 
 ---
 
-## ⚡ UPDATE 2026-10-20 (latest — read this first)
+## ⚡ UPDATE 2026-10-21 (latest — read this first)
+
+**Launch pass (`PROMPT_LAUNCH_ALL.md`) on `main` @ `11b775f`. Everything below is UNCOMMITTED on the owner's working copy —
+the owner commits (one item per commit; exact commands in the session report).** Owner steps:
+`OWNER_ACTIONS_2026-10-21.md`. Decisions: `DECISIONS_2026-10-21.md`. Evidence: `AUDIT_MASTER.md` rows (each RED on HEAD →
+GREEN, counts in the row).
+
+| Item | What changed | RED → GREEN |
+|---|---|---|
+| LR27 / 0a | Sweep "(0.0s)" = display only (clock.js pinned the runner's Date.now; harnesses DID run — a deliberately broken real harness went RED). hrtime timing. | 6/1 → 7/0 |
+| LR11 | Banking "+ Add" → real manual bank line (per business, audited, idempotency key + index, no GL until matched). | 11/5 → 16/0 |
+| LC3c | Separate `personal_history` (no business column, append-only, erased with the account, exported, Personal page card). Guard known gap **17 → 0**. | 20/6 → 26/0 · UI 3/1 → 4/0 · guard 2/6 → 8/0 |
+| LR24 (new) | Recurring-personal PUT/DELETE used the ACCOUNT, not the person — a team member deleted the owner's private row. | 5/1 → 6/0 |
+| LR12 | Audit page "By" column (one shared SQL for both audit reads). | 6/0 → 6/0 |
+| LR26 (new) | Audit / security / admin / personal records used the proxy's IP (`req.ip`) — now the visitor's (`_clientIp`). New-device alerts were unreliable. | 5/0 → 5/0 |
+| LR13 | Documents cards read a never-set `window._docsCache`; sizes in bytes shown/summed as KB; `.txt` accepted. | 5/0 → 5/0 |
+| LR15 | Inventory "COGS this month" was the selected period's COGS — card now names its period (figure was right). | 2/2 → 4/0 |
+| LR20 | Sales receipt captions ("Via Stripe" → "Card & Stripe · all time", etc.). | 3/1 → 4/0 |
+| LR21 | Settings Industry list = onboarding's 11; a stored value is never blank. ×5 settings fetch NOT reproduced — needs a live trace. | 2/1 → 3/0 |
+| A5 | `@sentry/node` added (DSN alone did nothing); restore drill refuses DEST = SRC; ALLOW_INDEXING verified both ways. | Sentry 2/5 → 7/0 · drill 3/4 → 7/0 |
+| A6 | `tools/launch/list-test-data.js` + `purge-test-data.js` (reversals via shared `ledger-reverse.js`; books tie to the cent). | 12/3 → 15/0 |
+| A7 | LC1c lister verified read-only; exact-name link script prepared behind `--apply --expect`. | 7/6 → 13/0 |
+
+Related re-runs: LR11 + LC3c set **77/77 GREEN**; GL / audit / security set — see the session report. Final full sweep on
+the working tree — count in the session report.
+
+**Not done (agent, next):** LR14 (consolidated caption + "Intercompany $0"), LR16 (Bank Rec balances — investigate),
+LR18 (template preview heading), LR19 (Budget page ignores the period), `VERIFICATION.md` A7.5–A7.8 / A7.18 / A8a / A8b
+stamps (§4.2). **Decisions waiting:** 3.1–3.7, LR1-follow-up, LR5, LR6, LR8, LR9, LR10, LR22, LR23, LR25, 2.6.
+**Tooling note:** the bundle has TWO more sources than `finflow-api-wiring-*.js` — `finflow-api.js` and
+`finflow-api-wiring.js`. A Rule-1 grep must include them (`public/finflow-api*.js`).
+
+---
+
+## UPDATE 2026-10-20
 
 **Read `CLAUDE.md` first.** Then `LAUNCH_STATUS.md` (what stands between today and launch) and the LC rows in
 `AUDIT_MASTER.md` (evidence for each fix).

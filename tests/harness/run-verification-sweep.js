@@ -53,8 +53,11 @@ let tests = fs.readdirSync(HARNESS_DIR)
 console.log(`\nFinFlow verification sweep — ${tests.length} harnesses, sequential, ${TIMEOUT / 1000}s timeout each.\n`);
 
 const results = [];
+// Wall-clock timing via hrtime, NOT Date: the documented command loads clock.js into THIS process too, and clock.js
+// pins Date.now() — so Date-based timing printed "(0.0s)" for every harness (0a, 2026-10-21). hrtime is not pinned.
+const elapsedSecs = (t0) => (Number(process.hrtime.bigint() - t0) / 1e9).toFixed(1);
 for (const f of tests) {
-  const started = Date.now();
+  const started = process.hrtime.bigint();
   const r = spawnSync(process.execPath, ['-r', CLOCK, path.join(HARNESS_DIR, f)], {
     encoding: 'utf8', timeout: TIMEOUT, maxBuffer: 64 * 1024 * 1024,
   });
@@ -87,7 +90,7 @@ for (const f of tests) {
     : crashed ? 'CRASH (FATAL / PROBE ERROR — no summary line)'
     : (exitOk ? 'passed (exit 0)' : `failed (exit ${r.status})`);
   const summary = masked ? `MASKED — exit 0 but reported: ${base}` : base;
-  const secs = ((Date.now() - started) / 1000).toFixed(1);
+  const secs = elapsedSecs(started);
   results.push({ f, ok, summary, out, masked });
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${f.padEnd(46)} ${summary}  (${secs}s)`);
 }

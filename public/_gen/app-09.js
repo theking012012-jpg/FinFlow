@@ -24,13 +24,17 @@ function _auditParse(s){ if(s==null)return null; if(typeof s==='object')return s
 function _auditVal(v){ if(v==null)return ''; if(typeof v==='object')return JSON.stringify(v); return String(v); }
 // One audit_log event → one or more display rows (one per changed field). CREATE lists new values,
 // DELETE lists old values, UPDATE lists only fields whose value actually changed.
-function _auditDiff(action,oldRaw,newRaw){
+function _auditDiff(action,oldRaw,newRaw,table){
   const o=_auditFlatten(_auditParse(oldRaw)), n=_auditFlatten(_auditParse(newRaw));
-  const keys=[...new Set([...Object.keys(o),...Object.keys(n)])].filter(k=>!_AUDIT_NOISE.has(k));
+  // LR8: what the person typed rides beside the stored figures (_entered) — shown on its line, never as a field.
+  const ent=(n._entered&&typeof n._entered==='object')?n._entered:{};
+  const keys=[...new Set([...Object.keys(o),...Object.keys(n)])].filter(k=>!_AUDIT_NOISE.has(k)&&k.charAt(0)!=='_');
+  // LR8: budget targets are stored per YEAR — say so on every line, so 300 is never read as the 25 typed per month.
+  const unit=table==='budget_targets'?' / year':'';
   const changed=[];
   for(const k of keys){
     const ov=_auditVal(o[k]), nv=_auditVal(n[k]);
-    if(ov!==nv) changed.push({field:k,old:ov,new:nv});
+    if(ov!==nv) changed.push({field:k,old:ov&&unit?ov+unit:ov,new:(nv&&unit?nv+unit:nv)+(ent[k]?' (entered '+ent[k]+')':'')});
   }
   if(!changed.length) changed.push({field:'—',old:'',new:''}); // payload-less events (e.g. CHANGE_PASSWORD)
   return changed;
@@ -68,7 +72,7 @@ async function loadAuditTrail(){
       const d=new Date(r.created_at);
       const dStr=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
       const badge=actionBadge[r.action]||'b-amber';
-      return _auditDiff(r.action,r.old_data,r.new_data).map(f=>`<tr style="border-bottom:1px solid var(--bd)">
+      return _auditDiff(r.action,r.old_data,r.new_data,r.table_name).map(f=>`<tr style="border-bottom:1px solid var(--bd)">
         <td style="padding:5px 8px;color:var(--t2);font-size:11px;white-space:nowrap">${esc(dStr)}</td>
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>

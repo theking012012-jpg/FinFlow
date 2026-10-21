@@ -3105,7 +3105,21 @@ app.get('/api/budget-targets', requireAuth, wrap(async (req, res) => {
 app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = req.entityId || null;
-  const targets = req.body || {};
+  // LR8: `entered` is what the person TYPED for the rows they changed ({Software: {amount: 25, per: 'month'}}) — it is
+  // recorded on the audit row beside the stored figure, never stored as a target (targets are annual).
+  const { entered: _rawEntered, ...targets } = req.body || {};
+  const _flat = t => (t && t.targets && typeof t.targets === 'object' && !Array.isArray(t.targets)) ? t.targets : (t || {});
+  const _entered = {};
+  if (_rawEntered && typeof _rawEntered === 'object') {
+    for (const [cat, v] of Object.entries(_rawEntered).slice(0, 200)) {
+      if (!Object.prototype.hasOwnProperty.call(_flat(targets), cat) || !v || typeof v !== 'object') continue;
+      const amt = Number(v.amount), per = v.per === 'month' ? 'month' : v.per === 'year' ? 'year' : null;
+      if (per && Number.isFinite(amt) && amt >= 0) _entered[String(cat).slice(0, 80)] = Math.round(amt * 100) / 100 + ' / ' + per;
+    }
+  }
+  // The audit row holds the categories FLAT (the modal sends {targets:{…}}, which showed as one JSON blob on the Audit
+  // page) plus what was typed — storage is unchanged.
+  const _audNew = () => Object.assign({}, _flat(targets), Object.keys(_entered).length ? { _entered } : {});
   // Upsert by both user_id and entity_id so each entity has its own budget
   let existing = null;
   if (eid) {
@@ -3122,10 +3136,10 @@ app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   if (existing) {
     await db.updateById('budget_targets', existing.id, { targets });
     // FIX-3: the targets map itself is the audited record, so the Audit page shows one line per category changed.
-    await recordAudit(pool, { userId: scopeId(req), entityId: eid, table: 'budget_targets', recordId: existing.id, action: 'UPDATE', oldData: existing.targets || {}, newData: targets, req });
+    await recordAudit(pool, { userId: scopeId(req), entityId: eid, table: 'budget_targets', recordId: existing.id, action: 'UPDATE', oldData: _flat(existing.targets), newData: _audNew(), req });
   } else {
     const { row: _btNew } = await db.insert('budget_targets', { user_id: scopeId(req), entity_id: eid, targets });
-    await recordAudit(pool, { userId: scopeId(req), entityId: eid, table: 'budget_targets', recordId: _btNew.id, action: 'CREATE', newData: targets, req });   // FIX-3
+    await recordAudit(pool, { userId: scopeId(req), entityId: eid, table: 'budget_targets', recordId: _btNew.id, action: 'CREATE', newData: _audNew(), req });   // FIX-3 / LR8
   }
   res.json({ ok: true });
 }));

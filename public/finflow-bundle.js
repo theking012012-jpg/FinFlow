@@ -1973,6 +1973,8 @@
       if (!row) return;
       const v = parseFloat(inp.value);
       row.dataset.btAnnual = Number.isFinite(v) ? String(_btPeriod() === 'monthly' ? v * 12 : v) : '';
+      // LR8: remember what was typed and in which view, so the audit row can say "25 / month → 300 / year".
+      row.dataset.btTyped = Number.isFinite(v) ? JSON.stringify({ amount: v, per: _btPeriod() === 'monthly' ? 'month' : 'year' }) : '';
     }
     function _btSetPeriod(modal, period) {
       modal.dataset.period = period;
@@ -2046,16 +2048,17 @@
     window._saveBudgetTargets = async function () {
       const modal = document.getElementById('_budget-targets-modal');
       const rows = document.querySelectorAll('#_budget-target-rows ._bt-row');
-      const targets = {};
+      const targets = {}, entered = {};
       rows.forEach(row => {
         const cat = row.querySelector('[data-bt-cat]')?.value?.trim();
         // LR7: the row's annual figure — never the displayed number × 12
         const v   = parseFloat(row.dataset.btAnnual);
         if (!cat || !(v > 0)) return;
         targets[cat] = Math.round(v);
+        if (row.dataset.btTyped) { try { entered[cat] = JSON.parse(row.dataset.btTyped); } catch (_) {} }   // LR8
       });
       try {
-        await api('PUT', '/api/budget-targets', { targets });
+        await api('PUT', '/api/budget-targets', Object.assign({ targets }, Object.keys(entered).length ? { entered } : {}));
         modal.classList.add('hidden');
         await loadBudgetFromDB();
         if (typeof notify === 'function') notify('Budget targets saved ✦');

@@ -6254,8 +6254,10 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     {desc:'QA testing & delivery',qty:1,rate:900,total:900},
   ];
   const subtotal = items.reduce((s,i)=>s+i.total,0);
-  const tax = Math.round(subtotal*0.125);
-  const total = subtotal+tax;
+  // LR32: no sample tax. It was a hard-coded "Tax (12.5%)" — one region's VAT rate on every business's preview
+  // (FinFlow has no VAT engine). A real document shows a Tax line only when the document carries a tax amount
+  // (finflow-docview.js), so a sample without one shows none.
+  const total = subtotal;
 
   const itemRows = items.map(i=>`
     <tr>
@@ -6283,7 +6285,6 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     <div style="font-size:10px;color:#888">April 28, 2026 · TechCorp Inc.</div></div>
     ${items.map(i=>`<div class="row"><span>${esc(i.desc)}</span><span>${_sym}${i.total.toLocaleString()}</span></div>`).join('')}
     <div class="row" style="color:#888;margin-top:4px"><span>Subtotal</span><span>${_sym}${subtotal.toLocaleString()}</span></div>
-    <div class="row" style="color:#888"><span>Tax (12.5%)</span><span>${_sym}${tax.toLocaleString()}</span></div>
     <div class="row total"><span>TOTAL</span><span style="color:${acc}">${_sym}${total.toLocaleString()}</span></div>
     <div style="text-align:center;margin-top:16px;font-size:10px;color:#aaa">Thank you for your business</div>
     ${poweredByHTML}
@@ -6325,7 +6326,6 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   <div style="display:flex;justify-content:flex-end;margin-top:24px">
     <div style="width:220px">
       <div style="display:flex;justify-content:space-between;padding:6px 0;color:#888;font-size:13px"><span>Subtotal</span><span>${_sym}${subtotal.toLocaleString()}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0;color:#888;font-size:13px"><span>Tax (12.5%)</span><span>${_sym}${tax.toLocaleString()}</span></div>
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid ${acc};font-weight:700;font-size:16px"><span>Total</span><span style="color:${acc}">${_sym}${total.toLocaleString()}</span></div>
     </div>
   </div>

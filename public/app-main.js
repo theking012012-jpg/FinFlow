@@ -5042,6 +5042,31 @@ function _cogsPeriodParams(){
   return qs;
 }
 window._cogsPeriodParams=_cogsPeriodParams;
+// LR15: the Inventory "COGS this month" card is THIS calendar month of the active business, whatever period the
+// dashboard shows. It printed window._cogsTotal — the dashboard period's COGS (the fiscal year by default) — under
+// "this month". Kept apart from _cogsTotal, which the dashboard Net subtracts; tagged with its business so a figure
+// fetched for one business is never shown on another.
+async function _loadCogsThisMonth(){
+  const eid=(window.ENTITIES||[]).find(e=>e.active)?._dbId ?? null;
+  const { fyStartIdx, curFyIdx } = _fyContext();
+  const qs=new URLSearchParams();
+  if(eid) qs.set('entity_id', eid);
+  qs.set('period','month'); qs.set('monthIdx', String(curFyIdx)); qs.set('fyStart', String(fyStartIdx));
+  const seq=window._entitySwitchSeq||0;
+  let v=null;
+  try{ const r=await fetch('/api/cogs?'+qs.toString(),{credentials:'include'}); if(r.ok){ const j=await r.json(); v=parseFloat(j&&j.totalCOGS)||0; } }catch(e){}
+  if((window._entitySwitchSeq||0)!==seq) return;          // a switch landed mid-fetch — discard
+  window._cogsThisMonth={ eid, v };
+  _paintCogsThisMonth();
+}
+function _paintCogsThisMonth(){
+  const el=document.getElementById('inv-cogs'); if(!el) return;
+  const eid=(window.ENTITIES||[]).find(e=>e.active)?._dbId ?? null;
+  const c=window._cogsThisMonth;
+  el.textContent=(c && c.eid===eid && c.v!=null) ? S(c.v) : '—';   // not loaded / failed / another business → "—"
+}
+window._loadCogsThisMonth=_loadCogsThisMonth;
+window._paintCogsThisMonth=_paintCogsThisMonth;
 
 // F25: refetch the period-scoped COGS and repaint the cards that subtract it. Called on every
 // period/month switch. On failure it LEAVES the prior value (never fabricates $0 — F62 class) and

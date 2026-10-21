@@ -601,7 +601,9 @@
       _invKpi('inv-lowstock', lowCount);
       // F-K1: COGS is cost of goods SOLD (FIFO, server /api/cogs), NOT inventory value (units×cost).
       // The old units×cost duplicated the Inventory-value KPI and contradicted the FIFO COGS Summary.
-      _invKpi('inv-cogs',  S(window._cogsTotal || 0));
+      // LR15: "COGS this month" = this calendar month (app-main _loadCogsThisMonth), never the dashboard period's _cogsTotal.
+      if (typeof window._paintCogsThisMonth === 'function') window._paintCogsThisMonth();
+      if (typeof window._loadCogsThisMonth === 'function') { try { window._loadCogsThisMonth(); } catch (e) {} }
       if (typeof window.loadCOGS === 'function' && window._cogsTotal == null) { try { window.loadCOGS(); } catch (e) {} }
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');

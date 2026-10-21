@@ -738,6 +738,10 @@ async function loadCOGS(){
     { const _iv=document.getElementById('inv-value'); if(_iv && window._inventoryValue!=null) _iv.textContent=S(window._inventoryValue); }
     if(typeof window.renderInventory==='function'){ try{ window.renderInventory(); }catch(e){ console.error('[COGS] inventory repaint failed:', e && e.message); } }   // LA5: rows read the per-item values just loaded
     ['updateDashboard','updateAI','updateHealthScore'].forEach(fn=>{if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}}});
+    // LR30: these cards are the dashboard period's figures (the same window the fetch asked for) — say which.
+    { const _pe=document.getElementById('cogs-period');
+      const _pw=(typeof window._periodWindow==='function')?window._periodWindow(window.currentPeriod||'year'):null;
+      if(_pe) _pe.textContent='FIFO cost of goods sold'+(_pw&&_pw.label?' · '+_pw.label:''); }
     const totalEl=document.getElementById('cogs-total');
     const revEl=document.getElementById('cogs-revenue');
     const gpEl=document.getElementById('cogs-gross-profit');

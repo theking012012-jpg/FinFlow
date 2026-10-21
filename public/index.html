@@ -2668,7 +2668,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <div class="card">
           <div class="card-header">
-            <div><h2 class="card-title">COGS Summary</h2><div class="card-sub">FIFO cost of goods sold</div></div>
+            <div><h2 class="card-title">COGS Summary</h2><div class="card-sub" id="cogs-period">FIFO cost of goods sold</div></div>
             <button class="btn btn-ghost btn-sm" onclick="loadCOGS()">Refresh</button>
           </div>
           <div class="metrics-grid-3" style="margin-bottom:.75rem">
@@ -7332,6 +7332,10 @@ async function loadCOGS(){
     { const _iv=document.getElementById('inv-value'); if(_iv && window._inventoryValue!=null) _iv.textContent=S(window._inventoryValue); }
     if(typeof window.renderInventory==='function'){ try{ window.renderInventory(); }catch(e){ console.error('[COGS] inventory repaint failed:', e && e.message); } }   // LA5: rows read the per-item values just loaded
     ['updateDashboard','updateAI','updateHealthScore'].forEach(fn=>{if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}}});
+    // LR30: these cards are the dashboard period's figures (the same window the fetch asked for) — say which.
+    { const _pe=document.getElementById('cogs-period');
+      const _pw=(typeof window._periodWindow==='function')?window._periodWindow(window.currentPeriod||'year'):null;
+      if(_pe) _pe.textContent='FIFO cost of goods sold'+(_pw&&_pw.label?' · '+_pw.label:''); }
     const totalEl=document.getElementById('cogs-total');
     const revEl=document.getElementById('cogs-revenue');
     const gpEl=document.getElementById('cogs-gross-profit');

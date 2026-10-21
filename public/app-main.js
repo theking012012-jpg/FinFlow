@@ -2417,6 +2417,8 @@ function refreshAllPeriodData(){
   if(typeof _loadPeriodCOGS==='function') _loadPeriodCOGS();
   // LR19: the Budget page is period-scoped too — repaint it when it is the page on screen (opening it loads it anyway).
   if(document.getElementById('page-budget')?.classList.contains('active') && typeof window._loadBudgetFromDB==='function') window._loadBudgetFromDB();
+  // LR30: the COGS Summary (Inventory page) shows the period's figures and names the period — reload it when on screen.
+  if(document.getElementById('page-inventory')?.classList.contains('active') && typeof window.loadCOGS==='function') window.loadCOGS();
 }
 
 // Text form of the active period's date range — for the AI suggested-prompt seed

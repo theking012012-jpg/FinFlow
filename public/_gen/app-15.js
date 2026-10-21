@@ -11,9 +11,9 @@
     scenarioPage.id = 'page-scenario';
     scenarioPage.innerHTML = `
       <div class="metrics-grid" id="scenario-metrics">
-        <div class="mc"><div class="mc-label">Projected revenue</div><div class="mc-val" id="sc-rev">$0</div><div class="mc-change up" id="sc-rev-chg">Baseline</div></div>
-        <div class="mc"><div class="mc-label">Projected expenses</div><div class="mc-val" id="sc-exp">$0</div><div class="mc-change neutral" id="sc-exp-chg">Baseline</div></div>
-        <div class="mc"><div class="mc-label">Net profit</div><div class="mc-val" id="sc-profit">$0</div><div class="mc-change up" id="sc-profit-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Projected revenue</div><div class="mc-val" id="sc-rev">—</div><div class="mc-change up" id="sc-rev-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Projected expenses</div><div class="mc-val" id="sc-exp">—</div><div class="mc-change neutral" id="sc-exp-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Net profit</div><div class="mc-val" id="sc-profit">—</div><div class="mc-change up" id="sc-profit-chg">Baseline</div></div>
         <div class="mc"><div class="mc-label">Cash runway</div><div class="mc-val" id="sc-runway">—</div><div class="mc-change up" id="sc-runway-chg">At current burn</div></div>
       </div>
 

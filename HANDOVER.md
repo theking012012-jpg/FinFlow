@@ -7,8 +7,12 @@
 
 ## ⚡ UPDATE 2026-10-21 (latest — read this first)
 
-**Launch pass (`PROMPT_LAUNCH_ALL.md`) on `main` @ `11b775f`. Everything below is UNCOMMITTED on the owner's working copy —
-the owner commits (one item per commit; exact commands in the session report).** Owner steps:
+**Launch pass (`PROMPT_LAUNCH_ALL.md`) on top of `11b775f`. Committed by the owner and pushed to `main`: `060846f` (LR27) ·
+`d795df8` (A5 drill) · `35e1c5a` (A5 Sentry) · `dc9895d` (A7) · `6e10c34` (A6 tools) · `80b0671` (app fixes LR11 / LC3c / LR24 /
+LR12 / LR26 / LR13 / LR15 / LR20 / LR21 + the server side of A6) · `cd39c3e` (docs). One combined app commit: server.js,
+index.html and app-main.js each carry several fixes, so they could not be split by file. **NOT deployed yet** — Railway
+paused all builds (Railway incident, 2026-10-21); production still runs `9682467`. When builds resume: confirm a deploy of
+`main`, then the §3 log lines in `OWNER_ACTIONS_2026-10-21.md` and the owner's 3× full sweep.** Owner steps:
 `OWNER_ACTIONS_2026-10-21.md`. Decisions: `DECISIONS_2026-10-21.md`. Evidence: `AUDIT_MASTER.md` rows (each RED on HEAD →
 GREEN, counts in the row).
 
@@ -28,8 +32,8 @@ GREEN, counts in the row).
 | A6 | `tools/launch/list-test-data.js` + `purge-test-data.js` (reversals via shared `ledger-reverse.js`; books tie to the cent). | 12/3 → 15/0 |
 | A7 | LC1c lister verified read-only; exact-name link script prepared behind `--apply --expect`. | 7/6 → 13/0 |
 
-Related re-runs: LR11 + LC3c set **77/77 GREEN**; GL / audit / security set — see the session report. Final full sweep on
-the working tree — count in the session report.
+Related re-runs: LR11 + LC3c set **77/77 GREEN**; GL / audit / security set 75 / 76 run before it was stopped — the one
+FAIL (`verify-fix3-audit-coverage`, stale column index after LR12) fixed → 15/0. **No agent full sweep** (owner's, 3×).
 
 **Not done (agent, next):** LR14 (consolidated caption + "Intercompany $0"), LR16 (Bank Rec balances — investigate),
 LR18 (template preview heading), LR19 (Budget page ignores the period), `VERIFICATION.md` A7.5–A7.8 / A7.18 / A8a / A8b

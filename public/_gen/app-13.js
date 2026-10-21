@@ -351,23 +351,31 @@ window.setConsolCurrency = function(code){
   document.querySelectorAll('.consol-cur-btn').forEach(b=>{
     b.classList.toggle('active-preset', b.dataset.code===code);
   });
-  // Update rate label
-  const rateEl = document.getElementById('consol-fx-rate');
-  if(rateEl){
-    const cur = window.CURRENCIES[code];
-    if(cur && code !== 'USD'){
-      rateEl.textContent = `1 USD = ${cur.rate.toFixed(cur.rate<1?4:cur.rate>100?0:2)} ${code}`;
-    } else {
-      rateEl.textContent = 'Base currency · no conversion';
-    }
-  }
+  // LR14: the caption is written by renderConsolPL (_consolCaption) from what the figures actually are — it quoted the
+  // client's static table rate, which the server's per-transaction conversion never used.
   // Refetch every entity in the new currency (server per-leg conversion), then re-render — renderEntities
   // re-runs the per-entity loop with display=<code>. Fall back to a plain render if the wiring isn't loaded.
   if (typeof window.renderEntities === 'function') window.renderEntities();
   else renderConsolPL();
 };
 
+// LR14: says what the consolidated table IS. Every entity column is fetched in the consolidation currency and the
+// server converts each transaction at the stored rate for its own date — so there is no one rate to quote. It read
+// "No conversion · native currencies shown" while a TTD entity's column was in $.
+function _consolCaption(){
+  const el = document.getElementById('consol-fx-rate');
+  if(!el) return;
+  const cc = consolCurrency || 'USD';
+  const conv = ENTITIES.filter(e => (e.currency || 'USD') !== cc);
+  let t = !conv.length
+    ? `All in ${cc} · every entity books in ${cc}, nothing converted`
+    : `All in ${cc} · ${conv.map(e => e.name + ' (' + (e.currency || 'USD') + ')').join(', ')} converted at the stored rate for each transaction's date`;
+  const cb = window._consolBooks;
+  if (ENTITIES.some(e => e.data && e.data.unavailable) || (cb && cb.complete === false)) t += ' · some rates are missing — totals show —';
+  el.textContent = t;
+}
 function renderConsolPL(){
+  _consolCaption();
   const pl = document.getElementById('consol-pl');
   if(!pl) return;
   const cur = window.CURRENCIES[consolCurrency] || {symbol:'$'};
@@ -379,7 +387,7 @@ function renderConsolPL(){
   if(hdr){
     hdr.style.gridTemplateColumns = cols;
     hdr.innerHTML = '<span>Line</span>' +
-      ENTITIES.map(e=>`<span style="text-align:right">${e.name}</span>`).join('') +
+      ENTITIES.map(e=>`<span style="text-align:right">${esc(e.name)}</span>`).join('') +   // LR25 class: the name is user text
       '<span style="text-align:right">Consolidated</span>';
   }
 
@@ -427,10 +435,10 @@ window.renderEntities=function(){
     const margin = (!_unavail && e.data.rev) ? Math.round(e.data.netProfit/e.data.rev*100*10)/10 : null;
     return `
     <div class="entity-card${e.active?' active-entity':''}" onclick="switchEntity(${i})">
-      <div class="entity-logo" style="background:${e.color}">${e.name.slice(0,2).toUpperCase()}</div>
+      <div class="entity-logo" style="background:${esc(e.color)}">${esc(e.name.slice(0,2).toUpperCase())}</div>
       <div style="flex:1;min-width:0">
-        <div class="entity-name">${e.name}</div>
-        <div class="entity-meta">${e.currency}${e.country?' · '+_ffCountryName(e.country):''} · <span class="entity-tag">${e.tag}</span></div>
+        <div class="entity-name">${esc(e.name)}</div>
+        <div class="entity-meta">${esc(e.currency)}${e.country?' · '+esc(_ffCountryName(e.country)):''} · <span class="entity-tag">${esc(e.tag)}</span></div>
       </div>
       <div class="entity-stat">
         <div class="entity-stat-val">${revConverted}</div>

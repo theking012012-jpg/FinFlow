@@ -204,6 +204,18 @@ let _brecBankSelected=null;
 // own POST; "Save matches" commits the whole set in ONE batch request (/match-batch).
 let _brecPending=[];
 let _brecSaving=false;
+// LR31: save the statement's ending balance + date (PUT /api/bank-reconciliation/statement), then repaint.
+async function saveBankStatement(){
+  const v=(document.getElementById('brec-stmt-input')||{}).value, d=(document.getElementById('brec-stmt-date')||{}).value;
+  try{
+    const r=await fetch('/api/bank-reconciliation/statement',{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({balance:v,date:d})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not save the statement balance', true); return; }
+    if(typeof notify==='function') notify('Statement balance saved');
+    await loadBankRec();
+  }catch(e){ if(typeof notify==='function') notify('Could not save the statement balance — '+(e.message||''), true); }
+}
+window.saveBankStatement=saveBankStatement;
 async function loadBankRec(){
   try{
     const res=await fetch('/api/bank-reconciliation',{credentials:'include'});
@@ -234,8 +246,14 @@ async function loadBankRec(){
     { const _t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
       _t('brec-book-bal', data.bookBalance!=null ? S(data.bookBalance) : '—');
       _t('brec-book-sub', data.bookBalance!=null ? 'From the ledger (Balance Sheet cash)' : (data.bookBalanceNote==='failed' ? 'Could not be read' : 'Not tracked until the books reconcile'));
+      // LR31: the statement side, as entered from the bank statement; the difference is what is still to explain.
       _t('brec-stmt-bal', data.statementBalance!=null ? S(data.statementBalance) : '—');
-      _t('brec-stmt-sub', data.statementBalance!=null ? 'From the bank' : 'Not supplied by the bank feed');
+      const _sd = data.statementDate ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(data.statementDate,{year:true}) : data.statementDate) : '';
+      _t('brec-stmt-sub', data.statementBalance==null ? 'Not entered — type it from your bank statement'
+        : ('As of '+_sd+(data.difference==null ? '' : Math.abs(data.difference)<0.005 ? ' · matches the books' : ' · difference '+S(data.difference)+' to explain')));
+      { const _si=document.getElementById('brec-stmt-input'), _sdt=document.getElementById('brec-stmt-date');
+        if(_si && data.statementBalance!=null && document.activeElement!==_si) _si.value=String(data.statementBalance);
+        if(_sdt && data.statementDate && document.activeElement!==_sdt) _sdt.value=data.statementDate; }
       const _done=(data.reconciledLines||[]);
       _t('brec-feed-count', data.feedLines!=null ? data.feedLines : '—');
       _t('brec-feed-sub', data.feedLines!=null ? (unbank.length+_brecPending.length)+' to match · '+matched.length+' matched · '+(data.unmatchedDebits||[]).length+' money out · '+_done.length+' dealt with' : '');

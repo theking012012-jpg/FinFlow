@@ -1699,7 +1699,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <option value="projects,timesheet">Projects &amp; time</option>
                 <option value="budget_targets">Budget</option>
                 <option value="recurring_invoices,recurring_bills">Recurring schedules</option>
-                <option value="bank_lines,bank_reconciliation">Bank feed &amp; reconciliation</option>
+                <option value="bank_lines,bank_reconciliation,bank_statement">Bank feed &amp; reconciliation</option>
                 <option value="fx_rates,fx_transactions">FX rates &amp; positions</option>
                 <option value="autocat_rules">Auto-categorise rules</option>
                 <option value="journals,chart_of_accounts,ledger_entries">Journals &amp; accounts</option>
@@ -1768,7 +1768,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         
         <div class="metrics-grid-3">
           <div class="mc"><div class="mc-label">Book balance · cash</div><div class="mc-val" id="brec-book-bal">—</div><div class="mc-change neutral" id="brec-book-sub">From the ledger</div></div>
-          <div class="mc"><div class="mc-label">Statement balance</div><div class="mc-val" id="brec-stmt-bal">—</div><div class="mc-change neutral" id="brec-stmt-sub">Not supplied by the bank feed</div></div>
+          <div class="mc"><div class="mc-label">Statement balance</div><div class="mc-val" id="brec-stmt-bal">—</div><div class="mc-change neutral" id="brec-stmt-sub">Not entered</div>
+            
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
+              <input class="finput" id="brec-stmt-input" type="number" step="0.01" placeholder="Ending balance" style="flex:1;min-width:90px;font-size:11px;padding:3px 6px">
+              <input class="finput" id="brec-stmt-date" type="date" style="flex:1;min-width:110px;font-size:11px;padding:3px 6px">
+              <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="saveBankStatement()">Save</button>
+            </div></div>
           <div class="mc"><div class="mc-label">Bank feed lines</div><div class="mc-val" id="brec-feed-count">—</div><div class="mc-change neutral" id="brec-feed-sub">Each in one list below</div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">

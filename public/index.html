@@ -1700,7 +1700,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <option value="projects,timesheet">Projects &amp; time</option>
                 <option value="budget_targets">Budget</option>
                 <option value="recurring_invoices,recurring_bills">Recurring schedules</option>
-                <option value="bank_lines,bank_reconciliation">Bank feed &amp; reconciliation</option>
+                <option value="bank_lines,bank_reconciliation,bank_statement">Bank feed &amp; reconciliation</option>
                 <option value="fx_rates,fx_transactions">FX rates &amp; positions</option>
                 <option value="autocat_rules">Auto-categorise rules</option>
                 <option value="journals,chart_of_accounts,ledger_entries">Journals &amp; accounts</option>
@@ -1769,7 +1769,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <!-- LR16: the two sides of a reconciliation, and the feed's size (every line is in one list below). -->
         <div class="metrics-grid-3">
           <div class="mc"><div class="mc-label">Book balance · cash</div><div class="mc-val" id="brec-book-bal">—</div><div class="mc-change neutral" id="brec-book-sub">From the ledger</div></div>
-          <div class="mc"><div class="mc-label">Statement balance</div><div class="mc-val" id="brec-stmt-bal">—</div><div class="mc-change neutral" id="brec-stmt-sub">Not supplied by the bank feed</div></div>
+          <div class="mc"><div class="mc-label">Statement balance</div><div class="mc-val" id="brec-stmt-bal">—</div><div class="mc-change neutral" id="brec-stmt-sub">Not entered</div>
+            <!-- LR31: enter it from the bank statement (the feed carries none) -->
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
+              <input class="finput" id="brec-stmt-input" type="number" step="0.01" placeholder="Ending balance" style="flex:1;min-width:90px;font-size:11px;padding:3px 6px">
+              <input class="finput" id="brec-stmt-date" type="date" style="flex:1;min-width:110px;font-size:11px;padding:3px 6px">
+              <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="saveBankStatement()">Save</button>
+            </div></div>
           <div class="mc"><div class="mc-label">Bank feed lines</div><div class="mc-val" id="brec-feed-count">—</div><div class="mc-change neutral" id="brec-feed-sub">Each in one list below</div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
@@ -6799,6 +6805,18 @@ let _brecBankSelected=null;
 // own POST; "Save matches" commits the whole set in ONE batch request (/match-batch).
 let _brecPending=[];
 let _brecSaving=false;
+// LR31: save the statement's ending balance + date (PUT /api/bank-reconciliation/statement), then repaint.
+async function saveBankStatement(){
+  const v=(document.getElementById('brec-stmt-input')||{}).value, d=(document.getElementById('brec-stmt-date')||{}).value;
+  try{
+    const r=await fetch('/api/bank-reconciliation/statement',{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({balance:v,date:d})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not save the statement balance', true); return; }
+    if(typeof notify==='function') notify('Statement balance saved');
+    await loadBankRec();
+  }catch(e){ if(typeof notify==='function') notify('Could not save the statement balance — '+(e.message||''), true); }
+}
+window.saveBankStatement=saveBankStatement;
 async function loadBankRec(){
   try{
     const res=await fetch('/api/bank-reconciliation',{credentials:'include'});
@@ -6829,8 +6847,14 @@ async function loadBankRec(){
     { const _t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
       _t('brec-book-bal', data.bookBalance!=null ? S(data.bookBalance) : '—');
       _t('brec-book-sub', data.bookBalance!=null ? 'From the ledger (Balance Sheet cash)' : (data.bookBalanceNote==='failed' ? 'Could not be read' : 'Not tracked until the books reconcile'));
+      // LR31: the statement side, as entered from the bank statement; the difference is what is still to explain.
       _t('brec-stmt-bal', data.statementBalance!=null ? S(data.statementBalance) : '—');
-      _t('brec-stmt-sub', data.statementBalance!=null ? 'From the bank' : 'Not supplied by the bank feed');
+      const _sd = data.statementDate ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(data.statementDate,{year:true}) : data.statementDate) : '';
+      _t('brec-stmt-sub', data.statementBalance==null ? 'Not entered — type it from your bank statement'
+        : ('As of '+_sd+(data.difference==null ? '' : Math.abs(data.difference)<0.005 ? ' · matches the books' : ' · difference '+S(data.difference)+' to explain')));
+      { const _si=document.getElementById('brec-stmt-input'), _sdt=document.getElementById('brec-stmt-date');
+        if(_si && data.statementBalance!=null && document.activeElement!==_si) _si.value=String(data.statementBalance);
+        if(_sdt && data.statementDate && document.activeElement!==_sdt) _sdt.value=data.statementDate; }
       const _done=(data.reconciledLines||[]);
       _t('brec-feed-count', data.feedLines!=null ? data.feedLines : '—');
       _t('brec-feed-sub', data.feedLines!=null ? (unbank.length+_brecPending.length)+' to match · '+matched.length+' matched · '+(data.unmatchedDebits||[]).length+' money out · '+_done.length+' dealt with' : '');

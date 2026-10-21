@@ -5641,6 +5641,20 @@ let itemsFilter='all';
 const bankAccounts=[]; // populated from DB via loadBankingFromDB()
 let bankTxns=[];
 
+// LR31: fill bankAccounts from /api/plaid/accounts (Plaid's balance per linked account, read-only). A bank that could
+// not be read is kept as an account with no balance — the page then says so, never a $0.
+let _bankAcctErrors=[];
+async function _loadBankAccounts(){
+  try{
+    const r=await fetch('/api/plaid/accounts',{credentials:'include'});
+    if(!r.ok) return;
+    const j=await r.json();
+    const asOf=j.as_of?(window.FinFlowDates?window.FinFlowDates.fmtLabel(String(j.as_of).slice(0,10)):String(j.as_of).slice(0,10)):'';
+    bankAccounts.length=0;
+    (j.accounts||[]).forEach(a=>bankAccounts.push({ name:a.name, bank:a.institution||'Bank', last4:a.mask||'', type:a.type||'', balance:a.balance, currency:a.currency, updated:asOf?('as of '+asOf):'' }));
+    _bankAcctErrors=j.errors||[];
+  }catch(e){ console.warn('[Banking] accounts unavailable:', e && e.message); }
+}
 async function loadBankingFromDB(){
   try {
     const res = await fetch('/api/banking',{credentials:'include'});
@@ -5668,6 +5682,8 @@ async function loadBankingFromDB(){
         manual: r.manual===true||r.manual==='true',   // LR11: typed by a person, not sent by the bank
       };
     });
+    // LR31: the linked banks' accounts and balances (bankAccounts had no writer — the list was always empty).
+    await _loadBankAccounts();
     if(typeof renderBanking==='function') renderBanking();
   } catch(e){
     // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch
@@ -5704,7 +5720,12 @@ window.saveBankTxn = saveBankTxn;
 function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
   const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  const _bkTotal = (bankAccounts||[]).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+  // LR31: Total Balance adds only accounts in the business's own currency (a sum across currencies is not a balance);
+  // accounts in another currency are counted and named in the caption.
+  const _bkCur = _activeEntityCurrency();
+  const _bkSame = (bankAccounts||[]).filter(a => a.balance != null && a.balance !== '' && isFinite(parseFloat(a.balance)) && (!a.currency || a.currency === _bkCur));
+  const _bkOther = (bankAccounts||[]).filter(a => a.balance != null && a.currency && a.currency !== _bkCur);
+  const _bkTotal = _bkSame.reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
   // F87: the MTD month key comes from the CALENDAR date (UTC via resolvedToday), not local
   // getMonth — so Inflow/Outflow (MTD) don't shift by the viewer's timezone. Row side is a
   // string prefix match on the row's own 'YYYY-MM-DD'.
@@ -5713,11 +5734,14 @@ function renderBanking(){
   const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkUncat = (bankTxns||[]).filter(t => !t.cat || /uncategor/i.test(t.cat)).length;
-  // LR16: the bank feed carries no account balance (nothing fills bankAccounts), so with no balance the card says so —
-  // it read a confident "$0" with a linked bank.
-  const _bkHasBal = (bankAccounts||[]).some(a => a.balance != null && a.balance !== '' && isFinite(parseFloat(a.balance)));
+  // LR16 / LR31: with no balance the card says why (nothing linked, not sent, not readable) — it read a confident "$0"
+  // with a linked bank.
+  const _bkHasBal = _bkSame.length > 0;
   _bkSet('bank-total-bal', _bkHasBal ? S(_bkTotal) : '—');
-  _bkSet('bank-total-sub', _bkHasBal ? 'Across all accounts' : 'Not supplied by the bank feed');
+  _bkSet('bank-total-sub', _bkHasBal
+    ? (_bkSame.length + ' account' + (_bkSame.length===1?'':'s') + (_bkOther.length ? ' · ' + _bkOther.length + ' in another currency not added' : ''))
+    : (bankAccounts||[]).length ? (_bkOther.length ? 'Accounts are in another currency' : 'The bank did not send a balance')
+    : (_bankAcctErrors.length ? 'The bank could not be read' : 'No bank account linked'));
   _bkSet('bank-inflow',    S(_bkIn));
   _bkSet('bank-outflow',   S(_bkOut));
   _bkSet('bank-uncat',     _bkUncat);
@@ -5731,7 +5755,7 @@ function renderBanking(){
         <div style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(a.bank)} · ****${esc(a.last4)}</div></div>
       </div>
-      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${S(parseFloat(a.balance)||0)}</div><div style="font-size:10px;color:var(--t3)">${esc(a.type)} · ${esc(a.updated)}</div></div>
+      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${(a.balance==null||a.balance==='')?'—':(a.currency&&a.currency!==_bkCur)?esc(a.currency)+' '+(Number(a.balance)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):S(parseFloat(a.balance)||0)}</div><div style="font-size:10px;color:var(--t3)">${esc(a.type)} · ${esc(a.updated)}</div></div>
     </div>`).join('');
   const tl=document.getElementById('bank-txns-list');
   if(tl)tl.innerHTML=bankTxns.map(t=>`

@@ -63,12 +63,14 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     const bs = await (await w.fetch('/api/reports/balance-sheet', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
     eq('the Balance Sheet cash is the hand-derived 260 (300 in − 40 booked)', [bs.cashTracked, bs.cash], [true, 260], undefined);
     eq('book balance = the Balance Sheet cash', t('brec-book-bal'), '$260', '');
-    eq('statement balance is not invented', [t('brec-stmt-bal'), t('brec-stmt-sub')], ['—', 'Not supplied by the bank feed'], ['', '']);
+    // LR31 (2026-10-21): the statement side is now entered from the bank statement — none entered here, so it says so.
+    eq('statement balance is not invented', [t('brec-stmt-bal'), t('brec-stmt-sub')], ['—', 'Not entered — type it from your bank statement'], ['', '']);
 
     w.showPage('banking'); await settle(30, 40);
     if (typeof w.renderBanking === 'function') w.renderBanking();
     await settle(5, 10);
-    eq('Banking total balance: no made-up $0', [t('bank-total-bal'), t('bank-total-sub')], ['—', 'Not supplied by the bank feed'], ['$0', '']);   // old: the caption had no id → read ''
+    // LR31 (2026-10-21): no bank linked on this seed — the caption names why there is no balance.
+    eq('Banking total balance: no made-up $0', [t('bank-total-bal'), t('bank-total-sub')], ['—', 'No bank account linked'], ['$0', '']);   // old: the caption had no id → read ''
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   finally { try { if (boot && boot.stop) await boot.stop(); } catch (_) {} }
   console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);

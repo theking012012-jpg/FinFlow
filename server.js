@@ -7678,6 +7678,37 @@ const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_
 
 // GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
 // an honest "needs setup" state instead of a Link button that would 502.
+// LR31: the linked banks' ACCOUNTS and the balance Plaid holds for each (/accounts/get — Plaid's cached balance, kept
+// current by its own refresh; READ-ONLY, nothing is written to the books). The Banking "Bank Accounts" list and Total
+// Balance had no source at all. Same scope as the feed (M60): a business reads its own banks, Personal its own —
+// never another's. Only Plaid's mask (last 4) leaves the server, never a token or a full account number. A bank that
+// cannot be read is reported as such, never as a zero balance.
+app.get('/api/plaid/accounts', requireAuth, wrap(async (req, res) => {
+  const _bc = _bankCtx(req);
+  if (await _bankBizUnscoped(req)) return res.json({ configured: plaidConfigured(), accounts: [], errors: [] });
+  const { items } = await _getPlaidItemsE(_bc.uid, _bc.eid);
+  if (!items.length || !plaidConfigured()) return res.json({ configured: plaidConfigured(), accounts: [], errors: [] });
+  const accounts = [], errors = [];
+  for (const it of items) {
+    try {
+      const j = await plaidCall('/accounts/get', { access_token: decTok(it.access_token) });
+      for (const a of (j.accounts || [])) {
+        const b = a.balances || {};
+        accounts.push({
+          item_id: it.item_id, account_id: a.account_id, institution: it.institution_name || null,
+          name: a.name || a.official_name || 'Account', mask: a.mask || null, type: a.subtype || a.type || null,
+          balance: b.current != null && isFinite(Number(b.current)) ? Number(b.current) : null,
+          available: b.available != null && isFinite(Number(b.available)) ? Number(b.available) : null,
+          currency: (b.iso_currency_code || b.unofficial_currency_code) ? String(b.iso_currency_code || b.unofficial_currency_code).toUpperCase() : null,
+        });
+      }
+    } catch (e) {
+      console.error('[plaid accounts]', it.item_id, e && e.message, e && e.plaid && e.plaid.error_code);
+      errors.push({ item_id: it.item_id, institution: it.institution_name || null, error: (e && e.plaid && e.plaid.error_code) || 'unavailable' });
+    }
+  }
+  res.json({ configured: true, accounts, errors, as_of: new Date().toISOString() });
+}));
 app.get('/api/plaid/items', requireAuth, wrap(async (req, res) => {
   const _bc = _bankCtx(req);   // M60
   const { items } = (await _bankBizUnscoped(req)) ? { items: [] } : await _getPlaidItemsE(_bc.uid, _bc.eid);
@@ -10105,10 +10136,38 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
     const _bs = await glBalanceSheet(uid, req.entityId == null ? null : req.entityId);
     if (_bs && _bs.cashTracked) bookBalance = _bs.cash; else bookBalanceNote = 'not_tracked';
   } catch (e) { console.error('[bank-rec] book balance read failed:', e && e.message); bookBalanceNote = 'failed'; }
+  // LR31: the statement side, as the person entered it (the feed has none).
+  const _stmt = req.entityId == null ? null : await _getBankStatement(uid, req.entityId);
+  const statementBalance = _stmt && Number.isFinite(Number(_stmt.balance)) ? Number(_stmt.balance) : null;
   res.json({ unmatchedBanking, unmatchedPayments, matched, unmatchedDebits: _debits, openBills: _openBills,
-    reconciledLines, feedLines: banking.length, bookBalance, bookBalanceNote, statementBalance: null, statementBalanceNote: 'not_supplied_by_feed' });
+    reconciledLines, feedLines: banking.length, bookBalance, bookBalanceNote,
+    statementBalance, statementDate: statementBalance != null ? _stmt.date : null, statementBalanceNote: statementBalance != null ? null : 'not_entered',
+    difference: statementBalance != null && bookBalance != null ? Math.round((statementBalance - bookBalance) * 100) / 100 : null });
 }));
 
+// LR31: the bank STATEMENT side of a reconciliation — the ending balance and date the person reads off their bank
+// statement (the feed carries no balance). Stored per business; the page shows statement − book cash = the difference
+// still to explain. Nothing is posted to the books. Audited (who entered which figure, and what it replaced).
+async function _getBankStatement(uid, eid) {
+  const { rows: [r] } = await pool.query(
+    `SELECT data FROM user_settings WHERE user_id=$1 AND data->>'key'='bank_statement' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`, [uid, eid]);
+  try { return r && r.data && r.data.value ? JSON.parse(r.data.value) : null; } catch (_) { return null; }
+}
+app.put('/api/bank-reconciliation/statement', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'Choose a business first — a bank statement belongs to one business.' });
+  const b = req.body || {};
+  const bal = typeof b.balance === 'number' || (typeof b.balance === 'string' && b.balance.trim() !== '') ? Number(b.balance) : NaN;
+  if (!Number.isFinite(bal) || Math.abs(bal) >= 1e12) return res.status(400).json({ error: 'Enter the statement\'s ending balance as a number.' });
+  const d = String(b.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d)
+    return res.status(400).json({ error: 'Enter the statement date as a real date.' });
+  if (d > await entityTodayYmd(req.entityId)) return res.status(400).json({ error: 'A statement date cannot be in the future.' });
+  const next = { balance: Math.round(bal * 100) / 100, date: d, entered_at: new Date().toISOString() };
+  let prev = null;
+  await _mutateSettingsBlob(scopeId(req), 'bank_statement', req.entityId, cur => { prev = cur; return next; }, req);
+  await _auditRec(req, 'bank_statement', 'UPDATE', prev ? { entity_id: req.entityId, balance: prev.balance, date: prev.date } : null, { entity_id: req.entityId, balance: next.balance, date: next.date });
+  res.json({ ok: true, statementBalance: next.balance, statementDate: next.date });
+}));
 app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {
   const { banking_id, invoice_payment_id } = req.body || {};
   if (!banking_id || !invoice_payment_id) return res.status(400).json({ error: 'banking_id and invoice_payment_id required' });

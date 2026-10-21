@@ -106,7 +106,19 @@
       });
     }
 
-    return { get: collect, reset: reset, addRow: addRow, recompute: recompute, install: install };
+    // LR9: put saved lines back into the editor (editing a quote) — the amount is then re-derived from them (Rule 2).
+    function load(items) {
+      reset();
+      (Array.isArray(items) ? items : []).forEach(function (it) {
+        addRow();
+        var rows = rowEls(), tr = rows[rows.length - 1]; if (!tr) return;
+        var d = tr.querySelector('.' + p + '-li-desc'), q = tr.querySelector('.' + p + '-li-qty'), r = tr.querySelector('.' + p + '-li-rate');
+        if (d) d.value = it.desc || it.description || ''; if (q) q.value = it.qty != null ? it.qty : ''; if (r) r.value = it.rate != null ? it.rate : '';
+      });
+      recompute();
+    }
+
+    return { get: collect, reset: reset, addRow: addRow, recompute: recompute, install: install, load: load };
   }
 
   var inv   = makeLI('inv');
@@ -115,7 +127,7 @@
 
   window.ffInvLineItems   = { get: inv.get,   reset: inv.reset,   addRow: inv.addRow,   recompute: inv.recompute };
   window.ffBillLineItems  = { get: bill.get,  reset: bill.reset,  addRow: bill.addRow,  recompute: bill.recompute };
-  window.ffQuoteLineItems = { get: quote.get, reset: quote.reset, addRow: quote.addRow, recompute: quote.recompute };
+  window.ffQuoteLineItems = { get: quote.get, reset: quote.reset, addRow: quote.addRow, recompute: quote.recompute, load: quote.load };
 
   function installAll() { inv.install(); bill.install(); quote.install(); }
 

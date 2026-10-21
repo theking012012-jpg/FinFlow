@@ -1915,6 +1915,8 @@ app.get('/api/invoices', requireAuth, wrap(async (req, res) => respondList(req, 
 // backstop). Case-insensitive; an unknown status is rejected 400, never silently stored. credit_notes
 // / vendor_credits already validate via their own validStatuses; payroll_runs status is code-set only.
 const INVOICE_STATUSES = new Set(['pending', 'overdue', 'partial', 'paid', 'draft']);
+// LR9: a quote's status is one a person can choose; 'converted' is set only by turning it into an invoice.
+const QUOTE_STATUSES = new Set(['pending', 'accepted', 'declined']);
 const BILL_STATUSES    = new Set(['unpaid', 'due_soon', 'overdue', 'partial', 'paid']);
 const _badStatus = (set, v) => v != null && !set.has(String(v).toLowerCase());
 
@@ -2079,7 +2081,19 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required.' });
   if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' });
   const eid = entity_id || req.entityId || null;
-  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // LR9: turning a quote into an invoice. The quote must be this account's, in this business, and not declined; the
+  // idempotency key is FORCED to 'quote:<id>', so idx_invoices_idem_key allows ONE invoice per quote — converting
+  // twice (a double-click, a second tab, a direct API call with any key) returns the first invoice, never a second.
+  let _fromQuote = null;
+  if (req.body && req.body.from_quote_id != null) {
+    const _qid = parseInt(req.body.from_quote_id, 10);
+    const { rows: [_q] } = Number.isInteger(_qid) ? await pool.query(`SELECT * FROM quotes WHERE id = $1 AND user_id = $2 LIMIT 1`, [_qid, scopeId(req)]) : { rows: [] };
+    const _qo = _q ? rowToObj(_q) : null;
+    if (!_qo || (_qo.entity_id != null && eid != null && _qo.entity_id !== eid)) return res.status(404).json({ error: 'Quote not found.' });
+    if (String(_qo.status || '').toLowerCase() === 'declined') return res.status(409).json({ error: 'A declined quote cannot be turned into an invoice.', code: 'QUOTE_DECLINED' });
+    _fromQuote = _qo;
+  }
+  const idem = _fromQuote ? ('quote:' + _fromQuote.id) : (typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null);
   // Layer 3 (fast path): the 5s findRecentDuplicate pre-check is TOKEN-BLIND — it matches on
   // client+amount only, never the idempotency key. Run it ONLY for token-less requests (old
   // clients / API callers), where it stays the near-simultaneous-dupe guard. When a token IS
@@ -2150,7 +2164,7 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   const _issueYmd = issue_date || await entityTodayYmd(eid);
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: _issueYmd, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, ...(_fromQuote ? { from_quote_id: _fromQuote.id } : {}), client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: _issueYmd, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(
@@ -2162,6 +2176,12 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
     throw e;
   }
   logAudit(req, 'CREATE', 'invoices', row.id, null, row);
+  // LR9: the quote now points at its invoice and is locked (PUT / DELETE refuse a converted quote); audited.
+  if (_fromQuote) {
+    await pool.query(`UPDATE quotes SET data = data || jsonb_build_object('status', 'converted', 'invoice_id', $1::int, 'converted_at', now()::text), updated_at = NOW() WHERE id = $2`, [row.id, _fromQuote.id]);
+    const { rows: [_qn] } = await pool.query(`SELECT * FROM quotes WHERE id = $1`, [_fromQuote.id]);
+    if (_qn) await _auditRec(req, 'quotes', 'UPDATE', _fromQuote, rowToObj(_qn));
+  }
   // GL Phase 2 (dual-write shadow): an ISSUED invoice is Dr AR / Cr Revenue at its issue date —
   // mirrors computeBooks' issue-based accrual (draft is not recognized, so posts nothing). Best-effort:
   // a shadow posting failure must NEVER break invoice creation (reports read computeBooks until Phase 5).
@@ -4015,6 +4035,8 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   if (_li.error) return res.status(400).json({ error: _li.error });
   const _effAmount = _li.present ? _li.amount : amount;
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required' });
+  if (!QUOTE_STATUSES.has(String(status))) return res.status(400).json({ error: 'status must be pending, accepted or declined.' });   // LR9
+  if (!(Number(_effAmount) > 0) || !Number.isFinite(Number(_effAmount))) return res.status(400).json({ error: 'amount must be a positive number.' });
   const entity = await activeEntity(req);
   const num = 'QT-' + String(Date.now()).slice(-4);
   const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(_effAmount) } });
@@ -4030,23 +4052,34 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   );
   if (!_qtr) return res.status(404).json({ error: 'not found' });
   const row = rowToObj(_qtr);
+  // LR9: a quote of ANOTHER business is not editable from this one (the same account, a different business in view).
+  if (req.entityId != null && row.entity_id != null && row.entity_id !== req.entityId) return res.status(404).json({ error: 'not found' });
+  // LR9: once a quote became an invoice it is the record of what was agreed — locked, here on the server, not only by
+  // hiding a button. Change the invoice instead.
+  if (String(row.status || '').toLowerCase() === 'converted') return res.status(409).json({ error: 'This quote was turned into invoice #' + (row.invoice_id || '?') + ' and is locked. Change the invoice instead.', code: 'QUOTE_CONVERTED', invoice_id: row.invoice_id || null });
   const patch = {};
   const b = req.body || {};
   // F194 Phase 2b: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
   const _li = normalizeLineItems(b.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
-  if (b.client      != null) patch.client      = b.client;
+  if (b.status != null && !QUOTE_STATUSES.has(String(b.status))) return res.status(400).json({ error: 'status must be pending, accepted or declined.' });   // LR9 — 'converted' only by converting
+  if (b.client != null && !String(b.client).trim()) return res.status(400).json({ error: 'client cannot be empty.' });
+  if (!_li.present && b.amount != null && !(Number(b.amount) > 0 && Number.isFinite(Number(b.amount)))) return res.status(400).json({ error: 'amount must be a positive number.' });
+  if (b.client      != null) patch.client      = String(b.client).trim().slice(0, 200);
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
   else if (b.amount != null) patch.amount      = Number(b.amount);
   if (b.expiry_date != null) patch.expiry_date = b.expiry_date;
-  if (b.status      != null) patch.status      = b.status;
-  if (b.notes       != null) patch.notes       = b.notes;
+  if (b.status      != null) patch.status      = String(b.status);
+  if (b.notes       != null) patch.notes       = String(b.notes).slice(0, 2000);
   await db.updateById('quotes', Number(req.params.id), patch);
   const { rows: [_qtn] } = await pool.query(`SELECT * FROM quotes WHERE id = $1 LIMIT 1`, [row.id]);
   if (_qtn) await _auditRec(req, 'quotes', 'UPDATE', row, rowToObj(_qtn));   // FIX-3
   res.json({ ok: true });
 }));
 app.delete('/api/quotes/:id', requireAuth, requireOwnedRow('quotes'), wrap(async (req, res) => {
+  // LR9: a converted quote is the source of an invoice — kept, so the invoice can always be traced back to it.
+  const { rows: [_qcv] } = await pool.query(`SELECT data->>'status' AS status, data->>'invoice_id' AS invoice_id FROM quotes WHERE id = $1 AND user_id = $2`, [Number(req.params.id), scopeId(req)]);
+  if (_qcv && String(_qcv.status || '').toLowerCase() === 'converted') return res.status(409).json({ error: 'This quote was turned into invoice #' + (_qcv.invoice_id || '?') + ' and cannot be deleted.', code: 'QUOTE_CONVERTED' });
   const { rows: [_qtd] } = await pool.query('DELETE FROM quotes WHERE id = $1 AND user_id = $2 RETURNING *', [Number(req.params.id), scopeId(req)]);
   if (_qtd) await _auditRec(req, 'quotes', 'DELETE', rowToObj(_qtd), null);   // FIX-3
   res.json({ ok: true });
@@ -5473,9 +5506,20 @@ async function timesheetProject(req, projectId, entityId) {
   if (!p || (p.entity_id == null ? null : Number(p.entity_id)) !== (entityId == null ? null : Number(entityId))) return { error: 'Project not found in this business.' };
   return { project: p };
 }
+// LR10: a time entry's values, checked on the server (create and edit): hours 0 < h ≤ 24 for one day, a rate that is not
+// negative, a real calendar date.
+function _timeEntryInvalid({ hours, rate, date }) {
+  if (hours != null && !(Number.isFinite(Number(hours)) && Number(hours) > 0 && Number(hours) <= 24)) return 'hours must be more than 0 and at most 24.';
+  if (rate != null && rate !== '' && !(Number.isFinite(Number(rate)) && Number(rate) >= 0)) return 'rate cannot be negative.';
+  if (date != null && date !== '' && !(/^\d{4}-\d{2}-\d{2}$/.test(String(date)) && new Date(String(date) + 'T00:00:00Z').toISOString().slice(0, 10) === String(date))) return 'date must be a real calendar date (YYYY-MM-DD).';
+  return null;
+}
 app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
   const { employee, project = '', project_id = null, date, hours, billable = 'Yes', rate = 0 } = req.body || {};
   if (!employee || hours == null) return res.status(400).json({ error: 'employee and hours required' });
+  const _tsBad = _timeEntryInvalid({ hours, rate, date });   // LR10
+  if (_tsBad) return res.status(400).json({ error: _tsBad });
+  if (req.entityId != null && await refuseIfLocked(res, scopeId(req), req.entityId, date || await entityTodayYmd(req.entityId))) return;   // LR10: no time in a closed period
   const _lp = await timesheetProject(req, project_id, req.entityId || null);
   if (_lp.error) return res.status(400).json({ error: _lp.error });
   const label = _lp.project ? String(_lp.project.name || '') : String(project || '');
@@ -5501,8 +5545,16 @@ app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
 }));
 app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('timesheet', req.params.id, scopeId(req));
-  if (!row) return res.status(404).json({ error: 'Not found.' });
+  // LR10: an entry of ANOTHER business is not editable from this one.
+  if (!row || (req.entityId != null && row.entity_id != null && row.entity_id !== req.entityId)) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
+  const _tsBad = _timeEntryInvalid({ hours: b.hours, rate: b.rate, date: b.date });
+  if (_tsBad) return res.status(400).json({ error: _tsBad });
+  // LR10: neither the entry's current date nor a new one may be in a locked (closed) period.
+  if (row.entity_id != null) {
+    if (await refuseIfLocked(res, scopeId(req), row.entity_id, row.date)) return;
+    if (b.date != null && await refuseIfLocked(res, scopeId(req), row.entity_id, b.date)) return;
+  }
   const patch = {};
   if (b.employee != null) patch.employee = b.employee;
   if (b.project  != null) patch.project  = b.project;
@@ -5524,7 +5576,8 @@ app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
 }));
 app.delete('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
   const _told = await ownedBy('timesheet', req.params.id, scopeId(req));
-  if (!_told) return res.status(404).json({ error: 'Not found.' });
+  if (!_told || (req.entityId != null && _told.entity_id != null && _told.entity_id !== req.entityId)) return res.status(404).json({ error: 'Not found.' });   // LR10: this business's entries only
+  if (_told.entity_id != null && await refuseIfLocked(res, scopeId(req), _told.entity_id, _told.date)) return;   // LR10: closed period
   await db.deleteById('timesheet', parseInt(req.params.id));
   await _auditRec(req, 'timesheet', 'DELETE', _told, null);   // FIX-3
   res.json({ ok: true });

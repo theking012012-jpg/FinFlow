@@ -124,14 +124,14 @@
       return;
     }
     el.innerHTML = _tsData.map(t => `
-      <div style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px 36px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+      <div style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px 64px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
         <span style="font-weight:500">${e(t.employee)}</span>
         <span style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(_tsProjectLabel(t) || '—')}</span>
         <span style="color:var(--t2)">${e(t.date || '—')}</span>
         <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
         <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
         <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
-        <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
+        <div style="display:flex;gap:2px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" style="padding:0 4px" title="Edit" onclick="editTimesheetEntry(${t.id})">✎</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button></div>
       </div>`).join('');
   }
 
@@ -217,8 +217,28 @@
     if (keep && sel.querySelector(`option[value="${keep}"]`)) sel.value = keep;
   }
 
+  const _tsTitle = t => { const el = document.querySelector('#ts-log-modal .modal-title'); if (el) el.textContent = t; };
+  // LR10: edit a time entry with the same form. The server refuses an entry in a locked (closed) period or of
+  // another business, and checks the values again.
+  window.editTimesheetEntry = function (id) {
+    const t = _tsData.find(x => x.id === id);
+    if (!t) return;
+    const modal = buildTimesheetModal();
+    window._editingTsId = id; _tsTitle('Edit time entry');
+    document.getElementById('ts-employee').value = t.employee || '';
+    document.getElementById('ts-project').value  = t.project_id != null ? '' : (t.project || '');
+    _fillTsProjects();
+    const sel = document.getElementById('ts-project-id'); if (sel) sel.value = t.project_id != null ? String(t.project_id) : '';
+    document.getElementById('ts-date').value     = t.date || today();
+    document.getElementById('ts-hours').value    = t.hours != null ? t.hours : '';
+    document.getElementById('ts-rate').value     = t.rate != null ? t.rate : '';
+    document.getElementById('ts-billable').value = _isBillable(t) ? 'Yes' : 'No';
+    modal.classList.remove('hidden');
+  };
+
   window.openLogTimeModal = function () {
     const modal = buildTimesheetModal();
+    window._editingTsId = null; _tsTitle('Log Time');
     document.getElementById('ts-employee').value = '';
     document.getElementById('ts-project').value  = '';
     document.getElementById('ts-project-id').value = '';
@@ -242,6 +262,16 @@
     const billable = document.getElementById('ts-billable')?.value         || 'Yes';
     const rate     = parseFloat(document.getElementById('ts-rate')?.value) || 0;
     try {
+      if (window._editingTsId) {   // LR10
+        await api('PUT', '/api/timesheet/' + window._editingTsId, { employee, project, project_id, date, hours, billable, rate });
+        window._editingTsId = null;
+        document.getElementById('ts-log-modal')?.classList.add('hidden');
+        tip('Time entry updated ✦');
+        await loadTimesheet();
+        loadProjects().catch(()=>{});
+        window._refreshDashboardUI?.();
+        return;
+      }
       const saved = await api('POST', '/api/timesheet', { employee, project, project_id, date, hours, billable, rate });
       _tsData.unshift(saved.row || saved);
       window.timesheet = _tsData;

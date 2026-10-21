@@ -91,7 +91,7 @@
       if (!_quotesFetched) { loadQuotes(); return; }
       const el = document.getElementById('quotes-list');
       if (!el) return;
-      const cls = { pending: 'b-amber', accepted: 'b-green', declined: 'b-red' };
+      const cls = { pending: 'b-amber', accepted: 'b-green', declined: 'b-red', converted: 'b-blue' };
       el.innerHTML = _quotesData.length
         ? _quotesData.map(q => `
           <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
@@ -99,8 +99,8 @@
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(q.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(q.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(q.expiry_date,{year:true}):(q.expiry_date||''))||'—')}</span>
-            <span><span class="badge ${cls[q.status] || 'b-amber'}">${esc(q.status)}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewQuote(${q.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button></div>
+            <span><span class="badge ${cls[q.status] || 'b-amber'}">${esc(q.status === 'converted' ? 'converted · invoice #' + (q.invoice_id || '?') : q.status)}</span></span>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewQuote(${q.id})">View</button>${q.status !== 'converted' ? `<button class="btn btn-ghost btn-sm" onclick="editQuote(${q.id})">Edit</button>` : ''}${(q.status === 'pending' || q.status === 'accepted') ? `<button class="btn btn-ghost btn-sm" onclick="convertQuote(${q.id})" title="Create an invoice from this quote">→ Invoice</button>` : ''}<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
       const accepted = _quotesData.filter(q => q.status?.toLowerCase() === 'accepted').length;
@@ -113,10 +113,41 @@
       set('qt-value', S(openVal));
     };
 
+    // LR9: the same form adds or edits a quote; window._editingQuoteId says which.
+    const _quoteModalTitle = t => { const el = document.querySelector('#quote-modal .modal-title'); if (el) el.textContent = t; };
     window.openNewQuoteModal = function () {
+      window._editingQuoteId = null; _quoteModalTitle('New Quote');
       ['quote-client','quote-amount','quote-expiry','quote-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const s = document.getElementById('quote-status'); if (s) s.value = 'pending';
       openModal('quote-modal');
+    };
+    window.editQuote = function (id) {
+      const q = _quotesData.find(x => x.id === id);
+      if (!q) return;
+      if (q.status === 'converted') { notify('This quote became invoice #' + (q.invoice_id || '?') + ' and is locked — change the invoice instead.', true); return; }
+      window._editingQuoteId = id; _quoteModalTitle('Edit Quote');
+      const set = (fid, v) => { const el = document.getElementById(fid); if (el) el.value = v == null ? '' : v; };
+      set('quote-client', q.client); set('quote-amount', q.amount); set('quote-expiry', q.expiry_date || ''); set('quote-notes', q.notes || '');
+      set('quote-status', ['pending', 'accepted', 'declined'].includes(q.status) ? q.status : 'pending');
+      openModal('quote-modal');
+      if (window.ffQuoteLineItems && window.ffQuoteLineItems.load) window.ffQuoteLineItems.load(Array.isArray(q.line_items) ? q.line_items : []);
+    };
+    // LR9: quote → invoice through the one invoice route; the server allows ONE invoice per quote and locks the quote.
+    window.convertQuote = async function (id) {
+      const q = _quotesData.find(x => x.id === id);
+      if (!q) return;
+      const _msg = 'Create an invoice for ' + q.client + ' (' + S(q.amount) + ') from this quote? The quote is then locked.';
+      if (!(typeof window._confirmModal === 'function' ? await window._confirmModal(_msg) : window.confirm(_msg))) return;
+      const today = window._entityToday ? window._entityToday() : new Date().toISOString().slice(0, 10);
+      const due = new Date(Date.parse(today + 'T00:00:00Z') + 30 * 86400000).toISOString().slice(0, 10);
+      try {
+        const inv = await api('POST', '/api/invoices', { client: q.client, amount: q.amount, status: 'pending', issue_date: today, due_date: due,
+          notes: ('From quote ' + (q.num || '#' + q.id) + (q.notes ? ' — ' + q.notes : '')).slice(0, 500), from_quote_id: q.id,
+          ...(Array.isArray(q.line_items) && q.line_items.length ? { line_items: q.line_items } : {}) });
+        notify('✓ Invoice #' + ((inv && (inv.num || inv.id)) || '') + ' created from the quote');
+        await loadQuotes();
+        if (window.finflow && window.finflow.refresh) window.finflow.refresh(['invoices', 'dashboard', 'reports']);
+      } catch (e) { notify('Could not create the invoice — ' + e.message, true); }
     };
 
     window.saveQuote = async function () {
@@ -131,6 +162,14 @@
       // from them (Rule 2) — the `amount` here is only the locked on-screen mirror.
       const _qli = (window.ffQuoteLineItems && window.ffQuoteLineItems.get && window.ffQuoteLineItems.get()) || null;
       try {
+        if (window._editingQuoteId) {   // LR9: an edit — the server refuses a converted quote (409)
+          await api('PUT', '/api/quotes/' + window._editingQuoteId, { client, amount, expiry_date, status, notes, ...(_qli ? { line_items: _qli } : {}) });
+          window._editingQuoteId = null;
+          closeModal('quote-modal');
+          notify(`Quote for ${esc(client)} updated ✦`);
+          await loadQuotes();
+          return;
+        }
         const saved = await api('POST', '/api/quotes', { client, amount, expiry_date, status, notes, ...(_qli ? { line_items: _qli } : {}) });
         _quotesData.unshift(saved.row || saved);
         window.quotes = _quotesData;

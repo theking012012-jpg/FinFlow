@@ -41,7 +41,9 @@ try {
   win._nativeSymbol = () => '€'; // €
   win._fmtMoney = (n, sym) => sym + Math.round(n).toLocaleString('en-US');
   win._fmtMoneyNative = n => win._nativeSymbol() + Math.round(n).toLocaleString('en-US');   // L29: rows render exact native
-  new win.Function('window', 'document', src + '\n; window.__renderBudget = renderBudget;')(win, win.document);
+  // LR19: renderBudget escapes the category (esc — the app's global escaper, app-main.js); the sliced function needs it.
+  win.esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  new win.Function('window', 'document', 'esc', src + '\n; window.__renderBudget = renderBudget;')(win, win.document, win.esc);
   win.__renderBudget();
   const out = win.document.getElementById('budget-rows').innerHTML;
 

@@ -2434,6 +2434,8 @@ function refreshAllPeriodData(){
   // corrects it for month/quarter and repaints only if it changed (paint-then-correct, exactly as
   // the FX overlay does). Skipped when computeExpenseBreakdown-style data isn't ready yet.
   if(typeof _loadPeriodCOGS==='function') _loadPeriodCOGS();
+  // LR19: the Budget page is period-scoped too — repaint it when it is the page on screen (opening it loads it anyway).
+  if(document.getElementById('page-budget')?.classList.contains('active') && typeof window._loadBudgetFromDB==='function') window._loadBudgetFromDB();
 }
 
 // Text form of the active period's date range — for the AI suggested-prompt seed

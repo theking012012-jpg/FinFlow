@@ -1199,8 +1199,13 @@
         // YEAR's spend per category — the shared breakdown every expense surface uses (D3: direct categories +
         // Payroll + Bills & vendors + Journal entries), matched case-insensitively. It used to be Σ raw expense
         // rows of all time: last year's spend counted against this year, and a Payroll target always read 0.
+        // LR19: the Budget page follows the period buttons. Targets are ANNUAL, so the budget for the selected period is
+        // the annual target spread evenly — Month ÷ 12, Quarter ÷ 4, Year as stored — against that period's actuals
+        // (the same shared breakdown, same window as every other period surface). It always showed the year.
+        const _per = (window.currentPeriod === 'month' || window.currentPeriod === 'quarter') ? window.currentPeriod : 'year';
+        const _share = _per === 'month' ? 1 / 12 : _per === 'quarter' ? 1 / 4 : 1;
         const catActuals = {};
-        const _bd = typeof window.computeExpenseBreakdown === 'function' ? window.computeExpenseBreakdown('year') : null;
+        const _bd = typeof window.computeExpenseBreakdown === 'function' ? window.computeExpenseBreakdown(_per) : null;
         const _rows = typeof window._expenseCategoryRows === 'function' ? window._expenseCategoryRows(_bd, { all: true }) : [];
         _rows.forEach(([cat, v]) => {
           const k = String(cat || 'Other').toLowerCase();
@@ -1216,7 +1221,7 @@
         let totalBudget = 0, totalSpent = 0;
 
         Object.entries(targets).forEach(([cat, budget], i) => {
-          const bAmt = parseFloat(budget) || 0;
+          const bAmt = Math.round((parseFloat(budget) || 0) * _share * 100) / 100;   // LR19: this period's share
           const actual = catActuals[cat.toLowerCase()] || 0;
           totalBudget += bAmt;
           totalSpent += actual;   // F-G1: budgeted-category actuals only
@@ -1229,7 +1234,11 @@
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
         set('budget-total',    sm(totalBudget));
-        set('budget-total-sub', totalBudget > 0 ? Object.keys(targets).length + ' categor' + (Object.keys(targets).length === 1 ? 'y' : 'ies') : 'No targets set');
+        const _nCat = Object.keys(targets).length;
+        const _perLbl = ((document.getElementById('period-label') || {}).textContent || '').trim();
+        set('budget-total-sub', totalBudget > 0
+          ? _nCat + ' categor' + (_nCat === 1 ? 'y' : 'ies') + (_per === 'year' ? ' · annual targets' : ' · annual ÷ ' + (_per === 'month' ? '12' : '4')) + (_perLbl ? ' · ' + _perLbl : '')
+          : 'No targets set');
         set('budget-spent',    sm(totalSpent));
         set('budget-spent-pct', pct + '% used');
         set('budget-remaining', sm(Math.max(0, remaining)));

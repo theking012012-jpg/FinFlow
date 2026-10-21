@@ -54,7 +54,9 @@ try {
   AS('no local business formatter still hardcodes "=>\'$\'+"', !/=>\s*'\$'\s*\+/.test(appMain));
 
   // ── reverse-check: honest-USD investment surfaces deliberately KEPT '$' (not over-reached) ──
-  AS('business-investment S2b intentionally still uses $ (USD prices, unconverted — F126 not F129)', /const S2b = n => \(window\._fmtMoney \? window\._fmtMoney\(n, '\$'\)/.test(html));
+  // LR22 (2026-10-21, owner-approved): holdings are priced in USD — "$" on a USD business only, "USD x" on any other
+  // (executed in verify-lr22-usd-amounts). Still not the entity symbol: they are USD figures, not converted (F126).
+  AS('business-investment S2b says USD (never the entity symbol): "$" on a USD business, "USD " otherwise', /const S2b = n => _usdBiz \? \(window\._fmtMoney \? window\._fmtMoney\(n, '\$'\)/.test(html) && /: 'USD '\+/.test(html));
 
   console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (F129 entity currency symbol)`);
   console.log('');

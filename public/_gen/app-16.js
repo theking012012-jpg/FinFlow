@@ -551,11 +551,16 @@ document.addEventListener('click', e=>{
     if(!list) return;
     const hs = window.bizHoldings || [];
     const bizEl = (id, val) => { const e=document.getElementById(id); if(e) e.textContent=val; };
-    const S2b = n => (window._fmtMoney ? window._fmtMoney(n, '$') : '$'+Math.round(n).toLocaleString());
+    // LR22: holdings are priced in USD (M36). On a USD business they read as $; on any other business every figure says
+    // "USD", and the total carries its business-currency equivalent at the stored rate, with the rate named.
+    const _bcur=((typeof _activeEntityCurrency==='function'&&_activeEntityCurrency())||'USD').toUpperCase(), _usdBiz=_bcur==='USD';
+    const S2b = n => _usdBiz ? (window._fmtMoney ? window._fmtMoney(n, '$') : '$'+Math.round(n).toLocaleString())
+                             : 'USD '+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    const _eqEl=document.getElementById('biz-inv-total-eq'); if(_eqEl) _eqEl.textContent='';
     if(!hs.length){
       list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>';
-      ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'$0'));
-      bizEl('biz-inv-income','$0/yr');
+      ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,S2b(0)));   // LR22: was a literal '$0'
+      bizEl('biz-inv-income',S2b(0)+'/yr');
       // F155: this render OWNS the business Performance box. It used to be written only by the
       // PERSONAL renderInvestments (app-main.js) from personal holdings — a cross-wire that showed
       // the personal cost basis on the business page, identical across every entity.
@@ -583,12 +588,12 @@ document.addEventListener('click', e=>{
           <div style="font-weight:500;color:var(--t1)">${esc(h.ticker)}${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
           <div style="font-size:11px;color:var(--t3)">${esc(h.type||'Stock')} · ${esc(String(shares))} units</div>
         </div>
-        <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">$${price.toFixed(2)}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'$')}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'$')}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">${_usdBiz?'$'+price.toFixed(2):S2b(price)}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${S2b(val)}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${S2b(cost)}</div>
         <div style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${glPct}%</div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">
-          ${inc>0?window._fmtMoney(inc,'$'):'—'}
+          ${inc>0?S2b(inc):'—'}
           ${h.id!=null?`<div style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
             <button class="btn btn-ghost" style="padding:1px 7px;font-size:10px" title="Edit holding" onclick="event.stopPropagation();editHolding(${h.id})">Edit</button>
             <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" onclick="event.stopPropagation();deleteHolding(${h.id})">✕</button>
@@ -617,6 +622,7 @@ document.addEventListener('click', e=>{
       return;
     }
     bizEl('biz-inv-total',  S2b(totalValue));
+    if(!_usdBiz && _eqEl) _bizInvEquivalent(_eqEl, totalValue, _bcur);   // LR22
     bizEl('biz-inv-gain',   (totalGain>=0?'+':'')+S2b(totalGain));
     bizEl('biz-inv-income', S2b(totalIncome)+'/yr');
     bizEl('biz-inv-daychg', haveDay?((totalDayChg>=0?'+':'')+S2b(totalDayChg)):'—');
@@ -648,6 +654,17 @@ document.addEventListener('click', e=>{
     { const pp=document.getElementById('biz-perf-port'); const ps=document.getElementById('biz-perf-summary');
       if(pp){ pp.textContent=(gainPos?'+':'')+Math.abs(parseFloat(gainPct))+'%'; pp.style.color=gainPos?'var(--green)':'var(--red)'; pp.style.fontWeight='600'; }
       if(ps) ps.textContent='Unrealised '+(gainPos?'gain':'loss')+': '+(gainPos?'+':'')+S2b(totalGain)+' on '+S2b(totalCost)+' cost basis.'; }
+  }
+
+  // LR22: "≈ TT$8,136.00 at 6.7800 TTD per USD" — the stored rate, named; none stored → say so, never a guess.
+  async function _bizInvEquivalent(el, usd, cur){
+    try{
+      const r=await fetch('/api/fx/rate?from=USD&to='+encodeURIComponent(cur),{credentials:'include'});
+      const d=r.ok?await r.json():null;
+      if(!el.isConnected) return;
+      if(d&&d.rate!=null){ el.textContent='≈ '+S(usd*d.rate)+' at '+Number(d.rate).toFixed(4)+' '+cur+' per USD'; el.title='Your stored USD→'+cur+' rate as of '+d.as_of+' (FX / Currency)'; }
+      else { el.textContent='No USD→'+cur+' rate — add one under FX / Currency to see this in '+cur; el.title=''; }
+    }catch(_){ el.textContent=''; }
   }
 
   // Apply live quotes into window.bizHoldings, then repaint.

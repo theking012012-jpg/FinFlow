@@ -8695,8 +8695,12 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
         if (m) c.matchInvoice = { id: m.id, num: m.num || null, client: m.client || null, amount: parseFloat(m.amount) || 0 };
       });
     } catch (_) { /* match hint is best-effort */ }
-    const total = charges.filter(c => c.status === 'succeeded' && !c.refunded).reduce((sum, c) => sum + c.amount, 0);
-    res.json({ configured: true, connected: true, account: value.stripe_user_id, charges, total, livemode: charges.length ? charges[0].livemode : null, books: _stripeBooksTarget(value, req) });
+    const _ok = charges.filter(c => c.status === 'succeeded' && !c.refunded);
+    const total = _ok.reduce((sum, c) => sum + c.amount, 0);
+    // LR22: money in different currencies is never added together — one total PER currency (`total` kept for old clients).
+    const totals = {};
+    for (const c of _ok) totals[c.currency] = Math.round(((totals[c.currency] || 0) + c.amount) * 100) / 100;
+    res.json({ configured: true, connected: true, account: value.stripe_user_id, charges, total, totals, livemode: charges.length ? charges[0].livemode : null, books: _stripeBooksTarget(value, req) });
   } catch (e) {
     console.error('[stripe feed]', e.message);
     res.status(502).json({ error: 'Could not read Stripe payments: ' + e.message });
@@ -12764,6 +12768,16 @@ function computeUnrealised(tx, rateMap) {
   if (cur == null || !isFinite(cur)) return null;
   return Math.round((cur - parseFloat(tx.rate_at_transaction)) * parseFloat(tx.foreign_amount) * 100) / 100;
 }
+
+// LR22: ONE stored rate, read-only — used to show a USD-priced figure (business holdings) beside its business-currency
+// equivalent with the rate named. No rate stored → rate null; the screen then shows USD only and says so (never a guess).
+app.get('/api/fx/rate', requireAuth, wrap(async (req, res) => {
+  const from = String(req.query.from || '').toUpperCase(), to = String(req.query.to || '').toUpperCase();
+  if (!CURRENCY_CODES.has(from) || !CURRENCY_CODES.has(to)) return res.status(400).json({ error: 'Invalid currency code.' });
+  const asOf = await entityTodayYmd(req.entityId || null);
+  const rate = await rateAsOf(pool, scopeId(req), from, to, asOf);
+  res.json({ from, to, rate: rate == null ? null : Number(rate), as_of: asOf });
+}));
 
 app.get('/api/fx-rates', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(

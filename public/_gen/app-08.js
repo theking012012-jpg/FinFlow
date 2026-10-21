@@ -195,8 +195,12 @@ async function startStripeFeed(){
           bookCtl+
         '</div></div>';
     }).join('');
-    if(label) label.textContent=mode+_symOf((charges[0]||{}).currency)+_m(d.total)+' collected';
+    // LR22: one total per currency, each with its code — never a sum across currencies under the first one's sign; and
+    // what it covers is named (the last payments shown, not "today").
+    if(label){ const _t=d.totals&&typeof d.totals==='object'?d.totals:{}; const _cs=Object.keys(_t).sort();
+      label.textContent=_cs.length ? mode+'Last '+charges.length+' payment'+(charges.length===1?'':'s')+': '+_cs.map(c=>c+' '+_m(_t[c])).join(' · ')+' collected' : mode.trim(); }
   }catch(e){
+    if(label) label.textContent='';
     feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Could not load Stripe payments — '+esc(e.message||'try again')+'</div>';
   }
 }

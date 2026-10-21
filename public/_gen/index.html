@@ -1495,7 +1495,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div style="display:flex;align-items:center;gap:6px">
               <span class="dot dot-green"></span>
               <span style="font-size:11px;color:var(--green)">Live</span>
-              <span style="font-size:11px;color:var(--t3);margin-left:6px" id="stripe-total-label">Today: $0</span>
+              <span style="font-size:11px;color:var(--t3);margin-left:6px" id="stripe-total-label"></span><!-- LR22: was a static "Today: $0" -->
             </div>
           </div>
           <div class="stripe-feed" id="stripe-feed"></div>
@@ -2336,9 +2336,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <!-- BUSINESS INVESTMENTS PAGE -->
       <div class="page" id="page-biz-investments" data-lz="1"></div><template data-lz="page-biz-investments">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Portfolio Value</div><div class="mc-val" id="biz-inv-total">$0</div><div class="mc-change neutral" id="biz-inv-total-chg">—</div></div>
-          <div class="mc"><div class="mc-label">Unrealised Gain</div><div class="mc-val" id="biz-inv-gain">$0</div><div class="mc-change neutral" id="biz-inv-gain-chg">—</div></div>
-          <div class="mc"><div class="mc-label">Annual Income</div><div class="mc-val" id="biz-inv-income">$0</div><div class="mc-change neutral">Dividends &amp; interest</div></div>
+          <div class="mc"><div class="mc-label">Portfolio Value</div><div class="mc-val" id="biz-inv-total">—</div><div id="biz-inv-total-eq" style="font-size:11px;color:var(--t3);margin-top:2px"></div><div class="mc-change neutral" id="biz-inv-total-chg">—</div></div>
+          <div class="mc"><div class="mc-label">Unrealised Gain</div><div class="mc-val" id="biz-inv-gain">—</div><div class="mc-change neutral" id="biz-inv-gain-chg">—</div></div>
+          <div class="mc"><div class="mc-label">Annual Income</div><div class="mc-val" id="biz-inv-income">—</div><div class="mc-change neutral">Dividends &amp; interest</div></div>
           <div class="mc"><div class="mc-label">Day's Change</div><div class="mc-val" id="biz-inv-daychg">—</div><div class="mc-change neutral" id="biz-inv-daychg-chg">Loading…</div></div>
         </div>
         <div class="two-col" style="margin-bottom:1.25rem">

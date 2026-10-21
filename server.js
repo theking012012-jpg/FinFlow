@@ -34,11 +34,14 @@ const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single sour
 const { requirePerm } = require('./rbac');                // F5 Step 4 — per-route RBAC (matrix in rbac.js)
 const pgSession = require('connect-pg-simple')(session);
 
+const { checkedResend } = require('./email-send');   // LR23
 let resendClient = null;
 try {
   if (process.env.RESEND_API_KEY) {
     const { Resend } = require('resend');
-    resendClient = new Resend(process.env.RESEND_API_KEY);
+    // LR23: the SDK RETURNS { error } on a refused e-mail instead of throwing — checkedResend makes a refusal throw, so
+    // every send site's catch path runs and nothing reports a refused e-mail as sent (email-send.js).
+    resendClient = checkedResend(new Resend(process.env.RESEND_API_KEY));
   }
 } catch (e) {
   console.warn('[Resend] Package not installed — email will be skipped.');
@@ -9586,14 +9589,20 @@ async function securityAlert(req, user, event) {
   const build = securityLog.ALERTS[event];
   if (!build || !user) return;
   const ctx = { name: user.name, ip: req.ip || null, device: securityLog.deviceLabel(req.get && req.get('user-agent')), at: new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC' };
-  let sent = false, reason = null;
+  let sent = false, reason = null, detail = null;
   if (!resendClient) reason = 'email_not_configured';
   else if (!user.email) reason = 'no_email_address';
   else {
     try { const m = build(ctx); await resendClient.emails.send({ from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to: user.email, subject: m.subject, html: String(m.html) }); sent = true; }
-    catch (e) { reason = 'send_failed'; console.error('[security] alert e-mail failed:', event, e.message); }
+    catch (e) {
+      // LR17 / LR23: a refusal (unverified sender, sandbox recipient) is recorded as one, with the provider's reason —
+      // never the recipient or the body.
+      reason = e && e.code === 'EMAIL_REFUSED' ? 'refused' : 'send_failed';
+      detail = e && e.provider ? e.provider.message : String((e && e.message) || '').slice(0, 200);
+      console.error('[security] alert e-mail not sent:', event, reason, detail);
+    }
   }
-  await recordAudit(pool, { userId: user.id, table: 'users', recordId: user.id, action: 'SECURITY_ALERT', newData: { event, sent, ...(reason ? { reason } : {}) }, req });
+  await recordAudit(pool, { userId: user.id, table: 'users', recordId: user.id, action: 'SECURITY_ALERT', newData: { event, sent, ...(reason ? { reason } : {}), ...(detail ? { detail } : {}) }, req });
 }
 
 app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
@@ -13336,4 +13345,4 @@ module.exports.belvoTxnToRow = belvoTxnToRow;   // Belvo transaction -> feed-row
 module.exports.pickRate = pickRate;                 // FX-live - pair resolution: direct / inverse / cross-via-USD + date carry (test surface)
 module.exports._pickDirectRate = _pickDirectRate;   // FX-live - direct-pair carry-forward/backward matcher (test surface)
 module.exports.refreshLiveFxRates = refreshLiveFxRates;   // FX-live - USD-base feed upsert, manual-wins, idempotent-per-day (test surface)
-module.exports._setResendClientForTest = c => { resendClient = c; };   // LC3d: harness seam — a capturing fake Resend, never the network
+module.exports._setResendClientForTest = c => { resendClient = checkedResend(c); };   // LC3d: harness seam — a capturing fake Resend, never the network

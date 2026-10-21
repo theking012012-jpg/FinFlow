@@ -492,6 +492,27 @@ function _fmtMoneyNativeAbbr(n){ return _fmtMoney(n, _nativeSymbol()); }
 window._nativeSymbol   = _nativeSymbol;     // for sites that render exact, not abbreviated
 window._fmtMoneyNative = _fmtMoneyNative;
 window._fmtMoneyNativeAbbr = _fmtMoneyNativeAbbr;
+// LR24: a business money field's label names the ACTIVE business's currency — ONE painter for every such label
+// (19 labels read a literal "($)"). The symbol sits in <span data-cur="biz">, and is repainted whenever a modal is
+// shown — however it is opened (openModal, or a wiring file removing 'hidden' itself) — so a new form gets it by
+// marking its label, not by remembering to call anything.
+function _paintCurLabels(root){
+  const sym = _nativeSymbol();
+  (root || document).querySelectorAll('[data-cur="biz"]').forEach(el => { if(el.textContent !== sym) el.textContent = sym; });
+}
+window._paintCurLabels = _paintCurLabels;
+(function _watchModalsForCurLabels(){
+  const start = () => {
+    _paintCurLabels(document);
+    new MutationObserver(muts => {
+      for(const m of muts){
+        const t = m.target;
+        if(t.classList && t.classList.contains('modal-overlay') && !t.classList.contains('hidden')) _paintCurLabels(t);
+      }
+    }).observe(document.body, { subtree:true, attributes:true, attributeFilter:['class'] });
+  };
+  if(document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();
 
 // F94: a future-dated document is SCHEDULED — excluded from every figure by D2, and badged in its
 // list so it isn't mistaken for lost data. Tz-free calendar compare (Rule 10), on the SAME date the
@@ -5686,7 +5707,7 @@ function renderBanking(){
         <div style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${a.bank} · ****${a.last4}</div></div>
       </div>
-      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">$${a.balance.toLocaleString()}</div><div style="font-size:10px;color:var(--t3)">${a.type} · ${a.updated}</div></div>
+      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${S(parseFloat(a.balance)||0)}</div><div style="font-size:10px;color:var(--t3)">${a.type} · ${a.updated}</div></div>
     </div>`).join('');
   const tl=document.getElementById('bank-txns-list');
   if(tl)tl.innerHTML=bankTxns.map(t=>`

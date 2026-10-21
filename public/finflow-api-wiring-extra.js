@@ -195,7 +195,7 @@
       </div>
       <div class="field-group">
         <div class="field-wrap"><label class="field-label">Billable?</label><select class="finput" id="ts-billable"><option value="Yes">Yes — billable</option><option value="No">No — internal</option></select></div>
-        <div class="field-wrap"><label class="field-label">Rate ($/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
+        <div class="field-wrap"><label class="field-label">Rate (<span data-cur="biz">$</span>/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('ts-log-modal').classList.add('hidden')">Cancel</button>
@@ -593,7 +593,7 @@
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
           <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
           <div><label class="flabel">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
-          <div><label class="flabel">Budget ($)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
+          <div><label class="flabel">Budget (<span data-cur="biz">$</span>)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
           <div><label class="flabel">Status</label>
             <select id="proj-status" class="finput">
               <option value="In Progress">In Progress</option>

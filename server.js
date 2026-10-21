@@ -10057,7 +10057,11 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
   const _openBills = (await db.allByUser('bills', uid, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)))
     .filter(b => String(b.status || '').toLowerCase() !== 'paid')
     .map(b => ({ id: b.id, vendor: b.vendor, amount: parseFloat(b.amount) || 0, amount_paid: parseFloat(b.amount_paid) || 0, status: b.status, due_date: b.due_date }));
-  res.json({ unmatchedBanking, unmatchedPayments, matched, unmatchedDebits: _debits, openBills: _openBills });
+  // LR16: lines already dealt with (booked as an expense / matched to a bill / ignored) — listed, so a handled line never
+  // simply vanishes from Bank Rec.
+  const handled = banking.filter(r => r.reconcile_state).map(r => ({ id: r.id, description: r.description, amount: parseFloat(r.amount) || 0,
+    tx_type: r.tx_type, tx_date: r.tx_date || r.date || null, reconcile_state: r.reconcile_state, reconcile_ref: r.reconcile_ref || null }));
+  res.json({ unmatchedBanking, unmatchedPayments, matched, unmatchedDebits: _debits, openBills: _openBills, handled });
 }));
 
 app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {

@@ -1565,7 +1565,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="mc"><div class="mc-label">Entities</div><div class="mc-val" id="ent-count">0</div><div class="mc-change neutral">Separate ledgers</div></div>
           <div class="mc"><div class="mc-label">Consolidated revenue</div><div class="mc-val" id="ent-consol-rev">$0</div><div class="mc-change up">All entities</div></div>
           <div class="mc"><div class="mc-label">Consolidated profit</div><div class="mc-val" id="ent-consol-profit">$0</div><div class="mc-change up" id="ent-consol-margin">—</div></div>
-          <div class="mc"><div class="mc-label">Intercompany</div><div class="mc-val">$0</div><div class="mc-change neutral">Eliminated</div></div>
+          <div class="mc"><div class="mc-label">Intercompany</div><div class="mc-val" id="ent-interco">—</div><div class="mc-change neutral" id="ent-interco-sub">Internal trade, eliminated</div></div><!-- LR14: written by renderConsolPL in the report currency (was a hard-coded $0) -->
         </div>
         <div class="card">
           <div class="card-header">
@@ -1578,7 +1578,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="card-header" style="flex-wrap:wrap;gap:8px">
             <div>
               <h2 class="card-title">Consolidated P&amp;L</h2>
-              <span style="font-size:11px;color:var(--t3)" id="consol-fx-rate">No conversion · native currencies shown</span>
+              <span style="font-size:11px;color:var(--t3)" id="consol-fx-rate"></span><!-- LR14: written by _consolCaption() from the real report currency -->
             </div>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
               <span style="font-size:10.5px;color:var(--t3);white-space:nowrap">Report in:</span>
@@ -1783,6 +1783,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="card">
           <div class="card-header"><h2 class="card-title">Money Out — bank debits to reconcile</h2><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
           <div id="brec-debits-list" style="font-size:12px"></div>
+        </div>
+        <!-- LR16: lines already dealt with — booked as an expense, matched to a bill, or ignored. They used to vanish. -->
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">Handled bank lines</h2><span style="font-size:11px;color:var(--t3)">Booked, matched to a bill, or ignored</span></div>
+          <div id="brec-handled-list" style="font-size:12px"></div>
         </div>
       </div>
 
@@ -6871,6 +6876,13 @@ async function loadBankRec(){
           '</div></div>';
       }).join(''):'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No unreconciled business debits.</div>';
     }
+    // LR16: every handled line, with what was done — nothing leaves Bank Rec without a trace.
+    const hEl=document.getElementById('brec-handled-list');
+    if(hEl){
+      const _hs={expense:'Booked as an expense',bill:'Matched to a bill',ignored:'Ignored (not a business cost)'};
+      const hl=data.handled||[];
+      hEl.innerHTML=hl.length?hl.map(h=>`<div class="tx-row"><div><div class="tx-name">${esc(h.description||'Transaction')}</div><div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(h.tx_date,{year:true}):(h.tx_date||''))||'—')} · ${esc(_hs[h.reconcile_state]||h.reconcile_state)}</div></div><span class="tx-amt" style="color:${h.tx_type==='credit'?'var(--green)':'var(--red)'}">${h.tx_type==='credit'?'+':'−'}${S(h.amount)}</span></div>`).join(''):'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No handled lines yet.</div>';
+    }
   }catch(e){if(typeof notify==='function')notify('Could not load bank reconciliation');}
 }
 async function _brecAction(url,body,okMsg){
@@ -7937,23 +7949,30 @@ window.setConsolCurrency = function(code){
   document.querySelectorAll('.consol-cur-btn').forEach(b=>{
     b.classList.toggle('active-preset', b.dataset.code===code);
   });
-  // Update rate label
-  const rateEl = document.getElementById('consol-fx-rate');
-  if(rateEl){
-    const cur = window.CURRENCIES[code];
-    if(cur && code !== 'USD'){
-      rateEl.textContent = `1 USD = ${cur.rate.toFixed(cur.rate<1?4:cur.rate>100?0:2)} ${code}`;
-    } else {
-      rateEl.textContent = 'Base currency · no conversion';
-    }
-  }
+  _consolCaption();   // LR14: one caption, from the report currency (the old "1 USD = x" used the client's static table, not the server's rate)
   // Refetch every entity in the new currency (server per-leg conversion), then re-render — renderEntities
   // re-runs the per-entity loop with display=<code>. Fall back to a plain render if the wiring isn't loaded.
   if (typeof window.renderEntities === 'function') window.renderEntities();
   else renderConsolPL();
 };
 
+// LR14: the Consolidated P&L caption says what is ACTUALLY shown — every column is fetched in the report currency and
+// converted by the server, so a business in another currency is converted (it used to read "No conversion" until a
+// currency button was clicked). One writer, called on every render and every currency change.
+function _consolCaption(){
+  const el = document.getElementById('consol-fx-rate'); if(!el) return;
+  const code = consolCurrency || 'USD';
+  const others = [...new Set(ENTITIES.map(e => e.currency).filter(c => c && c !== code))];
+  el.textContent = 'Reported in ' + code + (others.length ? ' · ' + others.join(", ") + ' converted to ' + code : ' · no conversion needed');
+}
 function renderConsolPL(){
+  _consolCaption();
+  // LR14: Intercompany = internal trade the server detected and eliminated, in the report currency; "—" when the
+  // consolidated response carries none (never a hard-coded $0).
+  { const _icEl = document.getElementById('ent-interco'); const _cb = window._consolBooks;
+    if(_icEl){ const _ok = _cb && !_cb.unavailable && (_cb.currency||null) === (consolCurrency||null) && _cb.intercompany != null;
+      _icEl.textContent = _ok ? fmtTotal(_cb.intercompany) : '—';
+      const _s = document.getElementById('ent-interco-sub'); if(_s) _s.textContent = _ok ? 'Internal trade, eliminated' : 'Not available for this view'; } }
   const pl = document.getElementById('consol-pl');
   if(!pl) return;
   const cur = window.CURRENCIES[consolCurrency] || {symbol:'$'};

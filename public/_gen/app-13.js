@@ -351,23 +351,30 @@ window.setConsolCurrency = function(code){
   document.querySelectorAll('.consol-cur-btn').forEach(b=>{
     b.classList.toggle('active-preset', b.dataset.code===code);
   });
-  // Update rate label
-  const rateEl = document.getElementById('consol-fx-rate');
-  if(rateEl){
-    const cur = window.CURRENCIES[code];
-    if(cur && code !== 'USD'){
-      rateEl.textContent = `1 USD = ${cur.rate.toFixed(cur.rate<1?4:cur.rate>100?0:2)} ${code}`;
-    } else {
-      rateEl.textContent = 'Base currency · no conversion';
-    }
-  }
+  _consolCaption();   // LR14: one caption, from the report currency (the old "1 USD = x" used the client's static table, not the server's rate)
   // Refetch every entity in the new currency (server per-leg conversion), then re-render — renderEntities
   // re-runs the per-entity loop with display=<code>. Fall back to a plain render if the wiring isn't loaded.
   if (typeof window.renderEntities === 'function') window.renderEntities();
   else renderConsolPL();
 };
 
+// LR14: the Consolidated P&L caption says what is ACTUALLY shown — every column is fetched in the report currency and
+// converted by the server, so a business in another currency is converted (it used to read "No conversion" until a
+// currency button was clicked). One writer, called on every render and every currency change.
+function _consolCaption(){
+  const el = document.getElementById('consol-fx-rate'); if(!el) return;
+  const code = consolCurrency || 'USD';
+  const others = [...new Set(ENTITIES.map(e => e.currency).filter(c => c && c !== code))];
+  el.textContent = 'Reported in ' + code + (others.length ? ' · ' + others.join(", ") + ' converted to ' + code : ' · no conversion needed');
+}
 function renderConsolPL(){
+  _consolCaption();
+  // LR14: Intercompany = internal trade the server detected and eliminated, in the report currency; "—" when the
+  // consolidated response carries none (never a hard-coded $0).
+  { const _icEl = document.getElementById('ent-interco'); const _cb = window._consolBooks;
+    if(_icEl){ const _ok = _cb && !_cb.unavailable && (_cb.currency||null) === (consolCurrency||null) && _cb.intercompany != null;
+      _icEl.textContent = _ok ? fmtTotal(_cb.intercompany) : '—';
+      const _s = document.getElementById('ent-interco-sub'); if(_s) _s.textContent = _ok ? 'Internal trade, eliminated' : 'Not available for this view'; } }
   const pl = document.getElementById('consol-pl');
   if(!pl) return;
   const cur = window.CURRENCIES[consolCurrency] || {symbol:'$'};

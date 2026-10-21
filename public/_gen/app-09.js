@@ -41,7 +41,7 @@ async function loadAuditTrail(){
   const lastTimeEl=document.getElementById('audit-last-time');
   const lastActEl=document.getElementById('audit-last-action');
   if(!tbody)return;
-  tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
+  tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
   try{
     const tbl=document.getElementById('audit-filter-table')?.value||'all';
     const act=document.getElementById('audit-filter-action')?.value||'all';
@@ -60,7 +60,7 @@ async function loadAuditTrail(){
       if(lastActEl)lastActEl.textContent=events[0].action||'—';
     }
     if(!events.length){
-      tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
+      tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
       return;
     }
     const actionBadge={CREATE:'b-green',UPDATE:'b-amber',DELETE:'b-red'};
@@ -73,24 +73,25 @@ async function loadAuditTrail(){
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
         <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
+        <td style="padding:5px 8px;color:var(--t1);white-space:nowrap">${esc(r.actor_name||'—')}</td>
         <td style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
         <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.old||'')}">${esc(f.old||'—')}</td>
         <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.new||'')}">${esc(f.new||'—')}</td>
       </tr>`).join('');
     }).join('');
   }catch(e){
-    tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
   }
 }
 
 function exportAuditCSV(){
   const rows=document.querySelectorAll('#audit-trail-body tr');
   if(!rows.length)return;
-  const headers=['Date','Table','Record ID','Action','Field','Old Value','New Value'];
+  const headers=['Date','Table','Record ID','Action','By','Field','Old Value','New Value'];   // LR12: By
   const lines=[headers.join(',')];
   rows.forEach(tr=>{
     const cells=tr.querySelectorAll('td');
-    if(cells.length<7)return;
+    if(cells.length<8)return;
     const row=Array.from(cells).map(td=>'"'+td.textContent.replace(/"/g,'""')+'"');
     lines.push(row.join(','));
   });
@@ -292,6 +293,13 @@ async function loadBankRec(){
             '<button class="btn btn-ghost btn-sm" style="font-size:10px;opacity:.7" onclick="ffBankIgnore('+d.id+')">Ignore</button>'+
           '</div></div>';
       }).join(''):'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No unreconciled business debits.</div>';
+    }
+    // LR16: every handled line, with what was done — nothing leaves Bank Rec without a trace.
+    const hEl=document.getElementById('brec-handled-list');
+    if(hEl){
+      const _hs={expense:'Booked as an expense',bill:'Matched to a bill',ignored:'Ignored (not a business cost)'};
+      const hl=data.handled||[];
+      hEl.innerHTML=hl.length?hl.map(h=>`<div class="tx-row"><div><div class="tx-name">${esc(h.description||'Transaction')}</div><div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(h.tx_date,{year:true}):(h.tx_date||''))||'—')} · ${esc(_hs[h.reconcile_state]||h.reconcile_state)}</div></div><span class="tx-amt" style="color:${h.tx_type==='credit'?'var(--green)':'var(--red)'}">${h.tx_type==='credit'?'+':'−'}${S(h.amount)}</span></div>`).join(''):'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No handled lines yet.</div>';
     }
   }catch(e){if(typeof notify==='function')notify('Could not load bank reconciliation');}
 }

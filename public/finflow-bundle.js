@@ -1779,7 +1779,7 @@
         const _consolCc = window.consolCurrency;
         const _consolP = fetch('/api/reports?entity_id=all' + (_consolCc ? '&display=' + encodeURIComponent(_consolCc) : ''), { credentials: 'same-origin' })
           .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-          .then(d => { window._consolBooks = { currency: _consolCc || null, rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0, complete: !(d.fxCoverage && d.fxCoverage.complete === false) }; })
+          .then(d => { window._consolBooks = { currency: _consolCc || null, rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0, complete: !(d.fxCoverage && d.fxCoverage.complete === false), intercompany: d.intercompany ? (parseFloat(d.intercompany.revenue) || 0) : null }; })   // LR14: detected internal trade
           .catch(() => { window._consolBooks = { currency: _consolCc || null, unavailable: true }; });
         Promise.all([_consolP].concat(ents.map(e => {
           const _id = e._dbId || e.id;
@@ -1878,7 +1878,12 @@
         // Payroll + Bills & vendors + Journal entries), matched case-insensitively. It used to be Σ raw expense
         // rows of all time: last year's spend counted against this year, and a Payroll target always read 0.
         const catActuals = {};
-        const _bd = typeof window.computeExpenseBreakdown === 'function' ? window.computeExpenseBreakdown('year') : null;
+        // LR19: the page follows the SELECTED period (Month / Quarter / Year) — actuals for that period from the same
+        // breakdown every expense surface uses; the ANNUAL target is scaled to it below (month ÷ 12, quarter ÷ 4).
+        const _bp = (typeof currentPeriod !== 'undefined' && currentPeriod) || window.currentPeriod || 'year';
+        const _bScale = _bp === 'month' ? 1 / 12 : _bp === 'quarter' ? 1 / 4 : 1;
+        let _bLabel = ''; try { _bLabel = (typeof window.getPeriodData === 'function' ? window.getPeriodData() : getPeriodData()).label || ''; } catch (e) {}
+        const _bd = typeof window.computeExpenseBreakdown === 'function' ? window.computeExpenseBreakdown(_bp) : null;
         const _rows = typeof window._expenseCategoryRows === 'function' ? window._expenseCategoryRows(_bd, { all: true }) : [];
         _rows.forEach(([cat, v]) => {
           const k = String(cat || 'Other').toLowerCase();
@@ -1894,7 +1899,7 @@
         let totalBudget = 0, totalSpent = 0;
 
         Object.entries(targets).forEach(([cat, budget], i) => {
-          const bAmt = parseFloat(budget) || 0;
+          const bAmt = Math.round((parseFloat(budget) || 0) * _bScale * 100) / 100;   // LR19: the annual target for this period
           const actual = catActuals[cat.toLowerCase()] || 0;
           totalBudget += bAmt;
           totalSpent += actual;   // F-G1: budgeted-category actuals only
@@ -1907,7 +1912,7 @@
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
         set('budget-total',    sm(totalBudget));
-        set('budget-total-sub', totalBudget > 0 ? Object.keys(targets).length + ' categor' + (Object.keys(targets).length === 1 ? 'y' : 'ies') : 'No targets set');
+        set('budget-total-sub', totalBudget > 0 ? Object.keys(targets).length + ' categor' + (Object.keys(targets).length === 1 ? 'y' : 'ies') + (_bLabel ? ' · ' + _bLabel : '') : 'No targets set');
         set('budget-spent',    sm(totalSpent));
         set('budget-spent-pct', pct + '% used');
         set('budget-remaining', sm(Math.max(0, remaining)));

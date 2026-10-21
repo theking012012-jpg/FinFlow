@@ -974,16 +974,19 @@ function openReconcileModal(){
   document.getElementById('reconcile-modal').classList.remove('hidden');
 }
 
+// LR16: amounts are SIGNED (money in +, money out −) — every line used to be added as a positive amount. Book balance =
+// the business's bank lines in FinFlow; the statement is reconciled against the lines TICKED as on the statement
+// (difference = statement balance − ticked lines). It was "book − ticked", the wrong way round, and never shown.
+const _reconSigned = t => (t.type === 'credit' ? 1 : -1) * Math.abs(parseFloat(t.amount) || 0);
 function updateReconSummary(){
   const stmtBal = parseFloat(document.getElementById('recon-stmt-bal').value) || 0;
-  const bookBal = (typeof bankTxns!=='undefined'?bankTxns:window.bankTxns||[]).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const _txs = (typeof bankTxns!=='undefined'?bankTxns:window.bankTxns||[]);
+  const bookBal = Math.round(_txs.reduce((s,t)=>s+_reconSigned(t),0)*100)/100;
   const checked = [...document.querySelectorAll('#recon-txn-list input[type=checkbox]:checked')];
-  const clearedSum = checked.reduce((sum, cb)=>{
-    const idx = parseInt(cb.dataset.idx);
-    return sum + bankTxns[idx].amount;
-  }, 0);
-  const adjustedBook = bookBal - clearedSum;
-  const diff = stmtBal - adjustedBook;
+  const clearedSum = Math.round(checked.reduce((sum, cb)=>sum + _reconSigned(_txs[parseInt(cb.dataset.idx)]||{}), 0)*100)/100;
+  const _bb = document.getElementById('recon-book-bal');
+  if(_bb) _bb.textContent = (bookBal < 0 ? '-' : '') + _nativeSymbol() + Math.abs(bookBal).toFixed(2);
+  const diff = Math.round((stmtBal - clearedSum)*100)/100;
   const diffEl = document.getElementById('recon-diff');
   const statusEl = document.getElementById('recon-status');
   // L29: the entity's symbol (was a literal '$'), and a NEGATIVE difference keeps its minus sign (it printed unsigned).
@@ -996,8 +999,10 @@ function updateReconSummary(){
   } else {
     statusEl.innerHTML = '';
   }
+  // LR16: the business's own name — was a hard-coded "Main Checking ****4821".
+  const _rEnt = (window.ENTITIES || []).find(e => e && e.active);
   document.getElementById('recon-sub').textContent =
-    `Main Checking ****4821 · ${checked.length} of ${bankTxns.length} transactions cleared`;
+    `${(_rEnt && _rEnt.name) || 'This business'} · bank lines · ${checked.length} of ${_txs.length} ticked as on the statement`;
 }
 
 function finishReconciliation(){
@@ -2390,6 +2395,7 @@ function refreshAllPeriodData(){
   updateDashboard(d);
   updateCashflow(d);
   updateExpenses(d);
+  if(typeof window._loadBudgetFromDB==='function'){ try{ window._loadBudgetFromDB(); }catch(_){} }   // LR19: the Budget page follows the period too
   if(typeof window.updateInvoices==='function') window.updateInvoices(d);
   updateCharts(d);
   updateAI(d);
@@ -5669,6 +5675,8 @@ async function saveBankTxn(desc, amount, type, cat, date, idemKey){
 function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
   const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  // LR16: no linked account reports a balance (bankAccounts is filled by nothing today) → "—", never a fabricated $0.
+  const _bkHasBal = (bankAccounts||[]).some(a => a && a.balance != null && a.balance !== '');
   const _bkTotal = (bankAccounts||[]).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
   // F87: the MTD month key comes from the CALENDAR date (UTC via resolvedToday), not local
   // getMonth — so Inflow/Outflow (MTD) don't shift by the viewer's timezone. Row side is a
@@ -5678,7 +5686,7 @@ function renderBanking(){
   const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkUncat = (bankTxns||[]).filter(t => !t.cat || /uncategor/i.test(t.cat)).length;
-  _bkSet('bank-total-bal', S(_bkTotal));
+  _bkSet('bank-total-bal', _bkHasBal ? S(_bkTotal) : '—');
   _bkSet('bank-inflow',    S(_bkIn));
   _bkSet('bank-outflow',   S(_bkOut));
   _bkSet('bank-uncat',     _bkUncat);
@@ -6196,7 +6204,13 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   // F196: the issuing ENTITY's name wins over the account-wide settings business_name.
   const _activeEnt = (window.ENTITIES || []).find(e => e && e.active);
   const bizName = (_activeEnt && _activeEnt.name) || document.getElementById('s-biz-name')?.value || 'FinFlow Inc.';
-  const bizEmail = document.getElementById('s-email')?.value || '';
+  const bizEmail = (_activeEnt && _activeEnt.profile && _activeEnt.profile.email) || document.getElementById('s-email')?.value || '';
+  // LR18: the business's OWN address (entity profile, else Settings) — was a hard-coded 'New York, NY 10001'. Blank if none.
+  const _bizAddr = String((_activeEnt && _activeEnt.profile && _activeEnt.profile.address) || document.getElementById('s-address')?.value || '').trim();
+  const _addrHTML = _bizAddr ? esc(_bizAddr).replace(/\n/g, '<br>') : '';
+  // LR18: the document word follows the template's TYPE — a Quote template previews as a QUOTE, never an INVOICE.
+  const _isQuote = t.type === 'Quote';
+  const _docWord = _isQuote ? 'QUOTE' : 'INVOICE', _docNo = _isQuote ? '#QT-1042' : '#INV-1042';
   const poweredBy = settings.poweredBy !== false;
   const logoHTML = logoDataURL
     ? `<img src="${logoDataURL}" style="max-height:52px;max-width:160px;object-fit:contain">`
@@ -6232,7 +6246,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #eee}
     .total{font-size:15px;font-weight:700;border-top:2px dashed #ccc;padding-top:8px;margin-top:4px}
     </style></head><body>
-    <div class="hdr">${logoHTML}<div style="margin-top:8px;font-size:10px;color:#888">${bizEmail}</div>
+    <div class="hdr">${logoHTML}<div style="margin-top:8px;font-size:10px;color:#888">${esc(bizEmail)}${_addrHTML ? '<br>' + _addrHTML : ''}</div>
     <div style="margin-top:8px;font-size:11px;font-weight:700">RECEIPT #INV-1042</div>
     <div style="font-size:10px;color:#888">April 28, 2026 · TechCorp Inc.</div></div>
     ${items.map(i=>`<div class="row"><span>${esc(i.desc)}</span><span>${_sym}${i.total.toLocaleString()}</span></div>`).join('')}
@@ -6251,23 +6265,23 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   ${t.id==='minimal'
     ? `<div style="background:${acc};padding:28px 32px;margin:-48px -48px 36px;display:flex;align-items:center;justify-content:space-between">
         <div>${logoHTML}</div>
-        <div style="text-align:right;color:#fff"><div style="font-size:24px;font-weight:800;letter-spacing:-.02em">INVOICE</div><div style="opacity:.8;font-size:13px">#INV-1042</div></div>
+        <div style="text-align:right;color:#fff"><div style="font-size:24px;font-weight:800;letter-spacing:-.02em">${_docWord}</div><div style="opacity:.8;font-size:13px">${_docNo}</div></div>
        </div>`
     : `<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px">
         <div>${logoHTML}</div>
         <div style="text-align:right">
-          <div style="font-size:28px;font-weight:300;color:${acc};letter-spacing:.04em;font-style:italic">INVOICE</div>
-          <div style="font-size:12px;color:#888;margin-top:4px">#INV-1042 · April 28, 2026</div>
+          <div style="font-size:28px;font-weight:300;color:${acc};letter-spacing:.04em;font-style:italic">${_docWord}</div>
+          <div style="font-size:12px;color:#888;margin-top:4px">${_docNo} · April 28, 2026</div>
         </div>
        </div>`}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px">
     <div>
       <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">From</div>
       <div style="font-weight:600;font-size:14px">${esc(bizName)}</div>
-      <div style="color:#888;font-size:12px;margin-top:4px">${bizEmail}<br>New York, NY 10001</div>
+      <div style="color:#888;font-size:12px;margin-top:4px">${esc(bizEmail)}${_addrHTML ? '<br>' + _addrHTML : ''}</div>
     </div>
     <div>
-      <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Bill to</div>
+      <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${_isQuote ? 'Prepared for' : 'Bill to'}</div>
       <div style="font-weight:600;font-size:14px">TechCorp Inc.</div>
       <div style="color:#888;font-size:12px;margin-top:4px">accounts@techcorp.io<br>San Francisco, CA 94102</div>
     </div>
@@ -6284,7 +6298,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     </div>
   </div>
   <div style="margin-top:36px;padding:16px;background:#f9f9f9;border-radius:6px;font-size:12px;color:#888">
-    <strong style="color:#333">Payment terms:</strong> Due within 30 days · Bank transfer or card accepted via client portal
+    ${_isQuote ? '<strong style="color:#333">Validity:</strong> This quote is valid for 30 days' : '<strong style="color:#333">Payment terms:</strong> Due within 30 days · Bank transfer or card accepted via client portal'}
   </div>
   ${poweredByHTML}
   </body></html>`;

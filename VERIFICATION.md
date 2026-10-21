@@ -419,23 +419,23 @@ Client-displayed figure **==** server figure, six figures × three periods.
 ## A7 · Page-level figures — 23
 | # | Page | Figure | Expected | Result |
 |---|---|---|---|---|
-| A7.1 | Invoices | total outstanding | 8,500 || PASS (seed 9f6476f1) — `step3-gate.js` A7.1 (server AR, D2 non-future) = 8,500 · 56/0 |
-| A7.2 | Invoices | count excludes draft | 4 of 5 | |
-| A7.3 | Invoices | subtitle wording | "1 overdue" (never "All invoices paid") | |
+| A7.1 | Invoices | total outstanding | 8,500 | PASS 2026-10-21 — `step3-gate.js` A7.1 = 8,500 · 56/0 |
+| A7.2 | Invoices | count excludes draft | 4 of 5 | PASS 2026-10-21 — `step3-gate.js` A7.2 (all rows listed; draft excluded from revenue, not the list) · 56/0 |
+| A7.3 | Invoices | subtitle wording | "1 overdue" (never "All invoices paid") | PASS 2026-10-21 — `step3-gate.js` A7.3 exactly one overdue invoice · 56/0 |
 | A7.4 | Payments Received | total received | 1,500 | PASS (2026-08-23) — **F86 ruled: `invoice_payments` (Store B) is canonical Payments Received.** `step3-gate.js` A7.4 (via `GET /api/bank-reconciliation`.unmatchedPayments) **and** A7.4b (`GET /api/invoice-payments`, no-arg, exactly 2 rows resolving to INV-1/INV-2) both total **1,500**; full gate **56/0**. `payments_received` (Store A) is empty on the seed and orphaned in prod — see `f86-payments-source-instrument.js` (Store B $1,500 vs Store A $0 across DB **and** every live endpoint; a source swap would read $0 — Rule-4 discriminating). |
-| A7.5 | Customer detail | per-customer balance | **A = 300 · B = 7,000 · A+B = 7,300 (== NET AR; F58 CLOSE, A netted of CN-1 1,200)** || PASS (seed 9f6476f1) — `verify-verification-a7-gaps.js`: Accounts Receivable report (the per-customer surface) A 300 · B 7,000 · Total 7,300 |
-| A7.6 | Expenses page | period total | 750 (Jun) || PASS* (seed 9f6476f1) — `verify-verification-a7-gaps.js`: page shows 5,450 = expected.js PL.jun.opex. *The 750 above is manual expense rows only and predates decisions 1+2 (opex = manual + bills issued + payroll) — OWNER: restate Expected to 5,450 |
-| A7.7 | COGS page | period COGS | 200 (Jun) || PASS (seed 9f6476f1) — `verify-verification-a7-gaps.js`: COGS page, June = 200 |
-| A7.8 | COGS page | no-period call | 1,650 all-time || PASS (seed 9f6476f1) — `verify-verification-a7-gaps.js`: GET /api/cogs (no period) = 1,650 |
+| A7.5 | Customer detail | per-customer balance | **A = 300 · B = 7,000 · A+B = 7,300 (== NET AR; F58 CLOSE, A netted of CN-1 1,200)** | PASS 2026-10-21 — `verify-verification-a7-gaps.js` 9/0: A 300 · B 7,000 · A+B 7,300 = Total Receivable |
+| A7.6 | Expenses page | period total | 750 (Jun) | PASS* 2026-10-21 — `verify-verification-a7-gaps.js` 9/0: June page total 5,450 = expected.js PL.jun.opex. *Expected cell (750 = manual rows only) predates decisions 1+2 — OWNER: restate it as 5,450 |
+| A7.7 | COGS page | period COGS | 200 (Jun) | PASS 2026-10-21 — `verify-verification-a7-gaps.js` 9/0: COGS page June = 200 |
+| A7.8 | COGS page | no-period call | 1,650 all-time | PASS 2026-10-21 — `verify-verification-a7-gaps.js` 9/0: GET /api/cogs (no period) = 1,650 |
 | A7.9–11 | Cash Flow | cash in — Jun/Jul/FY | 500 / 0 / 1,500 | PASS (seed 9f6476f1) |
 | A7.12–14 | Cash Flow | cash out — Jun/Jul/FY | 750 / 1,850 / 3,200 | PASS (seed 9f6476f1) |
 | A7.15–17 | Cash Flow | net — Jun/Jul/FY | −250 / −1,850 / −1,700 | PASS (seed 9f6476f1) |
-| A7.18 | Cash Flow | FY cash out != FY opex | 3,200 != 8,200 || PASS* (seed 9f6476f1) — `verify-verification-a7-gaps.js`: Cash Flow FY cash out 3,200 != FY opex 9,100 (expected.js PL.fy.opex). *"8,200" above predates a seed revision — OWNER: restate |
+| A7.18 | Cash Flow | FY cash out != FY opex | 3,200 != 8,200 | PASS* 2026-10-21 — `verify-verification-a7-gaps.js` 9/0: FY cash out 3,200 != FY opex 9,100 (expected.js PL.fy.opex). *Expected cell "8,200" predates a seed revision — OWNER: restate it as 9,100 |
 | A7.19 | Banking | in/out/net for **selected period** (no MTD card) | ⬜ **RE-SCOPED — see below. The old "matches A7.9–17" expectation is RETIRED, not failed.** | N/A pending a Banking-page spec |
-| A7.20 | Bills / AP | outstanding | 1,100 || PASS (seed 9f6476f1) — `step3-gate.js` A7.20 = 1,100 · 56/0 |
-| A7.21 | Payroll | Monthly Payroll card | 5,000 (roster = template, informational only) || PASS (seed 9f6476f1) — `step3-gate.js` A7.21 roster card 5,000, contributes 0 to expense · 56/0 |
-| A7.22 | Payroll | run history dates | formatted, correct **local** day | |
-| A7.23 | Tax | YTD paid | **absent, or the literal text "Not tracked". ANY number = FAIL** (see below) | |
+| A7.20 | Bills / AP | outstanding | 1,100 | PASS 2026-10-21 — `step3-gate.js` A7.20 = 1,100 · 56/0 |
+| A7.21 | Payroll | Monthly Payroll card | 5,000 (roster = template, informational only) | PASS 2026-10-21 — `step3-gate.js` A7.21 roster card 5,000, contributes 0 to expense · 56/0 |
+| A7.22 | Payroll | run history dates | formatted, correct **local** day | PASS 2026-10-21 — `verify-verification-a7-22-23.js` 3/0: business in UTC+14, run created at 16:00Z on 25 Jul → history shows "Jul 26" (its local day; a UTC stamp gives Jul 25). Note: step3-gate's own "A7.22" label is a different check (AP future-dated bill) |
+| A7.23 | Tax | YTD paid | **absent, or the literal text "Not tracked". ANY number = FAIL** (see below) | PASS 2026-10-21 — `verify-verification-a7-22-23.js` 3/0: no tax-PAID number on Dashboard, Reports, "Income Tax Estimate" or "Tax-Deductible Expenses". Note: step3-gate's own "A7.23" label is a different check (Record Payment settle) |
 
 > ### ⬜ A7.19 — RE-SCOPED 2026-08-03. The equality it asserted was never the right question.
 >
@@ -517,12 +517,12 @@ Harness: `node tests/harness/tz-matrix.js`.
 
 | # | Figure | Expected | Result |
 |---|---|---|---|
-| A8a.1 | revenue — identical across all viewers | no difference || PASS (seed 9f6476f1) — `tz-matrix.js`: identical across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present; "every figure is IDENTICAL" |
-| A8a.2 | cogs | no difference || PASS (seed 9f6476f1) — `tz-matrix.js`: identical across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present; "every figure is IDENTICAL" |
-| A8a.3 | grossProfit | no difference || PASS (seed 9f6476f1) — `tz-matrix.js`: identical across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present; "every figure is IDENTICAL" |
-| A8a.4 | opex | no difference || PASS (seed 9f6476f1) — `tz-matrix.js`: identical across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present; "every figure is IDENTICAL" |
-| A8a.5 | netProfit | no difference || PASS (seed 9f6476f1) — `tz-matrix.js`: identical across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present; "every figure is IDENTICAL" |
-| A8a.6 | outstanding | no difference || PASS (seed 9f6476f1) — `tz-matrix.js`: identical across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present; "every figure is IDENTICAL" |
+| A8a.1 | revenue — identical across all viewers | no difference | PASS 2026-10-21 — `tz-matrix.js`: every figure IDENTICAL across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present |
+| A8a.2 | cogs | no difference | PASS 2026-10-21 — `tz-matrix.js`: every figure IDENTICAL across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present |
+| A8a.3 | grossProfit | no difference | PASS 2026-10-21 — `tz-matrix.js`: every figure IDENTICAL across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present |
+| A8a.4 | opex | no difference | PASS 2026-10-21 — `tz-matrix.js`: every figure IDENTICAL across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present |
+| A8a.5 | netProfit | no difference | PASS 2026-10-21 — `tz-matrix.js`: every figure IDENTICAL across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present |
+| A8a.6 | outstanding | no difference | PASS 2026-10-21 — `tz-matrix.js`: every figure IDENTICAL across LA (UTC-7) · Port of Spain (UTC-4) · London (UTC+1) · Kolkata (UTC+5:30), boundary row present |
 
 ### A8b · Fiscal-year setting — 6
 
@@ -533,7 +533,7 @@ would otherwise get different YEAR boundaries on the same data.
 
 | # | Figure | Expected | Result |
 |---|---|---|---|
-| A8b.1–6 | revenue / cogs / grossProfit / opex / netProfit / outstanding | no difference || PASS (2026-10-07) — `verify-a8b-fiscal-year-viewer.js`: books FY April, member's own setting January ⇒ owner, member and accountant portal all read FY April, year revenue 400 (a reader FY would give 1,400) |
+| A8b.1–6 | revenue / cogs / grossProfit / opex / netProfit / outstanding | no difference | PASS 2026-10-21 — `verify-a8b-fiscal-year-viewer.js` 5/0: books FY April; owner, member (own setting January) and accountant portal all read FY April — year revenue 400 (a reader FY gives 1,400); outstanding identical |
 
 ### A8c · Display currency — 6
 

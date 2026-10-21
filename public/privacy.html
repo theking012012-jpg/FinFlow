@@ -31,42 +31,69 @@
 </header>
 <main>
   <h1>Privacy Policy</h1>
-  <div class="updated">Last updated: September 2026</div>
+  <div class="updated">Last updated: October 2026</div>
 
-  <p>This Privacy Policy explains what information FinFlow collects, how we use it, and the choices you have. It applies to your use of the FinFlow application and website.</p>
+  <p>This Privacy Policy explains what information FinFlow collects, how we use it, who we share it with, how long we keep it, and the choices you have. It applies to the FinFlow application and website (the "Service"). In this Policy, "FinFlow", "we" and "us" mean the provider of the Service.</p>
+
+  <h2>Who is responsible for your data</h2>
+  <p>For your own account information, and for how we run and secure the Service, FinFlow is the data controller. For the business records you keep in FinFlow — including information about your customers, suppliers and employees — you decide what is recorded and why, and we process it on your behalf to provide the Service. Business customers can request our data processing terms by contacting us.</p>
 
   <h2>Information we collect</h2>
   <ul>
-    <li><strong>Account information</strong> — your name, email, business details, and password (stored only as a secure hash).</li>
-    <li><strong>Financial data you enter</strong> — invoices, expenses, payroll, and related records you create in the Service.</li>
-    <li><strong>Connected-provider data</strong> — when you link a third party (e.g. a bank via Plaid, or Stripe), we receive the data needed to display it, using access tokens that are encrypted at rest.</li>
-    <li><strong>Usage and device data</strong> — basic log and analytics data (such as pages viewed and coarse location derived from IP) to operate and secure the Service.</li>
+    <li><strong>Account information</strong> — your name, email address, business details (name, address, tax ID, currency, country, timezone), and password (stored only as a salted one-way hash). If you turn on two-factor authentication, we store the secret it needs, encrypted.</li>
+    <li><strong>Business records you enter or import</strong> — invoices, quotes, receipts, expenses, bills, payments, payroll (including employee names and pay), inventory, projects and time, journals, budgets, documents you upload, and similar records. These often contain personal data about <strong>your customers, suppliers and employees</strong> (for example names and e-mail addresses).</li>
+    <li><strong>Personal finance data</strong> — if you use the Personal area: personal transactions, assets and liabilities, goals, investments, net-worth snapshots, and your owner's salary when a payroll run that includes you is marked paid. Personal data is kept separate from your businesses and is never shown on a business page.</li>
+    <li><strong>Bank and connected-provider data</strong> — when you link a bank (through <strong>Plaid</strong> or, in Latin America, <strong>Belvo</strong>), upload a bank statement file (OFX, QFX or CSV), or connect another service (for example Stripe, QuickBooks, Xero or others you choose), we receive and store the transactions and account details needed to show them and to let you reconcile them. Access tokens are encrypted at rest. You can unlink a connection at any time.</li>
+    <li><strong>Security and sign-in data</strong> — each sign-in, failed sign-in, two-factor and password event, with the IP address and the browser / device it came from. We use this to protect your account, show you your recent security activity, and e-mail you about important events such as a sign-in from a new device.</li>
+    <li><strong>Activity history</strong> — an audit trail of changes to each business's records (who made the change, when, and what changed), and a separate history of changes to your personal records.</li>
+    <li><strong>Usage data</strong> — pages viewed, coarse location derived from IP address, and error reports, to operate, secure and improve the Service.</li>
   </ul>
 
   <h2>How we use it</h2>
-  <p>We use your information to provide, maintain, secure, and improve the Service; to process payments; to communicate with you about your account; and to comply with legal obligations. AI features process your data to generate insights at your request; we do not use your financial data to train third-party models.</p>
+  <p>To provide the Service (keeping your books, producing reports and income-tax estimates, sending the invoices, quotes, reminders and receipts you ask us to send to your customers); to process your subscription; to secure accounts and detect misuse; to support you; to improve the Service; and to meet legal obligations.</p>
+  <p><strong>AI features.</strong> When you use the AI assistant, insights or receipt scanning, the relevant data (for example a receipt image, or figures from your books) is sent to our AI provider, Anthropic, to produce the answer. We do not use your data to train AI models, and our provider does not use it to train its models.</p>
 
-  <h2>How we share it</h2>
-  <p>We do not sell your personal information. We share it only with: service providers who help us operate the Service (such as hosting, payment processing, and email delivery) under confidentiality obligations; third-party integrations you explicitly connect; and authorities where required by law. If you engage an accountant through FinFlow, the data you authorise is shared with that accountant.</p>
+  <h2>Who we share it with</h2>
+  <p>We do not sell your personal information. We share it only with:</p>
+  <ul>
+    <li><strong>Service providers</strong> who process data for us under contract: Railway (hosting), Supabase (database), Stripe (subscription billing and payment processing), Resend (e-mail delivery), Anthropic (AI features), Sentry (error monitoring) and, where used, Cloudflare (network security).</li>
+    <li><strong>Providers you connect</strong> — Plaid, Belvo and any other service you link, under their own terms and privacy policies.</li>
+    <li><strong>People you give access to</strong> — team members you invite, and any accountant you engage through FinFlow, see the business data you authorise. You can remove their access at any time.</li>
+    <li><strong>Your customers</strong> — when you send them an invoice, quote, reminder or receipt.</li>
+    <li><strong>FinFlow support</strong> — our staff can access your account only to support you or keep the Service secure; any change they make is recorded and shown on your business's Audit page as "FinFlow support".</li>
+    <li><strong>Authorities</strong> — where required by law.</li>
+  </ul>
+
+  <h2>Cookies</h2>
+  <p>We use a strictly necessary session cookie to keep you signed in, and we record page views (with coarse location derived from IP address) to understand how the Service is used. We do not use third-party advertising cookies.</p>
 
   <h2>Data security</h2>
-  <p>Connection tokens and sensitive credentials are encrypted at rest, traffic is encrypted in transit, and access is restricted. See our <a href="/security.html">Security overview</a> for more detail. No system is perfectly secure, so we encourage strong, unique passwords.</p>
+  <p>Traffic is encrypted in transit, connection tokens and other secrets are encrypted at rest, and access is restricted by role. See our <a href="/security.html">Security overview</a>. No system is perfectly secure, so please use a strong, unique password and turn on two-factor authentication.</p>
 
-  <h2>Data retention</h2>
-  <p>We keep your data for as long as your account is active and as needed to provide the Service, plus any period required to meet legal, tax, or accounting obligations. You can request export or deletion of your data.</p>
+  <h2>How long we keep data</h2>
+  <ul>
+    <li>Your data is kept while your account is active.</li>
+    <li>You can <strong>export</strong> all of your data at any time from Settings.</li>
+    <li>When you <strong>delete your account</strong>, your account, business records, personal finance data and personal history are erased. The <strong>audit trail of changes to your businesses' books is kept</strong>, because it is a financial record — this includes the sign-in and security events recorded in it (with IP address and device).</li>
+    <li>Backups held by our database provider are overwritten on their normal cycle.</li>
+    <li>You are responsible for keeping your own business records for as long as the law requires you to; please export them before deleting your account.</li>
+  </ul>
 
   <h2>Your rights</h2>
-  <p>Depending on your location, you may have the right to access, correct, export, or delete your personal data, and to object to or restrict certain processing. To exercise these rights, contact us at the address below.</p>
+  <p>Depending on where you live (for example under the UK GDPR or EU GDPR), you may have the right to access, correct, export or delete your personal data, to object to or restrict certain processing, and to complain to your data-protection authority (in the UK, the Information Commissioner's Office). To exercise these rights, contact us at the address below. If you are a customer, supplier or employee of a FinFlow user, please contact that business first — it controls the records it keeps about you.</p>
 
   <h2>International transfers</h2>
-  <p>Your data may be processed in countries other than your own. Where required, we use appropriate safeguards for such transfers.</p>
+  <p>Your data may be processed in countries other than your own, including the United States, by the providers listed above. Where the law requires it, we use appropriate safeguards for these transfers, such as standard contractual clauses.</p>
+
+  <h2>Children</h2>
+  <p>The Service is not intended for anyone under 18.</p>
 
   <h2>Changes</h2>
-  <p>We may update this Policy from time to time. Material changes will be communicated through the Service or by email.</p>
+  <p>We may update this Policy from time to time. Material changes will be communicated through the Service or by email before they take effect.</p>
 
   <h2>Contact</h2>
   <p>Questions or requests about privacy? Email <a href="mailto:hello@finflow.io">hello@finflow.io</a>.</p>
 </main>
-<footer>© 2026 FinFlow Inc. · <a href="/terms.html" style="color:var(--text3)">Terms</a> · <a href="/security.html" style="color:var(--text3)">Security</a></footer>
+<footer>© 2026 FinFlow · <a href="/terms.html" style="color:var(--text3)">Terms</a> · <a href="/security.html" style="color:var(--text3)">Security</a></footer>
 </body>
 </html>

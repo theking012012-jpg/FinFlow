@@ -31,31 +31,34 @@
 </header>
 <main>
   <h1>Security</h1>
-  <div class="updated">Last updated: September 2026</div>
+  <div class="updated">Last updated: October 2026</div>
 
-  <p>We know your financial data is sensitive. Security is built into how FinFlow is designed and operated. This page summarises the measures we take.</p>
+  <p>We know your financial data is sensitive. This page summarises how FinFlow protects it.</p>
 
   <h2>Encryption</h2>
-  <p>All traffic to and from FinFlow is encrypted in transit with TLS. Sensitive credentials — including the access tokens for any bank, payment, or accounting integration you connect — are encrypted at rest using authenticated AES-256-GCM encryption, and are never exposed back to the browser or written to logs.</p>
+  <p>All traffic to and from FinFlow is encrypted in transit with TLS. Access tokens for any bank, payment or accounting service you connect, and two-factor authentication secrets, are encrypted at rest with AES-256-GCM, and are never sent back to the browser or written to logs.</p>
 
-  <h2>Authentication &amp; access</h2>
-  <p>Passwords are stored only as salted one-way hashes, never in plain text. Sessions are server-side and regenerate on login. Password-reset links are single-use and time-limited. Role-based access control (Owner, Admin, Accountant, Viewer) governs what each user can see and do, and access is enforced per business entity.</p>
+  <h2>Sign-in and access</h2>
+  <p>Passwords are stored only as salted one-way hashes. Two-factor authentication (authenticator app) is available on every account. Sessions are held on the server and renewed at sign-in; password-reset links are single-use and expire. Repeated sign-in attempts are rate-limited. Roles (Owner, Admin, Accountant, Viewer) control what each person can see and do, per business.</p>
 
-  <h2>Data isolation</h2>
-  <p>Every record is scoped to its owning account and business entity, so one business's data is never visible to another. Connected integrations are scoped per entity — each business links its own accounts.</p>
+  <h2>Your security activity</h2>
+  <p>Every sign-in, failed sign-in, two-factor change and password change is recorded with the device and IP address, and you can review your recent activity in Settings. We e-mail you about important events, such as a sign-in from a device we have not seen before, two-factor being turned off, or your password being changed.</p>
 
-  <h2>Read-only by default</h2>
-  <p>Third-party connections pull data for display only. Nothing from an external provider is written into your books automatically; importing is always a separate, explicitly approved step, with duplicate-safe (idempotent) processing so the same transaction is never booked twice.</p>
+  <h2>Data separation</h2>
+  <p>Every record belongs to its account and business, and one business's data is never shown to another. Your personal finances are kept separate from your businesses: personal records never appear on a business page or in a business's audit trail. Each business connects its own bank and services.</p>
+
+  <h2>Connected services</h2>
+  <p>Linked banks sync transactions into your bank feed, where they affect your books only when you match, book or import them. A payment your customer makes through an invoice payment link is recorded on that invoice once the payment provider confirms it. Other connections are read for display, and importing their data into your books is a separate step you approve. Imports are duplicate-safe, so the same transaction is never booked twice.</p>
 
   <h2>Audit trail</h2>
-  <p>Changes to your books are recorded in an append-only audit trail that attributes each change to the user (or accountant) who made it, giving you a durable history for review and compliance.</p>
+  <p>Changes to your books are recorded in an append-only audit trail showing who made each change — you, a team member, an accountant, FinFlow support, or an automatic process — when, and what changed. It cannot be edited or deleted from within the Service.</p>
 
   <h2>Infrastructure</h2>
-  <p>FinFlow runs on managed cloud infrastructure with encrypted, regularly-backed-up databases and restricted operational access. Payment processing is handled by PCI-compliant providers; we do not store full card numbers.</p>
+  <p>FinFlow runs on managed cloud infrastructure with a managed PostgreSQL database. Card payments are handled by PCI-compliant payment providers; we never see or store full card numbers.</p>
 
   <h2>Reporting a vulnerability</h2>
   <p>If you believe you've found a security issue, please email <a href="mailto:security@finflow.io">security@finflow.io</a>. We appreciate responsible disclosure and will respond promptly.</p>
 </main>
-<footer>© 2026 FinFlow Inc. · <a href="/terms.html" style="color:var(--text3)">Terms</a> · <a href="/privacy.html" style="color:var(--text3)">Privacy</a></footer>
+<footer>© 2026 FinFlow · <a href="/terms.html" style="color:var(--text3)">Terms</a> · <a href="/privacy.html" style="color:var(--text3)">Privacy</a></footer>
 </body>
 </html>

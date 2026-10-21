@@ -22,7 +22,14 @@ DEST="${DEST:-}"                     # scratch DB URL to restore INTO (REQUIRED,
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 if [[ -z "$DEST" ]]; then echo "ERROR: set DEST=<scratch database url to restore into>"; exit 2; fi
-case "$DEST" in *prod*|*production*) echo "REFUSING: DEST looks like production ($DEST)"; exit 2;; esac
+case "$DEST" in *prod*|*production*) echo "REFUSING: DEST looks like production"; exit 2;; esac
+# A5 (2026-10-21): pg_restore --clean DROPS objects in DEST. A Supabase / Railway production URL never contains "prod",
+# so the name check above cannot stop DEST = the production database. Refuse when DEST is the same host:port/database as
+# SRC (credentials and query string ignored; case-insensitive). The URL itself is never echoed (it carries a password).
+_dbid() { printf '%s' "$1" | sed -E 's#^[A-Za-z0-9+.-]+://##; s#^[^@/]*@##; s#\?.*$##' | tr '[:upper:]' '[:lower:]'; }
+if [[ -n "$SRC" && "$(_dbid "$SRC")" == "$(_dbid "$DEST")" ]]; then
+  echo "REFUSING: DEST is the same database as SRC — the drill would drop and overwrite the source. Use a scratch database."; exit 2
+fi
 
 if [[ -z "$DUMP" ]]; then
   [[ -n "$SRC" ]] || { echo "ERROR: set SRC=<prod url> or DUMP=<file>"; exit 2; }

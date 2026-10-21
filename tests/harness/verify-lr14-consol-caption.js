@@ -45,7 +45,9 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     eq('default caption names what was converted, and how', t('consol-fx-rate'),
       `All in USD · ${storedName} (TTD) converted at the stored rate for each transaction's date`, 'No conversion · native currencies shown');
     const ic = d.getElementById('ent-interco') || Array.from(d.querySelectorAll('#page-entities .mc')).find(m => /Intercompany/i.test(m.textContent)).querySelector('.mc-val');
-    eq('intercompany card makes no claim the totals do not support', [ic.textContent.trim(), ic.nextElementSibling.textContent.trim()], ['—', 'Not eliminated in these totals'], ['$0', 'Eliminated']);
+    // LR29 (2026-10-21): the card now shows the ledger's DETECTED figure for the totals' window — none here, so $0 —
+    // and says it is not eliminated (verify-lr29-intercompany-detected seeds real intercompany trade).
+    eq('intercompany card makes no claim the totals do not support', [ic.textContent.trim(), ic.nextElementSibling.textContent.trim()], ['$0', '0 detected · not eliminated in these totals'], ['$0', 'Eliminated']);
     eq('an entity name with markup draws no element', d.querySelectorAll('#page-entities b').length, 0, 2);
 
     w.setConsolCurrency('TTD');

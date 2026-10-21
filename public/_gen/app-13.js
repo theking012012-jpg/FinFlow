@@ -427,6 +427,13 @@ window.renderEntities=function(){
   if(profEl) profEl.textContent=fmtTotal(totalProfit);
   const marginEl=document.getElementById('ent-consol-margin');
   if(marginEl) marginEl.textContent=consolMarginPct!==null?consolMarginPct+'% margin':'—';
+  // LR29: the ledger's DETECTED intercompany sales (a customer named exactly like another of these businesses), same
+  // window and currency as the totals — shown, not subtracted from them. "—" until loaded / when the ledger can't say.
+  { const _icEl=document.getElementById('ent-interco'), _icSub=_icEl&&_icEl.nextElementSibling;
+    const _cb=window._consolBooks, _ok=_cb&&!_cb.unavailable&&(_cb.currency||null)===(consolCurrency||null);
+    const _ic=_ok?_cb.intercompany:null;
+    if(_icEl) _icEl.textContent=_ic?fmtTotal(Number(_ic.revenue)||0):'—';
+    if(_icSub) _icSub.textContent=!_ok?'Loading…':_ic?((_ic.count||0)+' detected · not eliminated in these totals'):'Not available — the books are not reconciled'; }
 
   const el=document.getElementById('entity-list');
   if(el)el.innerHTML=ENTITIES.map((e,i)=>{

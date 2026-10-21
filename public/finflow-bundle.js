@@ -1779,7 +1779,7 @@
         const _consolCc = window.consolCurrency;
         const _consolP = fetch('/api/reports?entity_id=all' + (_consolCc ? '&display=' + encodeURIComponent(_consolCc) : ''), { credentials: 'same-origin' })
           .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-          .then(d => { window._consolBooks = { currency: _consolCc || null, rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0, complete: !(d.fxCoverage && d.fxCoverage.complete === false) }; })
+          .then(d => { window._consolBooks = { currency: _consolCc || null, rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0, complete: !(d.fxCoverage && d.fxCoverage.complete === false), intercompany: d.intercompany || null }; })   // LR29: detected intercompany, same window
           .catch(() => { window._consolBooks = { currency: _consolCc || null, unavailable: true }; });
         Promise.all([_consolP].concat(ents.map(e => {
           const _id = e._dbId || e.id;

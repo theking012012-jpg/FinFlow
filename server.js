@@ -7097,6 +7097,10 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     }
 
     res.json({
+      // LR29: the consolidated view carries the ledger's DETECTED intercompany trade for the same window (a customer /
+      // vendor named exactly like another of the owner's businesses) — shown, never subtracted from these totals.
+      // null when the figures did not come from the ledger (not reconciled) or for a single business.
+      intercompany: (eid == null && _pl.source === 'gl' && _pl.intercompany) ? { revenue: _pl.intercompany.revenue, expense: _pl.intercompany.expense, count: (_pl.intercompany.matches || []).length } : null,
       revenue, outstanding, overdue,
       expenses: totalExp,
       netProfit, margin,
@@ -7224,6 +7228,9 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     netProfit:     pl.netProfit,
     fxCoverage:    pl.fxCoverage,   // F34
     source:        pl.source,       // 'gl' | 'computeBooks'
+    // LR29: the consolidated report's "Intercompany (group consolidation)" block reads these — they were never sent, so
+    // it never rendered. The ledger's detection for THIS window; present only for the consolidated, ledger-served view.
+    ...(eid == null && pl.source === 'gl' && pl.intercompany ? { intercompany: pl.intercompany, eliminated: pl.eliminated } : {}),
   });
 }));
 
@@ -11486,7 +11493,11 @@ async function glConsolidated(userId, opts = {}) {
       const names = new Map(entRows.map(e => [String(e.name || '').trim().toLowerCase(), e.id]));
       const _REC = new Set(['pending', 'overdue', 'partial', 'paid']);
       const _inv = await db.allByUser('invoices', userId, () => true);
+      // LR29: only trade dated inside THIS P&L's window (and not after today) — it counted every invoice / bill ever,
+      // so a period P&L printed an all-time "intercompany" figure beside it. Same date the books recognise on.
+      const _inWin = r => { const y = FinFlowDates._toYmd(r.issue_date || r.created_at); return y != null && y >= winStart && y < winEnd && y <= _today; };
       for (const iv of _inv) {
+        if (!_inWin(iv)) continue;
         const cid = names.get(String(iv.client || '').trim().toLowerCase());
         if (cid != null && cid !== iv.entity_id && _REC.has(String(iv.status || '').toLowerCase())) {
           const from = entCur[iv.entity_id] || baseCur;
@@ -11496,6 +11507,7 @@ async function glConsolidated(userId, opts = {}) {
       }
       const _bil = await db.allByUser('bills', userId, () => true);
       for (const bl of _bil) {
+        if (!_inWin(bl)) continue;   // LR29
         const vid = names.get(String(bl.vendor || '').trim().toLowerCase());
         if (vid != null && vid !== bl.entity_id && FinFlowDates.isOpexBill(bl)) {   // M34: only an opex bill carries expense to eliminate
           const from = entCur[bl.entity_id] || baseCur;

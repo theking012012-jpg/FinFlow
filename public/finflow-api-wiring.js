@@ -188,7 +188,16 @@
           if (el) el.checked = !!s.notif_pay;
         }
         // Business profile fields (set from onboarding or earlier saves)
-        const setField = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+        // LR21: a stored value a <select> does not list is ADDED as an option, never dropped. A select set to an unlisted
+        // value goes blank, and the next Save wrote that blank over what was stored (Settings had no "Media & Creative").
+        const setField = (id, val) => {
+          const el = document.getElementById(id);
+          if (!el || val == null) return;
+          if (el.tagName === 'SELECT' && String(val) !== '' && !Array.from(el.options).some(o => o.value === String(val))) {
+            const o = document.createElement('option'); o.value = String(val); o.textContent = String(val); el.appendChild(o);
+          }
+          el.value = val;
+        };
         setField('s-biz-name', s.business_name);
         setField('s-industry', s.industry);
         setField('s-address',  s.address);

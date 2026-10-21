@@ -2076,7 +2076,7 @@ function _periodWindow(period, monthIdx){
   let label;
   if(kind==='month') label=_lbl(start);
   else if(kind==='quarter'){ const q=Math.floor(idx/3); label='Q'+(((q%4)+4)%4+1)+' · '+_lbl(start)+' – '+_lastLbl(end); }
-  else label='Fiscal year to date · '+_lbl(start)+' – '+_lbl(today);   // FIX-2: inWin stops at today (D2), so the label does too
+  else label='Year to date · '+_lbl(start)+' – '+_lbl(today);   // FIX-2: inWin stops at today (D2), so the label does too
   return { inWin, elapsedMonths:rp.elapsedMonths, label, start, end };
 }
 window._periodWindow = _periodWindow;
@@ -5710,7 +5710,30 @@ function renderBanking(){
       <span class="tx-amt" style="color:${t.type==='credit'?'var(--green)':'var(--red)'}">${t.type==='credit'?'+':''}${S(t.amount)}</span>
     </div>`).join('');
 }
-function openAddAccountModal(){notify('Connect or add a bank account');}
+// LR25 (decision 2026-10-21): "+ Add Account" was a toast-only stub. A business adds a bank in one of two real ways —
+// link it, or import a statement from any bank — so the button offers exactly those (business scope, never Personal).
+function openAddAccountModal(){
+  let m=document.getElementById('bank-add-account-modal');
+  if(!m){
+    m=document.createElement('div');
+    m.id='bank-add-account-modal';
+    m.className='modal-overlay hidden';
+    m.innerHTML=`<div class="modal" style="max-width:380px">
+      <div class="modal-header">
+        <div><div class="modal-title">Add a bank account</div><div class="modal-sub">For this business</div></div>
+        <button class="modal-close" onclick="closeModal('bank-add-account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="btn btn-primary" onclick="closeModal('bank-add-account-modal');window.ffBankLinkFromPage&&window.ffBankLinkFromPage()">🔗 Link a bank</button>
+        <div style="font-size:11.5px;color:var(--t3);margin:-4px 2px 4px">Connect securely so transactions sync automatically (where your bank is supported).</div>
+        <button class="btn btn-ghost" onclick="closeModal('bank-add-account-modal');window.ffImportStatement&&window.ffImportStatement()">⬆ Import a statement</button>
+        <div style="font-size:11.5px;color:var(--t3);margin:-4px 2px 0">Upload an OFX, QFX or CSV statement downloaded from any bank.</div>
+      </div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  openModal('bank-add-account-modal');
+}
 // LR11: Banking "+ Add" — a manual bank line on the business in view (was a toast-only stub). Audited server-side
 // (bank_lines); no ledger entry — like an imported line, it is booked when matched in Bank Rec.
 function openAddTxnModal(){
@@ -6062,7 +6085,7 @@ const documentsData=[]; // not used — renderDocuments() fetches from /api/docu
 let docsFilter='all';
 let _docsCache=[];
 // LR13: a document's size is stored in BYTES — one formatter for the list and the Storage card.
-function _fmtBytes(n){ n=parseFloat(n); if(!Number.isFinite(n)||n<0) return ''; if(n<1024) return Math.round(n)+' B'; if(n<1048576) return (Math.round(n/102.4)/10).toString().replace(/.0$/,'')+' KB'; return (Math.round(n/104857.6)/10).toString().replace(/.0$/,'')+' MB'; }
+function _fmtBytes(n){ n=parseFloat(n); if(!Number.isFinite(n)||n<0) return ''; if(n<1024) return Math.round(n)+' B'; if(n<1048576) return (Math.round(n/102.4)/10).toString().replace(/\.0$/,'')+' KB'; return (Math.round(n/104857.6)/10).toString().replace(/\.0$/,'')+' MB'; }
 window._fmtBytes=_fmtBytes;
 async function renderDocuments(){
   const l=document.getElementById('documents-list');if(!l)return;

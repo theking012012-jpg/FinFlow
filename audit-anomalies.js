@@ -148,7 +148,9 @@ async function notifyAnomalies(pool, resendClient, opts = {}) {
   if (!resendClient)      return { count: result.count, sent: false, reason: 'email not configured (no Resend client)', to };
   if (!to)                return { count: result.count, sent: false, reason: 'no recipient (set SECURITY_ALERT_EMAIL)', to: null };
   const mail = formatAnomalyEmail(result);
-  await resendClient.emails.send({ from: opts.from || process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to, subject: mail.subject, html: mail.html });
+  // LR23: a refused e-mail is reported as not sent (with why), never as sent.
+  try { await resendClient.emails.send({ from: opts.from || process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to, subject: mail.subject, html: mail.html }); }
+  catch (e) { return { count: result.count, sent: false, reason: 'send_failed', error: e && e.message, to }; }
   return { count: result.count, sent: true, to, subject: mail.subject, anomalies: result.anomalies };
 }
 

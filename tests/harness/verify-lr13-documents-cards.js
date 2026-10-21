@@ -30,6 +30,11 @@ run('LR13 — Documents cards count what is listed, with real sizes', async ({ w
   eq('3  Added this month', t('docs-added'), '2', '0');
   const list = ((d.getElementById('documents-list') || {}).textContent || '').replace(/\s+/g, ' ');
   A('4  list shows "91 B" and "2 KB"', /91 B/.test(list) && /2 KB/.test(list), list.slice(0, 200));
+  // 6  the size formatter itself, on values whose digits end in 0 (a regex that lost its backslash, /.0$/, stripped
+  //    "10" → "" and "100" → "1"; found 2026-10-21 in the LR13 fix itself — the 91 B / 2 KB seed could not show it).
+  const fb = n => (typeof w._fmtBytes === 'function' ? w._fmtBytes(n) : null);
+  eq('6  formatter: 10,240 B · 102,400 B · 1,536 B · 20 MB · 1.5 MB', [fb(10240), fb(102400), fb(1536), fb(20971520), fb(1572864)],
+    ['10 KB', '100 KB', '1.5 KB', '20 MB', '1.5 MB'], [' KB', '1 KB', '1.5 KB', ' MB', '1.5 MB']);
   if (typeof w.openUploadModal === 'function') { try { w.openUploadModal(); } catch (_) {} await settle(5, 30); }
   const inp = d.getElementById('doc-file-input');
   A('5  upload picker accepts .txt', !!inp && /(^|,)\.txt(,|$)/.test(inp.getAttribute('accept') || ''), inp && inp.getAttribute('accept'));

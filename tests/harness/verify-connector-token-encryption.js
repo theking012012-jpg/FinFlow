@@ -52,6 +52,9 @@ async function main() {
     console.log('='.repeat(78) + '\n');
 
     A('owner login → 200', (await http.post('/api/auth/login', { email: 'conn@finflow.test', password: PW })).status === 200);
+    // Decision 3.6 (2026-10-21): a business service connects to a business — create one and put it in view first.
+    const _biz = (await http.post('/api/entities', { name: 'Conn Co', currency: 'TTD', timezone: 'America/Port_of_Spain', country: 'TT' })).json;
+    await http.post('/api/entities/' + _biz.id + '/activate', {});
 
     // ── WiPay ──
     const WIPAY_KEY = 'wipay_PLAINTEXT_secret_ABC123';

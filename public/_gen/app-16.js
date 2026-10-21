@@ -551,11 +551,12 @@ document.addEventListener('click', e=>{
     if(!list) return;
     const hs = window.bizHoldings || [];
     const bizEl = (id, val) => { const e=document.getElementById(id); if(e) e.textContent=val; };
-    const S2b = n => (window._fmtMoney ? window._fmtMoney(n, '$') : '$'+Math.round(n).toLocaleString());
+    // LR22: holdings are priced in USD (M36) — say US$, so a TTD (or any non-USD) business never reads them as its own dollars.
+    const S2b = n => (window._fmtMoney ? window._fmtMoney(n, 'US$') : 'US$'+Math.round(n).toLocaleString());
     if(!hs.length){
       list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>';
-      ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'$0'));
-      bizEl('biz-inv-income','$0/yr');
+      ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'US$0'));
+      bizEl('biz-inv-income','US$0/yr');
       // F155: this render OWNS the business Performance box. It used to be written only by the
       // PERSONAL renderInvestments (app-main.js) from personal holdings — a cross-wire that showed
       // the personal cost basis on the business page, identical across every entity.
@@ -583,12 +584,12 @@ document.addEventListener('click', e=>{
           <div style="font-weight:500;color:var(--t1)">${esc(h.ticker)}${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
           <div style="font-size:11px;color:var(--t3)">${esc(h.type||'Stock')} · ${esc(String(shares))} units</div>
         </div>
-        <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">$${price.toFixed(2)}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'$')}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'$')}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">US$${price.toFixed(2)}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'US$')}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'US$')}</div>
         <div style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${glPct}%</div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">
-          ${inc>0?window._fmtMoney(inc,'$'):'—'}
+          ${inc>0?window._fmtMoney(inc,'US$'):'—'}
           ${h.id!=null?`<div style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
             <button class="btn btn-ghost" style="padding:1px 7px;font-size:10px" title="Edit holding" onclick="event.stopPropagation();editHolding(${h.id})">Edit</button>
             <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" onclick="event.stopPropagation();deleteHolding(${h.id})">✕</button>

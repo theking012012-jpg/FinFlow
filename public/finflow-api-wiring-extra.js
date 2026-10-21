@@ -131,7 +131,7 @@
         <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
         <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
         <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
-        <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
+        <span style="display:inline-flex;gap:2px"><button class="btn btn-ghost btn-sm" style="padding:0 4px" title="Edit" onclick="editTimesheetEntry(${t.id})">✎</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button></span>
       </div>`).join('');
   }
 
@@ -217,8 +217,32 @@
     if (keep && sel.querySelector(`option[value="${keep}"]`)) sel.value = keep;
   }
 
+  // LR10 (decision 2026-10-21): an entry can be EDITED — the same modal, pre-filled; Save sends PUT for that entry.
+  // _tsEditId is the entry being edited (null = a new entry); every open of "+ Log Time" clears it.
+  window._tsEditId = null;
+  window.editTimesheetEntry = async function (id) {
+    let t = _tsData.find(x => x.id === id);
+    if (!t) { try { await loadTimesheet(); } catch (_) {} t = _tsData.find(x => x.id === id); }   // not cached yet (e.g. added elsewhere) → fetch
+    if (!t) { tip('That time entry could not be found — refresh and try again', true); return; }
+    const modal = buildTimesheetModal();
+    // The project list MUST be loaded before the form is filled: an entry whose project is not in the list would save
+    // with no project — silently unlinking it.
+    if (!_projectsFetched || !(window.projects || []).some(p => String(p.id) === String(t.project_id))) { try { await loadProjects(); } catch (_) {} }
+    _fillTsProjects();
+    document.getElementById('ts-employee').value = t.employee || '';
+    document.getElementById('ts-project').value = t.project || '';
+    document.getElementById('ts-project-id').value = t.project_id != null ? String(t.project_id) : '';
+    document.getElementById('ts-date').value = String(t.date || '').slice(0, 10) || today();
+    document.getElementById('ts-hours').value = t.hours != null ? String(t.hours) : '';
+    document.getElementById('ts-rate').value = t.rate ? String(t.rate) : '';
+    document.getElementById('ts-billable').value = t.billable || 'Yes';
+    window._tsEditId = id;
+    modal.classList.remove('hidden');
+  };
+
   window.openLogTimeModal = function () {
     const modal = buildTimesheetModal();
+    window._tsEditId = null;   // LR10: a new entry, never the last one edited
     document.getElementById('ts-employee').value = '';
     document.getElementById('ts-project').value  = '';
     document.getElementById('ts-project-id').value = '';
@@ -241,19 +265,30 @@
     const date     = document.getElementById('ts-date')?.value             || today();
     const billable = document.getElementById('ts-billable')?.value         || 'Yes';
     const rate     = parseFloat(document.getElementById('ts-rate')?.value) || 0;
+    if (window._tsSaving) return;   // one save at a time (a double click never sends twice)
+    window._tsSaving = true;
+    const editId = window._tsEditId;
     try {
-      const saved = await api('POST', '/api/timesheet', { employee, project, project_id, date, hours, billable, rate });
-      _tsData.unshift(saved.row || saved);
+      if (editId != null) {
+        // LR10: edit — PUT the entry (server re-checks the project link against the entry's own business; audited).
+        const updated = await api('PUT', `/api/timesheet/${editId}`, { employee, project, project_id, date, hours, billable, rate });
+        _tsData = _tsData.map(t => t.id === editId ? Object.assign({}, t, updated && updated.id ? updated : { employee, project, project_id, date, hours, billable, rate }) : t);
+        window._tsEditId = null;
+      } else {
+        const saved = await api('POST', '/api/timesheet', { employee, project, project_id, date, hours, billable, rate });
+        _tsData.unshift(saved.row || saved);
+      }
       window.timesheet = _tsData;
       document.getElementById('ts-log-modal')?.classList.add('hidden');
       renderTimesheetList();
       updateTimesheetMetrics();
-      tip('Time entry saved ✦');
+      tip(editId != null ? 'Time entry updated ✦' : 'Time entry saved ✦');
       loadTimesheet().catch(()=>{});
       loadProjects().catch(()=>{});   // FIX-1: the project's hours / billed come from its entries
       window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not save — ' + err.message, true); }
+    finally { window._tsSaving = false; }
   };
 
   window.deleteTimesheetEntry = async function (id) {

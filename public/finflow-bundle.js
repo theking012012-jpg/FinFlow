@@ -2704,7 +2704,7 @@ function clearAIChat(){
       if (!_quotesFetched) { loadQuotes(); return; }
       const el = document.getElementById('quotes-list');
       if (!el) return;
-      const cls = { pending: 'b-amber', accepted: 'b-green', declined: 'b-red' };
+      const cls = { pending: 'b-amber', accepted: 'b-green', declined: 'b-red', converted: 'b-blue' };
       el.innerHTML = _quotesData.length
         ? _quotesData.map(q => `
           <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
@@ -2713,7 +2713,7 @@ function clearAIChat(){
             <span style="font-family:var(--font-mono)">${S(q.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(q.expiry_date,{year:true}):(q.expiry_date||''))||'—')}</span>
             <span><span class="badge ${cls[q.status] || 'b-amber'}">${esc(q.status)}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewQuote(${q.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button></div>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewQuote(${q.id})">View</button>${String(q.status || '').toLowerCase() === 'converted' ? '' : `<button class="btn btn-ghost btn-sm" title="Edit" onclick="editQuote(${q.id})">✎</button><button class="btn btn-ghost btn-sm" title="Create a draft invoice from this quote" onclick="convertQuote(${q.id})">→ Invoice</button>`}<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
       const accepted = _quotesData.filter(q => q.status?.toLowerCase() === 'accepted').length;
@@ -2727,9 +2727,56 @@ function clearAIChat(){
     };
 
     window.openNewQuoteModal = function () {
+      window._quoteEditId = null;   // LR9: a NEW quote — never the last one edited
       ['quote-client','quote-amount','quote-expiry','quote-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const s = document.getElementById('quote-status'); if (s) s.value = 'pending';
+      if (window.ffQuoteLineItems && window.ffQuoteLineItems.reset) window.ffQuoteLineItems.reset();
       openModal('quote-modal');
+    };
+
+    // LR9 (decision 2026-10-21): EDIT a quote — the same form, pre-filled with its lines (the total stays derived from
+    // them, Rule 2); Save sends PUT for that quote.
+    window._quoteEditId = null;
+    window.editQuote = async function (id) {
+      let q = _quotesData.find(r => r.id === id);
+      if (!q) { try { await loadQuotes(); } catch (_) {} q = _quotesData.find(r => r.id === id); }
+      if (!q) { notify('That quote could not be found — refresh and try again', true); return; }
+      if (String(q.status || '').toLowerCase() === 'converted') { notify('This quote was converted to an invoice — edit the invoice instead', true); return; }
+      const set = (fid, v) => { const el = document.getElementById(fid); if (el) el.value = v == null ? '' : v; };
+      set('quote-client', q.client); set('quote-expiry', String(q.expiry_date || '').slice(0, 10)); set('quote-notes', q.notes);
+      set('quote-status', q.status || 'pending'); set('quote-amount', q.amount != null ? Number(q.amount) : '');
+      if (window.ffQuoteLineItems && window.ffQuoteLineItems.load) window.ffQuoteLineItems.load(Array.isArray(q.line_items) ? q.line_items : []);
+      window._quoteEditId = id;
+      openModal('quote-modal');
+    };
+
+    // LR9: CONVERT a quote to an invoice — through the ONE invoice writer (POST /api/invoices), as a DRAFT (not revenue
+    // until the user issues it), idempotency key "quote-<id>" so a double click or a second tab makes ONE invoice (Rule 9);
+    // then the quote is marked "converted" with the invoice id.
+    const _converting = new Set();
+    window.convertQuote = async function (id) {
+      if (_converting.has(id)) return;
+      _converting.add(id);
+      try {
+        let q = _quotesData.find(r => r.id === id);
+        if (!q) { await loadQuotes(); q = _quotesData.find(r => r.id === id); }
+        if (!q) { notify('That quote could not be found', true); return; }
+        if (String(q.status || '').toLowerCase() === 'converted') { notify('Already converted — see Invoices'); return; }
+        const items = Array.isArray(q.line_items) && q.line_items.length ? q.line_items : null;
+        const today = (typeof window._entityToday === 'function') ? window._entityToday() : new Date().toISOString().slice(0, 10);
+        const inv = await api('POST', '/api/invoices', {
+          client: q.client, amount: Number(q.amount), status: 'draft', issue_date: today,
+          due_date: q.expiry_date ? String(q.expiry_date).slice(0, 10) : undefined,
+          notes: ('From quote ' + (q.num || '#' + q.id) + (q.notes ? ' — ' + q.notes : '')).slice(0, 500),
+          idempotency_key: 'quote-' + id, ...(items ? { line_items: items } : {}),
+        });
+        const invId = (inv && (inv.id || (inv.row && inv.row.id)));
+        await api('PUT', `/api/quotes/${id}`, { status: 'converted', invoice_id: invId });
+        await loadQuotes();
+        notify(`Draft invoice created from ${esc(q.num || 'the quote')} ✦ — review and issue it on Invoices`);
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
+      } catch (e) { notify('Could not convert — ' + e.message, true); }
+      finally { _converting.delete(id); }
     };
 
     window.saveQuote = async function () {
@@ -2743,17 +2790,27 @@ function clearAIChat(){
       // F194 Phase 2b: attach line_items when the user added any. The server re-derives the amount
       // from them (Rule 2) — the `amount` here is only the locked on-screen mirror.
       const _qli = (window.ffQuoteLineItems && window.ffQuoteLineItems.get && window.ffQuoteLineItems.get()) || null;
+      if (window._quoteSaving) return;   // one save at a time
+      window._quoteSaving = true;
+      const editId = window._quoteEditId;
       try {
-        const saved = await api('POST', '/api/quotes', { client, amount, expiry_date, status, notes, ...(_qli ? { line_items: _qli } : {}) });
-        _quotesData.unshift(saved.row || saved);
+        if (editId != null) {
+          // LR9: edit — PUT the quote (lines present ⇒ the server re-derives the amount from them; none ⇒ the amount).
+          await api('PUT', `/api/quotes/${editId}`, { client, expiry_date, status, notes, ...(_qli ? { line_items: _qli } : { amount, line_items: null }) });   // null clears stored lines (no stale lines beside a typed total)
+          window._quoteEditId = null;
+        } else {
+          const saved = await api('POST', '/api/quotes', { client, amount, expiry_date, status, notes, ...(_qli ? { line_items: _qli } : {}) });
+          _quotesData.unshift(saved.row || saved);
+        }
         window.quotes = _quotesData;
         closeModal('quote-modal');
         renderQuotes();
-        notify(`Quote for ${esc(client)} saved ✦`);
+        notify(editId != null ? `Quote for ${esc(client)} updated ✦` : `Quote for ${esc(client)} saved ✦`);
         loadQuotes().catch(()=>{});
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not save — ' + e.message, true); }
+      finally { window._quoteSaving = false; }
     };
 
     window.deleteQuote = async function (id) {
@@ -4121,7 +4178,7 @@ function clearAIChat(){
         <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
         <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
         <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
-        <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
+        <span style="display:inline-flex;gap:2px"><button class="btn btn-ghost btn-sm" style="padding:0 4px" title="Edit" onclick="editTimesheetEntry(${t.id})">✎</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button></span>
       </div>`).join('');
   }
 
@@ -4207,8 +4264,32 @@ function clearAIChat(){
     if (keep && sel.querySelector(`option[value="${keep}"]`)) sel.value = keep;
   }
 
+  // LR10 (decision 2026-10-21): an entry can be EDITED — the same modal, pre-filled; Save sends PUT for that entry.
+  // _tsEditId is the entry being edited (null = a new entry); every open of "+ Log Time" clears it.
+  window._tsEditId = null;
+  window.editTimesheetEntry = async function (id) {
+    let t = _tsData.find(x => x.id === id);
+    if (!t) { try { await loadTimesheet(); } catch (_) {} t = _tsData.find(x => x.id === id); }   // not cached yet (e.g. added elsewhere) → fetch
+    if (!t) { tip('That time entry could not be found — refresh and try again', true); return; }
+    const modal = buildTimesheetModal();
+    // The project list MUST be loaded before the form is filled: an entry whose project is not in the list would save
+    // with no project — silently unlinking it.
+    if (!_projectsFetched || !(window.projects || []).some(p => String(p.id) === String(t.project_id))) { try { await loadProjects(); } catch (_) {} }
+    _fillTsProjects();
+    document.getElementById('ts-employee').value = t.employee || '';
+    document.getElementById('ts-project').value = t.project || '';
+    document.getElementById('ts-project-id').value = t.project_id != null ? String(t.project_id) : '';
+    document.getElementById('ts-date').value = String(t.date || '').slice(0, 10) || today();
+    document.getElementById('ts-hours').value = t.hours != null ? String(t.hours) : '';
+    document.getElementById('ts-rate').value = t.rate ? String(t.rate) : '';
+    document.getElementById('ts-billable').value = t.billable || 'Yes';
+    window._tsEditId = id;
+    modal.classList.remove('hidden');
+  };
+
   window.openLogTimeModal = function () {
     const modal = buildTimesheetModal();
+    window._tsEditId = null;   // LR10: a new entry, never the last one edited
     document.getElementById('ts-employee').value = '';
     document.getElementById('ts-project').value  = '';
     document.getElementById('ts-project-id').value = '';
@@ -4231,19 +4312,30 @@ function clearAIChat(){
     const date     = document.getElementById('ts-date')?.value             || today();
     const billable = document.getElementById('ts-billable')?.value         || 'Yes';
     const rate     = parseFloat(document.getElementById('ts-rate')?.value) || 0;
+    if (window._tsSaving) return;   // one save at a time (a double click never sends twice)
+    window._tsSaving = true;
+    const editId = window._tsEditId;
     try {
-      const saved = await api('POST', '/api/timesheet', { employee, project, project_id, date, hours, billable, rate });
-      _tsData.unshift(saved.row || saved);
+      if (editId != null) {
+        // LR10: edit — PUT the entry (server re-checks the project link against the entry's own business; audited).
+        const updated = await api('PUT', `/api/timesheet/${editId}`, { employee, project, project_id, date, hours, billable, rate });
+        _tsData = _tsData.map(t => t.id === editId ? Object.assign({}, t, updated && updated.id ? updated : { employee, project, project_id, date, hours, billable, rate }) : t);
+        window._tsEditId = null;
+      } else {
+        const saved = await api('POST', '/api/timesheet', { employee, project, project_id, date, hours, billable, rate });
+        _tsData.unshift(saved.row || saved);
+      }
       window.timesheet = _tsData;
       document.getElementById('ts-log-modal')?.classList.add('hidden');
       renderTimesheetList();
       updateTimesheetMetrics();
-      tip('Time entry saved ✦');
+      tip(editId != null ? 'Time entry updated ✦' : 'Time entry saved ✦');
       loadTimesheet().catch(()=>{});
       loadProjects().catch(()=>{});   // FIX-1: the project's hours / billed come from its entries
       window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not save — ' + err.message, true); }
+    finally { window._tsSaving = false; }
   };
 
   window.deleteTimesheetEntry = async function (id) {

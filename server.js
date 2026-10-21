@@ -39,7 +39,9 @@ let resendClient = null;
 try {
   if (process.env.RESEND_API_KEY) {
     const { Resend } = require('resend');
-    resendClient = new Resend(process.env.RESEND_API_KEY);
+    // LR23: wrapped ONCE here — Resend resolves { error } instead of throwing, so without this every refused e-mail
+    // counted as sent. Every call site gets a rejection it already catches. (email-send.js)
+    resendClient = require('./email-send').checkedResend(new Resend(process.env.RESEND_API_KEY));
   }
 } catch (e) {
   console.warn('[Resend] Package not installed — email will be skipped.');
@@ -2726,6 +2728,17 @@ const _bankBizUnscoped = async req => {
   const { rows: [e] } = await pool.query(`SELECT 1 FROM entities WHERE user_id = $1 LIMIT 1`, [scopeId(req)]);
   return !!e;   // no business at all: the bank feed is the personal feed
 };
+// Decision 3.6 / LC3e-c (2026-10-21): a BUSINESS service (accounting, payroll, payments, commerce) connects to the business
+// it serves. With no business in view it would be stored with no business and recorded nowhere, so starting such a
+// connection is refused until one exists / is chosen. Personal bank linking has its own scope and is not affected.
+const _needsBusinessFirst = async (req, res) => {
+  if (req.entityId != null) return false;
+  const { rows: [e] } = await pool.query(`SELECT 1 FROM entities WHERE user_id = $1 LIMIT 1`, [scopeId(req)]);
+  res.status(400).json(e
+    ? { error: 'Choose a business first — a connected service belongs to the business it serves.', code: 'NO_BUSINESS_IN_VIEW' }
+    : { error: 'Create your business first — a connected service belongs to the business it serves.', code: 'NO_BUSINESS_YET' });
+  return true;
+};
 const _bankScopeRefused = async (req, res) => {
   if (!(await _bankBizUnscoped(req))) return false;
   res.status(400).json({ error: 'Choose a business first — bank lines belong to the business they were made in.', code: 'NO_BUSINESS_IN_VIEW' });
@@ -4099,10 +4112,12 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   if (_li.error) return res.status(400).json({ error: _li.error });
   if (b.client      != null) patch.client      = b.client;
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
-  else if (b.amount != null) patch.amount      = Number(b.amount);
+  else if (b.amount != null) { patch.amount = Number(b.amount); if (b.line_items === null) patch.line_items = null; }   // LR9: an explicit null clears the lines, so a typed total never sits beside stale lines (Rule 2)
   if (b.expiry_date != null) patch.expiry_date = b.expiry_date;
   if (b.status      != null) patch.status      = b.status;
   if (b.notes       != null) patch.notes       = b.notes;
+  // LR9: Convert to invoice records which invoice this quote became (the invoice itself is made by POST /api/invoices).
+  if (b.invoice_id  != null) { const _iv = parseInt(b.invoice_id, 10); if (!(_iv > 0)) return res.status(400).json({ error: 'invoice_id must be an invoice id.' }); patch.invoice_id = _iv; }
   await db.updateById('quotes', Number(req.params.id), patch);
   const { rows: [_qtn] } = await pool.query(`SELECT * FROM quotes WHERE id = $1 LIMIT 1`, [row.id]);
   if (_qtn) await _auditRec(req, 'quotes', 'UPDATE', row, rowToObj(_qtn));   // FIX-3
@@ -7979,6 +7994,7 @@ function registerOAuthConnector(spec) {
   }));
 
   app.post(`/api/${spec.key}/connect-url`, requireAuth, requirePerm(perm), wrap(async (req, res) => {
+    if (await _needsBusinessFirst(req, res)) return;   // decision 3.6
     if (!cfg()) return res.status(502).json({ error: notSetUp(spec.label + ' linking', spec.clientIdEnv, spec.secretEnv), code: CODE });
     // Per-shop providers (Shopify) build the authorize host from a validated request param; a bad/missing
     // one is a clean 400, never a request to an arbitrary host.
@@ -8076,6 +8092,7 @@ const _finchRedirectUri = () => process.env.FINCH_REDIRECT_URI || (appUrl() + '/
 // Build the Finch Connect authorize URL the browser opens (popup); Finch redirects back to
 // /finch/callback with a `code`. products default to read-only company/directory/payroll scopes.
 app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+  if (await _needsBusinessFirst(req, res)) return;   // decision 3.6
   if (!finchConfigured()) return res.status(502).json({ error: notSetUp('Payroll linking', 'FINCH_CLIENT_ID', 'FINCH_CLIENT_SECRET'), code: 'FINCH_NOT_CONFIGURED' });
   // Finch RETIRED the direct connect.tryfinch.com/authorize URL (now "legacy-flows"); the current flow is a
   // server-side Connect Session (POST /connect/sessions) that mints a fresh single-use connect_url. This is
@@ -8198,6 +8215,7 @@ app.get('/api/codat/status', requireAuth, wrap(async (req, res) => {
 
 // Create a Codat company + return the hosted Link URL the user completes to connect their platform.
 app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (await _needsBusinessFirst(req, res)) return;   // decision 3.6
   if (!codatConfigured()) return res.status(502).json({ error: notSetUp('Accounting linking', 'CODAT_API_KEY'), code: 'CODAT_NOT_CONFIGURED' });
   try {
     const uid = scopeId(req);
@@ -8543,6 +8561,7 @@ app.get('/api/stripe/status', requireAuth, wrap(async (req, res) => {
 }));
 
 app.post('/api/stripe/connect-url', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _needsBusinessFirst(req, res)) return;   // decision 3.6
   if (!stripeConnectConfigured()) return res.status(502).json({ error: notSetUp('Stripe payments linking', 'STRIPE_SECRET_KEY', 'STRIPE_CONNECT_CLIENT_ID'),   /* C24 */ code: 'STRIPE_NOT_CONFIGURED' });
   const params = new URLSearchParams({
     response_type: 'code', client_id: process.env.STRIPE_CONNECT_CLIENT_ID, scope: 'read_write',
@@ -9127,6 +9146,7 @@ app.get('/api/wipay/status', requireAuth, wrap(async (req, res) => {
 }));
 
 app.post('/api/wipay/connect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _needsBusinessFirst(req, res)) return;   // decision 3.6
   const account = String((req.body && req.body.account_number) || '').trim();
   const apiKey = String((req.body && req.body.api_key) || '').trim();
   const country = String((req.body && req.body.country) || 'TT').trim().toUpperCase();
@@ -9389,6 +9409,7 @@ app.get('/api/woocommerce/status', requireAuth, wrap(async (req, res) => {
   res.json({ connected: !!(value && value.connected), store: value ? value.store_url || null : null, provider: 'WooCommerce' });
 }));
 app.post('/api/woocommerce/connect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _needsBusinessFirst(req, res)) return;   // decision 3.6
   const b = req.body || {};
   const store = String(b.store_url || '').trim().replace(/\/+$/, '');
   const ck = String(b.consumer_key || '').trim(), cs = String(b.consumer_secret || '').trim();
@@ -10418,7 +10439,7 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
       // Postgres does not say which it checked first), then the period.
       const _tok = idem ? (await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [uid, idem])).rows[0] : null;
       const byToken = !!_tok;
-      const ex = _tok || (await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND COALESCE(entity_id,0) = COALESCE($2::int,0) AND period=$3 ORDER BY id ASC LIMIT 1`, [uid, eid, period])).rows[0];
+      const ex = _tok || (await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND COALESCE(entity_id,0) = COALESCE($2::int,0) AND period=$3 ORDER BY (lower(COALESCE(status,'')) = 'voided') ASC, id ASC LIMIT 1`, [uid, eid, period]))   /* LR1 follow-up: the LIVE run first — a voided period may now also hold a live run */.rows[0];
       if (ex && !byToken && String(ex.status || '').toLowerCase() === 'voided') {
         // The period's only run was voided. Whether a new run may then be created is an owner decision (LR1); until
         // it is made the database allows one run per period, and the person is told so instead of getting a 500.

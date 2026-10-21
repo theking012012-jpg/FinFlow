@@ -1427,7 +1427,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <button class="btn btn-ghost" onclick="setPeriod(this,'month')" id="pMonth">Month</button>
         <button class="btn btn-ghost" onclick="setPeriod(this,'quarter')" id="pQ">Quarter</button>
-        <button class="btn btn-ghost" onclick="setPeriod(this,'year')" id="pY" title="Fiscal year to date" style="border-color:var(--acc);color:var(--acc)">Year</button>
+        <button class="btn btn-ghost" onclick="setPeriod(this,'year')" id="pY" title="Year to date" style="border-color:var(--acc);color:var(--acc)">Year</button>
         <button class="btn btn-primary" onclick="exportPDF()" id="exportBtn">⬇ Export PDF</button>
         <button class="btn btn-ghost" onclick="exportAllCSV()" title="Export all data as CSV backup" style="font-size:11.5px">⬇ CSV</button><button class="btn btn-ghost" onclick="exportAllCSV('xlsx')" title="Export this page as an Excel .xlsx file" style="font-size:11.5px">&#11015; XLSX</button>
         <button class="btn btn-ghost" onclick="toggleAIPanel()" id="aiPanelBtn" style="border-color:var(--acc);color:var(--acc)"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="margin-right:3px"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/></svg>Ask AI</button>
@@ -1495,7 +1495,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div style="display:flex;align-items:center;gap:6px">
               <span class="dot dot-green"></span>
               <span style="font-size:11px;color:var(--green)">Live</span>
-              <span style="font-size:11px;color:var(--t3);margin-left:6px" id="stripe-total-label">Today: $0</span>
+              <span style="font-size:11px;color:var(--t3);margin-left:6px" id="stripe-total-label"></span>
             </div>
           </div>
           <div class="stripe-feed" id="stripe-feed"></div>
@@ -6606,6 +6606,12 @@ function _auditParse(s){ if(s==null)return null; if(typeof s==='object')return s
 function _auditVal(v){ if(v==null)return ''; if(typeof v==='object')return JSON.stringify(v); return String(v); }
 // One audit_log event → one or more display rows (one per changed field). CREATE lists new values,
 // DELETE lists old values, UPDATE lists only fields whose value actually changed.
+// LR8 (decision 2026-10-21): a budget target is stored as an ANNUAL figure — the Audit line says so ("300 per year"),
+// so a $25 / month entry is not misread as a $300 change.
+function _auditUnit(r,v){
+  if(v==null||v==='') return v;
+  return (r&&r.table_name==='budget_targets'&&/^-?\d+(\.\d+)?$/.test(String(v).trim())) ? String(v).trim()+' per year' : v;
+}
 function _auditDiff(action,oldRaw,newRaw){
   const o=_auditFlatten(_auditParse(oldRaw)), n=_auditFlatten(_auditParse(newRaw));
   const keys=[...new Set([...Object.keys(o),...Object.keys(n)])].filter(k=>!_AUDIT_NOISE.has(k));
@@ -6657,8 +6663,8 @@ async function loadAuditTrail(){
         <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
         <td style="padding:5px 8px;color:var(--t1);white-space:nowrap">${esc(r.actor_name||'—')}</td>
         <td style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
-        <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.old||'')}">${esc(f.old||'—')}</td>
-        <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.new||'')}">${esc(f.new||'—')}</td>
+        <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.old)||'')}">${esc(_auditUnit(r,f.old)||'—')}</td>
+        <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.new)||'')}">${esc(_auditUnit(r,f.new)||'—')}</td>
       </tr>`).join('');
     }).join('');
   }catch(e){
@@ -7965,8 +7971,43 @@ function _consolCaption(){
   const others = [...new Set(ENTITIES.map(e => e.currency).filter(c => c && c !== code))];
   el.textContent = 'Reported in ' + code + (others.length ? ' · ' + others.join(", ") + ' converted to ' + code : ' · no conversion needed');
 }
+// Decision 3.3 (2026-10-21): ASK ONCE for the reporting currency. With businesses in 2+ currencies and none chosen, "All
+// entities" silently used the oldest business's currency. The first time this view renders in that state, one question;
+// either answer SAVES the account setting (LA21 — saveReportingCurrency, the one writer), so it is never asked again on
+// any device. It asks only once the saved setting has loaded (dataset.saved is set by _ffApplyReportingCurrency).
+function _maybeAskReportingCurrency(){
+  if (window._rcAsked) return;
+  const sel = document.getElementById('s-reporting-currency');
+  if (!sel || sel.dataset.saved === undefined || sel.dataset.saved !== '') return;   // not loaded yet, or already chosen
+  const curs = [...new Set(ENTITIES.map(e => e.currency).filter(Boolean))];
+  if (curs.length < 2) return;
+  window._rcAsked = true;
+  let m = document.getElementById('rc-ask-modal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'rc-ask-modal'; m.className = 'modal-overlay hidden';
+    document.body.appendChild(m);
+  }
+  const def = consolCurrency && curs.includes(consolCurrency) ? consolCurrency : curs[0];
+  m.innerHTML = `<div class="modal" style="max-width:400px">
+    <div class="modal-header"><div><div class="modal-title">Which currency for your combined figures?</div>
+      <div class="modal-sub">Your businesses use ${curs.map(esc).join(' and ')}. "All entities" totals are shown in one currency.</div></div></div>
+    <div class="field-wrap"><label class="field-label" for="rc-ask-select">Report all businesses in</label>
+      <select class="finput" id="rc-ask-select">${curs.map(c => `<option value="${esc(c)}"${c === def ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+    <div style="font-size:11.5px;color:var(--t3);margin:4px 2px 0">You can change this any time in Settings.</div>
+    <div class="modal-footer"><button class="btn btn-primary" id="rc-ask-use">Use this currency</button></div>
+  </div>`;
+  m.querySelector('#rc-ask-use').onclick = async function () {
+    const v = m.querySelector('#rc-ask-select').value;
+    const s = document.getElementById('s-reporting-currency'); if (s) s.value = v;
+    if (typeof window.saveReportingCurrency === 'function') await window.saveReportingCurrency();
+    closeModal('rc-ask-modal');
+    if (typeof window.renderEntities === 'function') window.renderEntities(); else renderConsolPL();
+  };
+  openModal('rc-ask-modal');
+}
 function renderConsolPL(){
   _consolCaption();
+  try { _maybeAskReportingCurrency(); } catch (_) {}
   // LR14: Intercompany = internal trade the server detected and eliminated, in the report currency; "—" when the
   // consolidated response carries none (never a hard-coded $0).
   { const _icEl = document.getElementById('ent-interco'); const _cb = window._consolBooks;
@@ -9555,11 +9596,12 @@ document.addEventListener('click', e=>{
     if(!list) return;
     const hs = window.bizHoldings || [];
     const bizEl = (id, val) => { const e=document.getElementById(id); if(e) e.textContent=val; };
-    const S2b = n => (window._fmtMoney ? window._fmtMoney(n, '$') : '$'+Math.round(n).toLocaleString());
+    // LR22: holdings are priced in USD (M36) — say US$, so a TTD (or any non-USD) business never reads them as its own dollars.
+    const S2b = n => (window._fmtMoney ? window._fmtMoney(n, 'US$') : 'US$'+Math.round(n).toLocaleString());
     if(!hs.length){
       list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>';
-      ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'$0'));
-      bizEl('biz-inv-income','$0/yr');
+      ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'US$0'));
+      bizEl('biz-inv-income','US$0/yr');
       // F155: this render OWNS the business Performance box. It used to be written only by the
       // PERSONAL renderInvestments (app-main.js) from personal holdings — a cross-wire that showed
       // the personal cost basis on the business page, identical across every entity.
@@ -9587,12 +9629,12 @@ document.addEventListener('click', e=>{
           <div style="font-weight:500;color:var(--t1)">${esc(h.ticker)}${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
           <div style="font-size:11px;color:var(--t3)">${esc(h.type||'Stock')} · ${esc(String(shares))} units</div>
         </div>
-        <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">$${price.toFixed(2)}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'$')}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'$')}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">US$${price.toFixed(2)}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'US$')}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'US$')}</div>
         <div style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${glPct}%</div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">
-          ${inc>0?window._fmtMoney(inc,'$'):'—'}
+          ${inc>0?window._fmtMoney(inc,'US$'):'—'}
           ${h.id!=null?`<div style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
             <button class="btn btn-ghost" style="padding:1px 7px;font-size:10px" title="Edit holding" onclick="event.stopPropagation();editHolding(${h.id})">Edit</button>
             <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" onclick="event.stopPropagation();deleteHolding(${h.id})">✕</button>

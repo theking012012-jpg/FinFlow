@@ -44,7 +44,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     eq('header period label', txt('period-label'), 'Year to date · Jan 2026 – Jul 2026', 'Full Year · Jan 2026 – Dec 2026');
     eq('dashboard chart title', txt('d-chart-title'), 'Revenue vs Expenses — Year to date · Jan 2026 – Jul 2026', 'Revenue vs Expenses — Full Year · Jan 2026 – Dec 2026');
     eq('dashboard Revenue / Expenses / Net captions', [txt('d-rev-chg'), txt('d-exp-chg'), txt('d-profit-chg')], ['Year to date', 'Year to date', 'Year to date'], ['Full year total', 'Full year total', 'Full year total']);
-    eq('the year window label (Reports, statements)', w._periodWindow('year').label, 'Fiscal year to date · Jan 2026 – Jul 2026', 'Fiscal Year · Jan 2026 – Dec 2026');
+    eq('the year window label (Reports, statements)', w._periodWindow('year').label, 'Year to date · Jan 2026 – Jul 2026' /* LR6 decision 2026-10-21: one wording, "Year to date" */, 'Fiscal Year · Jan 2026 – Dec 2026');
 
     try { w.showPage('ai'); } catch (_) {}
     await settle(20, 50);

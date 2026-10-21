@@ -41,7 +41,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     try { boot.window.showPage('dashboard'); } catch (_) {}
     await boot.settle(20, 50);
     eq('April fiscal year: header label', (boot.window.document.getElementById('period-label') || {}).textContent, 'Year to date · Apr 2026 – Jul 2026', 'Year to date · Jan 2026 – Jul 2026');
-    eq('April fiscal year: the year window label', boot.window._periodWindow('year').label, 'Fiscal year to date · Apr 2026 – Jul 2026', 'Fiscal Year · Apr 2026 – Mar 2027');
+    eq('April fiscal year: the year window label', boot.window._periodWindow('year').label, 'Year to date · Apr 2026 – Jul 2026' /* LR6 decision 2026-10-21: one wording, "Year to date" */, 'Fiscal Year · Apr 2026 – Mar 2027');
     eq('April fiscal year: AI period label', (boot.window.document.getElementById('ai-period-label') || {}).textContent, 'Year to date · Apr 2026 – Jul 2026', 'Year to date · Jan 2026 – Jul 2026');
     eq('April fiscal year: dashboard chart title', (boot.window.document.getElementById('d-chart-title') || {}).textContent, 'Revenue vs Expenses — Year to date · Apr 2026 – Jul 2026', 'Revenue vs Expenses — Year to date · Jan 2026 – Jul 2026');
     eq('April fiscal year: month order (unchanged — already right)', boot.window.eval('MONTHS').slice(0, 2), ['Apr', 'May']);

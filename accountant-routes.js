@@ -1277,8 +1277,10 @@ If you cannot find a field, use null. Be concise.`;
     const accountant = acc.rows[0];
     const refUrl = `${appUrl()}/register?ref=${accountant.referral_code}`;
 
-    // Send email via Resend (reuse existing resendClient)
-    if (resendClient) {
+    // Send email via Resend (reuse existing resendClient). LR23: the invite IS the e-mail — never answer "sent" when it
+    // was not (no e-mail service configured, or Resend refused it).
+    if (!resendClient) return res.status(503).json({ error: 'E-mail is not set up yet, so the invitation was not sent.', code: 'EMAIL_NOT_SENT' });
+    try {
       await resendClient.emails.send({
         from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
         to: email,
@@ -1304,6 +1306,9 @@ If you cannot find a field, use null. Be concise.`;
           </div>
         `),
       });
+    } catch (e) {
+      console.error('[accountant invite] e-mail not sent:', e && e.message);
+      return res.status(502).json({ error: 'The invitation e-mail could not be sent. Check the address and try again.', code: 'EMAIL_NOT_SENT' });
     }
 
     return res.json({ success: true, message: `Invitation sent to ${email}` });

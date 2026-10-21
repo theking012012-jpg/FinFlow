@@ -24,6 +24,12 @@ function _auditParse(s){ if(s==null)return null; if(typeof s==='object')return s
 function _auditVal(v){ if(v==null)return ''; if(typeof v==='object')return JSON.stringify(v); return String(v); }
 // One audit_log event → one or more display rows (one per changed field). CREATE lists new values,
 // DELETE lists old values, UPDATE lists only fields whose value actually changed.
+// LR8 (decision 2026-10-21): a budget target is stored as an ANNUAL figure — the Audit line says so ("300 per year"),
+// so a $25 / month entry is not misread as a $300 change.
+function _auditUnit(r,v){
+  if(v==null||v==='') return v;
+  return (r&&r.table_name==='budget_targets'&&/^-?\d+(\.\d+)?$/.test(String(v).trim())) ? String(v).trim()+' per year' : v;
+}
 function _auditDiff(action,oldRaw,newRaw){
   const o=_auditFlatten(_auditParse(oldRaw)), n=_auditFlatten(_auditParse(newRaw));
   const keys=[...new Set([...Object.keys(o),...Object.keys(n)])].filter(k=>!_AUDIT_NOISE.has(k));
@@ -75,8 +81,8 @@ async function loadAuditTrail(){
         <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
         <td style="padding:5px 8px;color:var(--t1);white-space:nowrap">${esc(r.actor_name||'—')}</td>
         <td style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
-        <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.old||'')}">${esc(f.old||'—')}</td>
-        <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.new||'')}">${esc(f.new||'—')}</td>
+        <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.old)||'')}">${esc(_auditUnit(r,f.old)||'—')}</td>
+        <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.new)||'')}">${esc(_auditUnit(r,f.new)||'—')}</td>
       </tr>`).join('');
     }).join('');
   }catch(e){

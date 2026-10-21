@@ -8,7 +8,9 @@
  * token sent", so it looked the NEW token up, found nothing and re-threw → 500.
  *
  * Real scratch Postgres, real routes, the live shape. Each case states what the old code gives (Rule 4):
- *   A. voided Dec run exists, new Dec run (new token)  → 409 PERIOD_HAS_VOIDED_RUN naming run A, no new row   (old: 500)
+ *   A. voided Dec run exists, new Dec run (new token)  → 201 a NEW run; the voided run kept (owner decision 2026-10-21:
+ *      a voided period may be re-run — migration 2026-10-21-payroll-runs-uniq-allow-voided.sql)   (before: 409; old: 500)
+ *   A2. a further new Dec run while that live run exists → 200 already_exists (one LIVE run per period still)
  *   B. live Jan run exists, new Jan run (new token)     → 200, already_exists, the SAME run id, no new row    (old: 500)
  *   C. the same token retried                            → 200, the original run, already_exists false        (old: 200)
  *   D. a different period                                → 201, a new run                                     (old: 201)
@@ -17,11 +19,14 @@
  */
 const { run } = require('./moneyFixKit.js');
 
-run('LR1 — a second run for a period never 500s; a voided period says so', async ({ newOwner, c, eq }) => {
+run('LR1 — a second run for a period never 500s; a voided period can be re-run', async ({ newOwner, c, eq }) => {
   const { uid, http, J } = await newOwner('LR1', [{ name: 'Northwind LR1', currency: 'USD' }]);
   // The production index (scripts/migrations/2026-07-25-payroll-runs-uniq.sql) — created here in case the scratch
   // database's migration runner has not applied it.
   await c.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_runs_uniq ON payroll_runs (user_id, COALESCE(entity_id, 0), period)`);
+  // …then the versioned migration production applies at boot (the harness boot runs none), when it exists.
+  const _mig = require('path').join(__dirname, '..', '..', 'scripts', 'migrations', '2026-10-21-payroll-runs-uniq-allow-voided.sql');
+  if (require('fs').existsSync(_mig)) await c.query(require('fs').readFileSync(_mig, 'utf8'));
   await J('POST', '/api/payroll', { fname: 'Jordan', lname: 'Lee', gross: 3000, deductions: [] });
   const count = async p => (await c.query(`SELECT COUNT(*)::int n FROM payroll_runs WHERE user_id = $1 AND period = $2`, [uid, p])).rows[0].n;
   const post = (period, key) => http.request('POST', '/api/payroll-runs', { period, idempotency_key: key, run_date: '2026-07-25' });
@@ -32,10 +37,11 @@ run('LR1 — a second run for a period never 500s; a voided period says so', asy
   await J('PUT', '/api/payroll-runs/' + dec.id + '/void', {});
 
   const a = await post('December 2026', 'lr1-dec-2');
-  eq('A. voided period, new run → 409 PERIOD_HAS_VOIDED_RUN naming the voided run',
-    [a.status, a.json && a.json.code, a.json && a.json.existing_run_id], [409, 'PERIOD_HAS_VOIDED_RUN', dec.id], [500, undefined, undefined]);
-  eq('A. …and the message says what exists (no generic error)', /already has a voided payroll run/.test(a.json && a.json.error || ''), true, false);
-  eq('A. no new run was created', await count('December 2026'), 1);
+  eq('A. voided period, new run → 201, a NEW run (not the voided one)', [a.status, !!(a.json && a.json.id) && a.json.id !== dec.id], [201, true], [409, false]);
+  eq('A. the period now has 2 runs: the voided one kept + the new one', [await count('December 2026'), (await c.query(`SELECT status FROM payroll_runs WHERE id = $1`, [dec.id])).rows[0].status], [2, 'voided'], [1, 'voided']);
+  const a2 = await post('December 2026', 'lr1-dec-3');
+  eq('A2. another new Dec run while the new one is live → 200 already_exists, that run', [a2.status, a2.json && a2.json.id, a2.json && a2.json.already_exists], [200, a.json && a.json.id, true]);
+  eq('A2. still 2 Dec runs', await count('December 2026'), 2);
 
   const jan = await J('POST', '/api/payroll-runs', { period: 'January 2027', idempotency_key: 'lr1-jan-1' });
   const b = await post('January 2027', 'lr1-jan-2');

@@ -106,16 +106,31 @@
       });
     }
 
-    return { get: collect, reset: reset, addRow: addRow, recompute: recompute, install: install };
+    // LR9: open a saved document for editing with its lines — reset, one row per stored line, then the total re-derives
+    // from them (Rule 2). An empty / missing list leaves the single-amount path.
+    function load(items) {
+      reset();
+      (Array.isArray(items) ? items : []).forEach(function (it) {
+        addRow();
+        var rows = rowEls(), tr = rows[rows.length - 1]; if (!tr) return;
+        var d = tr.querySelector('.' + p + '-li-desc'), q = tr.querySelector('.' + p + '-li-qty'), r = tr.querySelector('.' + p + '-li-rate');
+        if (d) d.value = it && it.desc != null ? String(it.desc) : '';
+        if (q) q.value = it && it.qty != null ? String(it.qty) : '';
+        if (r) r.value = it && it.rate != null ? String(it.rate) : '';
+      });
+      recompute();
+    }
+
+    return { get: collect, reset: reset, addRow: addRow, recompute: recompute, install: install, load: load };
   }
 
   var inv   = makeLI('inv');
   var bill  = makeLI('bill');
   var quote = makeLI('quote');
 
-  window.ffInvLineItems   = { get: inv.get,   reset: inv.reset,   addRow: inv.addRow,   recompute: inv.recompute };
-  window.ffBillLineItems  = { get: bill.get,  reset: bill.reset,  addRow: bill.addRow,  recompute: bill.recompute };
-  window.ffQuoteLineItems = { get: quote.get, reset: quote.reset, addRow: quote.addRow, recompute: quote.recompute };
+  window.ffInvLineItems   = { get: inv.get,   reset: inv.reset,   addRow: inv.addRow,   recompute: inv.recompute,   load: inv.load };
+  window.ffBillLineItems  = { get: bill.get,  reset: bill.reset,  addRow: bill.addRow,  recompute: bill.recompute,  load: bill.load };
+  window.ffQuoteLineItems = { get: quote.get, reset: quote.reset, addRow: quote.addRow, recompute: quote.recompute, load: quote.load };
 
   function installAll() { inv.install(); bill.install(); quote.install(); }
 

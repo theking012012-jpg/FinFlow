@@ -367,8 +367,43 @@ function _consolCaption(){
   const others = [...new Set(ENTITIES.map(e => e.currency).filter(c => c && c !== code))];
   el.textContent = 'Reported in ' + code + (others.length ? ' · ' + others.join(", ") + ' converted to ' + code : ' · no conversion needed');
 }
+// Decision 3.3 (2026-10-21): ASK ONCE for the reporting currency. With businesses in 2+ currencies and none chosen, "All
+// entities" silently used the oldest business's currency. The first time this view renders in that state, one question;
+// either answer SAVES the account setting (LA21 — saveReportingCurrency, the one writer), so it is never asked again on
+// any device. It asks only once the saved setting has loaded (dataset.saved is set by _ffApplyReportingCurrency).
+function _maybeAskReportingCurrency(){
+  if (window._rcAsked) return;
+  const sel = document.getElementById('s-reporting-currency');
+  if (!sel || sel.dataset.saved === undefined || sel.dataset.saved !== '') return;   // not loaded yet, or already chosen
+  const curs = [...new Set(ENTITIES.map(e => e.currency).filter(Boolean))];
+  if (curs.length < 2) return;
+  window._rcAsked = true;
+  let m = document.getElementById('rc-ask-modal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'rc-ask-modal'; m.className = 'modal-overlay hidden';
+    document.body.appendChild(m);
+  }
+  const def = consolCurrency && curs.includes(consolCurrency) ? consolCurrency : curs[0];
+  m.innerHTML = `<div class="modal" style="max-width:400px">
+    <div class="modal-header"><div><div class="modal-title">Which currency for your combined figures?</div>
+      <div class="modal-sub">Your businesses use ${curs.map(esc).join(' and ')}. "All entities" totals are shown in one currency.</div></div></div>
+    <div class="field-wrap"><label class="field-label" for="rc-ask-select">Report all businesses in</label>
+      <select class="finput" id="rc-ask-select">${curs.map(c => `<option value="${esc(c)}"${c === def ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+    <div style="font-size:11.5px;color:var(--t3);margin:4px 2px 0">You can change this any time in Settings.</div>
+    <div class="modal-footer"><button class="btn btn-primary" id="rc-ask-use">Use this currency</button></div>
+  </div>`;
+  m.querySelector('#rc-ask-use').onclick = async function () {
+    const v = m.querySelector('#rc-ask-select').value;
+    const s = document.getElementById('s-reporting-currency'); if (s) s.value = v;
+    if (typeof window.saveReportingCurrency === 'function') await window.saveReportingCurrency();
+    closeModal('rc-ask-modal');
+    if (typeof window.renderEntities === 'function') window.renderEntities(); else renderConsolPL();
+  };
+  openModal('rc-ask-modal');
+}
 function renderConsolPL(){
   _consolCaption();
+  try { _maybeAskReportingCurrency(); } catch (_) {}
   // LR14: Intercompany = internal trade the server detected and eliminated, in the report currency; "—" when the
   // consolidated response carries none (never a hard-coded $0).
   { const _icEl = document.getElementById('ent-interco'); const _cb = window._consolBooks;

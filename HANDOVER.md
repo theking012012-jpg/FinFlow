@@ -39,7 +39,10 @@ FAIL (`verify-fix3-audit-coverage`, stale column index after LR12) fixed → 15/
 (small related set 32/32) · `VERIFICATION.md` every Result cell stamped with today's runs (A7.22 / A7.23 new harness 3/0) ·
 Terms / Privacy / Security rewritten (LR29 — fill the placeholders) · owner pack §7 corrected (set CONNECTOR_ENC_KEY first;
 do not rotate SESSION_SECRET once banks are linked) · LR28 landing testimonials (owner / legal). Production build chain
-(`npm run gen`) exit 0. **Open in code:** LR21 ×5 settings fetch (needs a live trace). **Decisions waiting:** 3.1–3.7, LR1-follow-up, LR5, LR6, LR8, LR9, LR10, LR22, LR23, LR25, 2.6.
+(`npm run gen`) exit 0. **Open in code:** LR21 ×5 settings fetch (needs a live trace).
+**Third round 2026-10-21 (owner: "go with your recommendations", UNCOMMITTED):** LR6 3/0 · LR8 2/0 · LR9 7/0 · LR10 6/0 ·
+LR22 2/0 · LR23 7/0 · LR25 3/0 · LR1b 9/0 · D3.3 4/0 · D3.6 5/0 (each RED first) · LR13 formatter regex follow-up 6/0.
+Decisions left: 3.4 (data step), 3.5 (legal), 2.6 (lawyer). **Full sweep: the owner's, at the end.** **Decisions waiting:** 3.1–3.7, LR1-follow-up, LR5, LR6, LR8, LR9, LR10, LR22, LR23, LR25, 2.6.
 **Tooling note:** the bundle has TWO more sources than `finflow-api-wiring-*.js` — `finflow-api.js` and
 `finflow-api-wiring.js`. A Rule-1 grep must include them (`public/finflow-api*.js`).
 

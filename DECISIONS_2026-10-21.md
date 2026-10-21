@@ -1,5 +1,11 @@
 # FinFlow — decisions waiting on the owner (2026-10-21)
 
+> **Owner answer 2026-10-21: "go with your recommendations."** Built and verified the same day (each RED → GREEN; rows in
+> `AUDIT_MASTER.md`): **LR6 A · LR8 A · LR9 A · LR10 A · LR22 A · LR23 A · LR25 A · LR1 follow-up B · 3.3 B · 3.6 A**.
+> Taken with no code: **LR5 A · 3.1 B** (connectors stay dark until keyed) **· 3.2 A** (read-only, already built) **· 3.7 A**.
+> **Still open:** **3.4** (a data step — run the prepared LC1c link script, owner-run, Rule 8), **3.5** (legal answer —
+> retention), **2.6** (lawyer review of the rewritten pages).
+
 One section per decision. Each: the options, the trade-offs, a recommendation, and **exactly** what code and data each
 option changes. **Nothing here is implemented** — reply with the option letter per item (e.g. "3.2 A, LR9 B") and it
 is built RED → GREEN as its own commit. Data changes are always a separate, owner-run step (Rule 8).

@@ -1,6 +1,8 @@
 'use strict';
 /**
  * verify-fix2-ytd-labels.js — FIX-2 / LC2 (owner decision 2026-10-20: relabel to "Year to date").
+ * EXPECTED WORDING UPDATED 2026-10-21 (LR6, owner decision: ONE wording everywhere — "Fiscal year to date" with the exact
+ * first and last day, e.g. "Fiscal year to date · 1 Jan – 25 Jul 2026"). The bug values ("Full year …") are unchanged.
  *
  * Every "Year" figure — server (computeBooks inPeriod, glFinancials, the monthly buckets) and client (_periodWindow
  * inWin) alike — counts only what is dated UP TO TODAY (the D2 rule): a November payroll run, viewed in October, adds
@@ -41,10 +43,10 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     await settle(20, 50);
     const txt = id => { const el = d.getElementById(id); return el ? el.textContent.trim() : null; };
 
-    eq('header period label', txt('period-label'), 'Year to date · Jan 2026 – Jul 2026', 'Full Year · Jan 2026 – Dec 2026');
-    eq('dashboard chart title', txt('d-chart-title'), 'Revenue vs Expenses — Year to date · Jan 2026 – Jul 2026', 'Revenue vs Expenses — Full Year · Jan 2026 – Dec 2026');
-    eq('dashboard Revenue / Expenses / Net captions', [txt('d-rev-chg'), txt('d-exp-chg'), txt('d-profit-chg')], ['Year to date', 'Year to date', 'Year to date'], ['Full year total', 'Full year total', 'Full year total']);
-    eq('the year window label (Reports, statements)', w._periodWindow('year').label, 'Fiscal year to date · Jan 2026 – Jul 2026', 'Fiscal Year · Jan 2026 – Dec 2026');
+    eq('header period label', txt('period-label'), 'Fiscal year to date · 1 Jan – 25 Jul 2026', 'Full Year · Jan 2026 – Dec 2026');
+    eq('dashboard chart title', txt('d-chart-title'), 'Revenue vs Expenses — Fiscal year to date · 1 Jan – 25 Jul 2026', 'Revenue vs Expenses — Full Year · Jan 2026 – Dec 2026');
+    eq('dashboard Revenue / Expenses / Net captions', [txt('d-rev-chg'), txt('d-exp-chg'), txt('d-profit-chg')], ['Fiscal year to date', 'Fiscal year to date', 'Fiscal year to date'], ['Full year total', 'Full year total', 'Full year total']);
+    eq('the year window label (Reports, statements)', w._periodWindow('year').label, 'Fiscal year to date · 1 Jan – 25 Jul 2026', 'Fiscal Year · Jan 2026 – Dec 2026');
 
     try { w.showPage('ai'); } catch (_) {}
     await settle(20, 50);
@@ -59,8 +61,8 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
 
     // STRUCTURAL (labelled): the accountant portal's own captions — it reads the same D2-capped computeBooks year.
     const acct = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'accountant-client.html'), 'utf8');
-    eq('STRUCTURAL accountant portal subtitle', /id="dash-subtitle">Year to date overview</.test(acct), true, false);
-    eq('STRUCTURAL accountant portal period caption (year)', /year:'Year to date'/.test(acct) && !/year:'Full year'/.test(acct), true, false);
+    eq('STRUCTURAL accountant portal subtitle', /id="dash-subtitle">Fiscal year to date overview</.test(acct), true, false);
+    eq('STRUCTURAL accountant portal period caption (year)', /year:'Fiscal year to date'/.test(acct) && !/year:'Full year'/.test(acct), true, false);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   finally { try { if (boot && boot.stop) await boot.stop(); } catch (_) {} }
   console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);

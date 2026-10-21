@@ -1799,7 +1799,7 @@ function S(n,s=false){
 function sum(arr,s,e){return arr.slice(s,e).reduce((a,v)=>a+v,0)}
 function pct(a,b){if(!b)return 0;return Math.round((a-b)/Math.abs(b)*100)}
 function chg(cur,prev,invert=false){
-  if(prev==null)return{txt:'Year to date',cls:'neutral'};   // FIX-2: the year counts what is dated up to today (D2), not the whole year
+  if(prev==null)return{txt:'Fiscal year to date',cls:'neutral'};   // FIX-2 / LR6: the year counts what is dated up to today (D2), not the whole year
   const p=pct(cur,prev);
   const good=invert?p<=0:p>=0;
   return{txt:(p>=0?'↑ ':'↓ ')+Math.abs(p)+'% vs prior period',cls:good?'up':'dn'};
@@ -1873,7 +1873,7 @@ function getPeriodData(){
       // F60: summed over the fiscal year, not EXP_RENT[0]*12 (see the quarter branch above).
       sal:sum(EXP_SAL,0,12),rent:sum(EXP_RENT,0,12),sw:sum(EXP_SW,0,12),mkt:sum(EXP_MKT,0,12),
       srcRC:0,srcTS:0,srcST:0,srcCO:0,
-      months:12, label:'Year to date · '+MONTH_FULL[0]+' – '+MONTH_FULL[(typeof _fyContext==='function'?_fyContext().curFyIdx:11)]   // FIX-2: up to today's fiscal month (D2)
+      months:12, label:_ffYtdLabel()   // FIX-2 / LR6: one wording everywhere, with the exact first and last day
     };
   }
 }
@@ -2071,10 +2071,25 @@ function _periodWindow(period, monthIdx){
   let label;
   if(kind==='month') label=_lbl(start);
   else if(kind==='quarter'){ const q=Math.floor(idx/3); label='Q'+(((q%4)+4)%4+1)+' · '+_lbl(start)+' – '+_lastLbl(end); }
-  else label='Fiscal year to date · '+_lbl(start)+' – '+_lbl(today);   // FIX-2: inWin stops at today (D2), so the label does too
+  else label=_ffYtdLabel();   // FIX-2 / LR6: inWin stops at today (D2), so the label does too
   return { inWin, elapsedMonths:rp.elapsedMonths, label, start, end };
 }
 window._periodWindow = _periodWindow;
+
+// LR6 (owner decision 2026-10-21): the ONE label for the "Year" view, used by the header, the chart, Reports, the AI panel
+// and exports — it names the basis (the FISCAL year, up to today — D2) and the exact first and last day, so a figure is
+// never read as the whole calendar year and stays right for a fiscal year that does not start in January.
+// e.g. "Fiscal year to date · 1 Jan – 20 Oct 2026", "Fiscal year to date · 1 Apr 2026 – 15 Feb 2027".
+function _ffYtdLabel(){
+  const { fyStartIdx } = _fyContext();
+  const today=_entityToday();
+  const rp=window.FinFlowDates.resolvePeriod({ period:'year', monthIdx:null, fyStartMonth:fyStartIdx, today });
+  const _MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dm=ymd=>parseInt(ymd.slice(8,10),10)+' '+_MN[parseInt(ymd.slice(5,7),10)-1];
+  const sameYear=rp.start.slice(0,4)===today.slice(0,4);
+  return 'Fiscal year to date · '+dm(rp.start)+(sameYear?'':' '+rp.start.slice(0,4))+' – '+dm(today)+' '+today.slice(0,4);
+}
+window._ffYtdLabel = _ffYtdLabel;
 
 // ── F57 / decision D3 — CASH-BASIS period summation ─────────────────────────────────────────
 // Sums the monthly rows from POST /api/reports/cash-flow (the SAME endpoint the Cash Flow
@@ -2477,7 +2492,7 @@ function updateDashboard(d=getPeriodData()){
     _pRev = computeRevenue('quarter', _priorQ);
     _pExp = computeExpenseBreakdown('quarter', _priorQ).total;
     _pProfit = _pRev - _pExp;
-  } // year → null baseline → chg() shows the neutral "Year to date"
+  } // year → null baseline → chg() shows the neutral "Fiscal year to date"
   const rc=chg(_ddRev,_pRev);
   const ec=chg(_ddExp,_pExp,true);
   const pc=chg(_ddProfit,_pProfit);

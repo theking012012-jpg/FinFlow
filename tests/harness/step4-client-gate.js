@@ -65,7 +65,7 @@ function loadClientEngine() {
   const dash = fs.readFileSync(ROOT + '/public/finflow-api-wiring-dashboard.js', 'utf8');
   // L36: _fyContext / _periodWindow / arOutstanding resolve "today" through _entityToday() → _activeEntityTz();
   // extract the real helpers too (the gate crashed with a ReferenceError at 37ec40b — owner-observed).
-  const appParts = ['function _activeEntityTz()', 'function _entityToday()', 'function _fyContext()', 'function _periodWindow(period, monthIdx)',
+  const appParts = ['function _activeEntityTz()', 'function _entityToday()', 'function _fyContext()', 'function _periodWindow(period, monthIdx)', 'function _ffYtdLabel()' /* LR6: _periodWindow's year label */,
     'function _jLineType(code)', 'function _journalPnL(w)',   // N20: computeRevenue/ExpenseBreakdown now depend on these
     'function computeRevenue(period, monthIdx)', 'function computeExpenseBreakdown(period, monthIdx)',
     'function arOutstanding(invoices)'].map(h => extractFn(appMain, h)).join('\n');

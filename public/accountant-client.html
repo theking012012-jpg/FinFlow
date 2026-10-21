@@ -368,7 +368,7 @@
       <div class="page-hdr">
         <div>
           <div class="page-title" id="dash-title">Dashboard</div>
-          <div class="page-subtitle" id="dash-subtitle">Year to date overview</div>
+          <div class="page-subtitle" id="dash-subtitle">Fiscal year to date overview</div>
         </div>
       </div>
 
@@ -1257,7 +1257,7 @@ function renderCashFlow(invoices, expenses) {
     <div class="pl-row"><span class="pl-label">A/R outstanding (not yet cash)</span><span style="color:var(--amber)">${fmt(ar)}</span></div>
     <div class="pl-row"><span class="pl-label" style="font-weight:500">Net operating cash flow</span><span style="color:${netOp>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(netOp)}</span></div>`;
   set('cf-net', fmt(netOp));
-  const labels = {year:'Year to date',quarter:'Current quarter',month:'Current month',all:'All time'};   // FIX-2: the year counts what is dated up to today
+  const labels = {year:'Fiscal year to date',quarter:'Current quarter',month:'Current month',all:'All time'};   // FIX-2: the year counts what is dated up to today
   set('cf-subtitle', labels[_period] || _period);
 }
 

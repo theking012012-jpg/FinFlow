@@ -61,6 +61,7 @@ function loadEngine(journals) {
     extractFn(appMain, 'function _entityToday()'),
     extractFn(appMain, 'function _fyContext()'),
     extractFn(appMain, 'function _periodWindow(period, monthIdx)'),
+    extractFn(appMain, 'function _ffYtdLabel()'),   // LR6: _periodWindow's year label comes from this helper
     optional('function _jLineType(code)'),
     optional('function _journalPnL(w)'),
     extractFn(appMain, 'function computeRevenue(period, monthIdx)'),

@@ -3895,11 +3895,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
       <!-- DOCUMENTS -->
       <div class="page" id="page-documents" data-lz="1"></div><template data-lz="page-documents">
-        <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Files</div><div class="mc-val" id="docs-count">0</div><div class="mc-change neutral">Stored documents</div></div>
-          <div class="mc"><div class="mc-label">Storage Used</div><div class="mc-val" id="docs-storage">0 KB</div><div class="mc-change neutral">of 5 GB</div></div>
-          <div class="mc"><div class="mc-label">Unattached</div><div class="mc-val" style="color:var(--amber)" id="docs-unattached">0</div><div class="mc-change dn">Needs linking</div></div>
-          <div class="mc"><div class="mc-label">Added this month</div><div class="mc-val" id="docs-added">0</div><div class="mc-change up">New this month</div></div>
+        
+        <div class="metrics-grid-3">
+          <div class="mc"><div class="mc-label">Total Files</div><div class="mc-val" id="docs-count">—</div><div class="mc-change neutral">Stored documents</div></div>
+          <div class="mc"><div class="mc-label">Storage Used</div><div class="mc-val" id="docs-storage">—</div><div class="mc-change neutral">Up to 5 MB per file</div></div>
+          <div class="mc"><div class="mc-label">Added this month</div><div class="mc-val" id="docs-added">—</div><div class="mc-change up">New this month</div></div>
         </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Documents</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterDocs('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('invoice')">Invoices</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('receipt')">Receipts</button><button class="btn btn-primary btn-sm" onclick="openUploadModal()">↑ Upload</button></div></div>

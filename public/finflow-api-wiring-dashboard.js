@@ -20,6 +20,8 @@
   }
 
   function money(n) { return typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toLocaleString(); }
+  // LR25: the full escaper for text written into HTML (the transactions list escaped only < / > by hand).
+  const escH = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // ── Parse a date string (ISO or "Apr 30" style) into a Date ──────
   function parseDate(s) {
@@ -340,8 +342,8 @@
             </svg>
           </div>
           <div>
-            <div class="tx-name">${(t.name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-            <div class="tx-cat">${(t.cat || '').replace(/</g,'&lt;')}</div>
+            <div class="tx-name">${escH(t.name)}</div>
+            <div class="tx-cat">${escH(t.cat)}</div>
           </div>
         </div>
         <div class="tx-amt ${t.type === 'income' ? 'up' : 'dn'}">${t.type === 'income' ? '+' : '-'}${money(t.amt)}</div>

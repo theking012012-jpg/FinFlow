@@ -5701,13 +5701,15 @@ function renderBanking(){
   _bkSet('bank-uncat',     _bkUncat);
   window._refreshDashboardUI?.();
   const al=document.getElementById('bank-accounts-list');
+  // LR25: every account field is escaped (bank, last4, type, updated were written raw — an HTML-injection path); LR24: the
+  // balance is in the business's currency (it was a literal "$").
   if(al)al.innerHTML=bankAccounts.map(a=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${a.bank} · ****${a.last4}</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(a.bank)} · ****${esc(a.last4)}</div></div>
       </div>
-      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${S(parseFloat(a.balance)||0)}</div><div style="font-size:10px;color:var(--t3)">${a.type} · ${a.updated}</div></div>
+      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${S(parseFloat(a.balance)||0)}</div><div style="font-size:10px;color:var(--t3)">${esc(a.type)} · ${esc(a.updated)}</div></div>
     </div>`).join('');
   const tl=document.getElementById('bank-txns-list');
   if(tl)tl.innerHTML=bankTxns.map(t=>`

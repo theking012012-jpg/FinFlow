@@ -29,7 +29,9 @@ const FILES = [
 ];
 
 // Free-text, user-controlled fields that must be escaped before hitting innerHTML.
-const RISKY = /(client_name|client_email|business_name|\bclient\b|\bcustomer\b|\bvendor\b|\bemployee\b|item\.name|\.project\b|\.notes\b|\.description\b|\.company\b)/;
+// LR25 (2026-10-21): the list missed bank / institution / category fields — an unescaped bank name, last-4 and update
+// time shipped in renderBanking. Widened; every hit it then found was fixed.
+const RISKY = /(\.bank\b|\.last4\b|\.updated\b|\.institution(_name)?\b|\.desc\b|\.cat\b|\.ticker\b|\.memo\b|client_name|client_email|business_name|\bclient\b|\bcustomer\b|\bvendor\b|\bemployee\b|item\.name|\.project\b|\.notes\b|\.description\b|\.company\b)/;
 // Lines whose interpolation goes to a safe sink (text, not HTML) — excluded from the scan.
 const SAFE_CTX = /(notify\(|confirmModal\(|textContent|\.value\s*=|placeholder|console\.|new Error\(|throw )/;
 const ESCAPED = /\b(esc|escHTML|escH|_e|e)\s*\(/;

@@ -569,7 +569,6 @@ window.showPage=function(id,el){
   if(id==='banking'){ _rAF(renderPlaid); loadBankingFromDB(); }
   if(id==='entities')_rAF(renderEntities);
   if(id==='team')    _rAF(renderTeam);
-  if(id==='audit')   _rAF(renderAudit);
   if(id==='connections'&&typeof window._connHydrate==='function') _rAF(window._connHydrate);
   if(id==='bank-rec'&&typeof loadBankRec==='function') _rAF(loadBankRec);
   if(id==='fx'&&typeof loadFXData==='function') _rAF(loadFXData);

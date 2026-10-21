@@ -946,27 +946,8 @@ window._ffDownloadCsv = function(rows, filename){
   notify('Exported ' + filename + ' ✦');
 };
 
-window.exportAuditCSV = async function(){
-  try {
-    const res = await fetch('/api/audit-log?limit=10000', {credentials:'include'});
-    if (!res.ok) { notify('Could not load audit log.', true); return; }
-    const data = await res.json();
-    const entries = Array.isArray(data) ? data : (data.rows || []);
-    if (!entries.length) { notify('No audit entries to export.', true); return; }
-    const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
-    const rows = [['TIMESTAMP','ACTION','TABLE','RECORD ID'],
-      ...entries.map(e => [e.created_at||'', e.action||'', e.table_name||'', e.record_id||''])];
-    const csv = rows.map(r => r.map(q).join(',')).join('\r\n');
-    const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const filename = 'finflow-audit-' + todayLocal() + '.csv';
-    const a = Object.assign(document.createElement('a'), {href:url, download:filename});
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-    notify('Exported ' + filename + ' ✦');
-  } catch(e) { notify('Export failed: ' + e.message, true); }
-};
+// LR27: the audit CSV export lives in index.html (exportAuditCSV — the runtime winner, measured); the copy that stood
+// here was overwritten at load and never ran.
 
 // ════════════════════════════════════════════
 // ③ BANK RECONCILIATION ENGINE

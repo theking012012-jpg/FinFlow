@@ -784,66 +784,8 @@ window.renderTeam=function(){
   }).join('');
 };
 
-// ── AUDIT TRAIL — all data from DB via /api/audit-log ──────────────────────
-const AUDIT_EVENTS=[]; // intentionally empty — no hardcoded demo data
-const ICON_SVG={
-  receipt:'<rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="9" y2="8"/>',
-  dollar:'<circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M6 9.5c0 .83.67 1.5 2 1.5s2-.67 2-1.5"/>',
-  users:'<circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/>',
-  user:'<circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/>',
-  settings:'<circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/>',
-  check:'<polyline points="2,8 6,12 14,4"/>',
-  grid:'<rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
-  trash:'<polyline points="2,4 14,4"/><path d="M5 4V2h6v2"/><rect x="3" y="4" width="10" height="10" rx="1"/>',
-};
-
-let auditFilter='all';
-window.filterAudit=function(val){auditFilter=val;renderAudit();};
-window.renderAudit=async function(){
-  const el=document.getElementById('audit-list');
-  if(!el)return;
-  el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
-  try{
-    const params=auditFilter!=='all'?'?type='+encodeURIComponent(auditFilter):'';
-    const res=await fetch('/api/audit-log'+params,{credentials:'include'});
-    if(!res.ok)throw new Error();
-    const data=await res.json();
-    const entries=Array.isArray(data)?data:(data.rows||data.entries||[]);
-    if(!entries.length){el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No audit events yet.</div>';return;}
-    el.innerHTML=entries.map(e=>`
-      <div class="audit-row">
-        <div class="audit-icon" style="background:var(--acc-bg);color:var(--acc)">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><polyline points="8,5 8,8 10,10"/></svg>
-        </div>
-        <div style="flex:1;min-width:0">
-          <div><span class="audit-user">You</span> <span class="audit-action">${e.action||''}</span> <span class="audit-target">${e.table_name||''}${e.record_id?' #'+e.record_id:''}</span></div>
-          <div class="audit-time">${e.created_at?new Date(e.created_at).toLocaleString():''}</div>
-        </div>
-      </div>`).join('');
-    // Update KPI cards with real data
-    (function(){
-      const _set=(id,v)=>{const _e=document.getElementById(id);if(_e)_e.textContent=v;};
-      _set('audit-event-count', entries.length);
-      const _last=entries[0];
-      if(_last){
-        const _d=_last.created_at?new Date(_last.created_at):null;
-        const _now=new Date();
-        let _rel='—';
-        if(_d){
-          const _diff=Math.floor((_now-_d)/1000);
-          if(_diff<60)_rel=_diff+'s ago';
-          else if(_diff<3600)_rel=Math.floor(_diff/60)+'m ago';
-          else if(_diff<86400)_rel=Math.floor(_diff/3600)+'h ago';
-          else _rel=_d.toLocaleDateString();
-        }
-        _set('audit-last-time',_rel);
-        _set('audit-last-action',(_last.action||'')+(_last.table_name?' · '+_last.table_name:''));
-      }
-    })();
-  }catch(err){
-    el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Could not load audit log. Check your connection.</div>';
-  }
-};
+// LR27: the second Audit renderer (renderAudit → #audit-list, which does not exist) is deleted. It returned on its first
+// line every time (measured), so its KPI-card code never ran — a trap for a future fix. loadAuditTrail is the one writer.
 
 // ── SWIPE HINT (show once on mobile) ────────────────────────────────────────
 (function(){

@@ -45,7 +45,7 @@ async function loadAuditTrail(){
   const lastTimeEl=document.getElementById('audit-last-time');
   const lastActEl=document.getElementById('audit-last-action');
   if(!tbody)return;
-  tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
+  tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
   try{
     const tbl=document.getElementById('audit-filter-table')?.value||'all';
     const act=document.getElementById('audit-filter-action')?.value||'all';

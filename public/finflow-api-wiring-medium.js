@@ -602,6 +602,11 @@
       // F-K1: COGS is cost of goods SOLD (FIFO, server /api/cogs), NOT inventory value (units×cost).
       // The old units×cost duplicated the Inventory-value KPI and contradicted the FIFO COGS Summary.
       _invKpi('inv-cogs',  S(window._cogsTotal || 0));
+      // LR15: _cogsTotal is the SELECTED period's COGS (every writer fetches /api/cogs for the dashboard period) — the
+      // card says which period, never a fixed "this month" on a year figure.
+      { const _cl = document.getElementById('inv-cogs-label');
+        let _pl = ''; try { _pl = (typeof window.getPeriodData === 'function' ? window.getPeriodData() : getPeriodData()).label || ''; } catch (e) {}
+        if (_cl) _cl.textContent = 'COGS' + (_pl ? ' · ' + _pl : ''); }
       if (typeof window.loadCOGS === 'function' && window._cogsTotal == null) { try { window.loadCOGS(); } catch (e) {} }
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
@@ -1154,11 +1159,9 @@
         const cache = window._docsCache || [];
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
         set('docs-count', cache.length);
-        const totalKB = cache.reduce((s, d) => {
-          const kb = parseFloat((d.size || '').replace(/[^0-9.]/g, '')) || 0;
-          return s + kb;
-        }, 0);
-        set('docs-storage', totalKB >= 1024 ? (totalKB / 1024).toFixed(1) + ' MB' : Math.round(totalKB) + ' KB');
+        // LR13: size is BYTES (a number) — it was parsed as KB. Same formatter as the list (app-main _fmtBytes).
+        const totalBytes = cache.reduce((s, d) => s + (parseFloat(d.size) || 0), 0);
+        set('docs-storage', typeof window._fmtBytes === 'function' ? (window._fmtBytes(totalBytes) || '0 B') : Math.round(totalBytes) + ' B');
         // F87-class: "this month" by canonical UTC calendar month, not viewer-local
         // getMonth/getFullYear. uploaded_at is a genuine timestamp → phase-1 resolves it in UTC
         // (entity-timezone resolution for genuine timestamps is the unbuilt phase-2 hook).

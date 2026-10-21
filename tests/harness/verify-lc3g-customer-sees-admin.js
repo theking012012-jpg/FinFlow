@@ -37,9 +37,11 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     d.getElementById('audit-filter-table').value = Array.from(d.getElementById('audit-filter-table').options).find(o => o.value.split(',').includes('users')).value;
     await w.loadAuditTrail(); await settle(5, 30);
     const rows = Array.from(d.querySelectorAll('#audit-trail-body tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim())).filter(r => r.length > 1);
-    const plan = rows.find(r => r[4] === 'plan');
-    eq('the plan change is listed: trial → business', plan ? [plan[5], plan[6]] : null, ['trial', 'business'], null);
+    // Columns (LR12 added By): Date 0 · Table 1 · Record 2 · Action 3 · By 4 · Field 5 · Old 6 · New 7.
+    const plan = rows.find(r => r[5] === 'plan');
+    eq('the plan change is listed: trial → business', plan ? [plan[6], plan[7]] : null, ['trial', 'business'], null);
     eq('…marked as made by FinFlow support', plan ? /FinFlow support/.test(plan[3]) : null, true, false);
+    eq('…and the By column says FinFlow support (LR12)', plan ? plan[4] : null, 'FinFlow support', null);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   finally { try { if (boot && boot.stop) await boot.stop(); } catch (_) {} }
   console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);

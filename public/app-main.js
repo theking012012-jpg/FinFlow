@@ -4066,9 +4066,34 @@ async function loadPersonalFinance(){
     if(typeof renderPersAccounts==='function'){ try{ renderPersAccounts(); }catch(_){}}
     if(typeof window.ffPersBankRender==='function'){ try{ window.ffPersBankRender(); }catch(_){}}   // M60: the person's own bank card
     _applyPersFilter();
+    renderPersHistory();   // LC3c — not awaited: the history never holds up the figures
   }catch(e){console.warn('[Personal] Load failed:',e.message);}
 }
 window.loadPersonalFinance=loadPersonalFinance;
+
+// LC3c: Personal's own history (GET /api/personal-history — the person's rows, whichever business is in view). Shown
+// here only; it is never written to, or read from, the business audit trail.
+const _PH_KIND={personal_transactions:'Transaction',bank_lines:'Bank line',bank_import:'Statement import',bank_sync:'Bank sync',bank_link:'Linked bank',bank_settings:'Bank settings',personal_accounts:'Asset / liability',goals:'Goal',holdings:'Investment',snapshots:'Net-worth snapshot',recurring_personal_transactions:'Recurring transaction',owner_salary:'Owner salary'};
+const _PH_ACT={CREATE:'Added',UPDATE:'Changed',DELETE:'Deleted',LINK:'Linked',UNLINK:'Unlinked',IMPORT:'Imported',SYNC:'Synced',CAPTURE:'Captured'};
+function _phWhat(r){
+  const d=r.after_data||r.before_data||{};
+  if(r.kind==='bank_import') return (d.imported||0)+' line'+(d.imported===1?'':'s');
+  if(r.kind==='bank_sync') return (d.provider||'')+' · '+(d.added||0)+' new';
+  if(r.kind==='bank_link') return d.institution||d.provider||'';
+  if(r.kind==='bank_settings') return [d.country,d.currency].filter(Boolean).join(' · ');
+  return d.description||d.name||d.ticker||d.kind||'';
+}
+async function renderPersHistory(){
+  const el=document.getElementById('pers-history-list'); if(!el) return;
+  try{
+    const r=await fetch('/api/personal-history?limit=50',{credentials:'include'});
+    if(!r.ok){ el.innerHTML='<div style="font-size:12px;color:var(--red);padding:.25rem 0">Could not load your history — try again.</div>'; return; }
+    const rows=await r.json();
+    if(!rows.length){ el.innerHTML='<div style="font-size:12px;color:var(--t3);padding:.25rem 0">No changes recorded yet.</div>'; return; }
+    el.innerHTML=rows.map(x=>`<div class="tx-row"><div class="tx-left"><div><div class="tx-name">${esc((_PH_ACT[x.action]||x.action)+' · '+(_PH_KIND[x.kind]||x.kind))}</div><div class="tx-cat">${esc(_phWhat(x))}${x.actor_type==='system'?' · automatic':''}</div></div></div><span class="tx-amt" style="color:var(--t3);font-size:11px">${esc(x.at?new Date(x.at).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'')}</span></div>`).join('');
+  }catch(e){ el.innerHTML='<div style="font-size:12px;color:var(--red);padding:.25rem 0">Could not load your history — check your connection.</div>'; }
+}
+window.renderPersHistory=renderPersHistory;
 
 // ── PERSONAL NET WORTH (real, from personal_accounts + live portfolio) ─────────
 function personalPortfolioValue(){ return (typeof holdings!=='undefined'?holdings:[]).reduce((a,h)=>a+((parseFloat(h.price)||0)*(parseFloat(h.shares)||0)),0); }
@@ -5622,20 +5647,24 @@ async function loadBankingFromDB(){
   }
 }
 
-async function saveBankTxn(desc, amount, type, cat){
+// LR11: returns true once the line is saved. `date` is the line's calendar date (YYYY-MM-DD, the business's own today by
+// default); `idemKey` is the per-submit token (idx_personal_transactions_idem_key) — reused on a retry, so a retried or
+// double-sent submit lands once. The line belongs to the business in view (server: M56 / M60); never Personal from here.
+async function saveBankTxn(desc, amount, type, cat, date, idemKey){
   // F46: reject an unknown tx_type here instead of letting it fall through to 'debit' server-side
   // (which would silently book an inflow as an outflow). Only 'credit'/'debit' are valid.
   if(type != null && type !== 'credit' && type !== 'debit'){
     if(typeof notify==='function') notify("Transaction type must be 'credit' or 'debit'", true);
-    return;
+    return false;
   }
   try {
     const res = await fetch('/api/banking',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({desc, amount, type, cat, date:todayLocal()})});
+      body:JSON.stringify({desc, amount, type, cat, date:date||_entityToday(), idempotency_key:idemKey||undefined})});
     if(!res.ok){ const d=await res.json().catch(()=>({})); throw new Error(d.error||'Save failed'); }
     await loadBankingFromDB();
     window.finflow?.refresh(['banking','dashboard','reports']);
-  } catch(e){ if(typeof notify==='function') notify('Error saving transaction — '+(e.message||''), true); }
+    return true;
+  } catch(e){ if(typeof notify==='function') notify('Error saving transaction — '+(e.message||''), true); return false; }
 }
 function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
@@ -5674,7 +5703,64 @@ function renderBanking(){
     </div>`).join('');
 }
 function openAddAccountModal(){notify('Connect or add a bank account');}
-function openAddTxnModal(){notify('Add manual transaction');}
+// LR11: Banking "+ Add" — a manual bank line on the business in view (was a toast-only stub). Audited server-side
+// (bank_lines); no ledger entry — like an imported line, it is booked when matched in Bank Rec.
+function openAddTxnModal(){
+  let m=document.getElementById('bank-add-modal');
+  if(!m){
+    m=document.createElement('div');
+    m.id='bank-add-modal';
+    m.className='modal-overlay hidden';
+    m.innerHTML=`<div class="modal" style="max-width:400px">
+      <div class="modal-header">
+        <div><div class="modal-title">Add bank line</div><div class="modal-sub">A line from this business's bank statement</div></div>
+        <button class="modal-close" onclick="closeModal('bank-add-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      </div>
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label" for="bank-add-date">Date *</label><input class="finput" id="bank-add-date" type="date"></div>
+        <div class="field-wrap"><label class="field-label" for="bank-add-dir">Money</label>
+          <select class="finput" id="bank-add-dir"><option value="out">Out (paid from the bank)</option><option value="in">In (paid into the bank)</option></select>
+        </div>
+      </div>
+      <div class="field-wrap"><label class="field-label" for="bank-add-desc">Description *</label><input class="finput" id="bank-add-desc" maxlength="200" placeholder="As it reads on the statement"></div>
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label" for="bank-add-amount">Amount *</label><input class="finput" id="bank-add-amount" type="number" min="0.01" step="0.01" inputmode="decimal"></div>
+        <div class="field-wrap"><label class="field-label" for="bank-add-cat">Category</label><input class="finput" id="bank-add-cat" maxlength="60" placeholder="Uncategorized"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('bank-add-modal')">Cancel</button>
+        <button class="btn btn-primary" id="bank-add-save" onclick="submitBankLine(this)">Add line</button>
+      </div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  document.getElementById('bank-add-date').value=_entityToday();
+  document.getElementById('bank-add-dir').value='out';
+  document.getElementById('bank-add-desc').value='';
+  document.getElementById('bank-add-amount').value='';
+  document.getElementById('bank-add-cat').value='';
+  window._bankLineIdemKey=null;   // fresh submit-intent → a genuine new line never reuses the last token
+  openModal('bank-add-modal');
+}
+async function submitBankLine(btn){
+  return withSubmitGuard(btn, async ()=>{
+    const date=document.getElementById('bank-add-date').value;
+    const desc=document.getElementById('bank-add-desc').value.trim();
+    const amount=parseFloat(document.getElementById('bank-add-amount').value);
+    const type=document.getElementById('bank-add-dir').value==='in'?'credit':'debit';
+    const cat=document.getElementById('bank-add-cat').value.trim()||'Uncategorized';
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!desc){notify('Date and description are required',true);return;}
+    if(!(Number.isFinite(amount)&&amount>0)){notify('Amount must be greater than 0',true);return;}
+    // One token per submit-intent: kept on failure (an idempotent retry), cleared on success.
+    window._bankLineIdemKey=window._bankLineIdemKey||(window.crypto?.randomUUID?window.crypto.randomUUID():'bank-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+    if(await saveBankTxn(desc, amount, type, cat, date, window._bankLineIdemKey)){
+      window._bankLineIdemKey=null;
+      closeModal('bank-add-modal');
+      notify('Bank line added ✦');
+    }
+  });
+}
+window.submitBankLine=submitBankLine;
 
 // ════════════════════════════════════════════
 // QUOTES, RECEIPTS, PAYMENTS RECEIVED, RECURRING INVOICES, CREDIT NOTES
@@ -5967,6 +6053,9 @@ async function renderReports(){
 const documentsData=[]; // not used — renderDocuments() fetches from /api/documents
 let docsFilter='all';
 let _docsCache=[];
+// LR13: a document's size is stored in BYTES — one formatter for the list and the Storage card.
+function _fmtBytes(n){ n=parseFloat(n); if(!Number.isFinite(n)||n<0) return ''; if(n<1024) return Math.round(n)+' B'; if(n<1048576) return (Math.round(n/102.4)/10).toString().replace(/.0$/,'')+' KB'; return (Math.round(n/104857.6)/10).toString().replace(/.0$/,'')+' MB'; }
+window._fmtBytes=_fmtBytes;
 async function renderDocuments(){
   const l=document.getElementById('documents-list');if(!l)return;
   l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
@@ -5975,13 +6064,14 @@ async function renderDocuments(){
     if(!res.ok)throw new Error();
     _docsCache=await res.json();
   }catch(e){_docsCache=[];}
+  window._docsCache=_docsCache;   // LR13: the cards (finflow-api-wiring-medium.js) read window._docsCache — a script `let` is not on window
   const filtered=docsFilter==='all'?_docsCache:_docsCache.filter(d=>d.type===docsFilter);
   if(!filtered.length){l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No documents yet. Click Upload to add your first file.</div>';return;}
   l.innerHTML=filtered.map(d=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:32px;height:32px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:14px">${(d.name||'').endsWith('.pdf')?'📄':'📊'}</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(d.name||'')}</div><div style="font-size:11px;color:var(--t3)">${d.size||''} · ${d.uploaded_at?d.uploaded_at.slice(0,10):''} · ${d.type||''}</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(d.name||'')}</div><div style="font-size:11px;color:var(--t3)">${esc(_fmtBytes(d.size))} · ${d.uploaded_at?d.uploaded_at.slice(0,10):''} · ${d.type||''}</div></div>
       </div>
       <div style="display:flex;gap:6px">
         <span class="badge b-blue">${d.type||'file'}</span>
@@ -6006,7 +6096,7 @@ function openUploadModal(){
     m.innerHTML=`<div class="modal" style="width:420px">
       <div class="modal-header"><span class="modal-title">Upload Document</span><button class="modal-close" onclick="closeModal('doc-upload-modal')">✕</button></div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
-        <div><label class="field-label">File (max 5 MB)</label><input type="file" id="doc-file-input" class="finput" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv,.docx"></div>
+        <div><label class="field-label">File (max 5 MB)</label><input type="file" id="doc-file-input" class="finput" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv,.docx,.txt"></div>
         <div><label class="field-label">Document type</label>
           <select id="doc-type-input" class="finput"><option>invoice</option><option>receipt</option><option>contract</option><option>quote</option><option>report</option><option>other</option></select></div>
         <div><label class="field-label">Notes (optional)</label><input id="doc-notes-input" class="finput" placeholder="e.g. Linked to INV-0042"></div>

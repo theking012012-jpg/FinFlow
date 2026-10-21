@@ -7,8 +7,8 @@
  * nothing noticed a NEW one. This guard enumerates every mutating route (server.js, accountant-routes.js,
  * admin-routes.js; tools/fix-2026-10-19/fix3-enumerate-audited-routes.js) and FAILS when one that writes no audit row is
  * neither EXEMPT (a stated reason it changes no books or access) nor a NUMBERED known gap (LC3g admin, LC3d sign-in / security, LC3f accountant portal and LC3e integrations, closed
- * 2026-10-20 — every admin action now writes the hardened admin_log via adminAudit) (an open finding with an
- * owner decision pending). It also fails when a listed route has started auditing (the list must be kept true).
+ * 2026-10-20 — every admin action now writes the hardened admin_log via adminAudit; LC3c personal, closed 2026-10-21 —
+ * Personal's own history, never the business trail) (an open finding with an owner decision pending). It also fails when a listed route has started auditing (the list must be kept true).
  *
  *   node tests/harness/verify-fix3b-audit-route-guard.js
  */
@@ -48,28 +48,6 @@ const ALLOWED = {
       "PUT /api/scenario",
     ],
   },
-  "LC3c": {
-    reason: "personal side \u2014 owner decision first: the audit trail is shown on a business page (the personal / business wall)",
-    routes: [
-      "DELETE /api/goals/:id",
-      "DELETE /api/holdings/:id",
-      "DELETE /api/personal-accounts/:id",
-      "DELETE /api/personal-transactions/:id",
-      "DELETE /api/recurring-personal-transactions/:id",
-      "POST /api/goals",
-      "POST /api/holdings",
-      "POST /api/personal-accounts",
-      "POST /api/personal-transactions",
-      "POST /api/recurring-personal-transactions",
-      "POST /api/snapshots/capture",
-      "PUT /api/goals/:id",
-      "PUT /api/holdings/:id",
-      "PUT /api/personal-accounts/:id",
-      "PUT /api/personal-bank",
-      "PUT /api/personal-transactions/:id",
-      "PUT /api/recurring-personal-transactions/:id",
-    ],
-  },
   "EXEMPT-LC3e": {
     reason: "integrations that store no access and no books (LC3e, 2026-10-20 \u2014 connect / disconnect / link / unlink / books-into are recorded at the one connection write path, _mutateSettingsBlob): starting a link flow (a one-time state token, nothing granted until the provider calls back); a display-only read of the provider (a count, a balance, a preview \u2014 a token refresh is not a new connection); verify-after-import (reads and reports); the Mercado Pago / dLocal webhook (the payment it books is recorded inside recordExternalInvoicePayment)",
     routes: [
@@ -106,6 +84,18 @@ A('every unaudited mutating route is exempt with a reason or a numbered known ga
 const stale = [...allowed.keys()].filter(k => !unaudited.includes(k));
 A('no listed route has started auditing or disappeared (keep the list true)', stale.length === 0, 'stale: ' + stale.join(' · '));
 for (const [k, g] of Object.entries(ALLOWED)) console.log(`     ${k.padEnd(6)} ${String(g.routes.length).padStart(3)}  ${g.reason}`);
+
+// LC3c (2026-10-21): the 17 personal routes were the last numbered known gap — they now write Personal's own history.
+// The wall, structurally: a personal route records in personal history ONLY — never the business audit trail (shown on
+// a business page). Holdings serve both sides and go through _holdingHist (by the row's own business, or none).
+const PERSONAL_ROUTE = /^\/api\/(personal-transactions|personal-accounts|goals|holdings|recurring-personal-transactions|snapshots\/capture|personal-bank)(\/|$)/;
+const personalRoutes = all.filter(r => PERSONAL_ROUTE.test(r.path));
+const knownGap = Object.entries(ALLOWED).filter(([k]) => !/^EXEMPT/.test(k)).reduce((n, [, g]) => n + g.routes.length, 0);
+A(`known gap = 0 (no numbered open finding left in the list) [measured ${knownGap}]`, knownGap === 0);
+A(`all ${personalRoutes.length} personal routes write personal history`, personalRoutes.length >= 17 && personalRoutes.every(r => r.personal),
+  'not recorded: ' + personalRoutes.filter(r => !r.personal).map(key).join(' · '));
+A('no personal route writes the business audit trail (the wall)', personalRoutes.every(r => !r.business),
+  'on the business trail: ' + personalRoutes.filter(r => r.business).map(key).join(' · '));
 
 // LC3e-b: a GET that writes (OAuth callbacks store the connection) — invisible to the list above. Each must be audited,
 // or listed here with why it changes no books and no access.

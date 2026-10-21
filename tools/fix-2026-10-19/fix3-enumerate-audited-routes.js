@@ -4,7 +4,9 @@
  * (app/router .post/.put/.patch/.delete) in the given files and whether its handler body calls an audit writer
  * (recordAudit / auditLog / logAudit / _audit* / adminAudit — or, LC3e, the connection write path `_saveProviderBlobE` /
  * `_mutatePlaidItemsE` / `_mutateSettingsBlob` called WITH `req` as its last argument, which records any change of connection
- * state; called without `req` it records only with no actor, so it does not count). A TEXT HEURISTIC — a handler that audits inside a helper it calls
+ * state; called without `req` it records only with no actor, so it does not count) — or, LC3c, Personal's own history
+ * (`_persHist` / `_holdingHist`, which records a holding where it lives). Each route also says WHICH record it writes
+ * (`business` = the audit trail, `personal` = personal history) so the wall can be checked. A TEXT HEURISTIC — a handler that audits inside a helper it calls
  * reads as "not audited" — so every entry it reports was confirmed by reading before it was classified.
  * Importable (the FIX-3b guard harness uses `enumerate`); run directly it prints a TSV.
  *   node tools/fix-2026-10-19/fix3-enumerate-audited-routes.js server.js accountant-routes.js admin-routes.js
@@ -41,7 +43,9 @@ function enumerate(files) {
       const body = [];
       for (let j = s.i; j < end; j++) { if (j > s.i && /^\s*(app|router)\.(get|use)\(|^(async )?function |^const |^\/\/ ── /.test(L[j])) break; body.push(L[j]); }
       const src = body.join('\n');
-      out.push({ audited: /recordAudit|auditLog\(|logAudit\(|_audit\w*\(|adminAudit\(/.test(src) || callsWritePathWithReq(src), file: f, line: s.i + 1, method: s.method, path: s.path });
+      const business = /recordAudit|auditLog\(|logAudit\(|_audit\w*\(|adminAudit\(/.test(src) || callsWritePathWithReq(src);
+      const personal = /_persHist\(|_holdingHist\(/.test(src);   // LC3c
+      out.push({ audited: business || personal, business, personal, file: f, line: s.i + 1, method: s.method, path: s.path });
     });
   }
   return out;

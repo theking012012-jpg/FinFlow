@@ -12,6 +12,7 @@ const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity, runMigrations
 const { establishSession } = require('./session-auth');
 const totp = require('./totp');
 const securityLog = require('./security-log');   // LC3d: security-log event names, device labels, alert e-mails
+const personalHistory = require('./personal-history');   // LC3c: Personal's own history — never the business audit trail
 const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js');
 // C24: customer-facing "not set up" message. It used to name the server's environment variables ("Add PLAID_CLIENT_ID
@@ -782,6 +783,10 @@ app.use((req, res, next) => (LARGE_PAYLOAD_PATHS.includes(req.path) ? bigJson : 
 app.use('/api', require('./body-shape.js').bodyShape);
 app.use(express.urlencoded({ extended: false, limit: '500kb' }));
 app.set('trust proxy', 1);
+// LR26: every RECORD of where a request came from (audit trail, security log + new-device check, admin log, personal
+// history) uses the visitor's address — the same one the rate limiters key on (_clientIp) — never req.ip, which with
+// `trust proxy: 1` is the nearest proxy hop (a Railway / Cloudflare edge).
+app.use((req, res, next) => { req.clientIp = _clientIp(req); next(); });
 app.use(session({
   store: new pgSession({
     pool,
@@ -1708,6 +1713,14 @@ async function logAudit(req, action, tableName, recordId, oldData, newData) {
 const _auditRec = (req, table, action, oldRow, newRow) => {
   const r = newRow || oldRow || {};
   return recordAudit(pool, { userId: scopeId(req), entityId: r.entity_id == null ? null : r.entity_id, table, recordId: r.id || null, action, oldData: oldRow || null, newData: newRow || null, req });
+};
+
+// LC3c: the personal counterpart of _auditRec — a personal record's change goes to PERSONAL history (personal-history.js),
+// never to audit_trail (shown on a business page — the wall). `person` is whose record it is (the row's own user_id, or
+// the session user) — never derived from req.entityId. A failure to record is logged, never an error for the change.
+const _persHist = (req, person, kind, action, oldRow, newRow, actorType = null) => {
+  const r = newRow || oldRow || {};
+  return personalHistory.record(pool, { userId: person, kind, action, recordId: r.id || null, before: oldRow || null, after: newRow || null, req, actorType });
 };
 
 // ── LOCK HELPER ───────────────────────────────────────────────────────────────
@@ -2744,6 +2757,7 @@ app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   // from (null = one-time). The period-KPI math uses it to exclude materialised
   // occurrences from one-time sums and project the profile instead (no double-count).
   const { row } = await db.insert('personal_transactions', { user_id: req.session.userId, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, tx_type, tx_date: tx_date || new Date().toISOString().slice(0,10), recurring_profile_id: recurring_profile_id != null ? Number(recurring_profile_id) : null, currency: String(currency || 'USD') });
+  await _persHist(req, req.session.userId, 'personal_transactions', 'CREATE', null, row);   // LC3c
   res.status(201).json(row);
 }));
 app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => {
@@ -2761,11 +2775,14 @@ app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => 
   if (b.recurring_profile_id !== undefined) patch.recurring_profile_id = b.recurring_profile_id != null ? Number(b.recurring_profile_id) : null;
   await db.updateById('personal_transactions', row.id, patch);
   const { rows: [_ptr] } = await pool.query(`SELECT * FROM personal_transactions WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_ptr) await _persHist(req, row.user_id, 'personal_transactions', 'UPDATE', row, rowToObj(_ptr));   // LC3c
   res.json(_ptr ? rowToObj(_ptr) : {});
 }));
 app.delete('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => {
-  if (!isPersonalTxnRow(await ownedBy('personal_transactions', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });   // M56
+  const _ptOld = await ownedBy('personal_transactions', req.params.id, req.session.userId);
+  if (!isPersonalTxnRow(_ptOld)) return res.status(404).json({ error: 'Not found.' });   // M56
   await db.deleteById('personal_transactions', parseInt(req.params.id));
+  await _persHist(req, _ptOld.user_id, 'personal_transactions', 'DELETE', _ptOld, null);   // LC3c
   res.json({ ok: true });
 }));
 
@@ -2797,6 +2814,7 @@ app.post('/api/personal-accounts', requireAuth, wrap(async (req, res) => {
     user_id: req.session.userId, entity_id: eid,
     kind, name: name.slice(0, 120), type: (b.type || 'other').slice(0, 40), value, currency, value_usd,
   });
+  await _persHist(req, req.session.userId, 'personal_accounts', 'CREATE', null, row);   // LC3c
   res.status(201).json(row);
 }));
 app.put('/api/personal-accounts/:id', requireAuth, wrap(async (req, res) => {
@@ -2817,11 +2835,14 @@ app.put('/api/personal-accounts/:id', requireAuth, wrap(async (req, res) => {
   }
   await db.updateById('personal_accounts', row.id, patch);
   const { rows: [_par] } = await pool.query(`SELECT * FROM personal_accounts WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_par) await _persHist(req, row.user_id, 'personal_accounts', 'UPDATE', row, rowToObj(_par));   // LC3c
   res.json(_par ? rowToObj(_par) : {});
 }));
 app.delete('/api/personal-accounts/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('personal_accounts', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const _paOld = await ownedBy('personal_accounts', req.params.id, req.session.userId);
+  if (!_paOld) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('personal_accounts', parseInt(req.params.id));
+  await _persHist(req, _paOld.user_id, 'personal_accounts', 'DELETE', _paOld, null);   // LC3c
   res.json({ ok: true });
 }));
 
@@ -2876,11 +2897,15 @@ app.post('/api/snapshots/capture', requireAuth, wrap(async (req, res) => {
   // M53: ONE personal (entity-less) row per period, whichever business is in view — it used to be filed under the
   // active business, one row per business. Rows the old capture filed under a business are kept (Rule 8).
   const existing = await db.allByUser('snapshots', uid, r => r.period_key === periodKey && r.entity_id == null);
+  // LC3c: a capture runs on every Personal page load — history records a NEW period, or a CHANGED value, not repeats.
   if (existing[0]) {
     await db.updateById('snapshots', existing[0].id, { value, date: dateStr });
+    if ((parseFloat(existing[0].value) || 0) !== value)
+      await _persHist(req, uid, 'snapshots', 'CAPTURE', { id: existing[0].id, kind, value: parseFloat(existing[0].value) || 0, period_key: periodKey }, { id: existing[0].id, kind, value, period_key: periodKey });
     return res.json({ ok: true, kind, value, date: dateStr, updated: true });
   }
   const { row } = await db.insert('snapshots', { user_id: uid, entity_id: null, kind, value, date: dateStr, period_key: periodKey });
+  await _persHist(req, uid, 'snapshots', 'CAPTURE', null, row);   // LC3c
   res.status(201).json({ ok: true, kind, value, date: dateStr, row });
 }));
 
@@ -2900,6 +2925,7 @@ app.post('/api/goals', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('goals', req.session.userId, null, { textMatch: { name: name.trim().slice(0,200) }, numMatch: { target_val: parseFloat(target_val)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('goals', { user_id: req.session.userId, name: name.trim().slice(0,200), current_val: parseFloat(current_val)||0, target_val: parseFloat(target_val)||0, monthly_contrib: parseFloat(monthly_contrib)||0, color });
+  await _persHist(req, req.session.userId, 'goals', 'CREATE', null, row);   // LC3c
   res.status(201).json(row);
 }));
 app.put('/api/goals/:id', requireAuth, wrap(async (req, res) => {
@@ -2914,12 +2940,21 @@ app.put('/api/goals/:id', requireAuth, wrap(async (req, res) => {
   if (b.monthly_contrib != null) patch.monthly_contrib = parseFloat(b.monthly_contrib);
   await db.updateById('goals', row.id, patch);
   const { rows: [_gr] } = await pool.query(`SELECT * FROM goals WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_gr) await _persHist(req, row.user_id, 'goals', 'UPDATE', row, rowToObj(_gr));   // LC3c
   res.json(_gr ? rowToObj(_gr) : {});
 }));
 app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('goals', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const _gOld = await ownedBy('goals', req.params.id, req.session.userId);
+  if (!_gOld) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('goals', parseInt(req.params.id));
+  await _persHist(req, _gOld.user_id, 'goals', 'DELETE', _gOld, null);   // LC3c
   res.json({ ok: true });
+}));
+
+// ── LC3c — PERSONAL HISTORY (the Personal page's own record of changes; never on a business page) ─────────────────
+// The person's own rows (req.session.userId), whichever business is in view — personal by what it is.
+app.get('/api/personal-history', requireAuth, wrap(async (req, res) => {
+  res.json(await personalHistory.list(pool, req.session.userId, req.query.limit));
 }));
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
@@ -3000,6 +3035,12 @@ app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
 // entity) belongs to the ACCOUNT that owns that entity, so every team member works on the same business
 // portfolio. Business holdings used to be stored under whichever member added them — the owner never saw them.
 const _holdingOwner = (req, entityId) => entityId != null ? scopeId(req) : req.session.userId;
+// LC3c: a holding is recorded where it lives — a business holding (entity_id set) on that business's audit trail, a
+// personal one (entity_id NULL) in the person's own history. Never both, never crossed.
+const _holdingHist = (req, action, oldRow, newRow) => {
+  const r = newRow || oldRow || {};
+  return r.entity_id != null ? _auditRec(req, 'holdings', action, oldRow, newRow) : _persHist(req, r.user_id, 'holdings', action, oldRow, newRow);
+};
 async function _ownedHolding(req, id) {
   const { rows: [r] } = await pool.query(
     `SELECT * FROM holdings WHERE id = $1 AND ((entity_id IS NULL AND user_id = $2) OR (entity_id IS NOT NULL AND user_id = $3)) LIMIT 1`,
@@ -3039,6 +3080,7 @@ app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('holdings', _holdingOwner(req, eid), eid, { textMatch: { ticker: b.ticker.trim().toUpperCase().slice(0,20) }, numMatch: { shares: parseFloat(b.shares)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('holdings', { user_id: _holdingOwner(req, eid), entity_id: eid, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });
+  await _holdingHist(req, 'CREATE', null, row);   // LC3c
   res.status(201).json(row);
 }));
 app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
@@ -3051,11 +3093,14 @@ app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
   ['shares','cost_per','price','dividend'].forEach(f => { if (b[f] != null) patch[f] = parseFloat(b[f]); });
   await db.updateById('holdings', row.id, patch);
   const { rows: [_hldr] } = await pool.query(`SELECT * FROM holdings WHERE id = $1 LIMIT 1`, [row.id]);
+  if (_hldr) await _holdingHist(req, 'UPDATE', row, rowToObj(_hldr));   // LC3c
   res.json(_hldr ? rowToObj(_hldr) : {});
 }));
 app.delete('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await _ownedHolding(req, req.params.id))) return res.status(404).json({ error: 'Not found.' });
+  const _hOld = await _ownedHolding(req, req.params.id);
+  if (!_hOld) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('holdings', parseInt(req.params.id));
+  await _holdingHist(req, 'DELETE', _hOld, null);   // LC3c
   res.json({ ok: true });
 }));
 
@@ -3242,6 +3287,7 @@ const EXPORT_TABLES = [
   'fx_rates','fx_transactions','holdings','goals','personal_accounts','personal_transactions',
   'snapshots','documents','templates','team_members','lock_settings','user_settings',
   'audit_trail','audit_log','ledger_accounts','ledger_entries','ledger_lines',
+  'personal_history',   // LC3c
 ];
 // ── IN-APP SUPPORT ────────────────────────────────────────────────────────────────────────────
 // A real support channel (replaces the dead mailto): the user submits from inside the app, it is
@@ -3492,6 +3538,9 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
     await client.query('BEGIN');
     await client.query(`DELETE FROM team_members WHERE data->>'member_user_id' = $1::text`, [String(uid)]);   // memberships in OTHER accounts
     await client.query(`UPDATE accountants SET user_id = NULL WHERE user_id = $1`, [uid]);
+    // LC3c: personal_history is append-only except inside THIS transaction — the flag lets its trigger allow the erase
+    // of this one person's rows (personal data, erased with the account; audit_trail is kept, below).
+    await client.query(`SELECT set_config('finflow.erase_user', $1::text, true)`, [String(uid)]);
     const { rows: tables } = await client.query(
       `SELECT c.table_name FROM information_schema.columns c
          JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
@@ -3696,6 +3745,21 @@ app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── AUDIT LOG ─────────────────────────────────────────────────────────────────
+// LR12: who did it — ONE readable name per audit row, from the row's own actor, shared by every audit read (Rule 2):
+// the account owner or a team member by name, an accountant by name, an admin as "FinFlow support", the scheduler /
+// a data fix as "FinFlow (automatic)". Use with the trail aliased `a`.
+const AUDIT_ACTOR_SQL = {
+  name: `CASE a.actor_type
+           WHEN 'user'       THEN COALESCE(NULLIF(u_act.data->>'name', ''), u_act.data->>'email', 'User #' || a.actor_id)
+           WHEN 'accountant' THEN COALESCE(NULLIF(trim(acc_act.first_name || ' ' || acc_act.last_name), ''), 'Accountant') || ' (accountant)'
+           WHEN 'admin'      THEN 'FinFlow support'
+           WHEN 'system'     THEN 'FinFlow (automatic)'
+           WHEN 'anonymous'  THEN 'Not signed in'
+           ELSE COALESCE(a.actor_type, 'Unknown')
+         END AS actor_name`,
+  joins: `LEFT JOIN users u_act ON a.actor_type = 'user' AND u_act.id = a.actor_id
+          LEFT JOIN accountants acc_act ON a.actor_type = 'accountant' AND acc_act.id = a.actor_id`,
+};
 app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
   // Reads the REAL append-only trail (audit_trail). The old audit_log table has had zero writers since
   // the F90 unification (logAudit -> recordAudit -> audit_trail), so this route used to serve a dead
@@ -3708,19 +3772,20 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
   const ACCOUNT_LEVEL_TABLES = ['entities', 'users'];
   const { limit = 500, type } = req.query;
   const params = [scopeId(req)];
-  let q = `SELECT id, user_id, entity_id, table_name, record_id, action, field_name,
-                  old_value, new_value, old_data, new_data, actor_type, actor_id, changed_at AS created_at
-             FROM audit_trail WHERE user_id = $1`;
+  let q = `SELECT a.id, a.user_id, a.entity_id, a.table_name, a.record_id, a.action, a.field_name,
+                  a.old_value, a.new_value, a.old_data, a.new_data, a.actor_type, a.actor_id, a.changed_at AS created_at,
+                  ${AUDIT_ACTOR_SQL.name}
+             FROM audit_trail a ${AUDIT_ACTOR_SQL.joins} WHERE a.user_id = $1`;
   if (req.entityId != null) {
     params.push(req.entityId);
     const _al = ACCOUNT_LEVEL_TABLES.map(t => `'${t}'`).join(',');
-    q += ` AND (entity_id IS NULL OR entity_id = $${params.length} OR table_name IN (${_al}))`;
+    q += ` AND (a.entity_id IS NULL OR a.entity_id = $${params.length} OR a.table_name IN (${_al}))`;
   }
   // C29: a filter is a GROUP of tables (e.g. Payments = invoice_payments,payments_received), comma-separated. It
   // used to be one exact name, and the page asked for names nothing writes ("payroll" — runs log as payroll_runs).
-  if (type && type !== 'all') { params.push(String(type).split(',').map(t => t.trim()).filter(Boolean)); q += ` AND table_name = ANY($${params.length})`; }
+  if (type && type !== 'all') { params.push(String(type).split(',').map(t => t.trim()).filter(Boolean)); q += ` AND a.table_name = ANY($${params.length})`; }
   const lim = Math.min(Math.max(parseInt(limit) || 500, 1), 10000);
-  q += ` ORDER BY changed_at DESC LIMIT ${lim}`;
+  q += ` ORDER BY a.changed_at DESC LIMIT ${lim}`;
   const { rows } = await pool.query(q, params);
   res.json({ total: rows.length, rows });
 }));
@@ -3735,7 +3800,7 @@ app.get('/api/documents', requireAuth, wrap(async (req, res) => {
 app.post('/api/documents', requireAuth, wrap(async (req, res) => {
   const { name, type = 'other', file_data, media_type = 'application/octet-stream' } = req.body || {};
   if (!name || !file_data) return res.status(400).json({ error: 'name and file_data required.' });
-  const bytes = Math.ceil(file_data.length * 0.75); // approximate decoded size
+  const bytes = Buffer.byteLength(String(file_data), 'base64');   // LR13: the exact decoded size (ceil(len × 0.75) counted the padding)
   if (bytes > MAX_DOC_SIZE) return res.status(413).json({ error: 'File too large. Maximum size is 5 MB.' });
   const { row } = await db.insert('documents', {
     user_id: scopeId(req),
@@ -4866,12 +4931,13 @@ app.post('/api/recurring-personal-transactions', requireAuth, wrap(async (req, r
   const _dup = await findRecentDuplicate('recurring_personal_transactions', req.session.userId, null, { textMatch: { description: String(description).trim().slice(0,300), frequency: String(frequency) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_personal_transactions', { user_id: req.session.userId, description: String(description).trim().slice(0, 300), category, amount: parseFloat(amount)||0, tx_type, frequency, next_run, status, end_date: end_date || null, currency: String(currency || 'USD') });
+  await _persHist(req, req.session.userId, 'recurring_personal_transactions', 'CREATE', null, row);   // LC3c
   res.status(201).json(row);
 }));
 app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_rptr] } = await pool.query(
     `SELECT * FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), scopeId(req)]
+    [Number(req.params.id), req.session.userId]   // LR24: the PERSON's row (personal is per person) — never the account's
   );
   if (!_rptr) return res.status(404).json({ error: 'not found' });
   // Merge-update (db.updateById preserves next_run so the existing schedule holds).
@@ -4886,10 +4952,16 @@ app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req
   if (end_date !== undefined) patch.end_date = end_date || null;
   if (currency != null) { if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' }); patch.currency = String(currency); }
   await db.updateById('recurring_personal_transactions', Number(req.params.id), patch);
+  const { rows: [_rpta] } = await pool.query(`SELECT * FROM recurring_personal_transactions WHERE id = $1 LIMIT 1`, [Number(req.params.id)]);
+  if (_rpta) await _persHist(req, _rptr.user_id, 'recurring_personal_transactions', 'UPDATE', rowToObj(_rptr), rowToObj(_rpta));   // LC3c
   res.json({ ok: true });
 }));
-app.delete('/api/recurring-personal-transactions/:id', requireAuth, requireOwnedRow('recurring_personal_transactions'), wrap(async (req, res) => {
-  await pool.query('DELETE FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+// LR24: the PERSON's row only (req.session.userId). It was requireOwnedRow + scopeId — the ACCOUNT — so a team member
+// deleted the account owner's private schedule and could not delete their own.
+app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [_rptd] } = await pool.query('DELETE FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2 RETURNING *', [Number(req.params.id), req.session.userId]);
+  if (!_rptd) return res.status(404).json({ error: 'Not found.' });
+  if (_rptd) await _persHist(req, _rptd.user_id, 'recurring_personal_transactions', 'DELETE', rowToObj(_rptd), null);   // LC3c
   res.json({ ok: true });
 }));
 
@@ -6515,7 +6587,7 @@ async function runRecurringScheduler() {
           currency: r.currency || 'USD',   // carry the profile's native currency onto the occurrence
           recurring_profile_id: r.id,   // link back so the KPI math can exclude this occurrence
         });
-        if (_pt) _fired.pt++;
+        if (_pt) { _fired.pt++; await _persHist(null, _pt.user_id, 'personal_transactions', 'CREATE', null, _pt, 'system'); }   // LC3c: the scheduler's own row
       } catch (rowErr) { console.error('[Scheduler] recurring personal txn #' + r.id + ' failed (others continue):', rowErr && rowErr.message); }
     }
 
@@ -6542,25 +6614,45 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   // null/omitted type keeps the legacy-compatible 'debit' default below.
   const TX_TYPES = ['credit', 'debit'];
   if (type != null && !TX_TYPES.includes(type)) return res.status(400).json({ error: "tx_type must be 'credit' or 'debit'." });
-  // B8/C1: dedupe guard — personal_transactions is a JSONB table, so the JSONB matcher applies.
+  // LR11: a manual line is now entered by hand. body-shape already refuses a non-numeric / negative amount and a bad date;
+  // a ZERO amount still passed and was stored as a 0 line. Direction is tx_type, so the amount is a magnitude > 0.
+  const _amt = Number(amount);
+  if (!Number.isFinite(_amt) || _amt <= 0) return res.status(400).json({ error: 'Amount must be greater than 0.' });
   const _bc = _bankCtx(req);   // M60
   // M62: a line that lands in Personal books in the person's bank currency; none known → refused, never read as USD.
   const _pCur = _bc.eid == null ? await _persBankCurrency(_bc.uid) : null;
   if (_bc.eid == null && !_pCur) return res.status(400).json({ error: "Set your bank's currency (or its country) on the Your bank card first.", code: 'NO_BANK_CURRENCY' });
-  const _bDup = await findRecentDuplicate('personal_transactions', _bc.uid, _bc.eid,
-    { textMatch: { description: String(desc) }, numMatch: { amount: parseFloat(amount) || 0 } });
-  if (_bDup) return res.status(201).json(_bDup);
-  const { row } = await db.insert('personal_transactions', {
-    user_id: _bc.uid,
-    entity_id: _bc.eid,
-    description: desc, amount: parseFloat(amount) || 0,
-    // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
-    // (legacy rows written as type/date are still read via fallback below and on GET).
-    ..._bankTx(_bc.personal, (type || 'debit') === 'debit'), tx_date: date || (_bc.personal ? new Date().toISOString().slice(0, 10) : await entityTodayYmd(req.entityId)),
-    category: cat || 'Other', source: 'banking',
-    ...(_pCur ? { currency: _pCur } : {}),
-  });
+  // LR11 / Rule 9: the per-submit token is the arbiter (idx_personal_transactions_idem_key) — the 5 s
+  // findRecentDuplicate heuristic runs only for token-less callers (old clients / API), exactly as POST /api/expenses.
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  if (!idem) {
+    const _bDup = await findRecentDuplicate('personal_transactions', _bc.uid, _bc.eid,
+      { textMatch: { description: String(desc) }, numMatch: { amount: _amt } });
+    if (_bDup) return res.status(201).json(_bDup);
+  }
+  let row;
+  try {
+    ({ row } = await db.insert('personal_transactions', {
+      user_id: _bc.uid,
+      entity_id: _bc.eid,
+      description: String(desc).slice(0, 200), amount: _amt,
+      // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
+      // (legacy rows written as type/date are still read via fallback below and on GET).
+      ..._bankTx(_bc.personal, (type || 'debit') === 'debit'), tx_date: date || (_bc.personal ? new Date().toISOString().slice(0, 10) : await entityTodayYmd(req.entityId)),
+      category: cat || 'Other', source: 'banking',
+      ...(_pCur ? { currency: _pCur } : {}),
+      ...(idem ? { idempotency_key: idem } : {}),
+    }));
+  } catch (e) {
+    // A retry / concurrent double-submit with the SAME token → the index refuses the 2nd row → return the original.
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(`SELECT * FROM personal_transactions WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [_bc.uid, idem]);
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   if (_bc.eid != null) await _auditRec(req, 'bank_lines', 'CREATE', null, row);   // FIX-3b — business lines only (a personal line never reaches the business trail)
+  else await _persHist(req, _bc.uid, 'bank_lines', 'CREATE', null, row);   // LC3c — a personal line goes to Personal's own history
   res.status(201).json(row);
 }));
 app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
@@ -6571,6 +6663,7 @@ app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
   if (!_bl || _bl.source !== 'banking' || (_bl.entity_id == null ? null : _bl.entity_id) !== _bc.eid) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('personal_transactions', parseInt(req.params.id));
   if (_bl.entity_id != null) await _auditRec(req, 'bank_lines', 'DELETE', _bl, null);   // FIX-3b — business lines only
+  else await _persHist(req, _bl.user_id, 'bank_lines', 'DELETE', _bl, null);   // LC3c
   res.json({ ok: true });
 }));
 
@@ -6844,6 +6937,8 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
     if (eid != null) await _auditRec(req, 'bank_lines', 'CREATE', null, _impRow);   // FIX-3b — business lines only
     imported++;
   }
+  // LC3c: a personal statement import is one entry in Personal's history (what was imported, not each line).
+  if (eid == null && imported > 0) await _persHist(req, uid, 'bank_import', 'IMPORT', null, { format: format || null, imported, skipped, total: txns.length });
   res.status(201).json({ ok: true, imported, skipped, total: txns.length,
     ...(txns.dateOrder ? { dateOrder: txns.dateOrder, dateOrderAssumed: txns.dateOrderAssumed, decimalMark: txns.decimalMark, rejectedBadDate: txns.badDates } : {}) });
 }));
@@ -7510,6 +7605,12 @@ async function _mutateSettingsBlob(uid, key, entityId, mutate, req = null) {
   } catch (e) { if (!released) { try { await client.query('ROLLBACK'); } catch (_) {} } throw e; }
   finally { if (!released) client.release(); }
 }
+async function _persBankLinkHist(uid, key, before, after, req) {
+  const provider = key === 'plaid_items' ? 'plaid' : 'belvo';
+  const was = (_connState(before) || {}).links || new Map(), now = (_connState(after) || {}).links || new Map();
+  for (const [id, label] of was) if (!now.has(id)) await personalHistory.record(pool, { userId: uid, kind: 'bank_link', action: 'UNLINK', before: { provider, institution: label }, req });
+  for (const [id, label] of now) if (!was.has(id)) await personalHistory.record(pool, { userId: uid, kind: 'bank_link', action: 'LINK', after: { provider, institution: label }, req });
+}
 // LC3e — what a connection blob says about access, with every secret left out.
 const _CONN_MARKERS = ['access_token', 'account', 'stripe_user_id', 'account_number', 'company_id', 'connected', 'consumer_key'];
 const _connLinks = v => (Array.isArray(v) ? v : (v && Array.isArray(v.links) ? v.links : null));
@@ -7520,6 +7621,9 @@ const _connState = v => {
   return { account: v.account || v.account_number || v.store_url || v.stripe_user_id || v.company_id || v.provider_name || null, books: v.books || null };
 };
 async function _auditConnChange(uid, key, eid, before, after, req) {
+  // LC3c: a bank link with no business (Personal's own bank — M60) is recorded in Personal's history, by institution only.
+  // Any other connection with no business is LC3e-c (owner decision 3.6) and is recorded nowhere yet.
+  if (eid == null && (key === 'plaid_items' || key === 'belvo_conn')) return _persBankLinkHist(uid, key, before, after, req);
   if (eid == null || !(key === 'plaid_items' || /_conn$/.test(key))) return;
   const provider = key === 'plaid_items' ? 'plaid' : key.replace(/_conn$/, '');
   const b = _connState(before), a = _connState(after);
@@ -7678,6 +7782,8 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   // LC3e: a business's bank feed changed — one summary row (counts, never a transaction). Personal's feed stays off it.
   if (eid != null && (added + modified + removed + flagged) > 0)
     await recordAudit(pool, { userId: uid, entityId: eid, table: 'integrations', action: 'INTEGRATION_SYNC', newData: { provider: 'plaid', added, modified, removed, flagged }, req });
+  else if (eid == null && (added + modified + removed + flagged) > 0)
+    await _persHist(req, uid, 'bank_sync', 'SYNC', null, { provider: 'plaid', added, modified, removed, flagged });   // LC3c
   res.json({ ok: true, added, modified, removed, flagged });
 }));
 
@@ -7712,6 +7818,7 @@ app.put('/api/personal-bank', requireAuth, wrap(async (req, res) => {
   // M62: country and currency are set independently — only the fields sent change. An explicit currency is kept when
   // the country changes (a bank account has its own currency); with none set, the country's currency applies.
   const _norm = v => (v == null || v === '' ? null : String(v).trim().toUpperCase());
+  const _pbBefore = { country: (await _providerBlobE(uid, 'pers_bank_country', null)).value || null, currency: (await _providerBlobE(uid, 'pers_bank_currency', null)).value || null };
   if ('country' in b) {
     const country = _norm(b.country);
     if (country != null && !/^[A-Z]{2}$/.test(country)) return res.status(400).json({ error: 'country must be a 2-letter country code.' });
@@ -7722,7 +7829,9 @@ app.put('/api/personal-bank', requireAuth, wrap(async (req, res) => {
     if (currency != null && !/^[A-Z]{3}$/.test(currency)) return res.status(400).json({ error: 'currency must be a 3-letter currency code.' });
     await _mutateSettingsBlob(uid, 'pers_bank_currency', null, () => currency);
   }
-  res.json({ ok: true, country: (await _providerBlobE(uid, 'pers_bank_country', null)).value || null, currency: await _persBankCurrency(uid) });
+  const _pbAfter = { country: (await _providerBlobE(uid, 'pers_bank_country', null)).value || null, currency: (await _providerBlobE(uid, 'pers_bank_currency', null)).value || null };
+  if (JSON.stringify(_pbBefore) !== JSON.stringify(_pbAfter)) await _persHist(req, uid, 'bank_settings', 'UPDATE', _pbBefore, _pbAfter);   // LC3c
+  res.json({ ok: true, country: _pbAfter.country, currency: await _persBankCurrency(uid) });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -9005,6 +9114,7 @@ app.post('/api/belvo/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   }
   if (eid != null && added > 0)   // LC3e: as Plaid — a business's feed only, counts only
     await recordAudit(pool, { userId: uid, entityId: eid, table: 'integrations', action: 'INTEGRATION_SYNC', newData: { provider: 'belvo', added }, req });
+  else if (eid == null && added > 0) await _persHist(req, uid, 'bank_sync', 'SYNC', null, { provider: 'belvo', added });   // LC3c
   res.json({ ok: true, accounts, added });
 }));
 
@@ -9520,7 +9630,7 @@ async function recordAudit(pool, { userId = null, entityId = null, table, record
       [userId, entityId, table, recordId, action, field,
        oldValue == null ? null : String(oldValue), newValue == null ? null : String(newValue),
        oldData ? JSON.stringify(oldData) : null, newData ? JSON.stringify(newData) : null,
-       actorType, actorId, req?.ip || null, _ua]
+       actorType, actorId, (req && (req.clientIp || req.ip)) || null, _ua]   // LR26
     );
   } catch (e) { console.error('[audit] recordAudit failed:', e.message); }
 }
@@ -9537,7 +9647,7 @@ async function _isNewDevice(userId, req) {
     const { rows: [r] } = await pool.query(
       `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE ip_address IS NOT DISTINCT FROM $2 AND user_agent IS NOT DISTINCT FROM $3)::int AS same
          FROM audit_trail WHERE user_id = $1 AND action IN ('LOGIN','SIGNUP') AND changed_at > NOW() - INTERVAL '180 days'`,
-      [userId, req.ip || null, ua]);
+      [userId, req.clientIp || req.ip || null, ua]);   // LR26
     return r.n > 0 && r.same === 0;
   } catch (e) { console.error('[security] new-device check failed:', e.message); return false; }
 }
@@ -9546,7 +9656,8 @@ async function _isNewDevice(userId, req) {
 async function securityAlert(req, user, event) {
   const build = securityLog.ALERTS[event];
   if (!build || !user) return;
-  const ctx = { name: user.name, ip: req.ip || null, device: securityLog.deviceLabel(req.get && req.get('user-agent')), at: new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC' };
+  const ctx = { name: user.name, ip: req.clientIp || req.ip || null,   // LR26
+                device: securityLog.deviceLabel(req.get && req.get('user-agent')), at: new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC' };
   let sent = false, reason = null;
   if (!resendClient) reason = 'email_not_configured';
   else if (!user.email) reason = 'no_email_address';
@@ -9559,11 +9670,14 @@ async function securityAlert(req, user, event) {
 
 app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
   const { table, action } = req.query;
-  let q = `SELECT * FROM audit_trail WHERE user_id = $1`;
+  // LR12: who did it (AUDIT_ACTOR_SQL — the same name the Audit page shows).
+  let q = `SELECT a.*, ${AUDIT_ACTOR_SQL.name}
+        FROM audit_trail a ${AUDIT_ACTOR_SQL.joins}
+       WHERE a.user_id = $1`;
   const params = [scopeId(req)];
-  if (table && table !== 'all') { params.push(table); q += ` AND table_name = $${params.length}`; }
-  if (action && action !== 'all') { params.push(action); q += ` AND action = $${params.length}`; }
-  q += ` ORDER BY changed_at DESC LIMIT 500`;
+  if (table && table !== 'all') { params.push(table); q += ` AND a.table_name = $${params.length}`; }
+  if (action && action !== 'all') { params.push(action); q += ` AND a.action = $${params.length}`; }
+  q += ` ORDER BY a.changed_at DESC LIMIT 500`;
   const { rows } = await pool.query(q, params);
   res.json(rows);
 }));
@@ -10376,10 +10490,13 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
 // LA3 (live audit 2026-10-13 B2): returns what crossed — { ownerOnRun, booked: [{ employee, amount, currency, isNew }] } —
 // so mark-paid can tell the person. A paid run with no owner line crossed nothing and said nothing; on the live audit that
 // read as "the crossing does not fire".
-async function syncOwnerSalaryFromRun(userId, run, mode) {
+// LC3c: `req` attributes the Personal-history rows (who marked the run paid / voided it). The owner salary is the ONE
+// thing that crosses business → Personal (CLAUDE.md), so its arrival and removal are recorded in the owner's history.
+async function syncOwnerSalaryFromRun(userId, run, mode, req = null) {
   if (!run) return { ownerOnRun: false, booked: [] };
   if (mode === 'void') {
-    await pool.query(`DELETE FROM personal_transactions WHERE user_id = $1 AND entity_id IS NULL AND data->>'source' = 'payroll' AND data->>'payroll_run_id' = $2::text`, [userId, String(run.id)]);
+    const { rows: _gone } = await pool.query(`DELETE FROM personal_transactions WHERE user_id = $1 AND entity_id IS NULL AND data->>'source' = 'payroll' AND data->>'payroll_run_id' = $2::text RETURNING *`, [userId, String(run.id)]);
+    for (const g of _gone) await _persHist(req, userId, 'owner_salary', 'DELETE', rowToObj(g), null);
     return { ownerOnRun: false, booked: [] };
   }
   const { rows: lines } = await pool.query(
@@ -10396,11 +10513,12 @@ async function syncOwnerSalaryFromRun(userId, run, mode) {
     const cur = String((ent && ent.cur) || 'USD').toUpperCase();
     const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id = $1 AND data->>'idempotency_key' = $2 LIMIT 1`, [userId, key]);
     if (!dup) {
-      await db.insert('personal_transactions', {
+      const { row: _salRow } = await db.insert('personal_transactions', {
         user_id: userId, description: 'Owner salary — ' + String((ent && ent.name) || 'Business').slice(0, 120) + ' (' + String(run.period || '').slice(0, 40) + ')',
         category: 'Salary', amount: amt, tx_type: 'income', tx_date: paid, currency: cur,
         source: 'payroll', payroll_run_id: run.id, idempotency_key: key,
       });
+      await _persHist(req, userId, 'owner_salary', 'CREATE', null, _salRow);   // LC3c
     }
     outcome.booked.push({ employee: l.employee_name || '', amount: amt, currency: cur, isNew: !dup });
   }
@@ -10448,7 +10566,7 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
   await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
   // M14 / LA3: the outcome goes back to the person — a failure is reported, never only logged.
   let _ownerSalary;
-  try { _ownerSalary = await syncOwnerSalaryFromRun(scopeId(req), rows[0], 'paid'); }
+  try { _ownerSalary = await syncOwnerSalaryFromRun(scopeId(req), rows[0], 'paid', req); }
   catch (e) { console.error('[payroll] owner salary → personal failed:', e && e.message, e && e.stack); _ownerSalary = { ownerOnRun: true, booked: [], error: 'The run is paid, but the owner salary could not be added to Personal. Mark it paid again to retry.' }; }
   // GL Phase 5b (cash completeness): mark-paid is the CASH-OUT event - settle the payroll liability with
   // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), from the run's LINES. M41: on the 'net' basis the cash out
@@ -10524,7 +10642,7 @@ app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'),
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_run', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_run reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_paid', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_paid reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_remit', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_remit reversal failed (shadow, non-fatal):', glErr && glErr.message); }   // M41
-  try { await syncOwnerSalaryFromRun(scopeId(req), run, 'void'); } catch (e) { console.error('[payroll] owner salary void → personal failed:', e && e.message); }   // M14
+  try { await syncOwnerSalaryFromRun(scopeId(req), run, 'void', req); } catch (e) { console.error('[payroll] owner salary void → personal failed:', e && e.message); }   // M14
   await auditLog(pool, { userId: scopeId(req), entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
   res.json(rows[0]);
 }));
@@ -10739,30 +10857,8 @@ async function _postLedgerEntryBody(client, { userId, entityId, date, descriptio
 // reversal links to the original via reversal_of. Idempotent on 'reverse:<type>:<id>'. Best-effort - a
 // shadow reversal failure must never block the user's delete/void.
 async function reverseLedgerEntry(client, args) { return _ledgerTx(client, (cx) => _reverseLedgerEntryBody(cx, args)); }   // N62: one transaction
-async function _reverseLedgerEntryBody(client, { userId, sourceType, sourceId }) {
-  const revKey = 'reverse:' + sourceType + ':' + sourceId;
-  const { rows: already } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, revKey]);
-  if (already[0]) return already[0].id;                                   // already reversed - idempotent
-  const { rows: orig } = await client.query(
-    `SELECT id, entity_id, entry_date::text AS entry_date, description, currency FROM ledger_entries
-      WHERE user_id=$1 AND source_type=$2 AND source_id=$3 AND reversal_of IS NULL AND status='posted' ORDER BY id ASC LIMIT 1`,
-    [userId, sourceType, sourceId]);
-  if (!orig[0]) return null;                                             // nothing posted for this source
-  const o = orig[0];
-  const { rows: lines } = await client.query(`SELECT account_id, debit, credit, debit_base, credit_base FROM ledger_lines WHERE entry_id=$1`, [o.id]);
-  if (!lines.length) return null;
-  const { rows: [rev] } = await client.query(
-    `INSERT INTO ledger_entries (user_id, entity_id, entry_date, description, source_type, source_id, currency, status, reversal_of, idempotency_key)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'posted',$8,$9) RETURNING id`,
-    [userId, o.entity_id, o.entry_date, ('Reversal - ' + (o.description || '')).slice(0, 500), sourceType, sourceId, o.currency, o.id, revKey]);
-  for (const l of lines) {
-    await client.query(
-      `INSERT INTO ledger_lines (entry_id, user_id, entity_id, account_id, debit, credit, debit_base, credit_base)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [rev.id, userId, o.entity_id, l.account_id, l.credit, l.debit, l.credit_base, l.debit_base]);   // swap debit<->credit
-  }
-  return rev.id;
-}
+// A6: the body lives in ledger-reverse.js (shared with tools/launch/purge-test-data.js — one implementation).
+const _reverseLedgerEntryBody = require('./ledger-reverse').reverseLedgerEntryBody;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // GL Phase 2 (dual-write shadow) - RESYNC on edit. A source doc's PUT can change whether it is

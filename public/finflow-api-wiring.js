@@ -188,7 +188,13 @@
           if (el) el.checked = !!s.notif_pay;
         }
         // Business profile fields (set from onboarding or earlier saves)
-        const setField = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+        // LR21: a <select> shows a stored value even if its list lacks it (a legacy or renamed option) — never blank.
+        const setField = (id, val) => {
+          const el = document.getElementById(id);
+          if (!el || val == null) return;
+          if (el.tagName === 'SELECT' && val !== '' && ![...el.options].some(o => o.value === String(val))) el.add(new Option(String(val), String(val)));
+          el.value = val;
+        };
         setField('s-biz-name', s.business_name);
         setField('s-industry', s.industry);
         setField('s-address',  s.address);

@@ -230,6 +230,16 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // LR11 — manual bank lines (POST /api/banking, stored in personal_transactions source:'banking') idempotency backstop.
+    // Same shape: two identical "FEE 4.00" lines are legitimate, so the token is the key. Partial on non-NULL keys →
+    // every existing row (no token) is excluded and behaviour is unchanged until a token is sent.
+    // Mirrored by scripts/migrations/2026-10-21-personal-transactions-idem-key.sql.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_transactions_idem_key
+        ON personal_transactions (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)
@@ -1033,6 +1043,10 @@ async function initDB() {
       UPDATE timesheet t SET entity_id = (SELECT MIN(e.id) FROM entities e WHERE e.user_id = t.user_id)
        WHERE t.entity_id IS NULL AND EXISTS (SELECT 1 FROM entities e2 WHERE e2.user_id = t.user_id);
     `);
+
+    // LC3c — Personal's own append-only history (no business column; erased with the account). Schema only.
+    // Mirrored by scripts/migrations/2026-10-21-personal-history.sql.
+    await require('./personal-history').ensureSchema(client);
 
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');

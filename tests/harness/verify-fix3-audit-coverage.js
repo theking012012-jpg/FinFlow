@@ -88,15 +88,16 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
       return Array.from(d.querySelectorAll('#audit-trail-body tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim())).filter(r => r.length > 1); };
     if (opt('Budget')) {
       const b = await rows(opt('Budget'));
-      const upd = b.filter(r => r[3] === 'UPDATE').map(r => r[4]);
+      // Columns (LR12 added By): Date 0 · Table 1 · Record 2 · Action 3 · By 4 · Field 5 · Old 6 · New 7.
+      const upd = b.filter(r => r[3] === 'UPDATE').map(r => r[5]);
       eq('Budget filter: the UPDATE shows one line per changed target', upd.slice().sort(), ['Software', 'Travel'], ['targets']);
       console.log('     budget UPDATE lines: ' + JSON.stringify(b.filter(r => r[3] === 'UPDATE').map(r => r.slice(4))));
     }
     if (opt('Projects & time')) {
       const pt = await rows(opt('Projects & time'));
       eq('Projects & time filter lists only projects and time entries', [...new Set(pt.map(r => r[1]))].sort(), ['projects', 'timesheet']);
-      const hrs = pt.find(r => r[1] === 'timesheet' && r[3] === 'UPDATE' && r[4] === 'hours');
-      eq('…the time-entry UPDATE line reads hours 2.5 → 3.75', hrs ? [hrs[5], hrs[6]] : null, ['2.5', '3.75'], null);
+      const hrs = pt.find(r => r[1] === 'timesheet' && r[3] === 'UPDATE' && r[5] === 'hours');
+      eq('…the time-entry UPDATE line reads hours 2.5 → 3.75', hrs ? [hrs[6], hrs[7]] : null, ['2.5', '3.75'], null);
     }
     const _errs = boot.consoleErrors.slice(errBefore);
     eq('Audit page: no console errors while filtering', _errs.length, 0);

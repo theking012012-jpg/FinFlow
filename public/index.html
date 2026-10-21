@@ -1748,11 +1748,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Table</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Record ID</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Action</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600">By</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Field</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">Old Value</th>
                 <th style="text-align:left;padding:6px 8px;font-weight:600">New Value</th>
               </tr></thead>
-              <tbody id="audit-trail-body"><tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr></tbody>
+              <tbody id="audit-trail-body"><tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -2648,7 +2649,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="mc"><div class="mc-label">Total SKUs</div><div class="mc-val" id="inv-skus">0</div><div class="mc-change neutral">Active products</div></div>
           <div class="mc"><div class="mc-label">Inventory value</div><div class="mc-val" id="inv-value">$0</div><div class="mc-change up">At cost</div></div>
           <div class="mc"><div class="mc-label">Low stock alerts</div><div class="mc-val" style="color:var(--amber)" id="inv-lowstock">0</div><div class="mc-change dn">Reorder needed</div></div>
-          <div class="mc"><div class="mc-label">COGS this month</div><div class="mc-val" id="inv-cogs">$0</div><div class="mc-change neutral">FIFO method</div></div>
+          <div class="mc"><div class="mc-label" id="inv-cogs-label">COGS</div><div class="mc-val" id="inv-cogs">$0</div><div class="mc-change neutral">FIFO method</div></div>
         </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Stock levels</h2><button class="btn btn-ghost btn-sm" onclick="openProductModal()">+ Add product</button></div>
@@ -3248,6 +3249,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <!-- Personal salary entry (moved to bottom: set-once) -->
         <!-- M55 (personal/business wall): no payroll roster on the Personal page. The owner's salary arrives here only
              as income rows from PAID payroll runs (M14); it is set on the Payroll page, never from Personal. -->
+        <!-- LC3c: Personal's own history — every change to the person's records. Never on a business page (the wall). -->
+        <div class="card" id="pers-history-card" style="margin-top:16px">
+          <div class="card-header"><h2 class="card-title">Personal history</h2><span style="font-size:11px;color:var(--t3)">Only you see this — it is not part of any business's audit trail</span></div>
+          <div id="pers-history-list"><div style="font-size:12px;color:var(--t3);padding:.25rem 0">No changes recorded yet.</div></div>
+        </div>
       </div>
 
       <!-- AI INSIGHTS -->
@@ -3423,9 +3429,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="page" id="page-sales-receipts">
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Total Receipts</div><div class="mc-val">0</div><div class="mc-change neutral">This month</div></div>
-          <div class="mc"><div class="mc-label">Cash Sales</div><div class="mc-val">$0</div><div class="mc-change neutral">Direct payments</div></div>
-          <div class="mc"><div class="mc-label">Card Sales</div><div class="mc-val">$0</div><div class="mc-change neutral">Via Stripe</div></div>
-          <div class="mc"><div class="mc-label">Refunds</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Refunds issued</div></div>
+          <div class="mc"><div class="mc-label">Cash Sales</div><div class="mc-val">$0</div><div class="mc-change neutral">Cash · all time</div></div>
+          <div class="mc"><div class="mc-label">Card Sales</div><div class="mc-val">$0</div><div class="mc-change neutral">Card &amp; Stripe · all time</div></div><!-- LR20: card receipts recorded by hand count here too; the figures are all-time sums -->
+          <div class="mc"><div class="mc-label">Refunds</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Refunds issued · all time</div></div>
         </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Sales Receipts</h2><button class="btn btn-primary btn-sm" onclick="openNewReceiptModal()">+ New Receipt</button></div>
@@ -3950,7 +3956,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
               <div class="field-wrap"><label class="field-label" for="s-biz-name">Business name</label><input class="finput" id="s-biz-name" placeholder="Your business name" oninput="updateBrandName()"></div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label" for="s-industry">Industry</label><select class="finput" id="s-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
+                <div class="field-wrap"><label class="field-label" for="s-industry">Industry</label><select class="finput" id="s-industry"><option value="Technology">Technology</option><option value="Retail">Retail</option><option value="Finance">Finance</option><option value="Healthcare">Healthcare</option><option value="Consulting">Consulting</option><option value="Manufacturing">Manufacturing</option><option value="Construction">Construction</option><option value="Food & Beverage">Food &amp; Beverage</option><option value="Real Estate">Real Estate</option><option value="Media & Creative">Media &amp; Creative</option><option value="Other">Other</option></select><!-- LR21: the SAME list as #ob-industry (onboarding) — keep them identical (verify-lr21-settings-industry) --></div>
                 <div class="field-wrap"><label class="field-label" for="s-currency">Currency</label><select class="finput" id="s-currency" onchange="updateCurrency()"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option></select></div>
               </div>
               <!-- LA21: the account's reporting currency — the ONE currency "All entities" figures are shown in (dashboard
@@ -6612,7 +6618,7 @@ async function loadAuditTrail(){
   const lastTimeEl=document.getElementById('audit-last-time');
   const lastActEl=document.getElementById('audit-last-action');
   if(!tbody)return;
-  tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
+  tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
   try{
     const tbl=document.getElementById('audit-filter-table')?.value||'all';
     const act=document.getElementById('audit-filter-action')?.value||'all';
@@ -6631,7 +6637,7 @@ async function loadAuditTrail(){
       if(lastActEl)lastActEl.textContent=events[0].action||'—';
     }
     if(!events.length){
-      tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
+      tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
       return;
     }
     const actionBadge={CREATE:'b-green',UPDATE:'b-amber',DELETE:'b-red'};
@@ -6644,24 +6650,25 @@ async function loadAuditTrail(){
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
         <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
         <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
+        <td style="padding:5px 8px;color:var(--t1);white-space:nowrap">${esc(r.actor_name||'—')}</td>
         <td style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
         <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.old||'')}">${esc(f.old||'—')}</td>
         <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.new||'')}">${esc(f.new||'—')}</td>
       </tr>`).join('');
     }).join('');
   }catch(e){
-    tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
   }
 }
 
 function exportAuditCSV(){
   const rows=document.querySelectorAll('#audit-trail-body tr');
   if(!rows.length)return;
-  const headers=['Date','Table','Record ID','Action','Field','Old Value','New Value'];
+  const headers=['Date','Table','Record ID','Action','By','Field','Old Value','New Value'];   // LR12: By
   const lines=[headers.join(',')];
   rows.forEach(tr=>{
     const cells=tr.querySelectorAll('td');
-    if(cells.length<7)return;
+    if(cells.length<8)return;
     const row=Array.from(cells).map(td=>'"'+td.textContent.replace(/"/g,'""')+'"');
     lines.push(row.join(','));
   });

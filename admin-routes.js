@@ -40,7 +40,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
         `INSERT INTO admin_log (action, target_type, target_id, notes, ip, user_agent, session_ref, before_data, after_data, outcome, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
         [action, targetType || null, targetId == null ? null : (parseInt(targetId, 10) || null), notes == null ? null : String(notes).slice(0, 1000),
-         req.ip || null, String((req.get && req.get('user-agent')) || '').slice(0, 300) || null, _sessRef(req),
+         req.clientIp || req.ip || null, String((req.get && req.get('user-agent')) || '').slice(0, 300) || null, _sessRef(req),   // LR26
          before == null ? null : JSON.stringify(before), after == null ? null : JSON.stringify(after), outcome]);
     } catch (e) { console.error('[admin] AUDIT WRITE FAILED for', action, targetType, targetId, ':', e.message); }
   }
@@ -52,7 +52,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       await pool.query(
         `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, old_data, new_data, actor_type, actor_id, ip_address)
          VALUES ($1, NULL, 'users', $1, 'UPDATE', $2, $3, 'admin', NULL, $4)`,
-        [userId, oldData == null ? null : JSON.stringify(oldData), newData == null ? null : JSON.stringify(newData), req.ip || null]);
+        [userId, oldData == null ? null : JSON.stringify(oldData), newData == null ? null : JSON.stringify(newData), req.clientIp || req.ip || null]);   // LR26
     } catch (e) { console.error('[admin] customer trail write failed for user', userId, ':', e.message); }
   }
   const _userState = async id => (await pool.query(
@@ -66,7 +66,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // LC3g-c: the refusal is recorded BEFORE the 401 goes out — a write left running could be lost (or be read before it
   // landed). adminAudit never throws, so a log failure still cannot turn a refusal into a 500.
   const failedAdminLogin = async (req, res, reason, body) => {
-    await adminAudit(req, 'failed_login', 'security', null, { notes: String(reason + ' from ' + (req.ip || 'unknown')).slice(0, 500), outcome: 'refused' });
+    await adminAudit(req, 'failed_login', 'security', null, { notes: String(reason + ' from ' + (req.clientIp || req.ip || 'unknown')).slice(0, 500), outcome: 'refused' });
     return res.status(401).json(body);
   };
   app.post('/api/admin/login', adminLoginLimiter, wrap(async (req, res) => {

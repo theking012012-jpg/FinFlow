@@ -35,9 +35,11 @@ GREEN, counts in the row).
 Related re-runs: LR11 + LC3c set **77/77 GREEN**; GL / audit / security set 75 / 76 run before it was stopped — the one
 FAIL (`verify-fix3-audit-coverage`, stale column index after LR12) fixed → 15/0. **No agent full sweep** (owner's, 3×).
 
-**Not done (agent, next):** LR14 (consolidated caption + "Intercompany $0"), LR16 (Bank Rec balances — investigate),
-LR18 (template preview heading), LR19 (Budget page ignores the period), `VERIFICATION.md` A7.5–A7.8 / A7.18 / A8a / A8b
-stamps (§4.2). **Decisions waiting:** 3.1–3.7, LR1-follow-up, LR5, LR6, LR8, LR9, LR10, LR22, LR23, LR25, 2.6.
+**Second round 2026-10-21 (UNCOMMITTED — owner commits):** LR14 3/0 → 3/0 · LR16 5/0 → 5/0 · LR18 2/2 → 4/0 · LR19 3/2 → 5/0
+(small related set 32/32) · `VERIFICATION.md` every Result cell stamped with today's runs (A7.22 / A7.23 new harness 3/0) ·
+Terms / Privacy / Security rewritten (LR29 — fill the placeholders) · owner pack §7 corrected (set CONNECTOR_ENC_KEY first;
+do not rotate SESSION_SECRET once banks are linked) · LR28 landing testimonials (owner / legal). Production build chain
+(`npm run gen`) exit 0. **Open in code:** LR21 ×5 settings fetch (needs a live trace). **Decisions waiting:** 3.1–3.7, LR1-follow-up, LR5, LR6, LR8, LR9, LR10, LR22, LR23, LR25, 2.6.
 **Tooling note:** the bundle has TWO more sources than `finflow-api-wiring-*.js` — `finflow-api.js` and
 `finflow-api-wiring.js`. A Rule-1 grep must include them (`public/finflow-api*.js`).
 

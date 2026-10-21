@@ -165,9 +165,16 @@ closes F132's last half.
 
 | Variable | Value |
 |---|---|
-| `SESSION_SECRET` | 64+ random characters (generator below). Changing it signs everyone out once. |
+| `CONNECTOR_ENC_KEY` | 64 hex chars (generator below). **Set this FIRST, once, and never change it** — it encrypts stored bank / connector tokens. Back it up in your password manager. |
+| `SESSION_SECRET` | 64+ random characters. **If it is already set in Railway, leave it.** Read the warning below before ever changing it. |
 | `APP_URL` | `https://<domain>` — no trailing slash. Used in every e-mail link and OAuth redirect. |
-| `CONNECTOR_ENC_KEY` | 64 hex chars (32 bytes). **Set once and never change it** — it decrypts stored bank / connector tokens; a new value orphans every linked bank. Back it up in your password manager. |
+
+> ⚠ **Do not change `SESSION_SECRET` if any bank or service is already linked.** Tokens stored while
+> `CONNECTOR_ENC_KEY` was NOT set were encrypted with a key derived from `SESSION_SECRET` (`server.js` ~7521–7533). Change
+> `SESSION_SECRET` and those tokens can no longer be read — every such bank / connector must be unlinked and linked
+> again. Safe order: (1) add `CONNECTOR_ENC_KEY` now (new links use it; old ones still open via `SESSION_SECRET`);
+> (2) only rotate `SESSION_SECRET` if you must, and then re-link the old connections. If nothing has been linked on
+> production yet (or you start on a fresh database, §8 Path B), rotating is free — it just signs everyone out once.
 | `ANTHROPIC_API_KEY` | console.anthropic.com → API keys (AI assistant + receipt scan) |
 | `ALLOWED_ORIGIN` | `https://<domain>` |
 | `NODE_ENV` | `production` |
@@ -176,7 +183,7 @@ One-line generator (prints to your screen only — paste straight into Railway, 
 ```powershell
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
-(Run once per secret: one for `SESSION_SECRET`, one for `CONNECTOR_ENC_KEY`.)
+(Run once for `CONNECTOR_ENC_KEY`; and for `SESSION_SECRET` only if it is not set yet — see the warning above.)
 
 **Verify:** `curl.exe -s https://<domain>/healthz` → `ok`; sign in; Settings → "Ask AI" one question → it answers;
 a password-reset e-mail's link starts with `https://<domain>/`.

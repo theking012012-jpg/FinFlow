@@ -230,6 +230,27 @@ async function loadBankRec(){
     if(ubEl)ubEl.textContent=unbank.length+(data.unmatchedDebits||[]).length;
     if(upEl)upEl.textContent=unpay.length;
     if(mcEl)mcEl.textContent=matched.length;
+    // LR16: book vs statement balance, and every feed line accounted for.
+    { const _t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+      _t('brec-book-bal', data.bookBalance!=null ? S(data.bookBalance) : '—');
+      _t('brec-book-sub', data.bookBalance!=null ? 'From the ledger (Balance Sheet cash)' : (data.bookBalanceNote==='failed' ? 'Could not be read' : 'Not tracked until the books reconcile'));
+      _t('brec-stmt-bal', data.statementBalance!=null ? S(data.statementBalance) : '—');
+      _t('brec-stmt-sub', data.statementBalance!=null ? 'From the bank' : 'Not supplied by the bank feed');
+      const _done=(data.reconciledLines||[]);
+      _t('brec-feed-count', data.feedLines!=null ? data.feedLines : '—');
+      _t('brec-feed-sub', data.feedLines!=null ? (unbank.length+_brecPending.length)+' to match · '+matched.length+' matched · '+(data.unmatchedDebits||[]).length+' money out · '+_done.length+' dealt with' : '');
+      const _dl=document.getElementById('brec-done-list');
+      if(_dl){
+        const _how=r=>r.reconcile_state==='expense'?('Booked as expense'+(r.reconcile_ref?' #'+r.reconcile_ref:'')):r.reconcile_state==='bill'?('Paid bill'+(r.reconcile_bill_id?' #'+r.reconcile_bill_id:'')):r.reconcile_state==='ignored'?'Ignored':String(r.reconcile_state);
+        _dl.innerHTML=_done.length?_done.map(r=>`
+        <div class="tx-row">
+          <div><div class="tx-name">${esc(r.description||'Bank line')}</div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.tx_date,{year:true}):(r.tx_date||''))||'—')} · ${esc(_how(r))}</div></div>
+          <div class="tx-amt ${r.tx_type==='credit'?'up':'dn'}">${r.tx_type==='credit'?'+':''}${S(Math.abs(parseFloat(r.amount)||0))}</div>
+        </div>`).join('')
+        :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">Nothing dealt with yet.</div>';
+      }
+    }
 
     if(bankList){
       bankList.innerHTML=unbank.length?unbank.map(b=>`

@@ -5720,7 +5720,11 @@ function renderBanking(){
   const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkUncat = (bankTxns||[]).filter(t => !t.cat || /uncategor/i.test(t.cat)).length;
-  _bkSet('bank-total-bal', S(_bkTotal));
+  // LR16: the bank feed carries no account balance (nothing fills bankAccounts), so with no balance the card says so —
+  // it read a confident "$0" with a linked bank.
+  const _bkHasBal = (bankAccounts||[]).some(a => a.balance != null && a.balance !== '' && isFinite(parseFloat(a.balance)));
+  _bkSet('bank-total-bal', _bkHasBal ? S(_bkTotal) : '—');
+  _bkSet('bank-total-sub', _bkHasBal ? 'Across all accounts' : 'Not supplied by the bank feed');
   _bkSet('bank-inflow',    S(_bkIn));
   _bkSet('bank-outflow',   S(_bkOut));
   _bkSet('bank-uncat',     _bkUncat);

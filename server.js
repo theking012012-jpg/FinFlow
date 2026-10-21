@@ -10080,7 +10080,22 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
   const _openBills = (await db.allByUser('bills', uid, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)))
     .filter(b => String(b.status || '').toLowerCase() !== 'paid')
     .map(b => ({ id: b.id, vendor: b.vendor, amount: parseFloat(b.amount) || 0, amount_paid: parseFloat(b.amount_paid) || 0, status: b.status, due_date: b.due_date }));
-  res.json({ unmatchedBanking, unmatchedPayments, matched, unmatchedDebits: _debits, openBills: _openBills });
+  // LR16: every line of this business's feed is in exactly ONE list. Lines already dealt with (booked as an expense,
+  // matched to a bill, ignored) were in none — live: 54 feed lines, 50 + 1 shown, 3 debits nowhere.
+  const reconciledLines = banking.filter(r => r.reconcile_state).map(r => ({
+    id: r.id, description: r.description, amount: r.amount, tx_type: r.tx_type || 'debit', tx_date: r.tx_date,
+    reconcile_state: r.reconcile_state, reconcile_ref: r.reconcile_ref || null, reconcile_bill_id: r.reconcile_bill_id || null,
+  }));
+  // LR16: the BOOK side of a reconciliation is the ledger's cash — read through glBalanceSheet, the balance sheet's own
+  // writer, so the two can never disagree (Rule 2). The bank feed carries no balance, so the STATEMENT side is never
+  // invented: null, and the page says where it would come from.
+  let bookBalance = null, bookBalanceNote = null;
+  try {
+    const _bs = await glBalanceSheet(uid, req.entityId == null ? null : req.entityId);
+    if (_bs && _bs.cashTracked) bookBalance = _bs.cash; else bookBalanceNote = 'not_tracked';
+  } catch (e) { console.error('[bank-rec] book balance read failed:', e && e.message); bookBalanceNote = 'failed'; }
+  res.json({ unmatchedBanking, unmatchedPayments, matched, unmatchedDebits: _debits, openBills: _openBills,
+    reconciledLines, feedLines: banking.length, bookBalance, bookBalanceNote, statementBalance: null, statementBalanceNote: 'not_supplied_by_feed' });
 }));
 
 app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {

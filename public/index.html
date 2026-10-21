@@ -1766,6 +1766,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="mc"><div class="mc-label">Unmatched payments</div><div class="mc-val" id="brec-unmatched-pay">—</div><div class="mc-change dn">Needs matching</div></div>
           <div class="mc"><div class="mc-label">Matched pairs</div><div class="mc-val" id="brec-matched-count">—</div><div class="mc-change up">Reconciled</div></div>
         </div>
+        <!-- LR16: the two sides of a reconciliation, and the feed's size (every line is in one list below). -->
+        <div class="metrics-grid-3">
+          <div class="mc"><div class="mc-label">Book balance · cash</div><div class="mc-val" id="brec-book-bal">—</div><div class="mc-change neutral" id="brec-book-sub">From the ledger</div></div>
+          <div class="mc"><div class="mc-label">Statement balance</div><div class="mc-val" id="brec-stmt-bal">—</div><div class="mc-change neutral" id="brec-stmt-sub">Not supplied by the bank feed</div></div>
+          <div class="mc"><div class="mc-label">Bank feed lines</div><div class="mc-val" id="brec-feed-count">—</div><div class="mc-change neutral" id="brec-feed-sub">Each in one list below</div></div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><h2 class="card-title">Unmatched Bank Transactions</h2></div>
@@ -1783,6 +1789,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="card">
           <div class="card-header"><h2 class="card-title">Money Out — bank debits to reconcile</h2><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
           <div id="brec-debits-list" style="font-size:12px"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">Dealt with — booked, matched to a bill, or ignored</h2></div>
+          <div id="brec-done-list" style="font-size:12px"></div>
         </div>
       </div>
 
@@ -2414,7 +2424,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <!-- BANKING PAGE -->
       <div class="page" id="page-banking">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Balance</div><div class="mc-val" id="bank-total-bal">—</div><div class="mc-change neutral">Across all accounts</div></div>
+          <div class="mc"><div class="mc-label">Total Balance</div><div class="mc-val" id="bank-total-bal">—</div><div class="mc-change neutral" id="bank-total-sub">Across all accounts</div></div>
           <div class="mc"><div class="mc-label">Inflow (MTD)</div><div class="mc-val" id="bank-inflow">—</div><div class="mc-change" id="bank-inflow-chg"></div></div>
           <div class="mc"><div class="mc-label">Outflow (MTD)</div><div class="mc-val" id="bank-outflow">—</div><div class="mc-change neutral">This month</div></div>
           <div class="mc"><div class="mc-label">Uncategorized</div><div class="mc-val" id="bank-uncat" style="color:var(--amber)">—</div><div class="mc-change dn">Need review</div></div>
@@ -6813,6 +6823,27 @@ async function loadBankRec(){
     if(ubEl)ubEl.textContent=unbank.length+(data.unmatchedDebits||[]).length;
     if(upEl)upEl.textContent=unpay.length;
     if(mcEl)mcEl.textContent=matched.length;
+    // LR16: book vs statement balance, and every feed line accounted for.
+    { const _t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+      _t('brec-book-bal', data.bookBalance!=null ? S(data.bookBalance) : '—');
+      _t('brec-book-sub', data.bookBalance!=null ? 'From the ledger (Balance Sheet cash)' : (data.bookBalanceNote==='failed' ? 'Could not be read' : 'Not tracked until the books reconcile'));
+      _t('brec-stmt-bal', data.statementBalance!=null ? S(data.statementBalance) : '—');
+      _t('brec-stmt-sub', data.statementBalance!=null ? 'From the bank' : 'Not supplied by the bank feed');
+      const _done=(data.reconciledLines||[]);
+      _t('brec-feed-count', data.feedLines!=null ? data.feedLines : '—');
+      _t('brec-feed-sub', data.feedLines!=null ? (unbank.length+_brecPending.length)+' to match · '+matched.length+' matched · '+(data.unmatchedDebits||[]).length+' money out · '+_done.length+' dealt with' : '');
+      const _dl=document.getElementById('brec-done-list');
+      if(_dl){
+        const _how=r=>r.reconcile_state==='expense'?('Booked as expense'+(r.reconcile_ref?' #'+r.reconcile_ref:'')):r.reconcile_state==='bill'?('Paid bill'+(r.reconcile_bill_id?' #'+r.reconcile_bill_id:'')):r.reconcile_state==='ignored'?'Ignored':String(r.reconcile_state);
+        _dl.innerHTML=_done.length?_done.map(r=>`
+        <div class="tx-row">
+          <div><div class="tx-name">${esc(r.description||'Bank line')}</div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.tx_date,{year:true}):(r.tx_date||''))||'—')} · ${esc(_how(r))}</div></div>
+          <div class="tx-amt ${r.tx_type==='credit'?'up':'dn'}">${r.tx_type==='credit'?'+':''}${S(Math.abs(parseFloat(r.amount)||0))}</div>
+        </div>`).join('')
+        :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">Nothing dealt with yet.</div>';
+      }
+    }
 
     if(bankList){
       bankList.innerHTML=unbank.length?unbank.map(b=>`

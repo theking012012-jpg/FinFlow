@@ -4240,7 +4240,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
 
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="own-fname">First name</label><input class="finput" id="own-fname"></div><div class="field-wrap"><label class="field-label" for="own-lname">Last name</label><input class="finput" id="own-lname"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="own-role">Job title</label><input class="finput" id="own-role" value="CEO / Founder"></div><div class="field-wrap"><label class="field-label" for="own-type">Type</label><select class="finput" id="own-type"><option value="owner">Owner / Director</option><option value="fulltime">Full-time</option><option value="parttime">Part-time</option><option value="contractor">Contractor</option></select></div></div>
+        <!-- LR5: the owner card IS the owner's payroll record (is_owner) — the flag is shown, ticked and read-only; it is
+         changed in ONE place only (Edit employee, LA3), so the two can never disagree. -->
+    <div id="own-is-owner" style="display:flex;align-items:flex-start;gap:8px;margin:-2px 0 12px;font-size:12.5px;color:var(--t2)">
+      <input type="checkbox" id="own-is-owner-cb" checked disabled aria-describedby="own-is-owner-note" style="margin-top:2px">
+      <div><label for="own-is-owner-cb" style="color:var(--t1)">This is me — the business owner</label>
+        <div id="own-is-owner-note" style="font-size:11px;color:var(--t3);margin-top:2px">Your net pay is added to Personal when a payroll run is marked paid. To change who the owner is, use Edit employee.</div></div>
+    </div>
+<div class="field-group"><div class="field-wrap"><label class="field-label" for="own-role">Job title</label><input class="finput" id="own-role" value="CEO / Founder"></div><div class="field-wrap"><label class="field-label" for="own-type">Type</label><select class="finput" id="own-type"><option value="owner">Owner / Director</option><option value="fulltime">Full-time</option><option value="parttime">Part-time</option><option value="contractor">Contractor</option></select></div></div>
     <div class="field-wrap"><label class="field-label" for="own-gross">Monthly gross salary <span id="own-currency-sym" style="color:var(--acc)">($)</span></label><input class="finput" id="own-gross" type="number" placeholder="e.g. 8000" oninput="previewOwnerNet()"></div>
     <div class="field-wrap" style="margin-bottom:.35rem">
       <label class="field-label">Deductions</label>

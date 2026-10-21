@@ -2922,7 +2922,10 @@ app.post('/api/goals', requireAuth, wrap(async (req, res) => {
   if (!name || target_val == null) return res.status(400).json({ error: 'name and target_val required.' });
   const _dup = await findRecentDuplicate('goals', req.session.userId, null, { textMatch: { name: name.trim().slice(0,200) }, numMatch: { target_val: parseFloat(target_val)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('goals', { user_id: req.session.userId, name: name.trim().slice(0,200), current_val: parseFloat(current_val)||0, target_val: parseFloat(target_val)||0, monthly_contrib: parseFloat(monthly_contrib)||0, color });
+  // LR26: the currency the amounts were entered in (the personal display currency); absent = USD, as every goal saved
+  // before this was entered.
+  const _gcur = /^[A-Z]{3}$/.test(String((req.body || {}).currency || '')) ? String(req.body.currency) : null;
+  const { row } = await db.insert('goals', { user_id: req.session.userId, name: name.trim().slice(0,200), current_val: parseFloat(current_val)||0, target_val: parseFloat(target_val)||0, monthly_contrib: parseFloat(monthly_contrib)||0, color, currency: _gcur });
   res.status(201).json(row);
 }));
 app.put('/api/goals/:id', requireAuth, wrap(async (req, res) => {
@@ -2935,6 +2938,7 @@ app.put('/api/goals/:id', requireAuth, wrap(async (req, res) => {
   if (b.current_val != null) patch.current_val = parseFloat(b.current_val);
   if (b.target_val != null) patch.target_val = parseFloat(b.target_val);
   if (b.monthly_contrib != null) patch.monthly_contrib = parseFloat(b.monthly_contrib);
+  if (b.currency != null && /^[A-Z]{3}$/.test(String(b.currency))) patch.currency = String(b.currency);   // LR26
   await db.updateById('goals', row.id, patch);
   const { rows: [_gr] } = await pool.query(`SELECT * FROM goals WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_gr ? rowToObj(_gr) : {});

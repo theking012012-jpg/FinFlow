@@ -4002,8 +4002,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><path d="M2 2h12v12H2z"></path><path d="M2 6h12M6 6v8"></path></svg>Personal finance targets</div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label" for="s-inc-target">Income target ($/mo)</label><input class="finput" id="s-inc-target" value="0" type="number"></div>
-                <div class="field-wrap"><label class="field-label" for="s-budget">Monthly budget ($)</label><input class="finput" id="s-budget" value="0" type="number"></div>
+                <div class="field-wrap"><label class="field-label" for="s-inc-target">Income target (<span data-cur="pers">$</span>/mo)</label><input class="finput" id="s-inc-target" value="0" type="number"></div>
+                <div class="field-wrap"><label class="field-label" for="s-budget">Monthly budget (<span data-cur="pers">$</span>)</label><input class="finput" id="s-budget" value="0" type="number"></div>
               </div>
               <div class="field-wrap"><label class="field-label" for="s-savings-target">Savings rate target (%)</label><input class="finput" id="s-savings-target" value="40" type="number" min="0" max="100" oninput="refreshPersonal()"></div>
             </div>
@@ -4402,8 +4402,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add savings goal</div><div class="modal-sub">Set a new financial milestone</div></div><button class="modal-close" onclick="closeModal('goal-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"></line><line x1="13" y1="1" x2="1" y2="13"></line></svg></button></div>
     <div class="field-wrap"><label class="field-label" for="goal-name">Goal name *</label><input class="finput" id="goal-name" placeholder="e.g. House deposit"></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="goal-current">Current ($)</label><input class="finput" id="goal-current" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="goal-target">Target ($)</label><input class="finput" id="goal-target" type="number" placeholder="10000"></div></div>
-    <div class="field-wrap"><label class="field-label" for="goal-monthly">Monthly contribution ($)</label><input class="finput" id="goal-monthly" type="number" placeholder="500"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="goal-current">Current (<span data-cur="pers">$</span>)</label><input class="finput" id="goal-current" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="goal-target">Target (<span data-cur="pers">$</span>)</label><input class="finput" id="goal-target" type="number" placeholder="10000"></div></div>
+    <div class="field-wrap"><label class="field-label" for="goal-monthly">Monthly contribution (<span data-cur="pers">$</span>)</label><input class="finput" id="goal-monthly" type="number" placeholder="500"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('goal-modal')">Cancel</button><button class="btn btn-primary" onclick="saveGoal()">Add goal</button></div>
   </div>
 </div>

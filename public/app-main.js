@@ -499,6 +499,11 @@ window._fmtMoneyNativeAbbr = _fmtMoneyNativeAbbr;
 function _paintCurLabels(root){
   const sym = _nativeSymbol();
   (root || document).querySelectorAll('[data-cur="biz"]').forEach(el => { if(el.textContent !== sym) el.textContent = sym; });
+  // LR26: a PERSONAL money field names the personal display currency (walled from any business). persCurrency is
+  // declared further down this file — on the first paint, during load, it is not initialised yet: then "$" (USD).
+  let psym = '$';
+  try { psym = (CURRENCIES[persCurrency] || {}).symbol || '$'; } catch(_) {}
+  (root || document).querySelectorAll('[data-cur="pers"]').forEach(el => { if(el.textContent !== psym) el.textContent = psym; });
 }
 window._paintCurLabels = _paintCurLabels;
 (function _watchModalsForCurLabels(){
@@ -3307,6 +3312,7 @@ let persCurrency = 'USD';
 
 function setPersCurrency(code){
   persCurrency = code;
+  if(typeof _paintCurLabels==='function') _paintCurLabels(document);   // LR26: personal field labels follow
   // Update button states
   document.querySelectorAll('.pers-cur-btn').forEach(b=>{
     b.classList.toggle('active-preset', b.dataset.code===code);
@@ -3466,7 +3472,7 @@ function renderPersonal(){
           <div class="goal-header">
             <span class="goal-name">${esc(g.name)}</span>
             <span style="display:flex;align-items:center;gap:6px">
-              <span class="goal-val">${SP(g.current)}${g.target?' / '+SP(g.target):''}</span>
+              <span class="goal-val">${SPfrom(g.current, g.currency)}${g.target?' / '+SPfrom(g.target, g.currency):''}</span>
               ${g._dbId?`<button onclick="deletePersGoal(${g._dbId})" title="Delete goal" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:0 1px;font-size:11px;line-height:1">✕</button>`:''}
             </span>
           </div>
@@ -3498,10 +3504,10 @@ async function saveGoal(){
   const monthly=Number(document.getElementById('goal-monthly').value)||0;
   if(!target){notify('Target amount required',true);return;}
   try{
-    const res=await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,current_val:current,target_val:target,monthly_contrib:monthly,color:'var(--acc)'})});
+    const res=await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,current_val:current,target_val:target,monthly_contrib:monthly,color:'var(--acc)',currency:persCurrency})});   // LR26: entered in the personal display currency
     if(!res.ok) throw new Error((await res.json()).error||'Failed');
     const saved=await res.json();
-    goals.push({_dbId:saved.id,name,current,target,monthly,color:'var(--acc)'});
+    goals.push({_dbId:saved.id,name,current,target,monthly,color:'var(--acc)',currency:saved.currency||persCurrency});
     closeModal('goal-modal');
     renderPersonal();
     window.finflow?.refresh(['dashboard']);
@@ -4081,7 +4087,7 @@ async function loadPersonalFinance(){
       const gRes=await fetch('/api/goals',{credentials:'include'});
       if(gRes.ok){
         const gRows=await gRes.json();
-        goals=(gRows||[]).map(g=>({_dbId:g.id,name:g.name,current:parseFloat(g.current_val)||0,target:parseFloat(g.target_val)||0,monthly:parseFloat(g.monthly_contrib)||0,color:g.color||'var(--acc)'}));
+        goals=(gRows||[]).map(g=>({_dbId:g.id,name:g.name,current:parseFloat(g.current_val)||0,target:parseFloat(g.target_val)||0,monthly:parseFloat(g.monthly_contrib)||0,color:g.color||'var(--acc)',currency:g.currency||'USD'}));
       }
     }catch(_){}
     if(typeof renderPersAccounts==='function'){ try{ renderPersAccounts(); }catch(_){}}
@@ -4230,7 +4236,9 @@ function renderPersonalSections(){
   }
 
   // Budget vs Actual
-  const budgetTarget=parseInt(document.getElementById('s-budget')?.value)||0;
+  // LR26: the budget is TYPED in the personal display currency (its label says which); totals here are in USD, so it
+  // is compared — and shown back through SP — in USD. It was read as USD whatever the label.
+  const budgetTarget=_safeFX(parseInt(document.getElementById('s-budget')?.value)||0, persCurrency, 'USD');
   const usedPct=budgetTarget>0?Math.min(100,Math.round(totalExp/budgetTarget*100)):0;
   const variance=budgetTarget-totalExp;
   const bvEl=document.getElementById('budget-vs-actual-list');

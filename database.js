@@ -693,6 +693,8 @@ async function initDB() {
     // existed: those runs keep their gross cash-out on every path (no row is rewritten, Rule 8).
     await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS paid_basis TEXT`);
     await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS withholdings_remitted_date DATE`);
+    // LR1: a run created for a period whose run was voided names the run it replaces (+ migration 2026-10-21-payroll-runs-live-period-uniq.sql).
+    await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS replaces_run_id INTEGER`);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_runs_idem_key
         ON payroll_runs (user_id, idempotency_key)

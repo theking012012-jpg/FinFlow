@@ -397,7 +397,7 @@ async function loadPayrollRuns(){
       <div class="tx-row" style="align-items:flex-start">
         <div style="flex:1">
           <div class="tx-name">${esc(r.period)}</div>
-          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.run_date,{year:true}):(r.run_date||''))||'—')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}</div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.run_date,{year:true}):(r.run_date||''))||'—')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}${r.replaces_run_id?' · replaces voided run #'+esc(String(r.replaces_run_id)):''}</div>
           ${_runWithholdingsLine(r)}
         </div>
         <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
@@ -477,7 +477,7 @@ async function submitPayrollRun(){
     if(data.error){notify('⚠ '+data.error,true);return;}
     _payrollSubmitToken=null;                      // intent resolved — next run mints fresh
     closeModal('run-payroll-modal');
-    notify(data.already_exists ? 'Payroll for '+(data.period||period)+' already exists — run #'+data.id+' ('+(data.status||'')+')' : '✓ Payroll run created — '+(data.period||data.run?.period||''));   // LR1: never "created" for an existing run
+    notify(data.already_exists ? 'Payroll for '+(data.period||period)+' already exists — run #'+data.id+' ('+(data.status||'')+')' : '✓ Payroll run created — '+(data.period||data.run?.period||'')+(data.replaces_run_id?' (replaces voided run #'+data.replaces_run_id+')':''));   // LR1: never "created" for an existing run; name the voided run it replaces
     loadPayrollRuns();
   }catch(e){ notify('Could not create payroll run',true); }   // keep _payrollSubmitToken for an idempotent retry (same token → 23505 → original)
   finally{ window._savingPayrollRun=false; if(_prBtn) _prBtn.disabled=false; }

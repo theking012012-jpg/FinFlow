@@ -10276,10 +10276,16 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
     // date, Rule 10), else the ENTITY's today. It was NOW() — the server's UTC day — and the submitted date was
     // ignored, so a run dated the 31st could be stored as the 1st of the next month (paid-run cash fallback).
     const _rd = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.run_date) || '')) ? String(req.body.run_date) : await entityTodayYmd(eid);
+    // LR1 (owner decision 2026-10-21): a period whose run was voided may be run again; the new run names the voided run
+    // it replaces, so the books never show two runs for one month without saying how they relate. The database still
+    // allows only one LIVE run per period (idx_payroll_runs_live_period) — a double-click cannot create a second.
+    const { rows: [_voided] } = await _prc.query(
+      `SELECT id FROM payroll_runs WHERE user_id=$1 AND COALESCE(entity_id,0) = COALESCE($2::int,0) AND period=$3 AND lower(COALESCE(status,''))='voided' ORDER BY id DESC LIMIT 1`,
+      [uid, eid, period]);
     const { rows } = await _prc.query(
-      `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes, idempotency_key)
-       VALUES ($1,$2,$3,$10::date,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes, idem, _rd]
+      `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes, idempotency_key, replaces_run_id)
+       VALUES ($1,$2,$3,$10::date,$4,$5,$6,$7,$8,$9,$11) RETURNING *`,
+      [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes, idem, _rd, _voided ? _voided.id : null]
     );
     run = rows[0];
     for (const l of lines) {
@@ -10294,13 +10300,16 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
     try { await _prc.query('ROLLBACK'); } catch (_) {}
     if (e.code === '23505') {
       // Two unique indexes can refuse this INSERT: the token index (a retry of the SAME submit → return the original
-      // run) and idx_payroll_runs_uniq (one run per user / business / period → a run for this period already exists).
+      // run) and the period index — idx_payroll_runs_live_period (one LIVE run per user / business / period, 2026-10-21),
+      // or the older all-status idx_payroll_runs_uniq where that migration has not run → a run for this period exists.
       // LR1: the recovery looked up ONLY by token whenever one was sent — and the app always sends one — so a period
       // collision found nothing and re-threw → 500. Now: the token first (a same-token retry hits both indexes, and
       // Postgres does not say which it checked first), then the period.
       const _tok = idem ? (await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [uid, idem])).rows[0] : null;
       const byToken = !!_tok;
-      const ex = _tok || (await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND COALESCE(entity_id,0) = COALESCE($2::int,0) AND period=$3 ORDER BY id ASC LIMIT 1`, [uid, eid, period])).rows[0];
+      // The LIVE run for the period first (the one the live-period index protects); a voided one only where the old
+      // all-status index is still in place (the 2026-10-21 migration not applied) — then the 409 below explains it.
+      const ex = _tok || (await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND COALESCE(entity_id,0) = COALESCE($2::int,0) AND period=$3 ORDER BY (lower(COALESCE(status,''))='voided') ASC, id ASC LIMIT 1`, [uid, eid, period])).rows[0];
       if (ex && !byToken && String(ex.status || '').toLowerCase() === 'voided') {
         // The period's only run was voided. Whether a new run may then be created is an owner decision (LR1); until
         // it is made the database allows one run per period, and the person is told so instead of getting a 500.
@@ -10315,7 +10324,8 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
   } finally { _prc.release(); }
 
   const { rows: fullLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id = $1`, [run.id]);
-  await auditLog(pool, { userId: scopeId(req), entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
+  // LR1: the audit row says which voided run this one replaces (and for which period / total).
+  await auditLog(pool, { userId: scopeId(req), entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', newData: { period: run.period, total_gross: run.total_gross, replaces_run_id: run.replaces_run_id || null }, req });
   res.status(201).json({ ...run, lines: fullLines, unassigned_employees: unassignedEmployees });
 }));
 

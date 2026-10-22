@@ -55,8 +55,12 @@ const flat = s => String(s || '').replace(/\s+/g, ' ');
     const scr = (w.document.getElementById('sc-rev') || {}).textContent;
     A('scenario: projected revenue TT$12,346 (bug TT$12.3K)', scr === 'TT$12,346', 'sc-rev=' + scr);
 
-    // bank reconciliation difference: statement 0 vs book 5 ⇒ diff −5
-    w.eval('bankTxns = [{ amount: 5, date: "2026-07-01", description: "x" }]');
+    // bank reconciliation difference −5. LR16 (2026-10-21) corrected the formula to statement − TICKED lines (signed; it
+    // was "statement − (all lines − ticked)", unsigned). So the −5 is built the real way: a money-in line of 5 ticked as on
+    // the statement, statement balance 0 ⇒ the statement is 5 short ⇒ −5.
+    w.eval('bankTxns = [{ amount: 5, type: "credit", date: "2026-07-01", desc: "x" }]');
+    w.openReconcileModal();
+    const cb = w.document.querySelector('#recon-txn-list input[type=checkbox]'); if (cb) cb.checked = true;
     const sb = w.document.getElementById('recon-stmt-bal'); if (sb) sb.value = '0';
     w.updateReconSummary();
     const rd = (w.document.getElementById('recon-diff') || {}).textContent;

@@ -6234,6 +6234,10 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   // LR18: the document word follows the template's TYPE — a Quote template previews as a QUOTE, never an INVOICE.
   const _isQuote = t.type === 'Quote';
   const _docWord = _isQuote ? 'QUOTE' : 'INVOICE', _docNo = _isQuote ? '#QT-1042' : '#INV-1042';
+  // Fixed wording only (no user data) — a quote states its validity, an invoice its payment terms.
+  const _termsHTML = _isQuote
+    ? '<strong style="color:#333">Validity:</strong> This quote is valid for 30 days'
+    : '<strong style="color:#333">Payment terms:</strong> Due within 30 days · Bank transfer or card accepted via client portal';
   const poweredBy = settings.poweredBy !== false;
   const logoHTML = logoDataURL
     ? `<img src="${logoDataURL}" style="max-height:52px;max-width:160px;object-fit:contain">`
@@ -6321,7 +6325,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     </div>
   </div>
   <div style="margin-top:36px;padding:16px;background:#f9f9f9;border-radius:6px;font-size:12px;color:#888">
-    ${_isQuote ? '<strong style="color:#333">Validity:</strong> This quote is valid for 30 days' : '<strong style="color:#333">Payment terms:</strong> Due within 30 days · Bank transfer or card accepted via client portal'}
+    ${_termsHTML}
   </div>
   ${poweredByHTML}
   </body></html>`;

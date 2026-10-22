@@ -143,7 +143,7 @@ const num = s => parseFloat(String(s == null ? '' : s).replace(/[^0-9.\-]/g, '')
     const perf = document.getElementById('biz-perf-summary').textContent;
     // Extract the cost-basis figure specifically ("... on $6,000 cost basis.") — the sentence also
     // contains the gain, so a blanket digit-strip would concatenate the two numbers.
-    const cbM = perf.match(/on\s*\$?([\d,]+)\s*cost basis/i);
+    const cbM = perf.match(/on\s*(?:US)?\$?([\d,]+)\s*cost basis/i);   // LR22 (2026-10-21): USD figures read "US$6,000"
     const costBasis = cbM ? parseFloat(cbM[1].replace(/,/g, '')) : NaN;
     A('F155: business Performance box shows BUSINESS cost basis $6,000',
       costBasis === EXPECT.e1Cost, `#biz-perf-summary="${perf}" (parsed cost basis ${costBasis})`);

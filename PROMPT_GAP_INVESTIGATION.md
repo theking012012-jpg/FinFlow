@@ -10,16 +10,19 @@
 - run git write commands
 - call a mutating route on production
 
-What you may do:
-- Read code.
-- Run existing harnesses.
-- Write *new, throwaway* probe scripts under `_scratch/` (untracked) that run against a scratch Postgres only.
-- Make GET requests to production, but only if the owner gives you a session in chat. If he doesn't, work from code plus scratch DB reproduction.
+**Code reading only.** A 3× harness sweep is running on this machine. Do NOT:
+- run any harness or test
+- start any Postgres (embedded or scratch)
+- run `npm install`
+- start the server
+- run any process that binds a port or competes for CPU
+
+Read files, use grep, and use `git log`/`git show`/`git blame`. Nothing else.
 
 Your only deliverable file is `PLAN_GAP_FIXES_2026-10-22.md` in the repo root. Do not commit it; the owner will.
 
 **Evidence rule:** a narrative is not a verification. For each finding, state:
-- **Confirmed:** reproduced on a scratch DB or proven by the code path, with file:line.
+- **Confirmed:** proven by tracing the code path end to end, with file:line for each step. Write the harness that *would* go RED into the plan as a design; do not run it.
 - **Not a bug:** you found the code that already does it, with file:line and why the live walk missed it.
 - **Unclear:** say what would settle it.
 
@@ -34,7 +37,7 @@ Your only deliverable file is `PLAN_GAP_FIXES_2026-10-22.md` in the repo root. D
   1. Is a negative payroll liability ever valid?
   2. Do computeBooks and the GL agree?
   3. Which `VERIFICATION.md` checks cover payroll timing, and why didn't they catch this?
-- Reproduce it on a scratch DB with a harness that would go RED.
+- Trace it through the code and design the harness that would go RED. Do not run it.
 - Propose the correct rule (for example: recognise expense on the pay date, or block/warn on paying a future-period run). List every figure the rule changes: dashboard, P&L, balance sheet, AI page, Personal income.
 
 **V2. Banking shows "Total balance $0" with a Plaid account linked and synced.**
@@ -92,7 +95,7 @@ From audit §2–§8:
 
 ## Plan format (`PLAN_GAP_FIXES_2026-10-22.md`)
 
-1. **Findings table:** item → Confirmed / Not a bug / Unclear → evidence (file:line or scratch repro) → root cause.
+1. **Findings table:** item → Confirmed / Not a bug / Unclear → evidence (file:line) → root cause.
 2. **Money section first** (V1, V2): the proposed rule, the affected figures, and the harness design. Mark any **owner decision** needed.
 3. **Build plan:**
    - Ordered batches, each one commit-sized, with: files touched, size, risk, harness (RED → GREEN), and the related harnesses to re-run.
@@ -104,6 +107,6 @@ From audit §2–§8:
    - Contact upsert for existing data.
    - Whether to hide "coming soon" tabs.
 5. **Out of scope:** tax filing, VAT/GST engine.
-6. **UNEXECUTED:** anything you could not prove, and why.
+6. **UNEXECUTED:** everything is proven by code reading only. List which findings most need an executed harness once the sweep is done, starting with V1.
 
 Stop after writing the plan. Build nothing.

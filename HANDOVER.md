@@ -5,7 +5,60 @@
 
 ---
 
-## ⚡ UPDATE 2026-10-20 (latest — read this first)
+## ⚡ UPDATE 2026-10-22 (latest — read this first)
+
+**Read `CLAUDE.md` first.** Evidence for every row below: `AUDIT_MASTER.md` LR1–LR36 (counts, commit hashes).
+
+### Where things are
+
+- `main` = branch `claude/live-retest-2026-10-20` (fast-forward; owner instruction 2026-10-21 "update the docs, and
+  commit and push to main all that's already done and verified"). Railway auto-deploys `main`.
+- **28 fix commits, one per fix** (`f266dba` … `25fe839`) on top of `9682467`, then this docs commit. Each commit was
+  rebuilt on its own and its harness re-run GREEN on that exact commit before it was made.
+- **Full runs (agent, not the owner's 3× sweep):** every `verify-*` harness on the round-3 tree — 574 / 576 exit 0, the
+  2 failures were test defects, fixed (a fabricated `'draft'` quote seed; structural checks pinned to the old COGS
+  card); on the final tree — 582 / 584 exit 0: `verify-c29-audit-filters` caught a real gap (new `bank_statement`
+  audit rows had no filter option — fixed in the LR31 commit, 9/0) and `verify-f106-client-controls` timed out under
+  load (re-run 5/0). The owner's PowerShell sweep ×3 is still owed (`LAUNCH_STATUS.md` 0.1).
+- **Two schema migrations run on the next boot:** `2026-10-21-payroll-runs-live-period-uniq.sql` (LR1 — one LIVE
+  payroll run per period; the old index was stricter, so live data satisfies the new one) and
+  `2026-10-21-personal-tx-idem-key.sql` (LR11). Each runs in its own transaction; a failure rolls back and boot
+  continues. Confirm `[migrate] applied …` in the Railway log.
+
+### Fixed in this release (live retest 2026-10-20 + what its fixes uncovered)
+
+| Rows | What changed |
+|---|---|
+| LR1 | A voided payroll period can be run again (one live run per period; the new run names the one it replaces). |
+| LR2 / LR3 / LR4 / LR7 | Money-flow refresh, payroll empty text, budget Monthly / Annual toggle (earlier commits `4de29ba`…`9682467`). |
+| LR5 / LR6 / LR22 | Owner decisions: "This is me" on the owner card · "Fiscal year to date · <start> – <today>" · USD holdings say USD with the business-currency equivalent; Stripe totals per currency. |
+| LR8 · LR9 / LR10 · LR11 | Budget audit rows say "/ year" · quotes + time entries editable, quote → invoice · Banking "+ Add" adds a manual line (asks before a likely duplicate). |
+| LR12 · LR13 · LR14 | Audit "By" column · Documents cards / sizes / `.txt` / type allowlist · Entities caption + names escaped. |
+| LR15 · LR16 · LR18 · LR19 · LR20 · LR21 | COGS this month · Bank Rec lists every line + book balance · quote template on the business letterhead · Budget follows the period · no false "Via Stripe" · Settings keeps a stored industry (old code WIPED it on save). |
+| LR17 / LR23 | Every e-mail send checks Resend's answer — a refused e-mail is recorded as refused, never "sent". |
+| LR24 / LR25 · LR26 | Business money labels show the business currency (19) · HTML-injection paths closed (bank fields, document type, entity names, budget category, template preview) · personal money fields entered in the currency they show. |
+| LR27 · LR28 · LR29 · LR30 · LR31 · LR32 · LR33 | Dead audit code removed · no false Documents claims · detected intercompany shown (windowed) · COGS Summary names its period · Banking lists linked accounts with balances + Bank Rec statement balance · no invented sample tax · no static "$0" placeholders. |
+
+### Outstanding
+
+**Agent (in progress, owner said "fix" 2026-10-21):** LR34 (cards nothing writes — Avg Days to Pay, payroll "Next run
+date", MRR churn tiles) and LR36 (personal monthly budget never saved; Income target read by nothing) — fixed and
+verified on a copy, committed after this push. **LR35 — owner decision:** Scenario planner is filed under Personal but
+shows business figures (the wall); recommendation: move it to the business section.
+
+**Owner:**
+1. Full sweep ×3 on `main` (`LAUNCH_STATUS.md` 0.1).
+2. Railway log: the two migrations above applied.
+3. Production data checks (read-only): `DATABASE_URL=… node tools/f79-status-inventory.js` — the `quotes` line shows
+   any quote status LR9's allowlist now refuses (pending / accepted / declined only).
+4. Still open from before: rotate the database password (1.1); configure Resend (1.2) — until then LR17's "did the
+   12:24 alert go out" can only be read on the Resend dashboard; cleanup of the 21 `ZZ-LIVECHECK` records (1.6).
+5. Not reproduced: LR21's "GET /api/settings 5×" (2 at boot, 0 on opening Settings) — DevTools › Network › Initiator
+   on the live site if it matters.
+
+---
+
+## UPDATE 2026-10-20 (kept for history)
 
 **Read `CLAUDE.md` first.** Then `LAUNCH_STATUS.md` (what stands between today and launch) and the LC rows in
 `AUDIT_MASTER.md` (evidence for each fix).

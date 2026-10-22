@@ -5,7 +5,9 @@ audit-trail coverage work (LC3b, LC3d, LC3e, LC3f, LC3g): branch `claude/laughin
 docs commit, fast-forwarded onto `main` (which was `14709a6`, the commit the 557 ×3 sweep ran on) · **Replaces** the
 2026-10-05 version of this file (see git history at `47a026c`), which predated the 2026-10-09 money audit and the
 2026-10-13 live audit. · **Updated again 2026-10-20 (later):** results of Cowork's full live retest of this release —
-52 checks, 40 PASS · 6 FAIL · 5 BLOCKED · 1 SKIPPED (`COWORK_RETEST_RESULTS_2026-10-20.md`; findings = `AUDIT_MASTER.md` LR1–LR21).
+52 checks, 40 PASS · 6 FAIL · 5 BLOCKED · 1 SKIPPED (`COWORK_RETEST_RESULTS_2026-10-20.md`; findings = `AUDIT_MASTER.md` LR1–LR21). · **Updated 2026-10-22:** the
+retest's findings and everything their fixes uncovered (LR1–LR33) fixed and pushed to `main` — 28 commits `f266dba` …
+`25fe839` + docs; LR34 / LR36 follow; LR35 is an owner decision (§0, `HANDOVER.md` 2026-10-22).
 
 This is the single list of what stands between today and going public. Work it top to bottom.
 
@@ -22,8 +24,9 @@ This is the single list of what stands between today and going public. Work it t
 > launch**. What remains is one security action, external configuration, a final verification pass, and a few
 > launch-scope decisions.
 >
-> **2026-10-20 live retest:** two 🔴 code findings now stand between this release and "nothing blocks": **LR1** (Run
-> Payroll returns HTTP 500 on the test account) and **LR7** (Budget targets "Monthly" saves every row × 12). See §0.4.
+> **2026-10-20 live retest:** its two 🔴 findings — **LR1** (Run Payroll HTTP 500 on a voided period) and **LR7**
+> (Budget "Monthly" saved × 12) — are FIXED (`f266dba`, `9682467`), with every other LR row (§0, 2026-10-22 release).
+> What is left on the code side: LR34 / LR36 (in progress) and the owner decision LR35.
 
 ---
 
@@ -51,11 +54,17 @@ redeploy":
 | `1b41b86` LC3f | Both sides of the accountant relationship on the client's trail; accountant account events. |
 | `ad228ab` LC3e | Every connect / disconnect of an outside service, "books into" changes, bank-feed syncs (business only, never a credential). |
 
+**Release 2026-10-22 (live-retest fixes)** — 28 commits on top of `9682467`, one per fix (`AUDIT_MASTER.md` LR1–LR33,
+each row names its commit and its RED → GREEN counts), owner instruction 2026-10-21 "commit and push to main all
+that's already done and verified". Full agent runs: round-3 tree 574 / 576, final tree 582 / 584 exit 0 — every
+failure accounted for (`HANDOVER.md` 2026-10-22). Two migrations: `2026-10-21-payroll-runs-live-period-uniq.sql`,
+`2026-10-21-personal-tx-idem-key.sql`.
+
 | # | Step | Status | Evidence / how to confirm |
 |---|---|---|---|
-| 0.1 | Full sweep 3× on this release | ⬜ OPEN (owner) | NOT run by the owner on these 15 commits. Each fix: its harness RED on the old code → GREEN; related re-runs GREEN (LC3g 43 harnesses 583/0 · LC3d 265 harnesses 3,363 passed — the one failure a test contradiction, corrected · LC3f 80 → 1,117/0 · LC3e 90 → 1,196/0). The agent started one sweep (572 harnesses, ~3 h) at push time on the same code; its result is recorded in `HANDOVER.md` when it finishes. Run the 3× sweep on `main` as soon as possible. |
+| 0.1 | Full sweep 3× on this release | ⬜ OPEN (owner) | **2026-10-22 release:** not yet swept by the owner either (agent full runs only — above). NOT run by the owner on these 15 commits. Each fix: its harness RED on the old code → GREEN; related re-runs GREEN (LC3g 43 harnesses 583/0 · LC3d 265 harnesses 3,363 passed — the one failure a test contradiction, corrected · LC3f 80 → 1,117/0 · LC3e 90 → 1,196/0). The agent started one sweep (572 harnesses, ~3 h) at push time on the same code; its result is recorded in `HANDOVER.md` when it finishes. Run the 3× sweep on `main` as soon as possible. |
 | 0.2 | Merge to `main` | ✅ DONE 2026-10-20 | Fast-forward (`main` had no commits the branch lacked). Railway deploys `main`. |
-| 0.3 | Schema changes apply on first boot | ⬜ CONFIRM | Applied by `initDB()` at boot (`SKIP_INIT_DDL` is not set — §2.3) and mirrored by `scripts/migrations/2026-10-20-admin-log-hardening.sql` and `…-audit-trail-user-agent.sql`: `admin_log` gains ip / user_agent / session_ref / before_data / after_data / outcome + append-only trigger `admin_log_no_mutate`; `audit_trail` gains `user_agent`. Schema only, no data changed. Railway log: `[migrate] applied …`, no `[audit] recordAudit failed`. |
+| 0.3 | Schema changes apply on first boot | ⬜ CONFIRM | **2026-10-22:** `scripts/migrations/2026-10-21-payroll-runs-live-period-uniq.sql` + `…-personal-tx-idem-key.sql` — look for `[migrate] applied` (a failure rolls back and boot continues: `[migrate] FAILED`). Applied by `initDB()` at boot (`SKIP_INIT_DDL` is not set — §2.3) and mirrored by `scripts/migrations/2026-10-20-admin-log-hardening.sql` and `…-audit-trail-user-agent.sql`: `admin_log` gains ip / user_agent / session_ref / before_data / after_data / outcome + append-only trigger `admin_log_no_mutate`; `audit_trail` gains `user_agent`. Schema only, no data changed. Railway log: `[migrate] applied …`, no `[audit] recordAudit failed`. |
 | 0.4 | Post-deploy live check | 🟠 RUN 2026-10-20 — open FAILs | Cowork, `COWORK_RETEST_RESULTS_2026-10-20.md`: (a) time → project ✅ (F1); (b) audit rows for new quote / time / budget ✅, "Connected services" + "Security" filters ✅ (T1, T2, T5) — a quote or time entry cannot be *edited* in the UI (LR9, LR10), no manual bank line can be added (LR11); (c) "Recent security activity" lists the sign-in with device + IP ✅ — failed sign-in not tried (owner step, T4); (d) overpay warning ✅ (F3); (e) no sideways scroll ✅ (F4); (f) Dashboard "Year to date" ✅, Reports line reads "Year to date · Jan 2026 – Oct 2026" (LR6); (g) audit says a new-device alert was "sent: true" (LR17 — confirm). Plus FAILs elsewhere in the run: LR1 payroll 500, LR2/LR3 Money-flow stale, LR4, LR5. |
 
 ---
@@ -85,7 +94,7 @@ redeploy":
 | 2.4 | Cloudflare in front (proxied DNS, TLS Full (strict), managed WAF — free tier is enough) | ❔ CONFIRM | |
 | 2.5 | Secrets rotation schedule (DB URL, Stripe, connector keys) + rotate on any suspected exposure | ⬜ OPEN | 1.1 is the first instance. |
 | 2.6 | Legal review of `terms`, `privacy`, `security` pages | ⬜ OPEN · 🔒 OWNER | Pages exist (`public/terms.html`, `privacy.html`, `security.html`); content not reviewed for a product holding bank data. Plaid production approval asks for them. |
-| 2.7 | Live functional check of the areas no audit has exercised | 🟠 RUN 2026-10-20 | Part C 14/15 PASS, C14 (accountant portal) BLOCKED — no accountant login. Gaps found: LR9 (no quote edit / convert), LR10 (no time-entry edit), LR11 (bank "+ Add" stub), LR13 (Documents cards), LR16 (Bank Rec balances). Scope: `COWORK_LIVE_CHECK.md` Part C: Time Tracking, Budget, MRR/SaaS, Quotes, Sales Receipts, Payments Received/Made, Classes, Scheduled Documents, Reminders, Documents/Templates, Audit trail, accountant portal. |
+| 2.7 | Live functional check of the areas no audit has exercised | 🟠 RUN 2026-10-20 | **2026-10-22:** LR9, LR10, LR11, LR13, LR16 fixed — needs a live re-check. Part C 14/15 PASS, C14 (accountant portal) BLOCKED — no accountant login. Gaps found: LR9 (no quote edit / convert), LR10 (no time-entry edit), LR11 (bank "+ Add" stub), LR13 (Documents cards), LR16 (Bank Rec balances). Scope: `COWORK_LIVE_CHECK.md` Part C: Time Tracking, Budget, MRR/SaaS, Quotes, Sales Receipts, Payments Received/Made, Classes, Scheduled Documents, Reminders, Documents/Templates, Audit trail, accountant portal. |
 | 2.8 | `SECURITY_ALERT_EMAIL` (audit-anomaly digest), `LOG_REQUESTS=1` | ⬜ OPEN (optional) | Supported in `server.js`. |
 
 ---
@@ -111,7 +120,7 @@ redeploy":
 | 4.1 | Full sweep 3× GREEN on the exact commit going live | ⬜ OPEN | `node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js`. Capture: `HANDOVER.md` (log-file command). |
 | 4.2 | `VERIFICATION.md` re-sweep on real seeded data | ⬜ OPEN | Per `CLAUDE.md`, **done = every check in `VERIFICATION.md` green**; anything not on it is unverified. 19 Result cells are empty (A7.5–8, A7.18, A8a/A8b) — gate-tested but not stamped. |
 | 4.3 | Human smoke test on production | ⬜ OPEN | Sign up → create a business → invoice + expense → record a payment → P&L / balance sheet / All entities → connect one sandbox bank → invite an accountant. **Confirm the emails actually arrive** (needs 1.2). |
-| 4.4 | Live check complete with no open FAIL | ⬜ OPEN — 2026-10-20 run: 6 FAIL: B6 (LR1), B5 (LR2), B8 (LR3 + LR4), A4 (LR5), F2 (LR6), B10 (via LR1), 5 BLOCKED (T2, T3, T4, T8, C14), 1 SKIPPED (T6) | `COWORK_LIVE_CHECK.md` A (fixes live) + B (rerun of the 13 Oct live audit) + C (untested areas). |
+| 4.4 | Live check complete with no open FAIL | ⬜ OPEN — the 2026-10-20 FAILs are fixed in the 2026-10-22 release (LR1–LR5); a live re-run is needed to close it. Was: ⬜ OPEN — 2026-10-20 run: 6 FAIL: B6 (LR1), B5 (LR2), B8 (LR3 + LR4), A4 (LR5), F2 (LR6), B10 (via LR1), 5 BLOCKED (T2, T3, T4, T8, C14), 1 SKIPPED (T6) | `COWORK_LIVE_CHECK.md` A (fixes live) + B (rerun of the 13 Oct live audit) + C (untested areas). |
 
 ---
 
@@ -119,7 +128,7 @@ redeploy":
 
 | Area | Status | Evidence |
 |---|---|---|
-| Live retest 2026-10-20 — rows LR1–LR21 | ⬜ OPEN | `AUDIT_MASTER.md` LR rows. 🔴 LR1 (payroll run 500), LR7 (budget Monthly × 12); 🟠 LR2 / LR3 (Money flow stale), LR11 (bank "+ Add" stub); 🔒 decisions LR5, LR6, LR9, LR10; rest minor. Live confirmation of LA / LC fixes in the same section. |
+| Live retest 2026-10-20 — rows LR1–LR36 | ✅ LR1–LR33 FIXED + VERIFIED (2026-10-22 release) · ⬜ LR34 / LR36 in progress · 🔒 LR35 | `AUDIT_MASTER.md` LR rows — each names its commit and its harness RED → GREEN counts. Owner: sweep ×3, live re-check, LR35 decision. |
 | Live check 2026-10-19 — FIX-1…5 (rows LC1–LC5) | ✅ FIXED, deployed 2026-10-20 (§0); live-confirmed 2026-10-20 except LC2's Reports line (LR6) | `AUDIT_MASTER.md` LC rows; each RED → GREEN. FIX-2 = relabel (owner decision: "Year to date"). Open from it: LC1c (data, 3.4). |
 | Audit-trail coverage — every route that changes data (LC3b–LC3g) | ✅ FIXED except LC3c, deployed 2026-10-20 | Guard `verify-fix3b-audit-route-guard` (structural): 259 routes — 204 audited, 38 exempt with a stated reason, 17 known gap = **LC3c** (personal side). GET routes that write are checked too (LC3e-b). |
 | LC3c — separate personal history | 🔄 IN PROGRESS (not deployed) | Owner decision 2026-10-20. Design + scope in `AUDIT_MASTER.md` LC3c. |

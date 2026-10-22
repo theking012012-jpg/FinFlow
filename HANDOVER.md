@@ -43,6 +43,13 @@ do not rotate SESSION_SECRET once banks are linked) · LR28 landing testimonials
 **Third round 2026-10-21 (owner: "go with your recommendations", UNCOMMITTED):** LR6 3/0 · LR8 2/0 · LR9 7/0 · LR10 6/0 ·
 LR22 2/0 · LR23 7/0 · LR25 3/0 · LR1b 9/0 · D3.3 4/0 · D3.6 5/0 (each RED first) · LR13 formatter regex follow-up 6/0.
 Decisions left: 3.4 (data step), 3.5 (legal), 2.6 (lawyer). **Full sweep: the owner's, at the end.** **Decisions waiting:** 3.1–3.7, LR1-follow-up, LR5, LR6, LR8, LR9, LR10, LR22, LR23, LR25, 2.6.
+**Fourth round 2026-10-22 (UNCOMMITTED; owner's 3× sweep on `f59a845` = 601/605 · 599/605 · 601/605):** the 4 reds that
+recurred in every run were harness expectations left stale by the round-3 decisions, plus one escaping false positive. No app
+figure was wrong (LR30): escaping sweep 3/0 · LR18 4/0 · f129 7/0 · f154 14/0 · native-money 10/0. The 2 run-2 TIMEOUTs
+were NOT flaky: a real intermittent client loop (renderInventory ↔ loadCOGS; an error reply also zeroed COGS), latent since
+C7 (LR31). `verify-lr31-cogs-reload-loop` RED 3/3 → GREEN 6/0; bankrec-render and f106-client-controls 3/3 runs GREEN each.
+Related set (COGS / inventory / bank rec / escaping / currency labels) **30/30 GREEN**, sequential. `npm run gen` exit 0, no
+tracked build file changed. **Next: owner's 3× full sweep on the commit with these fixes.**
 **Tooling note:** the bundle has TWO more sources than `finflow-api-wiring-*.js` — `finflow-api.js` and
 `finflow-api-wiring.js`. A Rule-1 grep must include them (`public/finflow-api*.js`).
 

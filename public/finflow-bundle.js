@@ -1251,7 +1251,8 @@
       // C7: stock on hand at FIFO cost from the server (/api/cogs inventoryValue) — the Balance Sheet's figure. It was
       // units × the item's current cost field (75 vs the Balance Sheet's 90). "—" until loaded, never a different number.
       _invKpi('inv-value', window._inventoryValue != null ? S(window._inventoryValue) : '—');
-      if (window._inventoryValue == null && typeof window.loadCOGS === 'function') { try { window.loadCOGS(); } catch (e) {} }
+      // LR31: never while a loadCOGS is running — its own repaint lands here, and a reply without the value looped forever.
+      if (window._inventoryValue == null && !window._cogsLoading && typeof window.loadCOGS === 'function') { try { window.loadCOGS(); } catch (e) {} }
       _invKpi('inv-lowstock', lowCount);
       // F-K1: COGS is cost of goods SOLD (FIFO, server /api/cogs), NOT inventory value (units×cost).
       // The old units×cost duplicated the Inventory-value KPI and contradicted the FIFO COGS Summary.
@@ -1261,7 +1262,7 @@
       { const _cl = document.getElementById('inv-cogs-label');
         let _pl = ''; try { _pl = (typeof window.getPeriodData === 'function' ? window.getPeriodData() : getPeriodData()).label || ''; } catch (e) {}
         if (_cl) _cl.textContent = 'COGS' + (_pl ? ' · ' + _pl : ''); }
-      if (typeof window.loadCOGS === 'function' && window._cogsTotal == null) { try { window.loadCOGS(); } catch (e) {} }
+      if (typeof window.loadCOGS === 'function' && window._cogsTotal == null && !window._cogsLoading) { try { window.loadCOGS(); } catch (e) {} }
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {

@@ -7292,12 +7292,17 @@ async function submitStockOut(){
   finally{window._savingStockOut=false;if(_soBtn)_soBtn.disabled=false;}
 }
 async function loadCOGS(){
+  // LR31: renderInventory asks for COGS while the stock value is unknown, and this repaints renderInventory — so while a
+  // load is running, the render it triggers must not start another (window._cogsLoading; renderInventory checks it).
+  // Explicit loads (page open, Refresh, period change, switch) are never dropped.
+  window._cogsLoading=(window._cogsLoading||0)+1;
   try{
     // F25: fetch the CURRENT PERIOD's COGS (same window the dashboard uses), so opening the COGS
     // page on a Month/Quarter view no longer clobbers window._cogsTotal back to the all-time figure
     // and silently re-breaks the dashboard Net. Falls back to all-time if the helper isn't loaded.
     const _q=(typeof window._cogsPeriodParams==='function')?('?'+window._cogsPeriodParams().toString()):'';
     const res=await fetch('/api/cogs'+_q,{credentials:'include'});
+    if(!res.ok) throw new Error('/api/cogs '+res.status);   // LR31: an error reply is not books — keep the last figures, never COGS 0
     const data=await res.json();
     // Stash the entity-scoped FIFO total for the canonical Net (Revenue − COGS − OpEx) used by
     // the dashboard / AI / health score, then re-render them so COGS flows through immediately.
@@ -7338,7 +7343,8 @@ async function loadCOGS(){
       });
       if(typeof renderInventory==='function')renderInventory();
     }
-  }catch(e){}
+  }catch(e){ console.warn('[COGS] load failed:', e && e.message); }
+  finally{ window._cogsLoading=Math.max(0,(window._cogsLoading||1)-1); }
 }
 
 // ── FEATURE 5: FX GAIN/LOSS ───────────────────────────────────────────────────

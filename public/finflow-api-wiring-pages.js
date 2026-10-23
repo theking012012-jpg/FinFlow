@@ -1441,9 +1441,9 @@
       // exactly like renderPaymentsReceived does (same array, same tolerance for a missing invoice).
       const inv = new Map((window._realInvoices || []).map(i => [i.id, i])).get(r.invoice_id) || null;
       window.ffOpenDocView({
-        number: r.num || (inv && inv.num) || '', party: (inv && inv.client) || r.client || '—',
+        number: r.num || (inv && (inv.number || inv.num)) || '', party: (inv && inv.client) || r.client || '—',   // G17: B1b stores `number`
         issue_date: r.payment_date || r.date || null, status: 'paid',
-        notes: r.method ? 'Payment method: ' + r.method : (inv ? 'Payment for ' + (inv.num || 'invoice') : ''),
+        notes: r.method ? 'Payment method: ' + r.method : (inv ? 'Payment for ' + (inv.number || inv.num || 'invoice') : ''),
         amount: r.amount, currency: r.currency || null,
       }, 'payment');
     };

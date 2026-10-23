@@ -5677,6 +5677,19 @@ async function loadBankingFromDB(){
         cat: r.category||'Other',
       };
     });
+    // V2 (D7): the linked banks' accounts with the bank's own balance, and the books' cash to compare with. Either read
+    // failing leaves "—" / no comparison — never a made-up 0.
+    try {
+      const pr = await fetch('/api/plaid/items',{credentials:'include'});
+      const pj = pr.ok ? await pr.json() : null;
+      bankAccounts.length = 0;
+      ((pj && pj.items) || []).forEach(it => (it.accounts||[]).forEach(a => bankAccounts.push(Object.assign({ bank: it.institution_name }, a))));
+    } catch(_e){ bankAccounts.length = 0; }
+    try {
+      const br = await fetch('/api/reports/balance-sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});
+      const bj = br.ok ? await br.json() : null;
+      window._bankBooksCash = bj ? { tracked: bj.cashTracked === true && bj.cash != null, cash: parseFloat(bj.cash)||0 } : null;
+    } catch(_e){ window._bankBooksCash = null; }
     if(typeof renderBanking==='function') renderBanking();
   } catch(e){
     // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch
@@ -5708,9 +5721,16 @@ async function saveBankTxn(desc, amount, type, cat, date, idemKey){
 function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
   const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  // LR16: no linked account reports a balance (bankAccounts is filled by nothing today) → "—", never a fabricated $0.
-  const _bkHasBal = (bankAccounts||[]).some(a => a && a.balance != null && a.balance !== '');
-  const _bkTotal = (bankAccounts||[]).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+  // V2 (D7, 2026-10-23): bankAccounts = the linked banks' accounts with the bank's OWN balance (loadBankingFromDB). Totals
+  // are PER CURRENCY — two currencies are never added into one figure; the business's currency comes first. No account
+  // reporting a balance → "—" (LR16), never a fabricated $0.
+  const _cur = _activeEntityCurrency();
+  const _symOf = c => { const t=(window.FinFlowCurrency&&window.FinFlowCurrency.CURRENCIES)||window.CURRENCIES||{}; return (t[c]&&t[c].symbol) || (c ? c+' ' : ''); };
+  const _m2 = (n,c) => (n<0?'-':'')+_symOf(c)+Math.abs(+n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const _byCur = {};
+  (bankAccounts||[]).forEach(a => { if(a && a.current!=null && a.currency){ _byCur[a.currency]=Math.round(((_byCur[a.currency]||0)+a.current)*100)/100; } });
+  const _curs = Object.keys(_byCur).sort((x,y)=>(x===_cur?-1:y===_cur?1:x.localeCompare(y)));
+  const _bkHasBal = _curs.length > 0;
   // F87: the MTD month key comes from the CALENDAR date (UTC via resolvedToday), not local
   // getMonth — so Inflow/Outflow (MTD) don't shift by the viewer's timezone. Row side is a
   // string prefix match on the row's own 'YYYY-MM-DD'.
@@ -5719,20 +5739,39 @@ function renderBanking(){
   const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkUncat = (bankTxns||[]).filter(t => !t.cat || /uncategor/i.test(t.cat)).length;
-  _bkSet('bank-total-bal', _bkHasBal ? S(_bkTotal) : '—');
+  _bkSet('bank-total-bal', _bkHasBal ? _curs.map(c=>_m2(_byCur[c],c)).join(' · ') : '—');
   _bkSet('bank-inflow',    S(_bkIn));
   _bkSet('bank-outflow',   S(_bkOut));
   _bkSet('bank-uncat',     _bkUncat);
   window._refreshDashboardUI?.();
   const al=document.getElementById('bank-accounts-list');
+  const _asOf = v => { if(!v) return ''; const d=new Date(v); return isNaN(d) ? '' : 'as of '+d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); };
   if(al)al.innerHTML=bankAccounts.map(a=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${a.bank} · ****${a.last4}</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(a.bank||'Bank')}${a.mask?' · ****'+esc(a.mask):''}${a.subtype?' · '+esc(a.subtype):''}</div></div>
       </div>
-      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">$${a.balance.toLocaleString()}</div><div style="font-size:10px;color:var(--t3)">${a.type} · ${a.updated}</div></div>
+      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${a.current!=null?_m2(a.current,a.currency):'—'}</div><div style="font-size:10px;color:var(--t3)">${a.available!=null&&a.available!==a.current?_m2(a.available,a.currency)+' available · ':''}${esc(_asOf(a.as_of))}</div></div>
     </div>`).join('');
+  // V2: ONE honest comparison — the books hold a single cash account per business (bank lines do not record a per-account
+  // ledger yet), so the bank total in the BUSINESS's currency is set against the cash in the books, with the difference and
+  // the way to explain it (Bank Rec). Accounts in other currencies are named, never folded in.
+  let cmp=document.getElementById('bank-books-compare');
+  if(al && !cmp){ cmp=document.createElement('div'); cmp.id='bank-books-compare'; cmp.style.cssText='font-size:12px;color:var(--t2);padding:10px 0 2px;line-height:1.6'; al.parentNode.insertBefore(cmp, al.nextSibling); }
+  if(cmp){
+    const bc=window._bankBooksCash||null, others=_curs.filter(c=>c!==_cur);
+    let h='';
+    if(_byCur[_cur]!=null){
+      if(bc && bc.tracked){
+        const diff=Math.round((_byCur[_cur]-bc.cash)*100)/100;
+        h='Bank ('+esc(_cur)+'): <strong>'+_m2(_byCur[_cur],_cur)+'</strong> · Cash in your books: <strong>'+_m2(bc.cash,_cur)+'</strong> · Difference: <strong style="color:'+(Math.abs(diff)<0.005?'var(--green)':'var(--amber)')+'">'+_m2(diff,_cur)+'</strong>'
+          +(Math.abs(diff)<0.005?' ✓':' — <a href="#" onclick="showPage(\'bank-rec\');return false">reconcile it in Bank Rec</a>');
+      } else if(bc) h='Cash is not tracked in your books yet for this business, so there is no bank-vs-books difference to show.';
+    }
+    if(others.length) h+=(h?'<br>':'')+'Accounts in '+others.map(esc).join(', ')+' are shown separately and not compared with your '+esc(_cur)+' books.';
+    cmp.innerHTML=h;
+  }
   const tl=document.getElementById('bank-txns-list');
   if(tl)tl.innerHTML=bankTxns.map(t=>`
     <div class="tx-row">

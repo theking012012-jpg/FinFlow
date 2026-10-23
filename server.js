@@ -7709,7 +7709,17 @@ async function _auditConnChange(uid, key, eid, before, after, req) {
   if (b && a && JSON.stringify(b.books) !== JSON.stringify(a.books)) return rec('UPDATE', { provider, account: b.account, books: b.books }, { provider, account: a.account, books: a.books });
 }
 const _mutatePlaidItemsE = (uid, entityId, fn, req) => _mutateSettingsBlob(uid, 'plaid_items', entityId, cur => fn(Array.isArray(cur) ? cur : []), req);
-const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_name, linked_at: i.linked_at });
+// V2 (owner decision D7, 2026-10-23): the bank's OWN balance per account, as the provider reported it — stored at link
+// and refreshed on every sync (it was read once, only for the bank's name, and thrown away, so Banking showed "$0").
+// Display only: never posted to the books (the bank-vs-books difference is what reconciliation explains).
+const _plaidAccountsOut = (accts, asOf) => (Array.isArray(accts) ? accts : []).map(a => {
+  const b = a.balances || {};
+  const num = v => (v == null || v === '' || !Number.isFinite(Number(v))) ? null : Math.round(Number(v) * 100) / 100;
+  return { account_id: a.account_id, name: String(a.official_name || a.name || 'Account').slice(0, 120), mask: a.mask ? String(a.mask).slice(-4) : null,
+    type: a.type || null, subtype: a.subtype || null, current: num(b.current), available: num(b.available),
+    currency: b.iso_currency_code ? String(b.iso_currency_code).toUpperCase() : null, as_of: asOf };
+});
+const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_name, linked_at: i.linked_at, accounts: Array.isArray(i.accounts) ? i.accounts : [] });   // V2: balances, never the token
 
 // GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
 // an honest "needs setup" state instead of a Link button that would 502.
@@ -7747,9 +7757,10 @@ app.post('/api/plaid/exchange', requireAuth, _bankPerm, wrap(async (req, res) =>
   if (!publicToken) return res.status(400).json({ error: 'public_token is required.' });
   try {
     const ex = await plaidCall('/item/public_token/exchange', { public_token: publicToken });
-    let institution = 'Bank';
+    let institution = 'Bank', _linkAccts = [];
     try {
       const acc = await plaidCall('/accounts/get', { access_token: ex.access_token });
+      _linkAccts = _plaidAccountsOut(acc.accounts, new Date().toISOString());   // V2
       const instId = acc.item && acc.item.institution_id;
       if (instId) {
         const inst = await plaidCall('/institutions/get_by_id', { institution_id: instId, country_codes: PLAID_COUNTRIES });
@@ -7757,7 +7768,7 @@ app.post('/api/plaid/exchange', requireAuth, _bankPerm, wrap(async (req, res) =>
       }
     } catch (_) { /* institution name is best-effort; the link still succeeds */ }
     const { uid, eid } = _bankCtx(req);   // M60
-    const _newItem = { item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null };
+    const _newItem = { item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null, accounts: _linkAccts };
     const next = await _mutatePlaidItemsE(uid, eid, cur => cur.filter(it => it.item_id !== ex.item_id).concat([_newItem]), req);   // N45: idempotent re-link, atomic
     res.status(201).json({ ok: true, institution_name: institution, item_id: ex.item_id, items: next.map(_publicItem) });
   } catch (e) {
@@ -7834,7 +7845,7 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
             ..._bankTx(personal, Number(t.amount) >= 0),
             tx_date: t.date || new Date().toISOString().slice(0, 10),
             category: (t.personal_finance_category && t.personal_finance_category.primary) || 'Other',
-            source: 'banking', plaid_txn_id: t.transaction_id,
+            source: 'banking', plaid_txn_id: t.transaction_id, plaid_account_id: t.account_id || null,   // V2: per-account books later
             currency: _plCur(t), pending: !!t.pending,
           });
           added++;
@@ -7842,12 +7853,20 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
         cursor = sync.next_cursor; hasMore = !!sync.has_more;
       }
       it.cursor = cursor;
+      // V2: refresh the bank's own balances — real-time when the provider allows it, else its cached figure. A failure keeps
+      // the last known balances (with their as-of time), never zeroes them.
+      try {
+        let bal;
+        try { bal = await plaidCall('/accounts/balance/get', { access_token: token }); }
+        catch (_e) { bal = await plaidCall('/accounts/get', { access_token: token }); }
+        if (bal && Array.isArray(bal.accounts)) it.accounts = _plaidAccountsOut(bal.accounts, new Date().toISOString());
+      } catch (e) { console.error('[plaid balances]', e.message); }
     } catch (e) { console.error('[plaid sync]', e.message, e.plaid || ''); }
   }
   // N45: write back ONLY the cursors this sync advanced, onto the list as it is now — a bank linked or unlinked
   // while the sync ran is kept / stays removed.
-  const _cursors = new Map(items.map(it => [it.item_id, it.cursor]));
-  await _mutatePlaidItemsE(uid, eid, cur => cur.map(it => (_cursors.has(it.item_id) ? Object.assign({}, it, { cursor: _cursors.get(it.item_id) }) : it)));
+  const _cursors = new Map(items.map(it => [it.item_id, { cursor: it.cursor, accounts: it.accounts }]));
+  await _mutatePlaidItemsE(uid, eid, cur => cur.map(it => (_cursors.has(it.item_id) ? Object.assign({}, it, { cursor: _cursors.get(it.item_id).cursor }, Array.isArray(_cursors.get(it.item_id).accounts) ? { accounts: _cursors.get(it.item_id).accounts } : {}) : it)));
   // LC3e: a business's bank feed changed — one summary row (counts, never a transaction). Personal's feed stays off it.
   if (eid != null && (added + modified + removed + flagged) > 0)
     await recordAudit(pool, { userId: uid, entityId: eid, table: 'integrations', action: 'INTEGRATION_SYNC', newData: { provider: 'plaid', added, modified, removed, flagged }, req });

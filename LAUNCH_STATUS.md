@@ -8,6 +8,13 @@ docs commit, fast-forwarded onto `main` (which was `14709a6`, the commit the 557
 52 checks, 40 PASS · 6 FAIL · 5 BLOCKED · 1 SKIPPED (`COWORK_RETEST_RESULTS_2026-10-20.md`; findings = `AUDIT_MASTER.md` LR1–LR21).
 **Updated 2026-10-21 (agent; committed by the owner as `060846f` … `cd39c3e`, pushed to `main` — NOT yet deployed: Railway paused all builds during a Railway incident; redeploy when it lifts):** the launch pass (`PROMPT_LAUNCH_ALL.md`). Fixed RED → GREEN: LR11, LC3c (known gap 17 → 0), LR12, LR13, LR15, LR20, LR21 (industry half), new LR24 / LR26 / LR27 (sweep timer), A5 (Sentry dependency, restore-drill guard, indexing confirmed), A6 (test-data list + purge tools), A7 (LC1c link script, prepared). Owner steps: `OWNER_ACTIONS_2026-10-21.md`. Decisions: `DECISIONS_2026-10-21.md`. Second round (same day, UNCOMMITTED): LR14, LR16, LR18, LR19 fixed RED → GREEN; `VERIFICATION.md` — all 19 "empty" Result cells stamped with today's executed runs (they were a markdown "||" bug: the old result sat in a column markdown drops) + A7.22 / A7.23 given their first harness; Terms / Privacy / Security rewritten (LR29 — placeholders to fill). Still open in code: LR21 (×5 settings fetch — needs a live Network trace). Owner: LR28 (landing testimonials). **Third round 2026-10-21 (owner: "go with your recommendations", UNCOMMITTED):** LR6, LR8, LR9 (quote edit + convert), LR10 (time-entry edit), LR22, LR23 (refused e-mails never "sent"), LR25, LR1b (re-run a voided period), 3.3 (ask once for reporting currency), 3.6 (business first) — each RED → GREEN; LR13 formatter follow-up. Decisions left: 3.4 (data step), 3.5 (legal), 2.6 (lawyer).
 
+> **2026-10-22: competitor gap audit → plan.** `COMPETITOR_GAP_AUDIT_2026-10-22.md` (live walk) was investigated read-only
+> → **`PLAN_GAP_FIXES_2026-10-22.md`** (findings V1, V2, G1–G12 in `AUDIT_MASTER.md`; all by code reading, UNEXECUTED).
+> **Owner direction:** every feature must be an improved version of the industry standard, in what we offer *and how we
+> offer it* (plan §7). Seven audit items are already fixed on `main` but not deployed (plan §0), so **deploy `main` first**.
+> **Before launch:** plan batches 1–9, 12, 16 (V1 payroll first). **Right after launch:** 10, 11, 13, 14, 15, 17.
+> Owner decisions D1–D9 (upgraded) in plan §4, to confirm when batch 1 starts. Work begins after the owner's 3× sweep.
+
 This is the single list of what stands between today and going public. Work it top to bottom.
 
 **How to read the status marks**

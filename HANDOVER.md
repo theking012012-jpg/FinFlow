@@ -50,6 +50,7 @@ were NOT flaky: a real intermittent client loop (renderInventory ↔ loadCOGS; a
 C7 (LR31). `verify-lr31-cogs-reload-loop` RED 3/3 → GREEN 6/0; bankrec-render and f106-client-controls 3/3 runs GREEN each.
 Related set (COGS / inventory / bank rec / escaping / currency labels) **30/30 GREEN**, sequential. `npm run gen` exit 0, no
 tracked build file changed. **Next: owner's 3× full sweep on the commit with these fixes.**
+**2026-10-22 gap investigation (read only, UNCOMMITTED):** `PLAN_GAP_FIXES_2026-10-22.md` — V1 payroll paid before its period is accrual-correct but shown as Payroll Liabilities −6,700 (recommend Prepaid payroll + confirm + month picker); V2 Plaid balances never stored; G1–G12 logged in AUDIT_MASTER. Owner bar (plan §7): better than the industry standard in what and how. **Next session:** after the owner's 3× sweep, confirm D1–D9, then batch 1 (V1), RED → GREEN.
 **Tooling note:** the bundle has TWO more sources than `finflow-api-wiring-*.js` — `finflow-api.js` and
 `finflow-api-wiring.js`. A Rule-1 grep must include them (`public/finflow-api*.js`).
 

@@ -1415,7 +1415,7 @@
       window.ffOpenDocView({
         number: b.num, party: b.vendor, issue_date: b.issue_date || b.created_at || null,
         due_date: b.due_date || null, status: b.status || '', notes: b.notes || '',
-        amount: b.amount, tax: b.tax || 0, line_items: b.line_items || null, currency: b.currency || null,
+        amount: b.amount, amount_paid: b.amount_paid, tax: b.tax || 0, line_items: b.line_items || null, currency: b.currency || null,   // FA-M3: Amount Due nets payments made
       }, 'bill');
       if (window.ffDocHistory) window.ffDocHistory('bills', b.id);   // batch 7: what changed
     };

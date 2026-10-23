@@ -109,7 +109,10 @@
     // full total. `amount_paid` is passed by the invoice/bill viewers; status 'paid' forces 0 as a fallback.
     var _paid = parseFloat(doc.amount_paid) || 0;
     var balanceOwed = ((doc.status || '').toLowerCase() === 'paid') ? 0 : Math.max(0, total - _paid);
-    var _balanceVal = (K.balanceLabel === 'Balance Due' || K.balanceLabel === 'Amount Due') ? balanceOwed : total;
+    var _isOwed = (K.balanceLabel === 'Balance Due' || K.balanceLabel === 'Amount Due');
+    var _balanceVal = _isOwed ? balanceOwed : total;
+    // FA-M3: what was already paid is ON the document (the customer sees why the balance is lower than the total).
+    var _paidShown = _isOwed ? Math.min(total, ((doc.status || '').toLowerCase() === 'paid') ? total : _paid) : 0;
 
     var logoHTML = L.logo
       ? '<img src="'+esc(L.logo)+'" style="max-height:52px;max-width:180px;object-fit:contain" alt="">'
@@ -129,6 +132,10 @@
     var totalsHTML =
         '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Subtotal</span><span>'+money(subtotal, cur)+'</span></div>'
       + (tax ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Tax</span><span>'+money(tax, cur)+'</span></div>' : '')
+      + (_paidShown > 0.005
+          ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#222;font-weight:600"><span>Total</span><span>'+money(total, cur)+'</span></div>'
+          + '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#1a7f4b"><span>'+(kind === 'bill' ? 'Paid' : 'Payments received')+'</span><span>&minus;'+money(_paidShown, cur)+'</span></div>'
+          : '')
       + '<div style="display:flex;justify-content:space-between;padding:12px 0 0;margin-top:6px;border-top:2px solid #222;font-size:15px;font-weight:700;color:#111"><span>'+K.balanceLabel+'</span><span>'+money(_balanceVal, cur)+'</span></div>';
 
     return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -251,6 +258,7 @@
       status: inv.status || '',
       notes: inv.notes || '',
       amount: inv.amount,
+      amount_paid: inv.amount_paid,   // FA-M3: Balance Due nets what was received (it printed the full total)
       tax: inv.tax || 0,
       line_items: inv.line_items || null,
       currency: inv.currency || null,

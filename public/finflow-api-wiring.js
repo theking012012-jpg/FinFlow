@@ -94,6 +94,9 @@
         if ((v == null || v === '') && f === 'business_name' && ent && ent.name) v = ent.name;
         el.value = (v == null) ? '' : v;
       });
+      // B1b: this business's invoice-number prefix (repainted on a switch like the profile; "INV-" when unset).
+      var _pfx = document.getElementById('s-inv-prefix');
+      if (_pfx) _pfx.value = (ent && ent.invoice_prefix) || 'INV-';
       if (typeof window.updateBrandName === 'function') { try { window.updateBrandName(); } catch (_) {} }
     }
     // Exposed so the entity switcher can repaint the panel without a page reload (index.html switchEntity).
@@ -280,7 +283,11 @@
               tax_id:        document.getElementById('s-tax-id')?.value?.trim() || '',
               website:       document.getElementById('s-website')?.value?.trim() || '',
             };
-            await api('PUT', '/api/entities/' + _ent._dbId, _profile);
+            // B1b: the invoice-number prefix is this business's too (it was a field nothing read). Sent only when the field
+            // exists; the server refuses anything but plain text, and the message reaches the owner below.
+            const _pfx = document.getElementById('s-inv-prefix');
+            await api('PUT', '/api/entities/' + _ent._dbId, _pfx ? Object.assign({ invoice_prefix: _pfx.value.trim() }, _profile) : _profile);
+            if (_pfx) _ent.invoice_prefix = _pfx.value.trim();
             // Keep the in-memory entity in lockstep so the next document renders the new letterhead
             // without a page reload (the letterhead reads ENTITIES[i].profile, not the DB).
             _ent.profile = Object.assign({}, _ent.profile || {}, _profile);

@@ -181,7 +181,7 @@ async function startStripeFeed(){
       } else if(canBook){
         const _addBtn = '<button type="button" onclick="ffImportStripeCharge(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--t2);cursor:pointer;white-space:nowrap">'+(c.matchInvoice?'Add as income':'Add to books')+'</button>';
         if(c.matchInvoice){
-          const _mnum = esc(c.matchInvoice.num||('INV-'+c.matchInvoice.id));
+          const _mnum = esc(c.matchInvoice.number||c.matchInvoice.num||('#'+c.matchInvoice.id));   // B1b: the real number
           bookCtl = '<button type="button" onclick="ffMatchStripeInvoice(\''+esc(c.id)+'\','+(c.matchInvoice.id)+',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--green);border-radius:6px;background:var(--card);color:var(--green);cursor:pointer;white-space:nowrap">Match '+_mnum+'</button>'+_addBtn;
         } else {
           bookCtl = _addBtn;

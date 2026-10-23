@@ -1870,7 +1870,11 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   // fabricated (F31/F55) — an empty value clears it. Validation lives in a pure exported helper.
   const _oc = normalizeOpeningCash((req.body || {}).opening_cash);
   if (_oc.error) return res.status(400).json({ error: _oc.error });
+  // B1b: this business's invoice-number prefix — letters, numbers and - / # _ . (up to 12). Empty → back to "INV-".
+  const _ip = (req.body || {}).invoice_prefix;
+  if (_ip != null && !/^[A-Za-z0-9\-\/#_. ]{0,12}$/.test(String(_ip))) return res.status(400).json({ error: 'The invoice prefix can use letters, numbers and - / # _ . (up to 12 characters).', code: 'BAD_INVOICE_PREFIX' });
   await db.updateById('entities', row.id, {
+    ...(_ip != null && { invoice_prefix: String(_ip).trim() }),
     ...(name && {name}), ...(currency && {currency}), ...(color && {color}),
     ...(timezone !== undefined && { timezone: timezone ? String(timezone) : null }),
     ...(country !== undefined && { country: country ? String(country).toUpperCase() : null }),
@@ -2082,6 +2086,27 @@ function normalizeLineItems(raw) {
   return { present: true, line_items: items, amount };
 }
 
+// B1b (2026-10-23): INVOICE NUMBERS — the one assigner every invoice writer calls (the form, recurring, CSV, Codat). Per
+// BUSINESS, sequential, never reused: the counter lives on the entity row and only ever rises (the row lock serialises
+// concurrent creates), so a deleted invoice leaves a gap, never a repeat. Prefix per business (entity invoice_prefix,
+// default "INV-"). An imported invoice keeps its own number when it is free in this business; when it is taken it gets
+// the next in sequence — never a duplicate. The database backs this with a unique index (idx_invoices_number).
+async function assignInvoiceNumber(q, userId, entityId, invoiceId, sourceNumber) {
+  if (entityId == null || invoiceId == null) return null;
+  const set = async n => (await q.query(`UPDATE invoices SET data = data || jsonb_build_object('number', $1::text) WHERE id = $2 AND user_id = $3 AND data->>'number' IS NULL
+      AND NOT EXISTS (SELECT 1 FROM invoices o WHERE o.user_id = $3 AND o.entity_id = $4 AND o.id <> $2 AND o.data->>'number' = $1::text) RETURNING id`, [n, invoiceId, userId, entityId])).rowCount > 0;
+  const src = sourceNumber == null ? '' : String(sourceNumber).trim().slice(0, 40);
+  if (src) { try { if (await set(src)) return src; } catch (e) { if (e.code !== '23505') throw e; } }
+  for (let tries = 0; tries < 50; tries++) {
+    const { rows: [e] } = await q.query(`UPDATE entities SET data = jsonb_set(data, '{invoice_seq}', to_jsonb(COALESCE((data->>'invoice_seq')::int, 0) + 1))
+        WHERE id = $1 AND user_id = $2 RETURNING (data->>'invoice_seq')::int AS seq, COALESCE(NULLIF(data->>'invoice_prefix', ''), 'INV-') AS prefix`, [entityId, userId]);
+    if (!e) return null;
+    const n = e.prefix + String(e.seq).padStart(4, '0');
+    try { if (await set(n)) return n; } catch (err) { if (err.code !== '23505') throw err; }
+    // taken (an imported invoice already holds it) → the next one; the counter never goes back
+  }
+  return null;
+}
 app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
   // F194: when line_items are supplied, the DERIVED Σ qty×rate is the canonical amount (Rule 2).
@@ -2173,6 +2198,7 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
     }
     throw e;
   }
+  row.number = await assignInvoiceNumber(pool, scopeId(req), eid, row.id);   // B1b: before the audit row, so it records the number
   logAudit(req, 'CREATE', 'invoices', row.id, null, row);
   // GL Phase 2 (dual-write shadow): an ISSUED invoice is Dr AR / Cr Revenue at its issue date —
   // mirrors computeBooks' issue-based accrual (draft is not recognized, so posts nothing). Best-effort:
@@ -4467,7 +4493,7 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
     if (!UNPAID_INV.has(String(inv.status || '').toLowerCase())) continue;
     const outstanding = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
     if (outstanding <= 0.005 || !inv.due_date) continue;
-    inflows.push({ date: String(inv.due_date).slice(0, 10), amount: outstanding, kind: 'ar', label: (inv.client || 'Invoice') + ' (' + (inv.num || ('#' + inv.id)) + ')' });
+    inflows.push({ date: String(inv.due_date).slice(0, 10), amount: outstanding, kind: 'ar', label: (inv.client || 'Invoice') + ' (' + (inv.number || inv.num || ('#' + inv.id)) + ')' });
   }
   // Open AP → outflow at due date.
   for (const b of bills) {
@@ -4735,7 +4761,7 @@ app.get('/api/v1/invoices', requireApiKey, apiLimiter, wrap(async (req, res) => 
   if (Number.isNaN(since)) return _badSince(res);
   const rows = (await db.allByUser('invoices', req.apiUserId, _apiScope(req), (a, b) => b.id - a.id))
     .filter(r => _afterSince(r, since)).slice(0, limit)
-    .map(i => ({ id: i.id, client: i.client, amount: i.amount, amount_paid: i.amount_paid ?? 0, status: i.status, issue_date: i.issue_date || null, due_date: i.due_date || null, num: i.num || null, class: i.class || null, location: i.location || null, entity_id: i.entity_id ?? null, created_at: i.created_at || null }));
+    .map(i => ({ id: i.id, client: i.client, amount: i.amount, amount_paid: i.amount_paid ?? 0, status: i.status, issue_date: i.issue_date || null, due_date: i.due_date || null, num: i.number || i.num || null, class: i.class || null, location: i.location || null, entity_id: i.entity_id ?? null, created_at: i.created_at || null }));
   res.json({ object: 'list', count: rows.length, data: rows });
 }));
 app.get('/api/v1/expenses', requireApiKey, apiLimiter, wrap(async (req, res) => {
@@ -6536,6 +6562,7 @@ async function _fireRecurringOnce(table, r, docTable, docData) {
     const { rows: [doc] } = await cx.query(
       `INSERT INTO ${docTable} (user_id, entity_id, data) VALUES ($1, $2, $3) RETURNING *`,
       [r.user_id, r.entity_id || null, docData]);
+    if (docTable === 'invoices') { const _n = await assignInvoiceNumber(cx, r.user_id, r.entity_id, doc.id); if (_n) doc.data = Object.assign({}, doc.data, { number: _n }); }   // B1b
     await cx.query('COMMIT');
     return rowToObj(doc);
   } catch (e) {
@@ -6845,7 +6872,7 @@ const CSV_IMPORT_SPECS = {
     cols: { client: ['client', 'customer', 'customer name', 'name', 'bill to', 'company'], amount: ['amount', 'total', 'amount due', 'invoice total', 'grand total'], status: ['status'], issue_date: ['issue date', 'date', 'invoice date', 'created'], due_date: ['due date', 'due'], number: ['invoice number', 'invoice no', 'number', 'ref', 'invoice #'], ..._CSV_PAID_COLS },
     build: g => { const amount = g.__amt(g.amount); const issue = g.__date(g.issue_date) || g.__today; if (!(amount > 0)) return null; const dd = g.__date(g.due_date); const _st = _csvStatus(g.status, 'pending', _CSV_INV_ALIASES); if (_st == null) return null;
       const _pd = _csvPaidPart(g, amount, _st, issue, 'pending');
-      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, settle: _pd.settle, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _pd.status, issue_date: issue }, dd ? { due_date: dd } : {}, g.number ? { number: String(g.number).slice(0, 60) } : {}) }; } },
+      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, settle: _pd.settle, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _pd.status, issue_date: issue }, dd ? { due_date: dd } : {}), sourceNumber: g.number ? String(g.number).trim().slice(0, 40) : null }; } },   // B1b: the number is assigned after insert (kept when free)
   expenses: { table: 'expenses', money: true,
     cols: { description: ['description', 'memo', 'details', 'name', 'payee', 'item'], amount: ['amount', 'total', 'value'], category: ['category', 'account', 'type'], expense_date: ['date', 'expense date', 'posted'] },
     build: g => { const amount = g.__amt(g.amount); const dt = g.__date(g.expense_date) || g.__today; if (!(amount > 0)) return null;
@@ -6920,7 +6947,9 @@ async function _csvImport(uid, entityId, sessionUserId, type, content, mapping, 
     if (tally.sample.length < 3) tally.sample.push(m.settle ? Object.assign({}, m.data, { amount_paid: m.settle.amount }) : m.data);
     if (dryRun) { tally.added++; continue; }
     let _ins = null;
-    try { _ins = (await db.insert(spec.table, Object.assign({ user_id: uid, entity_id: entityId, import_key: importKey, idempotency_key: importKey, source: 'csv' }, m.data))).row; tally.added++; }
+    try { _ins = (await db.insert(spec.table, Object.assign({ user_id: uid, entity_id: entityId, import_key: importKey, idempotency_key: importKey, source: 'csv' }, m.data))).row; tally.added++;
+      if (spec.table === 'invoices') await assignInvoiceNumber(pool, uid, entityId, _ins.id, m.sourceNumber);   // B1b
+    }
     catch (e) { if (e.code === '23505') tally.duplicate++; else { tally.failed++; console.error('[csv import ' + type + ']', e.message); } }
     // M5: settle the paid part through the real payment writer (payment row + GL cash leg + status recalc).
     if (_ins && m.settle && spec.settleKind) {
@@ -8545,8 +8574,9 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
             [uid, entityId, linkId, m.data.amount, m.data.payment_date || await entityTodayYmd(entityId), m.data.method, m.data.reference, 'Imported (Codat)', m.key]);
         } else {
           const extra = (m.link && m.link.field && linkId) ? { [m.link.field]: linkId } : {};
-          await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
+          const { row: _cdRow } = await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
             import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data, extra));
+          if (m.table === 'invoices' && _cdRow) await assignInvoiceNumber(pool, uid, entityId, _cdRow.id, rec.invoiceNumber);   // B1b: the platform's own number, when free
         }
         tally.added++;
       } catch (e) {
@@ -8784,7 +8814,7 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
       charges.forEach(c => {
         if (c.inBooks || c.appliedToInvoice || c.status !== 'succeeded' || c.refunded) return;
         const m = _open.find(i => { const t = parseFloat(i.amount) || 0; const rem = t - (parseFloat(i.amount_paid) || 0); return Math.abs(t - c.amount) < 0.005 || Math.abs(rem - c.amount) < 0.005; });
-        if (m) c.matchInvoice = { id: m.id, num: m.num || null, client: m.client || null, amount: parseFloat(m.amount) || 0 };
+        if (m) c.matchInvoice = { id: m.id, num: m.number || m.num || null, number: m.number || null, client: m.client || null, amount: parseFloat(m.amount) || 0 };
       });
     } catch (_) { /* match hint is best-effort */ }
     const total = charges.filter(c => c.status === 'succeeded' && !c.refunded).reduce((sum, c) => sum + c.amount, 0);
@@ -8886,7 +8916,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
         });
       if (_openInv) {
         return res.json({ ok: false, needsConfirm: true, reason: 'invoice_match',
-          match: { num: _openInv.num || null, client: _openInv.client || null, amount: parseFloat(_openInv.amount) || 0, status: _openInv.status || null } });
+          match: { num: _openInv.number || _openInv.num || null, client: _openInv.client || null, amount: parseFloat(_openInv.amount) || 0, status: _openInv.status || null } });
       }
     } catch (e) { console.error('[stripe import guard]', e.message); /* advisory — never block a legit import */ }
   }

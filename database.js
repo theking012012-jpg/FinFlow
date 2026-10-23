@@ -142,6 +142,26 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // B1b (2026-10-23): one invoice number per business, backed by the database. GUARDED: a CSV import used to store the
+    // file's own number unchecked, so an existing database may already hold a duplicate — then the index is NOT built
+    // (a plain CREATE would fail and stop boot) and a warning names the step (tools/launch/list-invoice-numbers.js,
+    // read-only, then the owner decides — Rule 8). The app's assigner still refuses duplicates either way.
+    // Mirrored by scripts/migrations/2026-10-23-invoice-numbers.sql.
+    await client.query(`
+      DO $inv$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_invoices_number') THEN
+          IF EXISTS (SELECT 1 FROM invoices WHERE data->>'number' IS NOT NULL
+                      GROUP BY user_id, entity_id, data->>'number' HAVING count(*) > 1) THEN
+            RAISE WARNING 'idx_invoices_number NOT created: duplicate invoice numbers exist — run tools/launch/list-invoice-numbers.js';
+          ELSE
+            CREATE UNIQUE INDEX idx_invoices_number ON invoices (user_id, entity_id, (data->>'number')) WHERE data->>'number' IS NOT NULL;
+          END IF;
+        END IF;
+      END
+      $inv$;
+    `);
+
     // C1 Wave 1 — expenses idempotency backstop (same shape as invoices above). expenses is a
     // generic JSONB table with NO natural key (two identical "Fuel $50" expenses are legitimate),
     // so the enforcing key is the per-submit idempotency TOKEN, not UNIQUE(description, amount).

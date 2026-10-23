@@ -89,6 +89,7 @@
                       : 'TBD',
             due_date: r.due_date,
             status: r.status,
+            number: r.number || null,   // B1b: the invoice's number
             notes:  r.notes || '',
             color:  r.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)',
           }));
@@ -254,7 +255,7 @@
       window._invShowMore = function () { window._invRenderLimit += 200; if (typeof window.renderInvoices === 'function') window.renderInvoices(); };
       el.innerHTML = _shownInv.map((inv, idx) => `
         <div class="table-row inv-cols">
-          <span>${esc(inv.client)}</span>
+          <span>${esc(inv.client)}${inv.number ? `<br><span class="inv-number" style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(inv.number)}</span>` : ''}</span>
           <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
           <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
           <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>

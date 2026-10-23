@@ -201,7 +201,7 @@
   // ── map a client-side invoice record → the renderer's shape ──
   function invoiceToDoc(inv){
     return {
-      number: inv.number || inv.num || (inv._dbId != null ? 'INV-' + String(1000 + Number(inv._dbId)) : ''),
+      number: inv.number || inv.num || '',   // B1b: the real number; it used to fabricate "INV-" + (1000 + id) on a customer-facing document
       party: inv.client || inv.customer || '—',
       party_address: inv.client_address || inv.bill_to || '',
       issue_date: inv.issue_date || inv.date || null,

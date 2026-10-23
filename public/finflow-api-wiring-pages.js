@@ -354,7 +354,7 @@
             return `
           <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 90px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(_prInv?.client || '—')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.num || '—')}</span>
+            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.number || _prInv?.num || '—')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
             <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>

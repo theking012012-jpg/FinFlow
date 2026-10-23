@@ -118,7 +118,7 @@ function buildReminderCandidates({ invoices = [], customers = [], payments = [],
     const email = cust && cust.email ? cust.email : null;
 
     const draft = buildDraft({
-      businessName, customerName, invoiceNum: inv.num || ('#' + inv.id),
+      businessName, customerName, invoiceNum: inv.number || inv.num || ('#' + inv.id),   // B1b: the real invoice number
       outstanding, currency, dueDate: inv.due_date, daysOverdue: Math.max(0, daysOverdue), severity,
     });
 

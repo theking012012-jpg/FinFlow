@@ -1546,7 +1546,7 @@ async function loadEntityData(idx){
       _dbId:r.id, client:r.client, amount:r.amount,
       amount_paid: r.amount_paid,   // F48 follow-up: carry so markInvoicePaid settles only the REMAINING balance (partials don't overpay→400)
       due: r.due_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date) : 'TBD',   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
-      due_date:r.due_date, status:r.status, notes:r.notes||'',
+      due_date:r.due_date, status:r.status, notes:r.notes||'', number:r.number||null,   // B1b
       color: r.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)',
     }));
 

@@ -163,6 +163,9 @@ async function main() {
     A('imported payment_made has NO bill_id (no double-count path)', bpRow.bill_id === undefined || bpRow.bill_id === null || bpRow.bill_id === '', JSON.stringify(bpRow));
     const jrow = (await c.query(`SELECT data FROM journals WHERE user_id=$1 LIMIT 1`, [ownerId])).rows[0].data;
     A('journal imported balanced (debit==credit)', Number(jrow.debit) === Number(jrow.credit) && Number(jrow.debit) === 100, JSON.stringify(jrow));
+    // B1b (2026-10-23): an imported invoice keeps the source platform's own number (bug: no number at all).
+    const _nums = (await c.query(`SELECT data->>'number' AS n FROM invoices WHERE user_id=$1 ORDER BY data->>'number'`, [ownerId])).rows.map(r => r.n);
+    A('B1b: imported invoices keep their platform numbers INV-1, INV-2, INV-3', JSON.stringify(_nums) === JSON.stringify(['INV-1', 'INV-2', 'INV-3']), JSON.stringify(_nums));
 
     // ── IDEMPOTENCY: re-import must add 0 and create no duplicate rows ──
     console.log('\n-- idempotency (re-import) --');

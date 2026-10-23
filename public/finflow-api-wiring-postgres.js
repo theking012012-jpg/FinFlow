@@ -172,6 +172,7 @@
             : 'TBD',
           due_date: r.due_date,
           status:   r.status,
+          number:   r.number || null,   // B1b: the invoice's number
           notes:    r.notes || '',
           color:    r.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)',
         }));

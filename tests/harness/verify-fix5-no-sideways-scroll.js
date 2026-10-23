@@ -66,7 +66,11 @@ runBrowser('FIX-5 — no sideways scroll at any width (top bar wraps); invoice r
       return Array.from(document.querySelectorAll('#invoice-list .table-row.inv-cols')).map(row => {
         const R = e => e.getBoundingClientRect(); const c = R(row.children[0]), a = R(row.children[1]);
         const btnOut = Array.from(row.querySelectorAll('button')).filter(b => { const r = R(b); return r.width > 0 && (r.left < 0 || r.right > vw); }).length;
-        return { n: row.children[0].textContent.trim(), ok: c.left >= 0 && c.right <= vw && a.left >= 0 && a.right <= vw, btnOut };
+        // B1b (2026-10-23): the first cell also carries the invoice number (.inv-number, its own line) — the name is the
+        // cell's first text node, and the number must be on screen too.
+        const num = row.querySelector('.inv-number'); const nr = num ? R(num) : null;
+        const numOk = !num || (nr.left >= 0 && nr.right <= vw);
+        return { n: String((row.children[0].childNodes[0] || {}).textContent || '').trim(), ok: c.left >= 0 && c.right <= vw && a.left >= 0 && a.right <= vw && numOk, btnOut };
       });
     });
     eq(`${width}px Invoices: 3 rows, client + amount on screen, buttons on screen`, rows.map(r => [r.n, r.ok, r.btnOut]).sort(),

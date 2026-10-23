@@ -288,6 +288,9 @@
         if ((v == null || v === '') && f === 'business_name' && ent && ent.name) v = ent.name;
         el.value = (v == null) ? '' : v;
       });
+      // B1b: this business's invoice-number prefix (repainted on a switch like the profile; "INV-" when unset).
+      var _pfx = document.getElementById('s-inv-prefix');
+      if (_pfx) _pfx.value = (ent && ent.invoice_prefix) || 'INV-';
       if (typeof window.updateBrandName === 'function') { try { window.updateBrandName(); } catch (_) {} }
     }
     // Exposed so the entity switcher can repaint the panel without a page reload (index.html switchEntity).
@@ -474,7 +477,11 @@
               tax_id:        document.getElementById('s-tax-id')?.value?.trim() || '',
               website:       document.getElementById('s-website')?.value?.trim() || '',
             };
-            await api('PUT', '/api/entities/' + _ent._dbId, _profile);
+            // B1b: the invoice-number prefix is this business's too (it was a field nothing read). Sent only when the field
+            // exists; the server refuses anything but plain text, and the message reaches the owner below.
+            const _pfx = document.getElementById('s-inv-prefix');
+            await api('PUT', '/api/entities/' + _ent._dbId, _pfx ? Object.assign({ invoice_prefix: _pfx.value.trim() }, _profile) : _profile);
+            if (_pfx) _ent.invoice_prefix = _pfx.value.trim();
             // Keep the in-memory entity in lockstep so the next document renders the new letterhead
             // without a page reload (the letterhead reads ENTITIES[i].profile, not the DB).
             _ent.profile = Object.assign({}, _ent.profile || {}, _profile);
@@ -743,6 +750,7 @@
                       : 'TBD',
             due_date: r.due_date,
             status: r.status,
+            number: r.number || null,   // B1b: the invoice's number
             notes:  r.notes || '',
             color:  r.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)',
           }));
@@ -908,7 +916,7 @@
       window._invShowMore = function () { window._invRenderLimit += 200; if (typeof window.renderInvoices === 'function') window.renderInvoices(); };
       el.innerHTML = _shownInv.map((inv, idx) => `
         <div class="table-row inv-cols">
-          <span>${esc(inv.client)}</span>
+          <span>${esc(inv.client)}${inv.number ? `<br><span class="inv-number" style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(inv.number)}</span>` : ''}</span>
           <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
           <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
           <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
@@ -2968,7 +2976,7 @@ function clearAIChat(){
             return `
           <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 90px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(_prInv?.client || '—')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.num || '—')}</span>
+            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.number || _prInv?.num || '—')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
             <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
@@ -6474,6 +6482,7 @@ function clearAIChat(){
             : 'TBD',
           due_date: r.due_date,
           status:   r.status,
+          number:   r.number || null,   // B1b: the invoice's number
           notes:    r.notes || '',
           color:    r.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)',
         }));

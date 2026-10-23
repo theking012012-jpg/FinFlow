@@ -3341,7 +3341,7 @@ const EXPORT_TABLES = [
   'payments_received','payments_made','credit_notes','vendor_credits','sales_receipts',
   'quotes','items','inventory','inventory_movements','projects','timesheet','payroll',
   'payroll_runs','payroll_run_lines','journals','chart_of_accounts','budget_targets',
-  'recurring_invoices','recurring_bills','autocat_rules','bank_reconciliation',
+  'recurring_invoices','recurring_bills','autocat_rules','bank_reconciliation','bank_reconciliations',
   'fx_rates','fx_transactions','holdings','goals','personal_accounts','personal_transactions',
   'snapshots','documents','templates','team_members','lock_settings','user_settings',
   'audit_trail','audit_log','ledger_accounts','ledger_entries','ledger_lines',
@@ -6725,6 +6725,11 @@ app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
   // M56: only a bank line of the scope in view — a business's own line from that business; a personal-feed line only
   // when no business is in view. Never a personal transaction from a business, never another business's line.
   if (!_bl || _bl.source !== 'banking' || (_bl.entity_id == null ? null : _bl.entity_id) !== _bc.eid) return res.status(404).json({ error: 'Not found.' });
+  if (_bl.reconciliation_id != null) {   // B7b: a line a saved reconciliation cleared is locked
+    const { rows: [_rc] } = await pool.query(`SELECT statement_date::text AS d, statement_balance::float AS b FROM bank_reconciliations WHERE id = $1 AND user_id = $2`, [Number(_bl.reconciliation_id), _bc.uid]);
+    return res.status(409).json({ code: 'LINE_RECONCILED', reconciliation_id: Number(_bl.reconciliation_id),
+      error: 'This line is part of the reconciliation of ' + (_rc ? FinFlowDates.fmtLabel(_rc.d, { year: true }) + ' (statement balance ' + Number(_rc.b).toFixed(2) + ')' : 'a saved statement') + '. To change it, undo that reconciliation first (Reports → Bank Reconciliation).' });
+  }
   await db.deleteById('personal_transactions', parseInt(req.params.id));
   if (_bl.entity_id != null) await _auditRec(req, 'bank_lines', 'DELETE', _bl, null);   // FIX-3b — business lines only
   else await _persHist(req, _bl.user_id, 'bank_lines', 'DELETE', _bl, null);   // LC3c
@@ -7809,13 +7814,13 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
         const sync = await plaidCall('/transactions/sync', cursor ? { access_token: token, cursor } : { access_token: token });
         for (const t of (sync.modified || [])) {
           const r = await _txRow(t.transaction_id); if (!r) continue;
-          if (r.reconcile_state) { await db.updateById('personal_transactions', r.id, { plaid_changed: _fields(t) }); flagged++; continue; }
+          if (r.reconcile_state || r.reconciliation_id != null) { await db.updateById('personal_transactions', r.id, { plaid_changed: _fields(t) }); flagged++; continue; }   // B7b: a reconciled line is flagged too
           const f = _fields(t); if (!f.tx_date) delete f.tx_date;
           await db.updateById('personal_transactions', r.id, f); modified++;
         }
         for (const t of (sync.removed || [])) {
           const r = await _txRow(t.transaction_id); if (!r) continue;
-          if (r.reconcile_state) { await db.updateById('personal_transactions', r.id, { plaid_removed: true }); flagged++; continue; }
+          if (r.reconcile_state || r.reconciliation_id != null) { await db.updateById('personal_transactions', r.id, { plaid_removed: true }); flagged++; continue; }
           await db.deleteById('personal_transactions', r.id); removed++;
         }
         for (const t of (sync.added || [])) {
@@ -10351,6 +10356,98 @@ app.post('/api/bank-reconciliation/match-batch', requireAuth, wrap(async (req, r
   }
 }));
 
+// ── B7b / G2 (2026-10-23): SAVED STATEMENT RECONCILIATIONS ─────────────────────────────────────────────────────────────
+// "Finish reconciliation" used to keep its result in browser memory only — nothing was saved, nothing could be reported,
+// and the cleared lines stayed freely deletable. A reconciliation is now a record of one business's statement: its date
+// and balance, the bank lines it cleared (each line carries data.reconciliation_id, which LOCKS it), who and when.
+// The server recomputes the difference itself — statement − (lines cleared before + lines ticked now) — and saves only
+// at 0. Undo is newest-first and keeps the record (status 'undone'); every save and undo is audited.
+const _blSigned = r => ((r.tx_type || r.type) === 'credit' ? 1 : -1) * Math.abs(parseFloat(r.amount) || 0);
+const _r2c = n => Math.round((+n || 0) * 100) / 100;
+const _reconWho = req => String((req.session && (req.session.userEmail || req.session.userId)) || '');
+async function _bizBankLines(q, uid, eid, lock) {
+  const { rows } = await q.query(`SELECT * FROM personal_transactions WHERE user_id = $1 AND entity_id = $2 AND data->>'source' = 'banking'` + (lock ? ' FOR UPDATE' : ''), [uid, eid]);
+  return rows.map(rowToObj);
+}
+app.get('/api/bank-reconciliation/statements', requireAuth, wrap(async (req, res) => {
+  const { uid, eid } = _bankCtx(req);
+  if (eid == null) return res.json({ reconciliations: [] });
+  const { rows } = await pool.query(
+    `SELECT id, statement_date::text AS statement_date, statement_balance::float AS statement_balance, cleared_total::float AS cleared_total,
+            line_ids, status, created_by, created_at, undone_by, undone_at
+       FROM bank_reconciliations WHERE user_id = $1 AND entity_id = $2 ORDER BY id DESC`, [uid, eid]);
+  const byId = new Map((await _bizBankLines(pool, uid, eid)).map(l => [l.id, l]));
+  res.json({ reconciliations: rows.map(r => {
+    const lines = (r.line_ids || []).map(id => { const l = byId.get(id);
+      return l ? { id, date: FinFlowDates._toYmd(l.tx_date || l.date), description: l.description, amount: _r2c(_blSigned(l)), changed_by_bank: !!(l.plaid_changed || l.plaid_removed) } : { id, missing: true }; });
+    return Object.assign({}, r, { lines, changed_since: lines.filter(l => l.changed_by_bank || l.missing).length });
+  }) });
+}));
+app.post('/api/bank-reconciliation/statements', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;
+  const { uid, eid } = _bankCtx(req);
+  if (eid == null) return res.status(400).json({ error: 'Choose a business first — a reconciliation belongs to one business.', code: 'NO_BUSINESS_IN_VIEW' });
+  const b = req.body || {};
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.statement_date || '')) ? String(b.statement_date) : await entityTodayYmd(eid);
+  const bal = Number(b.statement_balance);
+  if (b.statement_balance == null || b.statement_balance === '' || !Number.isFinite(bal)) return res.status(400).json({ error: 'Enter the closing balance on your bank statement.' });
+  const ids = [...new Set((Array.isArray(b.line_ids) ? b.line_ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0))];
+  const idem = typeof b.idempotency_key === 'string' ? b.idempotency_key.slice(0, 64) : null;
+  const _existing = async () => idem ? (await pool.query(`SELECT * FROM bank_reconciliations WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1`, [uid, idem])).rows[0] : null;
+  const _dup = await _existing(); if (_dup) return res.status(200).json(_dup);   // Rule 9: a retried save lands once
+  const client = await pool.connect();
+  let saved, total;
+  try {
+    await client.query('BEGIN');
+    const lines = await _bizBankLines(client, uid, eid, true);   // serialise saves for this business
+    const byId = new Map(lines.map(l => [l.id, l]));
+    const refuse = async (status, body) => { await client.query('ROLLBACK'); return res.status(status).json(body); };
+    if (ids.some(id => !byId.has(id))) return refuse(400, { error: 'Some of these lines are not this business\'s bank lines.', code: 'NOT_THIS_BUSINESS' });
+    if (ids.some(id => byId.get(id).reconciliation_id != null)) return refuse(409, { error: 'Some of these lines were already reconciled. Reload and try again.', code: 'LINE_ALREADY_RECONCILED' });
+    const late = ids.map(id => byId.get(id)).find(l => (FinFlowDates._toYmd(l.tx_date || l.date) || '') > date);
+    if (late) return refuse(400, { error: `"${late.description}" is dated ${FinFlowDates.fmtLabel(late.tx_date || late.date, { year: true })}, after this statement (${FinFlowDates.fmtLabel(date, { year: true })}). Untick it, or reconcile it on the next statement.`, code: 'LINE_AFTER_STATEMENT' });
+    const { rows: [_last] } = await client.query(`SELECT statement_date::text AS d FROM bank_reconciliations WHERE user_id = $1 AND entity_id = $2 AND status = 'complete' ORDER BY id DESC LIMIT 1`, [uid, eid]);
+    if (_last && date < _last.d) return refuse(400, { error: `The last reconciliation is for ${FinFlowDates.fmtLabel(_last.d, { year: true })}. A new statement must be dated on or after it.`, code: 'STATEMENT_BEFORE_LAST' });
+    const prior = _r2c(lines.filter(l => l.reconciliation_id != null).reduce((s, l) => s + _blSigned(l), 0));
+    total = _r2c(prior + ids.reduce((s, id) => s + _blSigned(byId.get(id)), 0));
+    const diff = _r2c(bal - total);
+    if (Math.abs(diff) >= 0.005) return refuse(400, { code: 'NOT_BALANCED', difference: diff, cleared_total: total,
+      error: `The statement balance is ${Math.abs(diff).toFixed(2)} ${diff > 0 ? 'more' : 'less'} than the lines ticked as cleared (${total.toFixed(2)}). Tick or untick lines until the difference is 0.00.` });
+    ({ rows: [saved] } = await client.query(
+      `INSERT INTO bank_reconciliations (user_id, entity_id, statement_date, statement_balance, cleared_total, line_ids, created_by, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, statement_date::text AS statement_date, statement_balance::float AS statement_balance, cleared_total::float AS cleared_total, line_ids, status, created_by, created_at`,
+      [uid, eid, date, bal, total, ids, _reconWho(req), idem]));
+    if (ids.length) await client.query(`UPDATE personal_transactions SET data = data || jsonb_build_object('reconciliation_id', $1::int) WHERE user_id = $2 AND id = ANY($3::int[])`, [saved.id, uid, ids]);
+    await client.query('COMMIT');
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    if (e.code === '23505' && idem) { const x = await _existing(); if (x) return res.status(200).json(x); }
+    throw e;
+  } finally { client.release(); }
+  if (res.headersSent) return;
+  await recordAudit(pool, { userId: uid, entityId: eid, table: 'bank_reconciliations', recordId: saved.id, action: 'CREATE', newData: { statement_date: date, statement_balance: bal, cleared_total: total, lines: ids.length }, req });
+  res.status(201).json(saved);
+}));
+app.post('/api/bank-reconciliation/statements/:id/undo', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  const { uid, eid } = _bankCtx(req);
+  const id = parseInt(req.params.id, 10);
+  if (eid == null || !Number.isInteger(id)) return res.status(404).json({ error: 'Not found.' });
+  const { rows: [rec] } = await pool.query(`SELECT id, status, statement_date::text AS d, line_ids FROM bank_reconciliations WHERE id = $1 AND user_id = $2 AND entity_id = $3`, [id, uid, eid]);
+  if (!rec) return res.status(404).json({ error: 'Not found.' });
+  if (rec.status === 'undone') return res.json({ ok: true, status: 'undone' });   // idempotent
+  const { rows: [latest] } = await pool.query(`SELECT id, statement_date::text AS d FROM bank_reconciliations WHERE user_id = $1 AND entity_id = $2 AND status = 'complete' ORDER BY id DESC LIMIT 1`, [uid, eid]);
+  if (latest && latest.id !== rec.id) return res.status(409).json({ code: 'UNDO_LATEST_FIRST',
+    error: `Undo the later reconciliation (${FinFlowDates.fmtLabel(latest.d, { year: true })}) first — reconciliations are undone newest first.` });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`UPDATE bank_reconciliations SET status = 'undone', undone_by = $3, undone_at = NOW() WHERE id = $1 AND user_id = $2`, [id, uid, _reconWho(req)]);
+    await client.query(`UPDATE personal_transactions SET data = data - 'reconciliation_id' WHERE user_id = $1 AND id = ANY($2::int[]) AND (data->>'reconciliation_id')::int = $3`, [uid, rec.line_ids || [], id]);
+    await client.query('COMMIT');
+  } catch (e) { try { await client.query('ROLLBACK'); } catch (_) {} throw e; } finally { client.release(); }
+  await recordAudit(pool, { userId: uid, entityId: eid, table: 'bank_reconciliations', recordId: id, action: 'UNDO', field: 'status', oldValue: 'complete', newValue: 'undone', req });
+  res.json({ ok: true, status: 'undone' });
+}));
 app.delete('/api/bank-reconciliation/:id', requireAuth, wrap(async (req, res) => {
   // M61: only a match whose bank line belongs to the business in view.
   const { rows } = await pool.query(

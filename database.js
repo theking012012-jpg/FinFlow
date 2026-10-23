@@ -675,6 +675,29 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_bank_rec_user ON bank_reconciliation(user_id)`);
 
+    // B7b / G2 (2026-10-23): a saved STATEMENT reconciliation per business — the statement date and balance, the bank
+    // lines it cleared (each line also carries data.reconciliation_id, which locks it), who and when. Undone ones are
+    // kept (status 'undone'), never deleted. Mirrored by scripts/migrations/2026-10-23-bank-reconciliations.sql.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS bank_reconciliations (
+        id                SERIAL PRIMARY KEY,
+        user_id           INTEGER NOT NULL,
+        entity_id         INTEGER NOT NULL,
+        statement_date    DATE NOT NULL,
+        statement_balance NUMERIC(14,2) NOT NULL,
+        cleared_total     NUMERIC(14,2) NOT NULL,
+        line_ids          INTEGER[] NOT NULL DEFAULT '{}',
+        status            TEXT NOT NULL DEFAULT 'complete',
+        created_by        TEXT,
+        created_at        TIMESTAMPTZ DEFAULT NOW(),
+        undone_by         TEXT,
+        undone_at         TIMESTAMPTZ,
+        idempotency_key   TEXT
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_bank_recons_scope ON bank_reconciliations(user_id, entity_id, id)`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_recons_idem ON bank_reconciliations(user_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+
     // ── FEATURE 3: MULTI-JURISDICTION PAYROLL RUNS ──────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS payroll_runs (

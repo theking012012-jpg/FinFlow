@@ -950,26 +950,28 @@ window.exportAuditCSV = async function(){
 // ════════════════════════════════════════════
 // ③ BANK RECONCILIATION ENGINE
 // ════════════════════════════════════════════
-let reconState = {clearedIds: [], lastReconDate: null, lastReconBal: null};
-
+// B7b / G2 (2026-10-23): a finished reconciliation is SAVED on the server (it used to live in this page's memory only and
+// vanished on reload). A line a saved reconciliation cleared comes back ticked and LOCKED (t._reconId) — it counts toward
+// the cleared total like any ticked line, and cannot be unticked or deleted until that reconciliation is undone.
 function openReconcileModal(){
   // Build transaction list
   const list = document.getElementById('recon-txn-list');
-  list.innerHTML = bankTxns.map((t,i)=>`
-    <label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--bd);cursor:pointer;transition:background .1s" onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background=''">
-      <input type="checkbox" data-idx="${i}" style="accent-color:var(--acc);flex-shrink:0"
-        ${reconState.clearedIds.includes(i)?'checked':''} onchange="updateReconSummary()">
+  list.innerHTML = bankTxns.map((t,i)=>{
+    const locked = t._reconId != null;
+    return `
+    <label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--bd);cursor:${locked?'default':'pointer'};transition:background .1s${locked?';opacity:.75':''}" onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background=''">
+      <input type="checkbox" data-idx="${i}"${t._dbId!=null?` data-id="${t._dbId}"`:''} style="accent-color:var(--acc);flex-shrink:0"
+        ${locked?'checked disabled':''} onchange="updateReconSummary()">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;color:var(--t1);font-weight:500">${esc(t.desc||'')}</div>
-        <div style="font-size:11px;color:var(--t3)">${esc(t.cat||'')} · ${esc(t.date||'')}</div>
+        <div style="font-size:11px;color:var(--t3)">${esc(t.cat||'')} · ${esc(t.date||'')}${locked?' · 🔒 reconciled':''}</div>
       </div>
       <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;flex-shrink:0;color:${t.type==='credit'?'var(--green)':'var(--red)'}">
         ${t.type==='credit'?'+':'-'}${S(t.amount)}
       </span>
-    </label>`).join('');
-  if(reconState.lastReconBal){
-    document.getElementById('recon-stmt-bal').value = reconState.lastReconBal;
-  }
+    </label>`; }).join('');
+  const _sd = document.getElementById('recon-stmt-date');
+  if(_sd && !_sd.value) _sd.value = _entityToday();   // the business's today, never the viewer's clock (Rule 10)
   updateReconSummary();
   document.getElementById('reconcile-modal').classList.remove('hidden');
 }
@@ -1005,18 +1007,48 @@ function updateReconSummary(){
     `${(_rEnt && _rEnt.name) || 'This business'} · bank lines · ${checked.length} of ${_txs.length} ticked as on the statement`;
 }
 
-function finishReconciliation(){
-  const checked = [...document.querySelectorAll('#recon-txn-list input[type=checkbox]:checked')];
-  const diff = parseFloat(document.getElementById('recon-diff').textContent.replace(/[^0-9.-]/g,''));
+// B7b: undo the LATEST saved reconciliation (the server refuses an older one) — its lines unlock; the record stays, marked undone.
+window.ffUndoReconciliation = async function(id){
+  const ok = (typeof window._confirmModal==='function') ? await window._confirmModal('Undo this reconciliation? Its lines will be unlocked and can be ticked again. The record stays in the report, marked undone.', {okText:'Undo reconciliation'}) : true;
+  if(!ok) return;
+  try{
+    const res = await fetch('/api/bank-reconciliation/statements/'+id+'/undo',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d = await res.json().catch(()=>({}));
+    if(!res.ok){ notify(d.error || 'Could not undo the reconciliation', true); return; }
+    notify('Reconciliation undone — its lines are unlocked.');
+    if(typeof loadBankingFromDB==='function') await loadBankingFromDB();
+    if(typeof window.generateReport==='function') window.generateReport('Bank Reconciliation');
+  } catch(e){ notify('Could not undo the reconciliation — check your connection and try again', true); }
+};
+let _reconSaving = false, _reconToken = null;
+async function finishReconciliation(){
+  if(_reconSaving) return;
+  const diffTxt = (document.getElementById('recon-diff')||{}).textContent || '';
+  const diff = parseFloat(diffTxt.replace(/[^0-9.-]/g,''));
   if(isNaN(diff) || Math.abs(diff) > 0.01){
-    notify('Difference must be $0.00 to finish reconciliation','error'); return;
+    // G2: says how far off it is, in the business's currency (it printed a literal "$0.00").
+    notify('The difference is '+(isNaN(diff)?'not worked out yet':diffTxt.trim())+' — tick or untick lines until it is '+_nativeSymbol()+'0.00 to finish.', true); return;
   }
-  reconState.clearedIds = checked.map(cb => parseInt(cb.dataset.idx));
-  reconState.lastReconDate = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  reconState.lastReconBal = document.getElementById('recon-stmt-bal').value;
-  // reconState stored in-memory only — no localStorage
-  closeModal('reconcile-modal');
-  notify('Reconciliation complete — Main Checking ✓');
+  const fresh = [...document.querySelectorAll('#recon-txn-list input[type=checkbox]:checked:not(:disabled)')];
+  const lineIds = fresh.map(cb => parseInt(cb.dataset.id,10)).filter(n => Number.isInteger(n));
+  const stmtDate = (document.getElementById('recon-stmt-date')||{}).value || _entityToday();
+  if(!_reconToken) _reconToken = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random());   // one save per intent (Rule 9)
+  _reconSaving = true;
+  try{
+    const res = await fetch('/api/bank-reconciliation/statements',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ statement_date: stmtDate, statement_balance: parseFloat(document.getElementById('recon-stmt-bal').value), line_ids: lineIds, idempotency_key: _reconToken })});
+    const d = await res.json().catch(()=>({}));
+    if(!res.ok){ notify(d.error || 'Could not save the reconciliation', true); if(res.status!==409) _reconToken = null; return; }
+    _reconToken = null;
+    closeModal('reconcile-modal');
+    const _rEnt = (window.ENTITIES || []).find(e => e && e.active);
+    const _n = lineIds.length;
+    notify('Reconciliation saved — '+((_rEnt && _rEnt.name) || 'this business')+' · statement '+(window.FinFlowDates?window.FinFlowDates.fmtLabel(stmtDate,{year:true}):stmtDate)
+      +' · '+_n+' line'+(_n===1?'':'s')+' cleared and locked. It is in Reports → Bank Reconciliation.');
+    const _sd = document.getElementById('recon-stmt-date'); if(_sd) _sd.value = '';
+    if(typeof loadBankingFromDB==='function') await loadBankingFromDB();
+  } catch(e){ notify('Could not save the reconciliation — check your connection and try again', true); }
+  finally{ _reconSaving = false; }
 }
 
 // ════════════════════════════════════════════
@@ -5636,6 +5668,7 @@ async function loadBankingFromDB(){
       const _iso = (r.tx_date || r.date) || '';
       return {
         _dbId: r.id,
+        _reconId: r.reconciliation_id != null ? r.reconciliation_id : null,   // B7b: cleared by a saved reconciliation → locked
         desc: r.description,
         amount: Math.abs(r.amount),
         type: (r.tx_type || r.type)==='credit'?'credit':'debit',
@@ -6036,6 +6069,7 @@ const reportsData=[
   // LA10 (owner decision 2026-10-14): was "1099 / W-2 Summary" under Tax reports — US form names on a multi-region,
   // estimates-only product. It is each person's pay from payroll runs, so it is a payroll report.
   {name:'Payroll by person',desc:'Gross, deductions and net pay per person',icon:'🧾'},
+  {name:'Bank Reconciliation',desc:'Saved statement reconciliations and the lines each cleared',icon:'🏦'},   // B7b
 ];
 // LA9 (live audit 2026-10-13): no "VAT Return" tile — FinFlow has no VAT/GST engine by design (tax = estimates only),
 // so it could only ever answer "not tracked". generateReport('VAT Return') still answers that honestly if called.

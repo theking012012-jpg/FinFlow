@@ -789,6 +789,38 @@
         </div>`;
       };
 
+      // ── B7b (2026-10-23): Bank Reconciliation — every SAVED statement reconciliation for this business, newest first,
+      // with the lines each one cleared. Always to the cent (a reconciliation ties to the cent, so whole-unit rounding
+      // would hide the very difference it proves is zero). A line the bank changed after it was reconciled is flagged.
+      if (name === 'Bank Reconciliation') {
+        const d = await api('GET', '/api/bank-reconciliation/statements');
+        const list = (d && d.reconciliations) || [];
+        const sym = typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$';
+        const c2 = n => (n < 0 ? '-' : '') + sym + Math.abs(+n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const fd = ymd => (window.FinFlowDates ? window.FinFlowDates.fmtLabel(ymd, { year: true }) : ymd);
+        const live = list.filter(r => r.status === 'complete');
+        const latest = live[0] || null;
+        _rptBody(
+          tiles([
+            tile('Reconciliations', String(live.length), list.length > live.length ? (list.length - live.length) + ' undone' : 'saved'),
+            tile('Last statement', latest ? fd(latest.statement_date) : '—', latest ? c2(latest.statement_balance) + ' closing' : 'none yet'),
+          ])
+          + (list.length ? list.map(r => {
+              const n = (r.lines || []).length;
+              return hdr('Statement ' + e(fd(r.statement_date)) + (r.status === 'undone' ? ' — undone' : ''))
+                + row('Statement closing balance', c2(r.statement_balance), { bold: true })
+                + row('Cleared to date', c2(r.cleared_total))
+                + row('Lines cleared', n + ' line' + (n === 1 ? '' : 's'))
+                + row('Saved by', e(r.created_by || '—') + ' · ' + e(fd(String(r.created_at || '').slice(0, 10))))
+                + (r.status === 'undone' ? row('Undone by', e(r.undone_by || '—') + ' · ' + e(fd(String(r.undone_at || '').slice(0, 10)))) : '')
+                + (r.changed_since ? `<div style="font-size:12px;color:var(--amber);padding:4px 0">⚠ ${r.changed_since} line${r.changed_since === 1 ? '' : 's'} changed by the bank after this reconciliation — review before trusting it.</div>` : '')
+                + (r.lines || []).map(l => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0 2px 10px;color:var(--t3)"><span>${e(l.missing ? '(line no longer in the feed)' : fd(l.date) + ' · ' + (l.description || ''))}</span><span style="font-family:var(--font-mono)">${l.missing ? '' : c2(l.amount)}</span></div>`).join('')
+                + (latest && r.id === latest.id ? `<div style="text-align:right;margin:6px 0 10px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ffUndoReconciliation(${r.id})">Undo this reconciliation</button></div>` : '');
+            }).join('')
+            : '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No reconciliations saved yet. Bank Rec → Reconcile: enter your statement\'s closing balance, tick the lines on it, and finish at a 0.00 difference.</div>'));
+        return;
+      }
+
       // ── F137-a: the Balance Sheet report must render an ACTUAL balance sheet (assets /
       // liabilities / equity), NOT the generic P&L overview below. app-main.js:5647 had this but is
       // dead-shadowed by this winner. Delegates to the canonical /api/reports/balance-sheet (AR via

@@ -31,7 +31,7 @@ const USER_SCOPED = [
   // audit_trail is deliberately NOT here (labelled 2026-10-20, LC3d): it is the append-only legal record and OUTLIVES the
   // account by design (N18; server.js skips it; verify-account-delete asserts it is KEPT). It was listed here and passed
   // only vacuously — this account had no audit rows until sign-up and deletion started recording themselves (LC3d).
-  'invoice_payments','bank_reconciliation','payroll_runs',
+  'invoice_payments','bank_reconciliation','bank_reconciliations','payroll_runs',
   'payroll_run_lines','inventory_movements','fx_rates','fx_transactions',
   'personal_accounts','snapshots','ledger_accounts','ledger_entries','ledger_lines','ai_usage',
 ];

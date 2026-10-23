@@ -4178,8 +4178,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1rem">
       <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:.75rem">
-        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Statement balance</div>
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px"><label for="recon-stmt-bal">Statement closing balance</label></div>
         <input class="finput" type="number" id="recon-stmt-bal" placeholder="e.g. 97840" style="font-size:18px;font-family:var(--font-mono);color:var(--acc);border:none;background:none;padding:0;width:100%" oninput="updateReconSummary()">
+        <label for="recon-stmt-date" style="display:block;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin:8px 0 2px">Statement date</label>
+        <input class="finput" type="date" id="recon-stmt-date" style="font-size:12px;padding:3px 6px">
       </div>
       <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:.75rem">
         <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Book balance</div>

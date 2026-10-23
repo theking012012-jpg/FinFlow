@@ -2231,9 +2231,13 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   // the code gap is the same F133 class, so it is closed here.)
   // N11: a flip to 'paid' is settled by a real payment for the outstanding balance AFTER the edit (so an
   // amount changed in the same PUT is the one settled) — see settleInvoiceRemaining.
+  const _paidSoFar = await docPaidSoFar('invoice', scopeId(req), row);   // G3
+  const _refuse = await docEditRefusal('invoice', row, patch, _paidSoFar.paid);
+  if (_refuse) return res.status(409).json(_refuse);
   const _flipPaid = patch.status === 'paid' && String(row.status || '').toLowerCase() !== 'paid';
   if (patch.status === 'paid') delete patch.status;   // recalcInvoiceStatus derives it from the payments
   await db.updateById('invoices', row.id, patch);
+  if (!_flipPaid && (patch.amount != null || patch.status != null)) await rederiveDocStatus('invoice', scopeId(req), row.id, _paidSoFar.hasPayments, _paidSoFar.paid);   // G3
   if (_flipPaid || (req.body && String(req.body.status || '').toLowerCase() === 'paid')) {
     await settleInvoiceRemaining(pool, {
       userId: scopeId(req), invoiceId: row.id,
@@ -2263,6 +2267,47 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
 // stayed: the cash remained in the cash-flow report and the GL, with nothing behind it (AR / AP went
 // negative). One guard for the whole class — invoice ← invoice_payments, bill ← payments_made.bill_id.
 // The supported path is: delete the payments first (each reverses its own cash leg), then the document.
+// G3 (owner decision D2, 2026-10-22): the ONE rule for EDITING an invoice or bill that already has money against it —
+// both PUT routes call it. Every field stays editable, but an edit may never contradict the money recorded:
+//   · the amount may not go below what is paid (it left amount_paid > amount and hid the balance from AR / AP);
+//   · a paid or part-paid invoice may not go back to draft (its revenue would vanish while its cash stays — the same
+//     damage the delete guard below refuses);
+//   · after the edit the status follows the payments (a stale 'partial' on a now-covered document, or a hand-set
+//     'pending' on a part-paid one, contradicted them).
+// "Paid" is the payment rows when there are any; a legacy row from before payment rows keeps its stored amount_paid —
+// re-deriving from rows it does not have would wipe it.
+async function docPaidSoFar(kind, userId, row) {
+  const q = kind === 'invoice'
+    ? `SELECT count(*)::int AS n, COALESCE(sum(amount),0)::float AS s FROM invoice_payments WHERE user_id = $1 AND invoice_id = $2`
+    : `SELECT count(*)::int AS n, COALESCE(sum((data->>'amount')::numeric),0)::float AS s FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2::text`;
+  const { rows: [r] } = await pool.query(q, [userId, Number(row.id)]);
+  const has = !!(r && r.n > 0);
+  return { hasPayments: has, paid: Math.round((has ? r.s : (parseFloat(row.amount_paid) || 0)) * 100) / 100 };
+}
+async function docEditRefusal(kind, row, patch, paid) {
+  if (!(paid > 0)) return null;
+  const what = kind === 'invoice' ? 'invoice' : 'bill';
+  const { rows: [_e] } = row.entity_id != null ? await pool.query(`SELECT data->>'currency' AS c FROM entities WHERE id = $1`, [row.entity_id]) : { rows: [] };
+  const money = paid.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' ' + String((_e && _e.c) || 'USD').toUpperCase();
+  const amt = patch.amount != null ? parseFloat(patch.amount) : parseFloat(row.amount);
+  if (Number.isFinite(amt) && amt < paid - 0.005) return { code: 'AMOUNT_BELOW_PAID', paid, error: `This ${what} has ${money} paid against it, so its amount can't go below that. `
+    + (kind === 'invoice' ? 'To lower it further, delete or refund a payment first, or issue a credit note.' : 'To lower it further, delete a payment first, or record a vendor credit.') };
+  if (kind === 'invoice' && patch.status != null && String(patch.status).toLowerCase() === 'draft') return { code: 'PAID_TO_DRAFT', paid,
+    error: `This invoice has ${money} paid against it, so it can't go back to draft — its revenue would disappear while the payment stays in your books. Delete the payment first if it was recorded by mistake.` };
+  return null;
+}
+async function rederiveDocStatus(kind, userId, docId, hasPayments, paid) {
+  if (hasPayments) return kind === 'invoice' ? recalcInvoiceStatus(pool, docId, userId) : recalcBillStatus(pool, docId, userId);
+  if (!(paid > 0)) return;
+  // Legacy row: the same rule on its stored paid figure, which is kept as it is.
+  const table = kind === 'invoice' ? 'invoices' : 'bills';
+  const { rows: [_r] } = await pool.query(`SELECT * FROM ${table} WHERE id = $1 AND user_id = $2 LIMIT 1`, [docId, userId]);
+  const cur = _r ? rowToObj(_r) : null; if (!cur) return;
+  const status = paidDerivedStatus(paid, parseFloat(cur.amount) || 0, cur.status, kind === 'invoice' ? 'pending' : 'unpaid');
+  if (String(status) === String(cur.status)) return;
+  await db.updateById(table, docId, { status });
+  try { await auditLog(pool, { userId, entityId: cur.entity_id || null, table, recordId: docId, action: 'RECALC', field: 'status/amount_paid', oldValue: `${cur.status} / ${paid}`, newValue: `${status} / ${paid}` }); } catch (_) {}
+}
 async function settlementsBlockingDelete(kind, userId, docId) {
   const q = kind === 'invoice'
     ? `SELECT count(*)::int AS n, COALESCE(sum(amount),0)::numeric AS total FROM invoice_payments WHERE user_id = $1 AND invoice_id = $2`
@@ -4842,9 +4887,13 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
   // on amount_paid, since that bill DOES have linked payments.
   // N33: a flip to 'paid' is settled by a real bill-linked payment for the outstanding balance AFTER
   // the edit (settleBillRemaining); status/amount_paid are then derived by recalcBillStatus.
+  const _paidSoFar = await docPaidSoFar('bill', scopeId(req), row);   // G3
+  const _refuse = await docEditRefusal('bill', row, patch, _paidSoFar.paid);
+  if (_refuse) return res.status(409).json(_refuse);
   const _flipPaid = patch.status != null && String(patch.status).toLowerCase() === 'paid';
   if (_flipPaid) delete patch.status;
   await db.updateById('bills', Number(req.params.id), patch);
+  if (!_flipPaid && (patch.amount != null || patch.status != null)) await rederiveDocStatus('bill', scopeId(req), Number(req.params.id), _paidSoFar.hasPayments, _paidSoFar.paid);   // G3
   if (_flipPaid) {
     await settleBillRemaining(pool, {
       userId: scopeId(req), billId: Number(req.params.id),
@@ -9780,6 +9829,13 @@ async function settleInvoiceRemaining(pool, { userId, invoiceId, date, method, n
   return pay;
 }
 
+// The ONE status rule for a document with money against it (invoices and bills; G3 shares it with the edit routes):
+// covered → paid, some → partial, none → a payment-derived status reverts to the natural unpaid word (F48 #1).
+function paidDerivedStatus(paid, total, current, unpaidWord) {
+  if (paid >= total) return 'paid';
+  if (paid > 0) return 'partial';
+  return (current === 'partial' || current === 'paid') ? unpaidWord : current;
+}
 async function recalcInvoiceStatus(pool, invoiceId, userId) {
   const { rows: [_invR] } = await pool.query(
     `SELECT * FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1`, [invoiceId, userId]
@@ -9798,10 +9854,7 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
   // status ('partial'/'paid') to the natural unpaid state — NOT the stale current status, which
   // would strand the invoice at 'partial' with amount_paid 0. A manually-set non-payment status is
   // preserved. (Live-reproduced: paid → delete all → stuck 'partial', AR incoherent.)
-  let status;
-  if (paid >= total) status = 'paid';
-  else if (paid > 0) status = 'partial';
-  else status = (invRow.status === 'partial' || invRow.status === 'paid') ? 'pending' : invRow.status;
+  const status = paidDerivedStatus(paid, total, invRow.status, 'pending');
   const _oldStatus = invRow.status, _oldPaid = parseFloat(invRow.amount_paid) || 0;
   await db.updateById('invoices', invoiceId, { status, amount_paid: paid });
   // F92: recalcInvoiceStatus is a SIDE-EFFECT money writer — it changes invoices.status/amount_paid
@@ -9921,10 +9974,7 @@ async function recalcBillStatus(pool, billId, userId) {
   );
   const paid = parseFloat(rows[0].paid) || 0;
   const total = parseFloat(billRow.amount) || 0;
-  let status;
-  if (paid >= total) status = 'paid';
-  else if (paid > 0) status = 'partial';
-  else status = (billRow.status === 'partial' || billRow.status === 'paid') ? 'unpaid' : billRow.status;
+  const status = paidDerivedStatus(paid, total, billRow.status, 'unpaid');
   const _oldStatus = billRow.status, _oldPaid = parseFloat(billRow.amount_paid) || 0;
   await db.updateById('bills', billId, { status, amount_paid: paid });
   // F92: recalcBillStatus is the payables-side SIDE-EFFECT money writer (bills.status drives expense

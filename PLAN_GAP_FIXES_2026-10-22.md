@@ -208,7 +208,7 @@ current code, GREEN on the fix, then the listed related harnesses (owner runs th
 | 6 | ✅ **DONE 2026-10-23: B1b** — invoice numbers. Per-business sequence, unique index (user, business, number), prefix from Settings (closes the prefix part of G1); shown in Invoices, Payments Received, PDF, AR | `database.js` + migration, `server.js` (`POST /api/invoices`, the one writer, LA7), lists | M | Isolation, audit. **Existing rows: owner-run numbering script (dry run default, `--apply --expect N`, Rule 8)** | `verify-b1b-invoice-numbers`: 2 businesses × 2 invoices → INV-0001/0002 each; 5 concurrent creates → 5 distinct; Payments Received shows the number (**bug "—"**) | `verify-la7-invoices-one-writer`, `verify-c1-invoice-*`, `verify-invoice-line-items` |
 | 7 | ✅ **DONE 2026-10-23: B1a + B4a** — Edit invoice / Edit bill UI (prefilled form + line items, the LR9 `load()` pattern), after batch 2 | `finflow-api-wiring-medium.js` (invoices), `finflow-api-wiring-pages.js` (bills) | M | Money (via batch-2 server rules) | `verify-b1a-edit-invoice`: edit 700 → 800 keeps lines, GL 4000 = 800, one audit UPDATE; edit below paid shows the server's refusal | batch 2 set + `verify-lr9-quote-edit-convert` |
 | 8 | ✅ **DONE 2026-10-23: B1c + G1** — payment terms per business (saved setting); blank due = issue + terms; printed invoice shows the real due date; remove or relabel "Default tax rate" (**owner decision D6**) | `server.js` (settings, `POST /api/invoices`), `finflow-api-wiring.js` (`saveSettings`, the runtime winner), `app-main.js:6240` | S/M | Money (overdue KPI moves when dues appear). **No backfill of old null dues** (Rule 8: they show "No due date") | `verify-b1c-terms`: terms 15, issue 2026-07-01, blank due → due 2026-07-16, overdue on 07-25 (**bug: "TBD", not overdue**) | `verify-c16-bill-overdue-badge`, `verify-aging-reports-reconcile`, `verify-m27-invoices-collected` |
-| 9 | **B2**: contact picker + upsert. Invoice/bill form picks a saved contact or types a new one; save upserts by normalised name **per business** in the same transaction; nullable `customer_id` / `vendor_id` link. Existing data: the unsaved lists already enumerate it; an owner-run create script (dry run default, Rule 8) | `server.js` (`POST /api/invoices`, `POST /api/bills`), forms, migration | M | Isolation, audit (CREATE per contact) | `verify-b2-contact-upsert`: invoice to "Acme Ltd" twice → 1 customer; "acme ltd " → same; business B gets its own; unsaved list empties (**bug: 0 customers, "not saved"**) | `verify-la4-customers-from-invoices`, `verify-la14-vendors-from-bills`, `verify-f66-customer-vendor-validation`, `verify-customer-derived-revenue` |
+| 9 | ✅ **DONE 2026-10-23: B2** (`411c6af`; `verify-b9-contacts` 2/18 → 20/0; FA-B4 carries quotes / receipts / credit notes / payments) — contact picker + upsert. Invoice/bill form picks a saved contact or types a new one; save upserts by normalised name **per business** in the same transaction; nullable `customer_id` / `vendor_id` link. Existing data: the unsaved lists already enumerate it; an owner-run create script (dry run default, Rule 8) | `server.js` (`POST /api/invoices`, `POST /api/bills`), forms, migration | M | Isolation, audit (CREATE per contact) | `verify-b2-contact-upsert`: invoice to "Acme Ltd" twice → 1 customer; "acme ltd " → same; business B gets its own; unsaved list empties (**bug: 0 customers, "not saved"**) | `verify-la4-customers-from-invoices`, `verify-la14-vendors-from-bills`, `verify-f66-customer-vendor-validation`, `verify-customer-derived-revenue` |
 | 10 | **B1d**: Email invoice + sent/viewed. `POST /api/invoices/:id/send`, copying the reminder route: server-side recipient, idempotency, audit, `sent_at`/`sent_count`; `viewed_at` stamped when the customer opens the pay-link page | `server.js`, invoice row actions | M | Audit; outbound mail. **Needs a verified Resend domain (owner action, D8)** | `verify-b1d-send-invoice` (Resend at its boundary, checked wrapper as LR23): send → 1 mail, `sent_at` set; double send → 1 mail; no e-mail → 400 NO_EMAIL | `verify-lr23-*` |
 | 11 | **B3**: one shared list control (search across named fields, status chips, date range, column sort) over the arrays already loaded client-side; applied to Invoices, Bills, Expenses, Quotes, Payments received/made, Receipts, Credit notes, Vendor credits, Recurring invoices/bills, Vendors, Journals, Timesheet, Projects, Bank lines, Documents; Customers and Items moved onto it | new `public/finflow-list.js` + each page's render (the runtime winners) | M + S/page | **KPI cards must read the unfiltered array** (Rule 2) | `verify-b3-list-controls`: filter invoices "overdue" → only overdue rows; KPI cards unchanged; sort by amount desc (control: no filter = all rows) | each page's existing render harness |
 | 12 | **B8a**: Trial Balance + GL Detail in Reports, each showing the business's `/api/gl/verify` status ("books verified ✓" or "ledger not reconciled: figures may differ from the P&L") | `app-main.js` (`reportsData`), `finflow-api-wiring-extra.js` (`generateReport`, the runtime winner) | S | Read-only | `verify-b8a-tb-report`: TB debits = credits = seeded totals; a broken entry → banner shown | `verify-gl-statements`, `verify-gl-verify`, `verify-reports-parity` |
@@ -319,5 +319,51 @@ timezone and holidays, and personal + business in one app behind a hard wall.
 ## 8. Work order
 
 Work begins **after the owner's 3× sweep finishes**. First: deploy `main` (batch 0, owner, when Railway is back), then
-batch 1 (V1). Before launch: batches 1-9, 12 and 16. Right after launch: 10, 11, 13, 14, 15, 17. Batch 11 can start
+batch 1 (V1). ALL batches 1–17 ship before launch (owner rule 2026-10-23). Batch 11 can start
 with Invoices and Bills only if the launch date needs it.
+
+---
+
+## 9. Full app audit 2026-10-22 (`FULL_APP_AUDIT_2026-10-22.md`) — folded in 2026-10-23
+
+That audit walked **production**, which still runs the old build (`9682467`) — so part of it is already fixed on `main`
+today. Every finding mapped (read-only). New items are numbered **FA-…** in `AUDIT_MASTER.md`.
+
+| Audit item | Status on `main` | Where |
+|---|---|---|
+| M1 payroll period / negative liability | ✅ fixed (prepaid payroll 1250, confirm, month picker) | V1 |
+| M2 overdue understated (all open credits netted against one customer's overdue) | 🔴 **NEW — money, P0** | **FA-M2** → batch A1 |
+| M3 invoice document shows Balance Due = total (ignores payments) — on the customer's PDF | 🔴 **NEW — money, P0** | **FA-M3** → batch A1 |
+| M4 invoice list "Paid" column empty | 🔴 NEW | **FA-M4** → batch A1 |
+| M5 payment terms never applied | ✅ fixed for invoices (batch 8); **bills** still have no terms | B1c; **FA-M5b** (bills) |
+| M6 status hand-set at create (Paid / Applied with no money behind it) | 🟡 edits fixed (G3); **create-time** statuses still open | **FA-M6** → batch A2 |
+| M7 two charts of accounts (journal picker vs GL; code 5000 means two things) | 🔴 **NEW — ledger integrity, VERIFY first** | **FA-M7** → batch A2 |
+| M8 Sales by Customer lumps a credit note into "unattributed" | 🔴 NEW | **FA-M8** → batch A3 |
+| M9 Expense Report total ≠ breakdown (bills missing; no by-vendor) | 🔴 NEW | **FA-M9** → batch A3 |
+| M10 bank balances | 🟡 provider balances shown (V2); opening balances / per-account books open | V2, G15, D7 |
+| M11 inventory tiles ("COGS this month"; inventory revenue = all revenue) | 🟡 COGS label fixed (LR15, on main); revenue figure open | **FA-M11** → batch A3 |
+| M12 summary figures (AI weakest month, Scenario runway, avg days to pay, Customers "Active 0") | 🔴 NEW (4 small) | **FA-M12** → batch A3 |
+| M13 currency labels | 🟡 consolidated label fixed (LR14, on main); payroll "Monthly gross (USD)" hard-coded (`index.html:2595, 4309`) open | **FA-M13** → batch 16 |
+| M14 Personal treats transfers / card payments / CD deposits as spending | 🔴 NEW (Personal) | **FA-M14** → batch A4 |
+| L1–L8 landing page: invented testimonials, logos, stats, unbuilt Enterprise features, contradicting claims, comparison table; broken `/terms.html#6` link | 🔴 **NEW — legal, P0** (LR28 covered L1 only) | **FA-L** → batch A0 (owner copy decisions) |
+| B1 "Auto" email templates and the overdue-alert switch do nothing | 🔴 NEW (same class as decorative settings, G1) | **FA-B1** → with batch 10 (email) — remove the "Auto" claims now |
+| B2 tax-rate setting | ✅ removed (D6, batch 8) | B1c |
+| B3 invoice numbering | ✅ fixed (per business, stored, shown; fabricated number removed) | B1b |
+| B4 contacts not linked | ✅ invoices + bills (batch 9); **quotes, receipts, credit notes, payments** still free text; customer email required to save — VERIFY | B9; **FA-B4** |
+| B5 no invoice / bill edit | ✅ fixed (batch 7); item picker / tax / terms fields on lines open | B7e; **FA-B5** |
+| B6 edit forms titled "New …" (quote, time entry) | 🟡 invoice / bill fixed (batch 7); quote + time open | **FA-B6** → batch 16 |
+| B7 inventory stock-out has no price/customer; reorder level stored as max_units | 🔴 NEW | **FA-B7** |
+| B8 option lists disagree (auto-categorise vs expense categories; Add Entity industries 7 vs 11; business currency 6 vs ~160) | 🟡 Settings industries fixed (LR21); the rest open | **FA-B8** |
+| B9 bank-rec match suggests every bill | ✅ fixed (G4) | G4 |
+| B10 coming-soon pages, Rebalance stub | ⏳ batch 16 (D4) | batch 16 |
+| B11 "Card sales — via Stripe" on a manual receipt | ✅ fixed on main (LR20) | LR20 |
+| B12 forms stay open across page changes (15 stacked) | 🔴 NEW | **FA-B12** → batch 16 |
+| B13 unknown URLs return the home page with 200, never 404 | 🔴 NEW | **FA-B13** → batch 16 |
+| B14 reporting-currency prompt blocks every load until answered | 🟡 decision 3.3 built that prompt; "blocks every load" is UX — revisit | **FA-B14** |
+| §4 P1 gaps (statements, credit apply, search, partial pay, time, projects, aging, banking, payslips) | mostly already in plan batches 10–17; partial pay is **not a bug** (M48) | batches 10–17 |
+| U1 contrast fails app-wide (`--t3` 2.2–2.8 : 1; two items 1.0 : 1) | 🔴 **NEW — accessibility** | **FA-U1** → batch A5 |
+| U2 phone: header labels overflow on 18 lists, FX table, small tap targets | 🔴 NEW | **FA-U2** → batch A5 |
+| P1 CSP report-only noise (inline styles everywhere) | 🟡 known risk if enforced — log | **FA-P1** |
+| P2 Connections fires 17 status calls ×6 per visit | 🔴 NEW (same class as LR21 ×5 settings fetch) | **FA-P2** |
+
+**Owner rule 2026-10-23: EVERYTHING ships before launch — nothing is deferred.** Revised order (all before launch): finish batch 9 → **A0** landing-page claims (owner copy) → **A1** money on customer-facing documents and AR (FA-M2, M3, M4) → batch 12 → **A2** ledger integrity (FA-M7, M6) → **A3** report figures (FA-M8, M9, M11, M12) → batch 16 (+ FA-M13, B6, B12, B13) → **A5** contrast + phone (FA-U1, U2) → **A4** Personal transfers (FA-M14). Then, still before launch: batches 10 (built + tested now with Resend mocked; real delivery needs the owner's Resend domain), 11, 13, 14, 15, 17 + FA-B1, B4, B5, B7, B8, B14, P1, P2, M5b. Owner decisions G13–G16 are taken when their batch starts.

@@ -5755,11 +5755,9 @@ async function loadBankingFromDB(){
       bankAccounts.length = 0;
       ((pj && pj.items) || []).forEach(it => (it.accounts||[]).forEach(a => bankAccounts.push(Object.assign({ bank: it.institution_name }, a))));
     } catch(_e){ bankAccounts.length = 0; }
-    try {
-      const br = await fetch('/api/reports/balance-sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});
-      const bj = br.ok ? await br.json() : null;
-      window._bankBooksCash = bj ? { tracked: bj.cashTracked === true && bj.cash != null, cash: parseFloat(bj.cash)||0 } : null;
-    } catch(_e){ window._bankBooksCash = null; }
+    // The books' cash (a full balance sheet on the server) is read only when the Banking page is actually OPEN —
+    // renderBanking fetches it on demand. Reading it here ran that heavy computation at EVERY sign-in.
+    window._bankBooksCash = undefined;
     if(typeof renderBanking==='function') renderBanking();
   } catch(e){
     // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch
@@ -5788,6 +5786,8 @@ async function saveBankTxn(desc, amount, type, cat, date, idemKey){
     return true;
   } catch(e){ if(typeof notify==='function') notify('Error saving transaction — '+(e.message||''), true); return false; }
 }
+// The books comparison is only worth a balance-sheet read when there is a bank balance in the business's currency.
+function _bankAccountsReadyForCompare(v){ return v!=null; }
 function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
   const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
@@ -5830,6 +5830,16 @@ function renderBanking(){
   let cmp=document.getElementById('bank-books-compare');
   if(al && !cmp){ cmp=document.createElement('div'); cmp.id='bank-books-compare'; cmp.style.cssText='font-size:12px;color:var(--t2);padding:10px 0 2px;line-height:1.6'; al.parentNode.insertBefore(cmp, al.nextSibling); }
   if(cmp){
+    // Books' cash on demand: only while the Banking page is showing, once per load (undefined = not read yet).
+    const _bkOpen=!!(document.getElementById('page-banking')||{classList:{contains:()=>false}}).classList.contains('active');
+    if(window._bankBooksCash===undefined && _bankAccountsReadyForCompare(_byCur[_cur]) && _bkOpen && !window._bankBooksCashLoading){
+      window._bankBooksCashLoading=true;
+      fetch('/api/reports/balance-sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'})
+        .then(r=>r.ok?r.json():null)
+        .then(bj=>{ window._bankBooksCash = bj ? { tracked: bj.cashTracked === true && bj.cash != null, cash: parseFloat(bj.cash)||0 } : null; })
+        .catch(()=>{ window._bankBooksCash = null; })
+        .finally(()=>{ window._bankBooksCashLoading=false; if(typeof renderBanking==='function') renderBanking(); });
+    }
     const bc=window._bankBooksCash||null, others=_curs.filter(c=>c!==_cur);
     let h='';
     if(_byCur[_cur]!=null){
@@ -5838,6 +5848,7 @@ function renderBanking(){
         h='Bank ('+esc(_cur)+'): <strong>'+_m2(_byCur[_cur],_cur)+'</strong> · Cash in your books: <strong>'+_m2(bc.cash,_cur)+'</strong> · Difference: <strong style="color:'+(Math.abs(diff)<0.005?'var(--green)':'var(--amber)')+'">'+_m2(diff,_cur)+'</strong>'
           +(Math.abs(diff)<0.005?' ✓':' — <a href="#" onclick="showPage(\'bank-rec\');return false">reconcile it in Bank Rec</a>');
       } else if(bc) h='Cash is not tracked in your books yet for this business, so there is no bank-vs-books difference to show.';
+      else if(window._bankBooksCash===undefined) h='Bank ('+esc(_cur)+'): <strong>'+_m2(_byCur[_cur],_cur)+'</strong> · checking your books…';
     }
     if(others.length) h+=(h?'<br>':'')+'Accounts in '+others.map(esc).join(', ')+' are shown separately and not compared with your '+esc(_cur)+' books.';
     cmp.innerHTML=h;

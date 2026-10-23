@@ -61,7 +61,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     await J('POST', '/api/sales-receipts', { customer: 'Walk-in', amount: 150, date: '2026-07-06', method: 'Cash', idempotency_key: 'r-s' });
     await J('POST', '/api/payroll', { fname: 'Sam', lname: 'Owner', gross: 2000, is_owner: true, deductions: [{ label: 'Tax', value: 10, type: 'percent' }] });
     const octRun = await J('POST', '/api/payroll-runs', { period: 'October 2026', idempotency_key: 'r-run' });
-    await J('PUT', '/api/payroll-runs/' + octRun.id + '/approve', {}); await J('PUT', '/api/payroll-runs/' + octRun.id + '/mark-paid', {});
+    await J('PUT', '/api/payroll-runs/' + octRun.id + '/approve', {}); await J('PUT', '/api/payroll-runs/' + octRun.id + '/mark-paid', { confirm_future: true });   // V1 (D1): a future month — a confirmed prepayment
     await J('PUT', '/api/budget-targets', { Rent: 60000 });   // the body IS the map (as the app sends it)
     await J('POST', '/api/personal-transactions', { description: 'Groceries', amount: 120, currency: 'USD', category: 'Food', tx_type: 'expense', tx_date: '2026-07-07' });
 
@@ -86,7 +86,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     await J('POST', '/api/timesheet', { employee: 'Sam Owner', project_id: prT.id, date: '2026-07-18', hours: 1.5, billable: 'Yes', rate: 80 });
     await J('POST', '/api/quotes', { client: 'ZZ-LIVECHECK quote', amount: 100, expiry_date: '2026-08-30' });
     const novRun = await J('POST', '/api/payroll-runs', { period: 'November 2026', idempotency_key: 't-run' });
-    await J('PUT', '/api/payroll-runs/' + novRun.id + '/approve', {}); await J('PUT', '/api/payroll-runs/' + novRun.id + '/mark-paid', {});
+    await J('PUT', '/api/payroll-runs/' + novRun.id + '/approve', {}); await J('PUT', '/api/payroll-runs/' + novRun.id + '/mark-paid', { confirm_future: true });   // V1 (D1): a future month — a confirmed prepayment
     await J('PUT', '/api/budget-targets', { Rent: 60000, Software: 600 });
     await c.query(`INSERT INTO support_requests (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`, [uid, eid, { subject: 'Integration request', message: 'Please add FreshBooks', status: 'open' }]);
     await J('POST', '/api/personal-transactions', { description: 'ZZ-LIVECHECK personal', amount: 5, currency: 'USD', category: 'Other', tx_type: 'expense', tx_date: '2026-07-19' });

@@ -426,9 +426,24 @@ async function loadPayrollRuns(){
   }catch(e){el.innerHTML='<div style="color:var(--red);padding:1rem;font-size:12px">Could not load payroll runs</div>';}
 }
 
+// V1 (D1, 2026-10-22): the pay period is a MONTH, picked — never typed. A typed period the date reader could not parse
+// silently fell back to the run date (G7), and the default came from the viewer's clock, not the business's (G8, Rule 10).
+// The run still stores the display form ("August 2026") every earlier run uses, so the one-run-per-period rule holds.
+const _PRM_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function _prmPeriodLabel(ym){ const m=/^(\d{4})-(\d{2})$/.exec(String(ym||'')); return m&&_PRM_MONTHS[+m[2]-1] ? _PRM_MONTHS[+m[2]-1]+' '+m[1] : null; }
+function _prmPeriodHint(){
+  const el=document.getElementById('prm-period-hint'); if(!el) return;
+  const ym=(document.getElementById('prm-period')||{}).value||'';
+  const lbl=_prmPeriodLabel(ym); if(!lbl){ el.textContent=''; return; }
+  const start=ym+'-01', today=(typeof _entityToday==='function'?_entityToday():'');
+  // Says where the money lands BEFORE anyone saves: the expense on the period's first day; cash paid sooner is prepaid.
+  el.textContent='Expense recorded in '+lbl+' (from '+(window.FinFlowDates?window.FinFlowDates.fmtLabel(start,{year:true}):start)+')'
+    +(today && today<start ? ' · this month has not started — paying before then records prepaid payroll' : '');
+}
+window._prmPeriodHint=_prmPeriodHint;
 function openRunPayrollModal(){
   const period=document.getElementById('prm-period');
-  if(period){const d=new Date();period.value=d.toLocaleString('en-US',{month:'long',year:'numeric'});}
+  if(period){ period.value=(typeof _entityToday==='function'?_entityToday():new Date().toISOString().slice(0,10)).slice(0,7); _prmPeriodHint(); }
   const runDate=document.getElementById('prm-date');
   if(runDate)runDate.value=(window.todayLocal?window.todayLocal():new Date().toISOString().slice(0,10));  // C3/F37: local date, not UTC
   const notesEl=document.getElementById('prm-notes');
@@ -460,10 +475,13 @@ let _payrollSubmitToken=null;
 function _mintToken(){ try{ return crypto.randomUUID(); }catch(_){ return 'k_'+Date.now()+'_'+Math.random().toString(36).slice(2); } }
 async function submitPayrollRun(){
   if(window._savingPayrollRun) return;             // C1: in-flight re-entry lock — a double-click can't fire a 2nd run
-  const period=document.getElementById('prm-period')?.value?.trim();
+  // V1: 'YYYY-MM' from the month picker → the stored display form. A browser without a month picker shows a text box;
+  // anything that is not a month is refused here rather than filed under the run date.
+  const _pRaw=(document.getElementById('prm-period')?.value||'').trim();
+  const period=_prmPeriodLabel(_pRaw) || (/^[A-Za-z]+\s+\d{4}$/.test(_pRaw) && window.FinFlowDates && /^\d{4}-\d{2}-01$/.test(String(window.FinFlowDates.payrollPeriodYmd(_pRaw,null)||'')) ? _pRaw : null);
   const runDate=document.getElementById('prm-date')?.value;
   const notes=document.getElementById('prm-notes')?.value||'';
-  if(!period){notify('Enter a pay period',true);return;}
+  if(!period){notify(_pRaw?'Choose the pay period as a month (for example 2026-08)':'Choose a pay period',true);return;}
   if(!runDate){notify('Select a run date',true);return;}
   const emps=window.payrollEmployees||[];
   const owner=window.ownerPayroll;
@@ -551,8 +569,16 @@ async function saveRemitWithholdings(){
 }
 async function markPayrollPaid(id){
   try{
-    const res=await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include'});
-    const d=await res.json().catch(()=>({}));
+    let res=await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include'});
+    let d=await res.json().catch(()=>({}));
+    // V1 (D1): a run whose month has not started is paid only once the owner confirms — the server says, in words,
+    // when the expense lands; the money is recorded as prepaid payroll until then.
+    if(res.status===409&&d.code==='FUTURE_PERIOD'){
+      const ok=(typeof window._confirmModal==='function')?await window._confirmModal(d.error+' Pay it now?',{okText:'Pay in advance',cancelText:'Not yet'}):false;
+      if(!ok){ notify('Not paid — the run stays approved.'); return; }
+      res=await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm_future:true})});
+      d=await res.json().catch(()=>({}));
+    }
     if(!res.ok){notify('⚠ '+(d.error||'Could not update'),true);loadPayrollRuns();return;}   // N58: e.g. "Approve this payroll run before marking it paid."
     // LA3 (live audit 2026-10-13 B2): say what crossed to Personal — or why nothing did. It used to be silent.
     const os=d.owner_salary||{};

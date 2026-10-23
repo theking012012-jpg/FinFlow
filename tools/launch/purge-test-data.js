@@ -25,7 +25,7 @@
  */
 const { Client } = require('pg');
 const { findTestData, fingerprint } = require('./list-test-data.js');
-const { reverseLedgerEntryBody } = require('../../ledger-reverse.js');
+const { reverseLedgerEntryBody, PAYROLL_CASH_SOURCE_TYPES } = require('../../ledger-reverse.js');
 const { isLocked } = require('../../period-lock.js');
 
 // table → ledger source type the app reverses on delete (null = the app posts nothing for it), and the record's date.
@@ -115,7 +115,7 @@ async function apply(c, steps) {
     } else if (s.kind === 'run-void') {
       // == PUT /api/payroll-runs/:id/void
       await c.query(`UPDATE payroll_runs SET status = 'voided' WHERE id = $1`, [r.id]);
-      for (const src of ['payroll_run', 'payroll_paid', 'payroll_remit']) await reverseLedgerEntryBody(c, { userId: r.user_id, sourceType: src, sourceId: r.id });
+      for (const src of ['payroll_run'].concat(PAYROLL_CASH_SOURCE_TYPES)) await reverseLedgerEntryBody(c, { userId: r.user_id, sourceType: src, sourceId: r.id });
       const { rows: gone } = await c.query(`DELETE FROM personal_transactions WHERE user_id = $1 AND entity_id IS NULL AND data->>'source' = 'payroll' AND data->>'payroll_run_id' = $2::text RETURNING id, user_id, data`, [r.user_id, String(r.id)]);
       for (const g of gone) await persHist(c, g.user_id, 'owner_salary', 'DELETE', Object.assign({ id: g.id }, g.data));
       await audit(c, r.user_id, r.entity_id, 'payroll_runs', r.id, 'VOID', { purge: 'test data (§1.6)', period: r.period, status: r.status }, null);

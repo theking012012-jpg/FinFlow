@@ -1325,6 +1325,8 @@ const DEFAULT_COA = [
   { code: '1000', name: 'Cash',                 type: 'asset',     normal: 'debit',  is_system: true  },
   { code: '1100', name: 'Accounts Receivable',  type: 'asset',     normal: 'debit',  is_system: true  },
   { code: '1200', name: 'Inventory',            type: 'asset',     normal: 'debit',  is_system: true  },
+  // V1 (D1, 2026-10-22): payroll cash paid before the run's period starts waits here until the period's first day.
+  { code: '1250', name: 'Prepaid Payroll',      type: 'asset',     normal: 'debit',  is_system: true  },
   { code: '2000', name: 'Accounts Payable',     type: 'liability', normal: 'credit', is_system: true  },
   { code: '2100', name: 'Tax Payable',          type: 'liability', normal: 'credit', is_system: true  },
   { code: '2200', name: 'Payroll Liabilities',  type: 'liability', normal: 'credit', is_system: true  },

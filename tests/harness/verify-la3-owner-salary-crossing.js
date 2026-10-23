@@ -28,7 +28,7 @@ run('LA3 — the owner can be marked on the roster, and mark-paid says what cros
 
   const r1 = await J('POST', '/api/payroll-runs', { period: 'September 2026', idempotency_key: 'la3-sep' });
   await J('PUT', '/api/payroll-runs/' + r1.id + '/approve', {});
-  const p1 = await J('PUT', '/api/payroll-runs/' + r1.id + '/mark-paid', {});
+  const p1 = await J('PUT', '/api/payroll-runs/' + r1.id + '/mark-paid', { confirm_future: true });   // V1 (D1): a future month — a confirmed prepayment
   eq('nobody flagged → nothing crosses', (await salaryRows()).length, 0);
   eq('nobody flagged → mark-paid reports there was no owner on the run', p1.owner_salary && p1.owner_salary.ownerOnRun, false, undefined);
 
@@ -39,7 +39,7 @@ run('LA3 — the owner can be marked on the roster, and mark-paid says what cros
 
   const r2 = await J('POST', '/api/payroll-runs', { period: 'October 2026', idempotency_key: 'la3-oct' });
   await J('PUT', '/api/payroll-runs/' + r2.id + '/approve', {});
-  const p2 = await J('PUT', '/api/payroll-runs/' + r2.id + '/mark-paid', {});
+  const p2 = await J('PUT', '/api/payroll-runs/' + r2.id + '/mark-paid', { confirm_future: true });   // V1 (D1): a future month — a confirmed prepayment
   const rows = await salaryRows();
   eq('owner flagged → one Personal row', rows.length, 1, 0);
   eq('row = Sam NET 4,000 (not Jordan 2,700, not run net 6,700, not gross 5,000)', rows[0] && Number(rows[0].amount), 4000);

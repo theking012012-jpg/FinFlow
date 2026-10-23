@@ -31,4 +31,9 @@ async function reverseLedgerEntryBody(client, { userId, sourceType, sourceId }) 
   return rev.id;
 }
 
-module.exports = { reverseLedgerEntryBody };
+// V1 (2026-10-22): every ledger source a payroll run's CASH can post under — a prepayment (cash before the run's period)
+// adds a *_release entry dated the period's first day. Voiding a run reverses all of them; the server's void route and the
+// owner-run purge tool read this ONE list (Rule 2), so a new leg can never be left behind by one of them.
+const PAYROLL_CASH_SOURCE_TYPES = ['payroll_paid', 'payroll_paid_release', 'payroll_remit', 'payroll_remit_release'];
+
+module.exports = { reverseLedgerEntryBody, PAYROLL_CASH_SOURCE_TYPES };

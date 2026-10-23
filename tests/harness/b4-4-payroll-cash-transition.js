@@ -196,7 +196,7 @@ async function main() {
 
     // ── 4 · mark-paid IS cash. THE B4.4 assertion, and the F122 leg's guard. ──
     console.log('\n-- 4 - MARK-PAID: cash out rises by exactly Σ lines (B4.4) --');
-    const paid = await http.put(`/api/payroll-runs/${runId}/mark-paid`);
+    const paid = await http.put(`/api/payroll-runs/${runId}/mark-paid`, { confirm_future: true });   // V1 (D1): 2026-08 starts after the pinned 25 Jul — paying it is a confirmed prepayment
     A('PUT …/mark-paid → 200', paid.status, 200, `body: ${paid.text.slice(0, 200)}`);
     A('run status is paid', paid.json?.status, 'paid');
     const afterPaid = await snapshot(http, 'after mark-paid');

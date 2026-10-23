@@ -99,3 +99,23 @@ This list is not exhaustive; please confirm what applies.
 **Third-party terms the documents must respect**
 - Plaid, Belvo, Stripe (including Connect), the connected accounting / commerce platforms' developer terms, and
   Anthropic's usage policy.
+
+## Added 23 October 2026
+
+13. **Professional Conduct Policy for accountants** (new document, `/conduct.html`, version 1.0). Accountants must accept
+    it to join, and existing accountants are asked to accept it; access to client books pauses 14 days after they are
+    asked if they have not. Please review the whole document, and in particular section 8 (keeping work on the platform):
+    a 24-month non-circumvention period, a conversion fee (10% of the previous 12 months' fees billed through FinFlow,
+    minimum USD 250), and the penalties — warning plus repayment, 90-day suspension, permanent removal with forfeiture of
+    unpaid referral payments and set-off. Are these enforceable in the countries we operate in, and proportionate?
+14. **Legal entity name**: the website and documents currently say "FinFlow Inc.". The correct registered entity will be
+    confirmed once registered; all documents and the website will then name it.
+15. **Subscriptions — new commitments to word**: annual plans at 20% off; customers may leave an annual plan at any time
+    and are refunded what was paid minus the months used, charged at the monthly price; a renewal reminder 30 days
+    before each annual renewal; prices locked for the paid term; a self-serve downgrade that takes effect at the end of
+    the billing period. Terms section 6 currently says fees are non-refundable — it needs to change to match.
+16. **Data after cancellation**: proposed policy — export at any time; read-only access for 90 days after cancellation;
+    a warning 14 days before deletion; then deletion, except the audit trail of changes to the books (see question 4).
+    Is this consistent with customers' own record-keeping duties (question under "Records and retention")?
+17. **Marketing content (update)**: the testimonials, invented company logos, unsourced statistics and the competitor
+    price comparison have been removed from the website.

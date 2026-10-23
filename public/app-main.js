@@ -2171,6 +2171,10 @@ function arOutstanding(invoices){
   // D2 — a future-dated invoice is SCHEDULED, not yet receivable (mirrors the server AR leg).
   const _arToday = _entityToday();
   let total=0, count=0, overdueTotal=0, overdueCount=0;
+  // FA-M2: overdue and credits are kept PER CUSTOMER (the same contact key as server.js _contactKey — case and spacing
+  // never split a customer), so a credit note nets only its own customer's overdue.
+  const _ck=v=>String(v==null?'':v).trim().toLowerCase().replace(/\s+/g,' ');
+  const _ovdBy={}, _cnBy={};
   (invoices||[]).forEach(i=>{
     const st=(i.status||'').toLowerCase();
     if(!RECOGNIZED.includes(st)) return;
@@ -2181,7 +2185,7 @@ function arOutstanding(invoices){
     total+=due; count++;
     // F-C1: overdue = unpaid & past its due date (entity-local today), not a literal 'overdue' status.
     const _ovd=window.FinFlowDates._toYmd(i.due_date);
-    if(st==='overdue' || (_ovd!=null && _ovd<_arToday)){ overdueTotal+=due; overdueCount++; }
+    if(st==='overdue' || (_ovd!=null && _ovd<_arToday)){ overdueTotal+=due; overdueCount++; const k=_ck(i.client); _ovdBy[k]=(_ovdBy[k]||0)+due; }
   });
   // F58 CLOSE: open|applied credit notes are a receivable contra — the customer owes that much less.
   // Net them out of the AR TOTAL so the dashboard Outstanding, the AR report total and the server
@@ -2193,14 +2197,18 @@ function arOutstanding(invoices){
     if(cst!=='open'&&cst!=='applied') return;
     const _cy=window.FinFlowDates._toYmd(cn.date||cn.created_at);
     if(_cy==null||_cy>_arToday) return;
-    _cnTotal+=parseFloat(cn.amount)||0;
+    const c=parseFloat(cn.amount)||0;
+    _cnTotal+=c;
+    const k=_ck(cn.customer||cn.client); _cnBy[k]=(_cnBy[k]||0)+c;
   });
   const invoiceTotal=total;   // LA6: before the credit-note contra — the captions show what makes up the net figure
   total=Math.max(0,total-_cnTotal);
   // L35: overdue nets the SAME contra and is clamped to [0, total] — mirror of computeBooks.arSummary.overdueTotal
   // and /api/reports `overdue` (server.js). Un-netted it read ABOVE outstanding whenever a credit note was open
   // (live: Overdue $14,300 > Outstanding $13,550) — impossible, overdue is a subset of outstanding.
-  overdueTotal=Math.max(0,Math.min(total,overdueTotal-_cnTotal));
+  // FA-M2: …but only each customer's OWN credits, never below 0 for that customer (one customer's credit used to hide
+  // another's past-due money). Mirror of computeBooks.arSummary.overdueTotal.
+  overdueTotal=Math.max(0,Math.min(total,Object.keys(_ovdBy).reduce((s,k)=>s+Math.max(0,_ovdBy[k]-(_cnBy[k]||0)),0)));
   return { total, count, overdueTotal, overdueCount, invoiceTotal, creditTotal:_cnTotal };
 }
 window._arOutstanding = arOutstanding;

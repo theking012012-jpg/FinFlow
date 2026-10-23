@@ -69,10 +69,11 @@ const OWNER = { email: 'fc1-owner@finflow.test', password: 'harness-password-not
     // STRUCTURAL — every overdue computation is date-based, not a literal status match.
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
     // M24: /api/reports no longer keeps its own copy — it reads computeBooks.arSummary, which is due_date-based
-    // and nets credit notes (_arOverdueTotal − _arCreditContra, clamped to outstanding).
+    // and nets credit notes — FA-M2: each customer's OWN credits only (_arOverdueNet, clamped to outstanding); the
+    // per-customer values are asserted by executed numbers in verify-fam2-overdue-per-customer.
     AS('server reports.overdue reads the ONE date-based, credit-netted definition (computeBooks.arSummary)',
       /const overdue = \(books\.arSummary && books\.arSummary\.overdueTotal != null\)/.test(srv)
-      && /_ovd != null && _ovd < _today/.test(srv) && /overdueTotal: r2\(Math\.max\(0, Math\.min\(outstanding, _arOverdueTotal - _arCreditContra\)\)\)/.test(srv));
+      && /_ovd != null && _ovd < _today/.test(srv) && /overdueTotal: r2\(Math\.max\(0, Math\.min\(outstanding, _arOverdueNet\)\)\)/.test(srv));
     const am = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8');
     AS('app-main arOutstanding overdue is due_date-based',
       /function arOutstanding[\s\S]{0,1400}i\.due_date[\s\S]{0,200}overdueTotal/.test(am));

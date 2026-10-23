@@ -12521,6 +12521,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     return rate == null ? 0 : amt * rate;                        // null rate already flagged by the outstanding pass
   };
   let _arOpenCount = 0, _arOverdueTotal = 0, _arOverdueCount = 0;
+  const _ovdByCust = {}, _cnByCust = {};   // FA-M2: overdue and credits per customer (the batch 9 contact key)
   issuedInv
     .filter(i => { const _y = FinFlowDates._toYmd(_invDate(i)); return _y != null && _y <= _today; })
     .forEach(i => {
@@ -12531,19 +12532,30 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
       _arOpenCount++;
       // F-C1 (mirrors client arOutstanding): overdue = unpaid AND (literal 'overdue' status OR past its due date).
       const _ovd = FinFlowDates._toYmd(i.due_date);
-      if (String(i.status || '').toLowerCase() === 'overdue' || (_ovd != null && _ovd < _today)) { _arOverdueTotal += g; _arOverdueCount++; }
+      if (String(i.status || '').toLowerCase() === 'overdue' || (_ovd != null && _ovd < _today)) {
+        _arOverdueTotal += g; _arOverdueCount++;
+        const _k = _contactKey(i.client); _ovdByCust[_k] = (_ovdByCust[_k] || 0) + g;
+      }
     });
   creditNotes
     .filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase()) &&
       (function () { const _y = FinFlowDates._toYmd(_cnDate(cn)); return _y != null && _y <= _today; })())
-    .forEach(cn => { const c = num(cn.amount); if (c) _arAdd(cn.customer || cn.client || 'Unattributed credits', -_fxConvRow(c, cn.entity_id, _cnDate(cn))); });
+    .forEach(cn => { const c = num(cn.amount); if (!c) return;
+      const cv = _fxConvRow(c, cn.entity_id, _cnDate(cn));
+      _arAdd(cn.customer || cn.client || 'Unattributed credits', -cv);
+      const _k = _contactKey(cn.customer || cn.client); _cnByCust[_k] = (_cnByCust[_k] || 0) + cv;
+    });
+  // FA-M2: a credit note reduces only ITS OWN customer's overdue, never below 0 — netting every credit of the business
+  // against the overdue total let one customer's unrelated credit hide another's past-due money (live: Bright Labs'
+  // $1,500 read $1,200 because of Acme's $300 credit). A credit above its customer's overdue does not spill onto others.
+  const _arOverdueNet = Object.keys(_ovdByCust).reduce((s, k) => s + Math.max(0, _ovdByCust[k] - (_cnByCust[k] || 0)), 0);
   const arByCustomer = Object.entries(_arByCustomer)
     .map(([customer, amount]) => ({ customer, amount: r2(amount) }))
     .filter(r => Math.abs(r.amount) > 0.005)
     .sort((a, b) => b.amount - a.amount);
-  // H1: overdue nets credit notes on the SAME basis as `outstanding` (gross AR − credit contra),
-  // clamped to [0, outstanding] — a past-due figure can never exceed the total it is a subset of.
-  const arSummary = { total: outstanding, openCount: _arOpenCount, overdueTotal: r2(Math.max(0, Math.min(outstanding, _arOverdueTotal - _arCreditContra))), overdueCount: _arOverdueCount };
+  // H1 / FA-M2: overdue is net of each customer's OWN credit notes (above), clamped to [0, outstanding] — a past-due
+  // figure can never exceed the total it is a subset of. Client mirror: app-main.js arOutstanding.
+  const arSummary = { total: outstanding, openCount: _arOpenCount, overdueTotal: r2(Math.max(0, Math.min(outstanding, _arOverdueNet))), overdueCount: _arOverdueCount };
 
   // F205 — top clients by recognized revenue (mirrors the client _topClients: recognized statuses,
   // summed by client at FULL amount, no period/D2 filter — it is an all-time revenue ranking, not a

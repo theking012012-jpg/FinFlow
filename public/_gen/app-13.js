@@ -958,22 +958,6 @@ const ENT_FEATURES=[
   {text:'Annual audit support',ok:true},
 ];
 
-const COMPARE_ROWS=[
-  {feature:'Single business /mo (multi-currency tier)',ff:'$79 (Pro)',qb:'$75',xero:'$55',fb:'$30',ffWins:false},
-  {feature:'5 businesses — total /mo',ff:'$249 (one plan)',qb:'$375 (5 subs)',xero:'$450 (5 orgs)',fb:'✗',ffWins:true},
-  {feature:'10 businesses — total /mo',ff:'$400 (Scale)',qb:'$750 (10 subs)',xero:'$900 (10 orgs)',fb:'✗',ffWins:true},
-  {feature:'Native AI assistant',ff:'✓ Claude (Business)',qb:'Limited',xero:'✗',fb:'✗',ffWins:true},
-  {feature:'Multi-entity (same plan)',ff:'✓ Business',qb:'✗ Extra sub',xero:'✗ Extra org',fb:'✗',ffWins:true},
-  {feature:'AI receipt scanner',ff:'✓ Business',qb:'Basic OCR',xero:'Basic OCR',fb:'✗',ffWins:true},
-  {feature:'Live bank sync (Plaid)',ff:'✓ Business',qb:'✓',xero:'✓',fb:'Limited',ffWins:false},
-  {feature:'7-year audit trail',ff:'✓ Business',qb:'✓',xero:'✓',fb:'✗',ffWins:false},
-  {feature:'MRR / SaaS dashboard',ff:'✓ Business',qb:'✗',xero:'✗',fb:'✗',ffWins:true},
-  {feature:'Budget variance tracking',ff:'✓ Pro & Business',qb:'Add-on',xero:'Limited',fb:'✗',ffWins:true},
-  {feature:'Command palette',ff:'✓',qb:'✗',xero:'✗',fb:'✗',ffWins:true},
-  {feature:'Annual discount',ff:'20% off',qb:'10% off',xero:'10% off',fb:'10% off',ffWins:true},
-  {feature:'Free trial',ff:'30 days',qb:'30 days',xero:'30 days',fb:'30 days',ffWins:false},
-];
-
 const FAQ=[
   {q:'Can I switch plans at any time?',a:'Yes — upgrade or downgrade instantly. If you upgrade mid-cycle you\'re charged the prorated difference. Downgrades take effect at the next billing date.'},
   {q:'What happens to my data if I cancel?',a:'Your data is retained for 90 days after cancellation. You can export everything as CSV, PDF, or JSON at any point — including after cancelling.'},
@@ -1019,19 +1003,6 @@ function renderFeatureList(id, items){
       <span style="flex-shrink:0">${check(f.ok)}</span>
       <span>${f.text}</span>
     </div>`).join('');
-}
-
-function renderCompareTable(){
-  const body=document.getElementById('compare-table-body');
-  if(!body)return;
-  body.innerHTML=COMPARE_ROWS.map((r,i)=>`
-    <tr style="border-bottom:1px solid var(--bd);${i%2===0?'':'background:rgba(255,255,255,.01)'}">
-      <td style="padding:7px 8px;color:var(--t2)">${r.feature}</td>
-      <td style="padding:7px 8px;text-align:center;background:var(--acc-bg);font-weight:${r.ffWins?'600':'400'};color:${r.ffWins?'var(--acc)':'var(--t1)'}">${r.ff}</td>
-      <td style="padding:7px 8px;text-align:center;color:var(--t2)">${r.qb}</td>
-      <td style="padding:7px 8px;text-align:center;color:var(--t2)">${r.xero}</td>
-      <td style="padding:7px 8px;text-align:center;color:var(--t2)">${r.fb}</td>
-    </tr>`).join('');
 }
 
 function renderFAQ(){
@@ -1081,7 +1052,6 @@ function initPricing(){
   renderFeatureList('biz-features',BIZ_FEATURES);
   renderFeatureList('scale-features',SCALE_FEATURES);
   renderFeatureList('ent-features',ENT_FEATURES);
-  renderCompareTable();
   renderFAQ();
   _updatePricingCTAs();
 }

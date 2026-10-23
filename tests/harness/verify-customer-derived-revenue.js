@@ -69,7 +69,9 @@ async function seed({ http }) {
     set('cust-fname', 'Dan'); set('cust-lname', 'Delta'); set('cust-email', 'dan@unknown.test'); set('cust-company', 'Unknown Co');
     await w.saveCustomer(); await settle(20, 100);
     A('after adding Dan @ Unknown Co: card == 770', near(money(text('cust-revenue')), 770), 'cust-revenue=' + text('cust-revenue'));
-    A('Dan Delta is listed with $20 (his derived revenue)', /\$20\b/.test(row('Dan Delta')), row('Dan Delta') || '(not listed)');
+    // Batch 9 (D3): the "Unknown Co" invoice now saves "Unknown Co" as a customer when it is made, and the invoice is LINKED
+    // to it — so its 20 stays with that customer; Dan Delta (a person at the same company, his own contact) has 0.
+    A('the saved "Unknown Co" customer keeps its $20; Dan Delta (a separate contact) shows $0', /\$20\b/.test(row('Unknown Co')) && /\$0\b/.test(row('Dan Delta')), row('Unknown Co') + ' | ' + row('Dan Delta'));
   } catch (e) {
     fail++; console.log('  FATAL: ' + (e && e.stack || e));
   } finally {

@@ -42,4 +42,9 @@ run('LA4 — Customers page counts invoice clients that are not saved as custome
   eq('after saving: caption', all('cust-total-sub'), '1 saved · 1 from invoices, not saved yet');
   const badges = [...d.querySelectorAll('#customers-list .cust-row')].map(r => [r.querySelector('.cust-name').textContent.trim(), r.querySelector('.badge').textContent.trim()]);
   eq('after saving: Acme is a saved customer, Beta still unsaved', badges, [['Acme Ltd', 'active'], ['Beta Co', 'Not saved']]);
-});
+}, { extraSeed: async ({ client, userId }) => {
+  // Batch 9 (D3): invoices made through the app now save their customer automatically, so the "not saved" flow this test
+  // covers only exists for data from BEFORE that — recreated here: the seed's auto-saved customers removed, links dropped.
+  await client.query(`DELETE FROM customers WHERE user_id = $1`, [userId]);
+  await client.query(`UPDATE invoices SET data = data - 'customer_id' WHERE user_id = $1`, [userId]);
+} });

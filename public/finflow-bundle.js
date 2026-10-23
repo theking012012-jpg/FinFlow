@@ -3355,6 +3355,7 @@ function clearAIChat(){
       } catch (e) { console.warn('[Vendors]', e.message); }
     }
     loadVendors();
+    window.loadVendorsFromDB = loadVendors;   // batch 9: "Save all" refreshes the list
 
     window.openVendorModalFromUnsaved = function (i) {
       const u = _vendorsUnsavedNow()[i]; if (!u) return;
@@ -3366,7 +3367,9 @@ function clearAIChat(){
       const el = document.getElementById('vendors-list');
       if (!el) return;
       const unsaved = (unsavedList || _vendorsUnsavedNow()).map(u => ({ u, i: _vendorsUnsavedNow().indexOf(u) }));
-      const unsavedHtml = unsaved.map(({ u, i }) => `
+      // Batch 9 (D3): one click saves them all — with a preview that holds back look-alikes of saved vendors.
+      const unsavedHead = unsaved.length ? `<div class="ff-saveall-head" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;margin:4px 0;border-radius:var(--radius);background:var(--bg2)"><div><div style="font-weight:500">${unsaved.length} vendor name${unsaved.length === 1 ? '' : 's'} from bills not saved as vendors</div><div style="font-size:11px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" onclick="openSaveAllContacts('vendor')">Save all…</button></div>` : '';
+      const unsavedHtml = unsavedHead + unsaved.map(({ u, i }) => `
           <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
             <div>
               <div style="font-weight:500">${esc(u.name)}</div>
@@ -3580,6 +3583,7 @@ function clearAIChat(){
       window._billEditId = null;    // batch 7: "New bill" is never an edit of the last bill opened
       { const t = document.querySelector('#bill-modal .modal-title'); if (t) t.textContent = 'New Bill'; }
       try { if (window.ffBillLineItems && window.ffBillLineItems.reset) window.ffBillLineItems.reset(); } catch (_) {}
+      if (typeof window._fillContactPicker === 'function') window._fillContactPicker('bill-vendor', 'ff-vend-list', '/api/vendors', v => v.name);   // batch 9: pick a saved vendor
       openModal('bill-modal');
     };
 

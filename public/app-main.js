@@ -2688,6 +2688,56 @@ function markInvoicePaid(idx){
   renderInvoices();
   notify('Invoice marked as paid');
 }
+// Batch 9 (D3): the invoice / bill forms PICK from this business's saved contacts (a typed new name is still fine — the
+// server saves it as a contact). The list is refreshed every time the form opens, so a contact saved elsewhere appears.
+async function _fillContactPicker(inputId, listId, url, nameOf){
+  const inp=document.getElementById(inputId); if(!inp) return;
+  let dl=document.getElementById(listId);
+  if(!dl){ dl=document.createElement('datalist'); dl.id=listId; document.body.appendChild(dl); }
+  inp.setAttribute('list', listId); inp.setAttribute('autocomplete','off');
+  try {
+    const r=await fetch(url,{credentials:'include'}); const rows=r.ok?await r.json():[];
+    const names=[...new Set((Array.isArray(rows)?rows:[]).map(nameOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    dl.innerHTML=names.map(n=>`<option value="${esc(n)}"></option>`).join('');
+  } catch(_){}
+}
+window._fillContactPicker=_fillContactPicker;
+const _custDisplayName=c=>String(c.company||'').trim()||`${c.fname||''} ${c.lname||''}`.trim();
+// Batch 9 (D3): "Save all…" — a preview of every name from invoices (or bills) not saved as a contact. Each is ticked,
+// EXCEPT a name that looks like a contact already saved ("ACME Limited" ~ "Acme Ltd"): that one starts unticked with the
+// reason, so a near-duplicate is never created by accident. Nothing is saved until "Save selected".
+window.openSaveAllContacts=async function(kind){
+  const base=kind==='vendor'?'/api/vendors':'/api/customers', what=kind==='vendor'?'vendor':'customer';
+  let rows=[]; try { const r=await fetch(base+'/unsaved',{credentials:'include'}); rows=r.ok?await r.json():[]; } catch(_){}
+  if(!rows.length){ notify('Every name is already saved as a '+what+'.'); return; }
+  const ex=document.getElementById('ff-saveall'); if(ex) ex.remove();
+  const o=document.createElement('div'); o.id='ff-saveall';
+  o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem';
+  o.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-lg);padding:1.25rem;max-width:460px;width:100%;max-height:80vh;overflow:auto">'
+    +'<div style="font-size:15px;font-weight:600;margin-bottom:4px">Save '+rows.length+' name'+(rows.length===1?'':'s')+' as '+what+'s</div>'
+    +'<div style="font-size:12px;color:var(--t3);margin-bottom:10px">Untick any you do not want. A name that looks like one you already have starts unticked.</div>'
+    +rows.map(u=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--bd);font-size:13px;cursor:pointer"><input type="checkbox" data-name="${esc(u.name)}" ${u.similar_to?'':'checked'} style="margin-top:3px"><span><span style="color:var(--t1)">${esc(u.name)}</span>${u.similar_to?`<br><span style="font-size:11.5px;color:var(--amber)">Looks like your ${what} “${esc(u.similar_to)}” — tick only if it is a different one</span>`:''}</span></label>`).join('')
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn btn-ghost" id="ff-saveall-no" style="font-size:12px">Cancel</button><button class="btn btn-primary" id="ff-saveall-yes" style="font-size:12px">Save selected</button></div></div>';
+  document.body.appendChild(o);
+  const close=()=>o.remove();
+  o.addEventListener('click',e=>{ if(e.target===o) close(); });
+  document.getElementById('ff-saveall-no').onclick=close;
+  document.getElementById('ff-saveall-yes').onclick=async()=>{
+    const names=[...o.querySelectorAll('input[type=checkbox]:checked')].map(b=>b.getAttribute('data-name'));
+    if(!names.length){ close(); return; }
+    try {
+      const r=await fetch(base+'/save-unsaved',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({names})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok){ notify(d.error||'Could not save them',true); return; }
+      close(); notify('Saved '+d.created+' '+what+(d.created===1?'':'s')+' ✦');
+      if(kind==='vendor'){ if(typeof window.loadVendorsFromDB==='function') await window.loadVendorsFromDB(); }
+      else {   // the list the page RENDERS (top-level customers), re-read as the customer save does (L17)
+        try { const fr=await fetch('/api/customers',{credentials:'include'}); const rows=fr.ok?await fr.json():null; if(Array.isArray(rows)) customers=rows.map(c=>({...c,_dbId:c.id})); } catch(_){}
+        window._custUnsaved=null; if(typeof renderCustomers==='function') renderCustomers();
+      }
+    } catch(_){ notify('Could not save them — check your connection and try again',true); }
+  };
+};
 // Batch 8: this business's payment terms (Settings → Payment terms; 30 until set) and the due date they give. The server
 // applies the same rule when a due date is left blank — the note says it before anyone saves.
 function _bizPaymentTerms(){ try { const a=(window.ENTITIES||[]).find(e=>e&&e.active); return (a&&a.payment_terms!=null&&isFinite(a.payment_terms))?Number(a.payment_terms):30; } catch(_){ return 30; } }
@@ -2718,6 +2768,7 @@ function openInvoiceModal(){
   _sv('inv-desc','');
   try { if (window.ffInvLineItems) window.ffInvLineItems.reset(); } catch(_){}  // F194: clear line-items editor + unlock amount
   window._invDueHint();   // batch 8: the due date the terms give, shown before saving
+  _fillContactPicker('inv-client','ff-cust-list','/api/customers',_custDisplayName);   // batch 9: pick a saved customer
   openModal('invoice-modal');
 }
 function saveInvoice(){
@@ -4867,7 +4918,9 @@ function renderCustomers(filter='', _fromUnsaved){
   if(_ts) _ts.textContent=unsaved.length?(customers.length+' saved · '+unsaved.length+' from invoices, not saved yet'):(cu.error&&cu.eid===eid?'Invoice clients could not be loaded':'In your CRM');
   document.getElementById('cust-active').textContent=customers.filter(c=>c.status==='active').length;
   document.getElementById('cust-revenue').textContent=S(customers.reduce((a,c)=>a+Number(c.revenue),0)+unsaved.reduce((a,u)=>a+Number(u.revenue),0));
-  const unsavedHtml=unsavedShown.map(({u,i})=>`<div class="cust-row" onclick="openCustomerModalFromUnsaved(${i})">
+  // Batch 9 (D3): one click saves them all — with a preview that holds back look-alikes of saved customers.
+  const unsavedHead=unsaved.length?`<div class="ff-saveall-head" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;margin:4px 0;background:var(--bg2);border-radius:var(--radius)"><div><div style="font-weight:500;color:var(--t1)">${unsaved.length} name${unsaved.length===1?'':'s'} from invoices not saved as customers</div><div style="font-size:11.5px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" onclick="openSaveAllContacts('customer')">Save all…</button></div>`:'';   // a header, not a contact row
+  const unsavedHtml=unsavedHead+unsavedShown.map(({u,i})=>`<div class="cust-row" onclick="openCustomerModalFromUnsaved(${i})">
       <div class="cust-avatar av-amber">${esc(getInitials(String(u.name||'').split(/\s+/)[0]||'',String(u.name||'').split(/\s+/)[1]||''))}</div>
       <div><div class="cust-name">${esc(u.name)}</div><div class="cust-email">${u.invoices} invoice${u.invoices===1?'':'s'} · not saved as a customer yet</div></div>
       <span style="font-size:12px;color:var(--t2)">—</span>
@@ -4878,11 +4931,11 @@ function renderCustomers(filter='', _fromUnsaved){
   if(!filtered.length && !unsavedShown.length){document.getElementById('customers-list').innerHTML=`<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg></div><h3>No customers found</h3><p>Try a different search term, or add your first customer to get started.</p><button class="btn btn-primary btn-sm" onclick="openCustomerModal()">+ Add customer</button></div>`;return;}
   document.getElementById('customers-list').innerHTML=filtered.map(c=>{
     const av=AVATAR_COLORS[(parseInt(c.id)||0)%AVATAR_COLORS.length];
-    const ini=getInitials(c.fname,c.lname);
+    const ini=(c.fname||c.lname)?getInitials(c.fname,c.lname):getInitials(String(c.company||'').split(' ')[0]||'',String(c.company||'').split(' ')[1]||'');   // batch 9: a company-only customer
     const badge={active:'b-green',inactive:'b-purple',prospect:'b-amber'}[c.status]||'b-blue';
     return`<div class="cust-row" onclick="openCustomerModal(${Number(c.id)})">
       <div class="cust-avatar ${esc(av)}">${esc(ini)}</div>
-      <div><div class="cust-name">${esc(c.fname)} ${esc(c.lname)}</div><div class="cust-email">${esc(c.email)}</div></div>
+      <div><div class="cust-name">${(c.fname||c.lname)?esc(c.fname)+' '+esc(c.lname):esc(c.company||'—')}</div><div class="cust-email">${esc(c.email)}</div></div>
       <span style="font-size:12px;color:var(--t2)">${esc(c.company||'—')}</span>
       <span style="font-family:var(--font-mono);font-weight:600">${esc(S(c.revenue))}</span>
       <span><span class="badge ${esc(badge)}">${esc(c.status)}</span></span>

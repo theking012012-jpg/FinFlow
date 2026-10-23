@@ -30,4 +30,9 @@ run('LA14 — Vendors page lists bill vendors that are not saved as vendors yet'
   await settle(40, 50);
   eq('after saving: count still 1', count(), '1', '2');
   eq('after saving: the saved vendor, still $400 owing', rows(), [['Supply Co', '$400 owing', 'active']]);
-});
+}, { extraSeed: async ({ client, userId }) => {
+  // Batch 9 (D3): bills made through the app now save their vendor automatically; the "not saved" flow this test covers
+  // only exists for data from BEFORE that — recreated here: the seed's auto-saved vendors removed, links dropped.
+  await client.query(`DELETE FROM vendors WHERE user_id = $1`, [userId]);
+  await client.query(`UPDATE bills SET data = data - 'vendor_id' WHERE user_id = $1`, [userId]);
+} });

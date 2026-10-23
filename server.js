@@ -2215,6 +2215,7 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
     throw e;
   }
   row.number = await assignInvoiceNumber(pool, scopeId(req), eid, row.id);   // B1b: before the audit row, so it records the number
+  row.customer_id = await linkDocContact('invoices', scopeId(req), eid, row.id, client, req);   // batch 9: the client is a saved customer of this business
   logAudit(req, 'CREATE', 'invoices', row.id, null, row);
   // GL Phase 2 (dual-write shadow): an ISSUED invoice is Dr AR / Cr Revenue at its issue date —
   // mirrors computeBooks' issue-based accrual (draft is not recognized, so posts nothing). Best-effort:
@@ -2490,10 +2491,53 @@ app.delete('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wra
 // LA4 (live audit 2026-10-13 M1): an invoice whose client matches NO saved customer was attributed to nobody, so
 // the Customers page read "0 customers · $0 lifetime revenue" beside $23K of invoices. Those names are returned too
 // (`unsaved`), on the SAME basis — one attribution pass, so the saved list and the unsaved list cannot disagree.
+// Batch 9 (B2, owner decision D3): CONTACTS. One key decides "same name" everywhere a customer / vendor is matched by
+// name (it was two near-identical copies): trimmed, lower-case, spaces collapsed. A looser CORE (punctuation and legal
+// endings dropped) only ever WARNS — "ACME Limited" looks like "Acme Ltd" — it never merges two names on its own.
+const _contactKey = v => String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' ');
+const _CONTACT_SUFFIX = /\b(the|ltd|limited|inc|incorporated|llc|l\.l\.c|co|company|corp|corporation|plc|gmbh|sa|srl|pty|pvt)\b/g;
+const _contactCore = v => _contactKey(v).replace(/[.,'"&()\-\/]/g, ' ').replace(_CONTACT_SUFFIX, ' ').replace(/\s+/g, ' ').trim();
+const _custName = c => (String(c.company || '').trim() || `${c.fname || ''} ${c.lname || ''}`.trim());
+// Every invoice / bill writer calls this: the name on the document becomes a contact of THAT business (once). Returns the
+// contact id so the document can be linked to it. Contacts of another business never match (per business, M-wall).
+async function ensureContact(kind, uid, eid, name, req, q = pool) {
+  const k = _contactKey(name);
+  if (eid == null || !k) return null;
+  const table = kind === 'customer' ? 'customers' : 'vendors';
+  const { rows } = await q.query(`SELECT * FROM ${table} WHERE user_id = $1 AND (entity_id = $2 OR entity_id IS NULL) ORDER BY id`, [uid, eid]);
+  const hit = rows.map(rowToObj).find(c => kind === 'customer'
+    ? (_contactKey(c.company) === k || _contactKey(`${c.fname || ''} ${c.lname || ''}`) === k)
+    : _contactKey(c.name) === k);
+  if (hit) return hit.id;
+  const clean = String(name).trim().replace(/\s+/g, ' ').slice(0, 200);
+  const data = kind === 'customer' ? { company: clean, fname: '', lname: '', email: '', status: 'active', source: 'auto' } : { name: clean, contact: '', category: '', status: 'active', source: 'auto' };
+  const { row } = await db.insert(table, Object.assign({ user_id: uid, entity_id: eid }, data), q);
+  try { await recordAudit(q, { userId: uid, entityId: eid, table, recordId: row.id, action: 'CREATE', newData: row, req }); } catch (_) {}
+  return row.id;
+}
+// Batch 9: a contact's DISPLAY name (a customer's person name if given, else the company; a vendor's name) is unique within
+// a business — the industry rule (two "Acme Ltd" customers make every invoice ambiguous). Two people at one company stay
+// allowed (each is shown by their own name). Returns the contact already holding the name, or null.
+async function _contactNameTaken(kind, uid, eid, name, exceptId) {
+  const k = _contactKey(name);
+  if (!k) return null;
+  const table = kind === 'customer' ? 'customers' : 'vendors';
+  const { rows } = await pool.query(`SELECT * FROM ${table} WHERE user_id = $1 AND (entity_id = $2 OR entity_id IS NULL) ORDER BY id`, [uid, eid]);
+  return rows.map(rowToObj).find(c => c.id !== exceptId && _contactKey(kind === 'customer' ? (`${c.fname || ''} ${c.lname || ''}`.trim() || c.company) : c.name) === k) || null;
+}
+const _dupContactBody = (kind, c) => ({ code: 'DUPLICATE_CONTACT', existing_id: c.id,
+  error: `You already have a ${kind} called "${kind === 'customer' ? (`${c.fname || ''} ${c.lname || ''}`.trim() || c.company) : c.name}" in this business. Open that one instead, or add something that tells them apart.` });
+// Save the document's name as a contact and link the document to it (invoices.customer_id / bills.vendor_id).
+async function linkDocContact(table, uid, eid, docId, name, req, q = pool) {
+  const kind = table === 'invoices' ? 'customer' : 'vendor';
+  const id = await ensureContact(kind, uid, eid, name, req, q);
+  if (id) await q.query(`UPDATE ${table} SET data = data || jsonb_build_object($1::text, $2::int) WHERE id = $3`, [kind + '_id', id, docId]);
+  return id;
+}
 async function customerRevenueBook(uid, eid) {
   const scoped = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   const customers = await db.allByUser('customers', uid, scoped);
-  const key = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const key = _contactKey;   // batch 9: the one contact key
   const byName = new Map(), byCompany = new Map();
   for (const c of [...customers].sort((a, b) => a.id - b.id)) {
     const n = key(`${c.fname || ''} ${c.lname || ''}`); if (n && !byName.has(n)) byName.set(n, c.id);
@@ -2516,7 +2560,8 @@ async function customerRevenueBook(uid, eid) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   return {
     customers: customers.map(c => ({ ...c, revenue: r2(rev[c.id]) })).sort((a, b) => b.revenue - a.revenue),
-    unsaved: [...unsaved.values()].map(u => ({ ...u, revenue: r2(u.revenue) })).sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name)),
+    unsaved: [...unsaved.values()].map(u => { const core = _contactCore(u.name); const like = core ? customers.find(c => _contactCore(_custName(c)) === core) : null;
+      return Object.assign({ ...u, revenue: r2(u.revenue) }, like ? { similar_to: _custName(like) } : {}); }).sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name)),
   };
 }
 app.get('/api/customers', requireAuth, wrap(async (req, res) => {
@@ -2526,6 +2571,20 @@ app.get('/api/customers', requireAuth, wrap(async (req, res) => {
 app.get('/api/customers/unsaved', requireAuth, wrap(async (req, res) => {
   res.json((await customerRevenueBook(scopeId(req), req.entityId || null)).unsaved);
 }));
+// Batch 9 (D3): "Save all" — saves the names the OWNER chose from the "not saved" list (the preview); only names that are
+// actually on that list are accepted, each saved once as a contact of this business (audited). Rule 8: nothing is created
+// without this click; a near-duplicate ("looks like…") is saved only if it was ticked.
+async function _saveUnsaved(kind, req, res) {
+  const eid = req.entityId || null;
+  if (eid == null) return res.status(400).json({ error: 'Choose a business first.', code: 'NO_BUSINESS_IN_VIEW' });
+  const wanted = new Set((Array.isArray((req.body || {}).names) ? req.body.names : []).map(_contactKey).filter(Boolean));
+  const list = kind === 'customer' ? (await customerRevenueBook(scopeId(req), eid)).unsaved : (await vendorBook(scopeId(req), eid)).unsaved;
+  let created = 0;
+  for (const u of list) if (wanted.has(_contactKey(u.name)) && await ensureContact(kind, scopeId(req), eid, u.name, req)) created++;
+  res.json({ ok: true, created, skipped: wanted.size - created });
+}
+app.post('/api/customers/save-unsaved', requireAuth, requirePerm('books:write'), wrap((req, res) => _saveUnsaved('customer', req, res)));
+app.post('/api/vendors/save-unsaved', requireAuth, requirePerm('books:write'), wrap((req, res) => _saveUnsaved('vendor', req, res)));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   // F66: validate email format when one is supplied (empty/absent stays allowed, preserving the
@@ -2534,8 +2593,11 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const _cem = String(b.email == null ? '' : b.email).slice(0,200);
   if (_cem && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(_cem)) return res.status(400).json({ error: 'Invalid email address.' });
   const _custEnt = b.entity_id||req.entityId||null;  // F150: fall back to active entity (was body-only → NULL rows leaked into every entity)
-  const _dup = await findRecentDuplicate('customers', scopeId(req), _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
+  const _dup = await findRecentDuplicate('customers', scopeId(req), _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem, company: (b.company||'').trim().slice(0,200) } });   // batch 9: company too — a company-only customer matched ANY other company-only one made within 5 s
   if (_dup) return res.status(200).json(_dup);
+  { const _dn = `${String(b.fname || '').trim()} ${String(b.lname || '').trim()}`.trim() || String(b.company || '').trim();   // batch 9: display name unique per business
+    const _tk = _custEnt != null ? await _contactNameTaken('customer', scopeId(req), _custEnt, _dn, null) : null;
+    if (_tk) return res.status(409).json(_dupContactBody('customer', _tk)); }
   const { row } = await db.insert('customers', { user_id: scopeId(req), entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), status: b.status||'active', notes: (b.notes||'').slice(0,500) });
   await recordAudit(pool, { userId: scopeId(req), entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
@@ -2562,6 +2624,10 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
     patch.email = _em;
   }
   // L17: revenue is derived on read (GET /api/customers) — a typed value is no longer written.
+  if (patch.fname != null || patch.lname != null || patch.company != null) {   // batch 9: a rename cannot take another customer's name
+    const _m = Object.assign({}, row, patch); const _dn = `${_m.fname || ''} ${_m.lname || ''}`.trim() || _m.company;
+    const _tk = await _contactNameTaken('customer', scopeId(req), row.entity_id, _dn, row.id); if (_tk) return res.status(409).json(_dupContactBody('customer', _tk));
+  }
   await db.updateById('customers', row.id, patch);
   const { rows: [_cur] } = await pool.query(`SELECT * FROM customers WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'customers', recordId: row.id, action: 'UPDATE', oldData: row, newData: _cur ? rowToObj(_cur) : null, req });  // F90 Phase B
@@ -4228,7 +4294,7 @@ async function vendorBook(uid, eid) {
   // vendor's recognised bills issued on or before today (the canonicalAP basis, per vendor); ytd_paid = Σ
   // payments made to the vendor dated in the current fiscal year up to today. Vendor = name, case- and
   // space-insensitive (bills and payments carry the vendor's name).
-  const key = v => String(v || '').trim().toLowerCase();
+  const key = _contactKey;   // batch 9: the one contact key (it did not collapse spaces: "Supply  Co" was a 2nd vendor)
   const today = await entityTodayYmd(eid);
   const fy = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: await accountFyStartIdx(uid), today });
   const owing = {}, paid = {}, bills = {}, label = {};
@@ -4249,7 +4315,8 @@ async function vendorBook(uid, eid) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const saved = new Set(vendors.map(v => key(v.name)));
   const unsaved = Object.keys(label).filter(k => k && !saved.has(k) && ((owing[k] || 0) > 0.005 || (paid[k] || 0) > 0.005 || (bills[k] || 0) > 0))
-    .map(k => ({ name: label[k], owing: r2(owing[k]), ytd_paid: r2(paid[k]), bills: bills[k] || 0 }))
+    .map(k => { const core = _contactCore(label[k]); const like = core ? vendors.find(v => _contactCore(v.name) === core) : null;
+      return Object.assign({ name: label[k], owing: r2(owing[k]), ytd_paid: r2(paid[k]), bills: bills[k] || 0 }, like ? { similar_to: like.name } : {}); })   // batch 9
     .sort((a, b) => b.owing - a.owing || a.name.localeCompare(b.name));
   return { vendors: vendors.map(v => ({ ...v, owing: r2(owing[key(v.name)]), ytd_paid: r2(paid[key(v.name)]) })), unsaved };
 }
@@ -4274,6 +4341,8 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const _venEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const _dup = await findRecentDuplicate('vendors', scopeId(req), _venEnt, { textMatch: { name } });
   if (_dup) return res.json(_dup);
+  { const _tk = _venEnt != null ? await _contactNameTaken('vendor', scopeId(req), _venEnt, name, null) : null;   // batch 9: name unique per business
+    if (_tk) return res.status(409).json(_dupContactBody('vendor', _tk)); }
   const { row } = await db.insert('vendors', { user_id: scopeId(req), entity_id: _venEnt, name, contact, category, status });   // N24: owing / ytd_paid are derived on read
   await recordAudit(pool, { userId: scopeId(req), entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
@@ -4291,6 +4360,7 @@ app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   if (b.contact  != null) patch.contact  = String(b.contact).trim().slice(0, 200);
   if (b.category != null) patch.category = String(b.category).slice(0, 100);
   if (b.status   != null) patch.status   = String(b.status).slice(0, 50);
+  if (patch.name != null) { const _tk = await _contactNameTaken('vendor', scopeId(req), row.entity_id, patch.name, row.id); if (_tk) return res.status(409).json(_dupContactBody('vendor', _tk)); }   // batch 9: a rename cannot take another vendor's name
   await db.updateById('vendors', Number(req.params.id), patch);
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 Phase B
   res.json({ ok: true });
@@ -4874,6 +4944,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
     }
     throw e;
   }
+  row.vendor_id = await linkDocContact('bills', scopeId(req), _billEnt, row.id, vendor, req);   // batch 9: the vendor is a saved vendor of this business
   await recordAudit(pool, { userId: scopeId(req), entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): an issued bill accrues expense — Dr Operating Expenses / Cr AP at
   // its issue date (mirror of the invoice revenue leg; RECOGNIZED_BILL allowlist). A bill payment
@@ -6579,6 +6650,7 @@ async function _fireRecurringOnce(table, r, docTable, docData) {
       `INSERT INTO ${docTable} (user_id, entity_id, data) VALUES ($1, $2, $3) RETURNING *`,
       [r.user_id, r.entity_id || null, docData]);
     if (docTable === 'invoices') { const _n = await assignInvoiceNumber(cx, r.user_id, r.entity_id, doc.id); if (_n) doc.data = Object.assign({}, doc.data, { number: _n }); }   // B1b
+    if (docTable === 'invoices' || docTable === 'bills') await linkDocContact(docTable, r.user_id, r.entity_id, doc.id, docTable === 'invoices' ? docData.client : docData.vendor, null, cx);   // batch 9
     await cx.query('COMMIT');
     return rowToObj(doc);
   } catch (e) {
@@ -6965,6 +7037,7 @@ async function _csvImport(uid, entityId, sessionUserId, type, content, mapping, 
     let _ins = null;
     try { _ins = (await db.insert(spec.table, Object.assign({ user_id: uid, entity_id: entityId, import_key: importKey, idempotency_key: importKey, source: 'csv' }, m.data))).row; tally.added++;
       if (spec.table === 'invoices') await assignInvoiceNumber(pool, uid, entityId, _ins.id, m.sourceNumber);   // B1b
+      if (spec.table === 'invoices' || spec.table === 'bills') await linkDocContact(spec.table, uid, entityId, _ins.id, spec.table === 'invoices' ? m.data.client : m.data.vendor, null);   // batch 9
     }
     catch (e) { if (e.code === '23505') tally.duplicate++; else { tally.failed++; console.error('[csv import ' + type + ']', e.message); } }
     // M5: settle the paid part through the real payment writer (payment row + GL cash leg + status recalc).
@@ -8592,6 +8665,7 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
           const extra = (m.link && m.link.field && linkId) ? { [m.link.field]: linkId } : {};
           const { row: _cdRow } = await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
             import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data, extra));
+          if ((m.table === 'invoices' || m.table === 'bills') && _cdRow) await linkDocContact(m.table, uid, entityId, _cdRow.id, m.table === 'invoices' ? m.data.client : m.data.vendor, null);   // batch 9
           if (m.table === 'invoices' && _cdRow) await assignInvoiceNumber(pool, uid, entityId, _cdRow.id, rec.invoiceNumber);   // B1b: the platform's own number, when free
         }
         tally.added++;

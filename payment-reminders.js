@@ -21,7 +21,7 @@
 const DUE_SOON_DAYS = 7;          // include not-yet-overdue invoices due within this many days
 const HIGH_OVERDUE_DAYS = 30;     // > this many days overdue → 'high' severity
 
-const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
+const norm = (s) => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');   // batch 9: the same contact key as server.js _contactKey (spaces collapsed)
 const amt  = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
 
 // Day difference between two YYYY-MM-DD strings, parsed symmetrically as UTC midnight so the

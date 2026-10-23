@@ -298,11 +298,22 @@
       const _allInv = window.userInvoices || [];
       if (typeof window._invRenderLimit !== 'number') window._invRenderLimit = 100;
       const _shownInv = _allInv.slice(0, window._invRenderLimit);
+      // FA-M4: the "Paid" column — what was received (a paid-status row with no stored figure counts as paid in full),
+      // and on a part-paid invoice what is left. "—" when nothing was paid. Same amount_paid the AR figure reads.
+      const _invPaidCell = inv => {
+        const amt = parseFloat(inv.amount) || 0;
+        const paid = String(inv.status || '').toLowerCase() === 'paid' && !(parseFloat(inv.amount_paid) > 0) ? amt : Math.min(amt, parseFloat(inv.amount_paid) || 0);
+        if (!(paid > 0.005)) return '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="color:var(--t3)">—</span>';
+        const left = Math.max(0, amt - paid);
+        return '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="font-family:var(--font-mono);color:var(--green)">' + esc(S(paid)) + '</span>'
+          + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '');
+      };
       window._invShowMore = function () { window._invRenderLimit += 200; if (typeof window.renderInvoices === 'function') window.renderInvoices(); };
       el.innerHTML = _shownInv.map((inv, idx) => `
         <div class="table-row inv-cols">
           <span>${esc(inv.client)}${inv.number ? `<br><span class="inv-number" style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(inv.number)}</span>` : ''}</span>
           <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
+          <span class="inv-paid">${_invPaidCell(inv)}</span>
           <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
           <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
           <span class="table-actions">

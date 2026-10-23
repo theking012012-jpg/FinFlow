@@ -367,6 +367,7 @@ html{overflow-x:hidden;background:var(--bg0)}/* PWA: dark root so the notch/stat
   }
   /* the desktop column-header row is meaningless once rows are stacked cards */
   .table-header{display:none !important}
+  .inv-paid-lbl{display:inline !important}   /* FA-M4: …so the paid figure names itself */
 }
 
 /* ══════════════════════════════════════════════
@@ -578,7 +579,9 @@ body.sidebar-open .mob-bottom-nav,body.sidebar-open .mobile-fab{display:none!imp
 .table-row:last-child{border-bottom:none}
 .table-row:hover{background:var(--bg2);margin:0 -1rem;padding:7px 1rem;border-radius:var(--radius)}
 .table-actions{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap}
-.inv-cols{grid-template-columns:1fr 80px 72px 84px 80px}
+/* FA-M4: ONE grid for the Invoices header and its rows — client · amount · paid · due · status · actions */
+.inv-cols{grid-template-columns:minmax(0,1fr) 84px 96px 84px 84px auto}
+.inv-paid-lbl{display:none}   /* the header names the column; on a phone card (≤560px, no header) the label shows */
 /* PAYROLL */
 .payroll-row{display:flex;align-items:center;justify-content:space-between;padding:8px 4px;border-bottom:1px solid var(--bd);transition:background .1s}
 .payroll-row:last-child{border-bottom:none}
@@ -667,11 +670,11 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
    specificity — the copies in the media blocks near the top never applied). On a phone a
    hidden cell is not placed, so each template lists only the cells still shown. */
 @media(min-width:769px) and (max-width:1024px){
-  .inv-cols{grid-template-columns:1fr 70px 65px 78px 72px}
+  .inv-cols{grid-template-columns:minmax(0,1fr) 70px 80px 74px 72px auto}
   .cust-row{grid-template-columns:28px 1fr 90px 75px 60px 70px}
 }
 @media(max-width:768px){
-  .inv-cols{grid-template-columns:1fr 70px 60px 74px 72px}
+  .inv-cols{grid-template-columns:minmax(0,1fr) 64px 72px 70px 68px auto}
   .cust-row{grid-template-columns:28px minmax(0,1fr) minmax(0,90px) auto}      /* avatar · name · company · actions */
 }
 .cust-row:last-child{border-bottom:none}
@@ -2508,7 +2511,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <button class="btn btn-primary btn-sm" onclick="openInvoiceModal()">+ New invoice</button>
             </div>
           </div>
-          <div class="table-header" style="display:grid;grid-template-columns:1fr 90px 90px 100px 1fr;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Client</span><span>Amount</span><span>Paid</span><span>Due date</span><span>Status / Actions</span></div>
+          <div class="table-header inv-cols" style="display:grid;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Client</span><span>Amount</span><span>Paid</span><span>Due date</span><span>Status</span><span aria-label="Actions"></span></div>
           <div id="invoice-list"><!-- rendered --></div>
         </div>
       </div>

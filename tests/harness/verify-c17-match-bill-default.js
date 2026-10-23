@@ -3,6 +3,7 @@
  * C17 (Cowork end-to-end test): on Bank Rec, each money-out line's "match to bill" dropdown pre-selects the bill it
  * most likely pays — the bill whose remaining balance equals the line, else the bill whose vendor the bank names.
  * BUG: every dropdown defaulted to the FIRST open bill, so a one-click match paid the wrong bill.
+ * G4 (2026-10-22): a suggested option now starts with "★ " and carries its reason — the parser reads the vendor only.
  * Seed: clientMoneyKit (open bill Supply Co 400) + open bill Alpha Print 75 (listed FIRST — measured) + bank debits
  *   SUPPLY CO REF 123 → Supply Co (vendor named in the bank line)   bug: Alpha Print (first)
  *   ALPHA PRINT INV 75 → Alpha Print (amount match; control — also first)
@@ -14,7 +15,7 @@ run('C17 — match-bill dropdown pre-selects the right bill', async ({ w, d, set
   await settle(20, 60);
   if (typeof w.loadBankRec === 'function') { await w.loadBankRec(); await settle(10, 40); }
   const lines = (await http.get('/api/banking')).json || [];
-  const sel = desc => { const l = lines.find(x => x.description === desc); const s = l && d.getElementById('brec-bill-' + l.id); return s && s.options[s.selectedIndex] ? s.options[s.selectedIndex].textContent.split(' - ')[0] : null; };
+  const sel = desc => { const l = lines.find(x => x.description === desc); const s = l && d.getElementById('brec-bill-' + l.id); return s && s.options[s.selectedIndex] ? s.options[s.selectedIndex].textContent.replace(/^★\s*/, '').split(' - ')[0] : null; };
   eq('SUPPLY CO REF 123 → Supply Co', sel('SUPPLY CO REF'), 'Supply Co', 'Alpha Print');
   eq('control: ALPHA PRINT INV 75 → Alpha Print', sel('ALPHA PRINT INV'), 'Alpha Print');
 }, { extraSeed: async ({ http }) => {

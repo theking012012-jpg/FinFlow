@@ -6789,6 +6789,55 @@ let _brecBankSelected=null;
 // own POST; "Save matches" commits the whole set in ONE batch request (/match-batch).
 let _brecPending=[];
 let _brecSaving=false;
+// G4 (2026-10-22): ONE scorer for every bank-rec match suggestion — money out → open bills, money in → recorded invoice
+// payments. It weighs the amount, the name on the bank line and the date, says WHY each suggestion is made, and
+// preselects only a clear winner: C17 fell back to the FIRST open bill when nothing matched (a $5,850 debit arrived
+// with a $44 bill selected) and broke ties silently, so one click could book the wrong match.
+// cand: { amount, name, date, kind: 'bill' | 'payment' }. A suggestion needs an exact amount or the name on the line.
+function _brecScore(line, cand){
+  const amt=Math.abs(parseFloat(line.amount)||0), ca=Math.abs(parseFloat(cand.amount)||0);
+  const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const desc=' '+norm(line.description||line.merchant)+' ', name=norm(cand.name);
+  const words=name.split(' ').filter(w=>w.length>=3);
+  const why=[]; let score=0;
+  if(Math.abs(ca-amt)<0.005){ score+=100; why.push('exact amount'); }
+  else if(amt>0&&Math.abs(ca-amt)<=amt*0.01){ score+=40; why.push('amount within 1%'); }
+  if(name&&(desc.indexOf(' '+name+' ')>=0||(words.length&&words.every(w=>desc.indexOf(' '+w+' ')>=0)))){ score+=60; why.push((cand.kind==='bill'?'vendor':'customer')+' named on the line'); }
+  const ld=window.FinFlowDates?window.FinFlowDates._toYmd(line.tx_date||line.date):null, cd=window.FinFlowDates?window.FinFlowDates._toYmd(cand.date):null;
+  if(ld&&cd){   // two calendar dates, both read as UTC midnight — the gap in days is the same for every viewer
+    const days=Math.round(Math.abs(Date.parse(ld+'T00:00:00Z')-Date.parse(cd+'T00:00:00Z'))/864e5);
+    if(days<=14){ score+=15-days; why.push(days===0?'same day':(days+' day'+(days===1?'':'s')+' apart')); }
+  }
+  return { score, why, suggested: score>=60 };
+}
+// Ranks candidates; `pick` is the single clear winner (suggested and strictly ahead of the next), else null.
+function _brecRank(line, cands){
+  const amt=Math.abs(parseFloat(line.amount)||0);
+  const ranked=cands.map(c=>Object.assign({ c }, _brecScore(line, c)))
+    .sort((a,b)=>(b.score-a.score)||(Math.abs(Math.abs(a.c.amount)-amt)-Math.abs(Math.abs(b.c.amount)-amt)));
+  const sug=ranked.filter(r=>r.suggested);
+  const pick=sug.length&&(sug.length===1||sug[0].score>sug[1].score)?sug[0]:null;
+  return { ranked, sug, pick };
+}
+window._brecRank=_brecRank;
+// Money in: the recorded payments, ranked against the selected bank line when there is one.
+function _brecRenderPay(){
+  const payList=document.getElementById('brec-pay-list'); if(!payList) return;
+  const last=window._brecLast||{ unbank:[], unpay:[] };
+  const line=_brecBankSelected!=null?(last.unbank||[]).find(b=>b.id===_brecBankSelected):null;
+  let rows=(last.unpay||[]).map(p=>({ p, suggested:false, why:[] }));
+  if(line){
+    const r=_brecRank(line,(last.unpay||[]).map(p=>({ amount:p.amount, name:p.client, date:p.payment_date, kind:'payment', p })));
+    rows=r.ranked.map(x=>({ p:x.c.p, suggested:x.suggested, why:x.why }));
+  }
+  payList.innerHTML=rows.length?rows.map(({p,suggested,why})=>`
+        <div class="tx-row" style="cursor:pointer" onclick="matchBankRec(_brecBankSelected,${p.id})">
+          <div><div class="tx-name">${esc(p.client||'Invoice payment')}${suggested?` <span class="badge b-green" style="font-size:9.5px">Suggested · ${esc(why.join(' · '))}</span>`:''}</div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(p.payment_date,{year:true}):(p.payment_date||''))||'—')} · ${esc(p.method||'')}</div></div>
+          <div class="tx-amt up">+${S(parseFloat(p.amount))}</div>
+        </div>`).join('')
+    :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All payments matched</div>';
+}
 async function loadBankRec(){
   try{
     const res=await fetch('/api/bank-reconciliation',{credentials:'include'});
@@ -6826,15 +6875,8 @@ async function loadBankRec(){
         </div>`).join('')
         :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All bank transactions matched</div>';
     }
-    if(payList){
-      payList.innerHTML=unpay.length?unpay.map(p=>`
-        <div class="tx-row" style="cursor:pointer" onclick="matchBankRec(_brecBankSelected,${p.id})">
-          <div><div class="tx-name">${esc(p.client||'Invoice payment')}</div>
-          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(p.payment_date,{year:true}):(p.payment_date||''))||'—')} · ${esc(p.method||'')}</div></div>
-          <div class="tx-amt up">+${S(parseFloat(p.amount))}</div>
-        </div>`).join('')
-        :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All payments matched</div>';
-    }
+    window._brecLast={ unbank, unpay };   // G4: the selected line re-ranks these without a refetch
+    if(payList) _brecRenderPay();
     if(matchedList){
       // F101: pending (unsaved) block first, with the single Save button that commits ALL staged
       // pairs in one batch POST; then the persisted matches from the server.
@@ -6858,23 +6900,33 @@ async function loadBankRec(){
     const debEl=document.getElementById('brec-debits-list');
     if(debEl){
       const debits=data.unmatchedDebits||[];
-      // C17: each debit pre-selects the bill it most likely pays — remaining balance == the debit amount, else the bill's
-      // vendor named in the bank description — instead of always the first open bill. Options show what is still owed.
+      // G4 (replaces C17's first-bill fallback): the bills are ranked by the shared scorer against each debit — what is still
+      // owed vs the line, the vendor named on the line, the due date. Suggestions come first with their reason; only a
+      // single clear winner is preselected; with nothing suggested (or a tie) the dropdown starts on "Choose…" and the
+      // line says why, so "Match bill" can never book a guess.
       const _bills=(data.openBills||[]);
       const _rem=function(b){return Math.round(((parseFloat(b.amount)||0)-(parseFloat(b.amount_paid)||0))*100)/100;};
-      const _bestBill=function(d){
-        const amt=Math.abs(parseFloat(d.amount)||0), desc=String(d.description||'').toLowerCase();
-        const byAmt=_bills.filter(function(b){return Math.abs(_rem(b)-amt)<0.005;});
-        const byName=function(list){return list.find(function(b){const v=String(b.vendor||'').toLowerCase().trim();return v&&desc.indexOf(v)>=0;});};
-        return (byAmt.length>1&&byName(byAmt))||byAmt[0]||byName(_bills)||_bills[0]||null;
+      const _rankFor=function(d){return _brecRank(d,_bills.map(function(b){return { amount:_rem(b), name:b.vendor, date:b.due_date, kind:'bill', b:b };}));};
+      const _opt=function(x,pick){const b=x.c.b;return '<option value="'+b.id+'"'+(pick&&pick.c.b.id===b.id?' selected':'')+'>'+(x.suggested?'★ ':'')+esc((b.vendor||'Bill')+' - '+S(_rem(b))+(x.suggested?' · '+x.why.join(' · '):''))+'</option>';};
+      const billOptsFor=function(d,r){
+        const rest=r.ranked.filter(function(x){return !x.suggested;});
+        return '<option value="">Choose the bill this pays…</option>'
+          +(r.sug.length?'<optgroup label="Suggested">'+r.sug.map(function(x){return _opt(x,r.pick);}).join('')+'</optgroup>':'')
+          +(rest.length?'<optgroup label="'+(r.sug.length?'Other open bills':'Open bills')+'">'+rest.map(function(x){return _opt(x,null);}).join('')+'</optgroup>':'');
       };
-      const billOptsFor=function(d){const best=_bestBill(d);return _bills.map(function(b){return '<option value="'+b.id+'"'+(best&&best.id===b.id?' selected':'')+'>'+esc((b.vendor||'Bill')+' - '+S(_rem(b)))+'</option>';}).join('');};
+      const _whyFor=function(r){
+        if(r.pick) return 'Suggested: '+r.pick.why.join(' · ');
+        if(r.sug.length>1) return r.sug.length+' bills match equally — choose one';
+        return 'No open bill matches this amount or name';
+      };
       const billOpts=_bills.length?'1':'';
       debEl.innerHTML=debits.length?debits.map(function(d){
         const when=(window.FinFlowDates?window.FinFlowDates.fmtLabel(d.tx_date||d.date,{year:true}):(d.tx_date||d.date||''))||'—';
-        const billSel=billOpts?('<select id="brec-bill-'+d.id+'" style="font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 4px">'+billOptsFor(d)+'</select><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankMatchBill('+d.id+')">Match bill</button>'):'';
+        const _r=billOpts?_rankFor(d):null;
+        const whyLine=_r?'<div class="tx-cat" id="brec-why-'+d.id+'" style="color:'+(_r.pick?'var(--green)':'var(--t3)')+'">'+esc(_whyFor(_r))+'</div>':'';
+        const billSel=billOpts?('<select id="brec-bill-'+d.id+'" aria-describedby="brec-why-'+d.id+'" style="font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 4px;max-width:220px">'+billOptsFor(d,_r)+'</select><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankMatchBill('+d.id+')">Match bill</button>'):'';
         return '<div class="tx-row" style="align-items:center">'+
-          '<div><div class="tx-name">'+esc(d.description||'Debit')+'</div><div class="tx-cat">'+esc(when)+' - money out</div></div>'+
+          '<div><div class="tx-name">'+esc(d.description||'Debit')+'</div><div class="tx-cat">'+esc(when)+' - money out</div>'+whyLine+'</div>'+
           '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+
             '<div class="tx-amt dn" style="margin-right:6px">'+S(Math.abs(parseFloat(d.amount)||0))+'</div>'+
             '<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankBookExpense('+d.id+')">Book expense</button>'+
@@ -6906,12 +6958,13 @@ async function _brecAction(url,body,okMsg){
 }
 window.ffBankBookExpense=function(id){ _brecAction('/api/bank-reconciliation/book-expense',{banking_id:id},'Booked as expense'); };
 window.ffBankIgnore=function(id){ _brecAction('/api/bank-reconciliation/ignore',{banking_id:id},'Ignored'); };
-window.ffBankMatchBill=function(id){ const sel=document.getElementById('brec-bill-'+id); const billId=sel?parseInt(sel.value,10):0; if(!billId){ if(typeof notify==='function')notify('Pick a bill first',true); return; } _brecAction('/api/bank-reconciliation/match-bill',{banking_id:id,bill_id:billId},'Matched to bill - marked paid'); };
+window.ffBankMatchBill=function(id){ const sel=document.getElementById('brec-bill-'+id); const billId=sel?parseInt(sel.value,10):0; if(!billId){ if(typeof notify==='function')notify('Choose the bill this payment settles first',true); return; } _brecAction('/api/bank-reconciliation/match-bill',{banking_id:id,bill_id:billId},'Matched to bill - marked paid'); };
 function selectBankTx(id,el){
   _brecBankSelected=id;
   document.querySelectorAll('[id^="bbtx-"]').forEach(el2=>{el2.style.borderLeftColor='transparent';});
   if(el)el.style.borderLeftColor='var(--acc)';
-  if(typeof notify==='function')notify('Bank transaction selected — now click a payment to match');
+  _brecRenderPay();   // G4: the recorded payments re-rank against this line; matches are marked Suggested, with why
+  if(typeof notify==='function')notify('Bank line selected — the payments that match it are marked Suggested. Click one to match.');
 }
 // F101: pairing no longer fires a POST — it STAGES the pair. All staged pairs commit in one batch
 // request via saveBankRecMatches(). Same two-click interaction (select bank tx, click payment).

@@ -131,3 +131,20 @@ are to be BUILT / ENFORCED, not removed.** The questions each build needs:
   days after cancellation", "AES-256" — need a policy / a check before they stay.
 - c. In-app upgrade prompt for MRR promises "churn & expansion tracking, cohort analysis" (not built — becomes true with 5).
 - d. In-app plan cards still say "7-year audit trail" (decision 7) and list the Enterprise features (decision 6).
+
+---
+
+## OWNER DECISIONS 2026-10-23 — the build spec (all before launch; each item verified RED → GREEN before commit)
+
+| # | Item | Decision (owner: "better than the industry standard") |
+|---|---|---|
+| D-A | Plan comparison | Replace the removed competitor table with a Pro / Business / Scale comparison. ONE plan definition feeds the server's limits, the in-app gates, the in-app cards, the landing cards and the comparison — with a check that they agree. |
+| D-B | Annual billing | 20% off ($756 / $2,388 / $3,840 a year). Monthly → annual immediately, unused days credited, exact charge + credit shown before confirming. Upgrade mid-year immediate + prorated; annual → monthly or lower plan at renewal. **Leave any time:** refund = paid − months used at the MONTHLY price. Trial first (30 days, no card), choose monthly / annual at the end. Renewal e-mail 30 days before, with amount and one-click cancel. Price locked for the term. Owner creates the annual Stripe prices. |
+| D-C | Team members | Owner does not count ("3 team members plus you"). Viewers (read-only) free + unlimited. Accountants free + unlimited. Pending invites count. Trial = 15, Scale unlimited. Downgrade over the limit: never blocked, nobody locked out — owner picks who keeps edit access, the rest become Viewers. |
+| D-D | SaaS metrics | Stripe subscriptions + FinFlow recurring invoices. Rebuild history on connect (read-only), monthly snapshots after. Customer + revenue churn, net + gross revenue retention. CAC from chosen expense categories (default Marketing + Advertising), optional sales payroll share; payback period. Margin-adjusted LTV. Every figure shows its working and drills to the customers; "not enough history yet" instead of a misleading figure. Business+ (trial sees it). Retention cohort grid. |
+| D-E | Professional Conduct Policy | I draft it (IFAC principles + licence where they practise, indemnity insurance, data protection, AI disclosure) — lawyer reviews. **Penalties for taking clients off the platform specified.** Plain-language client summary; "Verified" badge with check date; client "report a concern"; versioned acceptance (version + time); existing accountants accept at next sign-in, 14-day grace before client access pauses. |
+| D-F | 7a Pro | Pro gets bank sync + receipt scanner (15 scans a month); MRR stays Business+. |
+| D-G | 7b FAQ | Self-serve downgrade at period end. Retention: export any time; read-only 90 days after cancellation; deletion warning 14 days before removal. Encryption wording = what the provider actually states. |
+| D-H | Enterprise + support | Upgrade and build to beat the standard (SSO, unlimited businesses and users; support with stated reply times + onboarding). |
+| D-I | Audit-trail retention | Fix: one retention policy; the claim matches it. |
+| D-J | Domain + legal name | **Waiting** — owner is buying the domain this week; done the moment the owner says so. |

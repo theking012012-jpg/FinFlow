@@ -2243,7 +2243,7 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   if (_li.error) return res.status(400).json({ error: _li.error });
   if (client != null) patch.client = client;
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
-  else if (amount != null) patch.amount = parseFloat(amount);
+  else if (amount != null) { patch.amount = parseFloat(amount); if (req.body.line_items === null) patch.line_items = null; }   // batch 7: an explicit null clears the lines (the LR9 quote rule)
   if (due_date != null) patch.due_date = due_date;
   if (status != null) { if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' }); patch.status = String(status).toLowerCase(); }
   if (notes != null) patch.notes = notes;
@@ -4899,7 +4899,7 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
   if (_li.error) return res.status(400).json({ error: _li.error });
   if (b.vendor     != null) patch.vendor     = b.vendor;
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
-  else if (b.amount != null) patch.amount    = Number(b.amount);
+  else if (b.amount != null) { patch.amount = Number(b.amount); if (b.line_items === null) patch.line_items = null; }   // batch 7: an explicit null clears the lines (the LR9 quote rule)
   if (b.due_date   != null) patch.due_date   = b.due_date;
   if (b.status     != null) { if (_badStatus(BILL_STATUSES, b.status)) return res.status(400).json({ error: 'Invalid bill status.' }); patch.status = b.status; }
   if (b.notes      != null) patch.notes      = b.notes;
@@ -9801,6 +9801,8 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
   const params = [scopeId(req)];
   if (table && table !== 'all') { params.push(table); q += ` AND a.table_name = $${params.length}`; }
   if (action && action !== 'all') { params.push(action); q += ` AND a.action = $${params.length}`; }
+  // Batch 7: one record's own history (the document's "History" section) — read only, same permission.
+  if (req.query.record_id != null && /^\d+$/.test(String(req.query.record_id))) { params.push(String(req.query.record_id)); q += ` AND a.record_id::text = $${params.length}`; }
   q += ` ORDER BY a.changed_at DESC LIMIT 500`;
   const { rows } = await pool.query(q, params);
   res.json(rows);

@@ -861,6 +861,7 @@
             <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[window._billDisplayStatus(b)] || 'b-amber'}">${esc(window._billDisplayStatus(b))}</span></span>
             <div style="display:flex;gap:4px">
               <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
+              <button class="btn btn-ghost btn-sm" onclick="editBill(${b.id})">Edit</button>
               ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
               ${window.FinFlowDates.isInventoryBill(b) ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>`}
             </div>
@@ -902,7 +903,26 @@
       const ro = document.getElementById('bill-recurring-opts'); if (ro) ro.style.display = 'none';
       const bf = document.getElementById('bill-freq'); if (bf) bf.value = 'Monthly';
       window._billIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new bill never reuses the last token
+      window._billEditId = null;    // batch 7: "New bill" is never an edit of the last bill opened
+      { const t = document.querySelector('#bill-modal .modal-title'); if (t) t.textContent = 'New Bill'; }
+      try { if (window.ffBillLineItems && window.ffBillLineItems.reset) window.ffBillLineItems.reset(); } catch (_) {}
       openModal('bill-modal');
+    };
+
+    // Batch 7: open the bill form PRE-FILLED for an existing bill (fields + line items); saveBill then PUTs to it.
+    window.editBill = async function (id) {
+      let b = (_billsData || []).find(r => r.id === id);
+      if (!b) { try { await loadBills(); } catch (_) {} b = (_billsData || []).find(r => r.id === id); }
+      if (!b) { notify('That bill could not be found — refresh and try again', true); return; }
+      window.openNewBillModal();
+      const set = (fid, v) => { const el = document.getElementById(fid); if (el) el.value = v == null ? '' : v; };
+      const ymd = v => (window.FinFlowDates ? (window.FinFlowDates._toYmd(v) || '') : String(v || '').slice(0, 10));
+      set('bill-vendor', b.vendor); set('bill-amount', b.amount != null ? Number(b.amount) : '');
+      set('bill-issue', ymd(b.issue_date)); set('bill-due', ymd(b.due_date));
+      set('bill-status', String(b.status || 'unpaid').toLowerCase()); set('bill-notes', b.notes);
+      if (Array.isArray(b.line_items) && b.line_items.length && window.ffBillLineItems && window.ffBillLineItems.load) window.ffBillLineItems.load(b.line_items);
+      window._billEditId = b.id;
+      const t = document.querySelector('#bill-modal .modal-title'); if (t) t.textContent = 'Edit bill — ' + (b.vendor || '');
     };
 
     // Next occurrence date for a recurring bill (mirrors server nextRunDate).
@@ -938,6 +958,26 @@
       const recurring = !!document.getElementById('bill-recurring')?.checked;
       const frequency = document.getElementById('bill-freq')?.value || 'Monthly';
       const endDate   = document.getElementById('bill-end-date')?.value || null;
+      // Batch 7: EDIT — saved to the SAME bill (PUT). The server keeps the ledger in step, refuses an amount below what is
+      // paid (G3) and keeps a stock purchase's amount/date with the purchase (M34); its reason reaches the owner as is.
+      if (window._billEditId != null) {
+        const _id = window._billEditId;
+        window._savingBill = true;
+        const _eb = document.querySelector('#bill-modal .ff-save-btn'); if (_eb) _eb.disabled = true;
+        try {
+          const _bli = (window.ffBillLineItems && window.ffBillLineItems.get && window.ffBillLineItems.get()) || null;
+          await api('PUT', '/api/bills/' + _id, Object.assign({ vendor, due_date, issue_date, status, notes }, _bli ? { line_items: _bli } : { amount, line_items: null }));
+          window._billEditId = null;
+          closeModal('bill-modal');
+          notify(`Bill from ${esc(vendor)} updated ✦`);
+          await loadBills().catch(() => {});
+          renderBills();
+          window._refreshDashboardUI?.();
+          if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
+        } catch (e) { notify(e.message || 'Could not update the bill', true); }
+        finally { window._savingBill = false; if (_eb) _eb.disabled = false; }
+        return;
+      }
       // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
       // on modal open (openNewBillModal) and on success below. Double-submit reuses it (→ DB dedupes);
       // a genuine new bill from a reopened modal gets a fresh token and is allowed.
@@ -1373,6 +1413,7 @@
         due_date: b.due_date || null, status: b.status || '', notes: b.notes || '',
         amount: b.amount, tax: b.tax || 0, line_items: b.line_items || null, currency: b.currency || null,
       }, 'bill');
+      if (window.ffDocHistory) window.ffDocHistory('bills', b.id);   // batch 7: what changed
     };
     window.viewQuote = function (id) {
       const q = (_quotesData || []).find(x => x.id === id); if (!q) return;

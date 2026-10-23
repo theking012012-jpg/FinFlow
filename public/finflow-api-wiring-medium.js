@@ -104,6 +104,27 @@
     }
     loadInvoicesFromDB();
 
+    // Batch 7: open the invoice form PRE-FILLED for an existing invoice — every field and its line items (the shared
+    // editor's load(), as the LR9 quote edit) — titled with its number; saveInvoice then PUTs to the same invoice.
+    window.editInvoice = async function (idx) {
+      const inv = (window.userInvoices || [])[idx];
+      if (!inv || inv._dbId == null) { notify('That invoice could not be found — refresh and try again', true); return; }
+      let raw = (window._realInvoices || []).find(r => r.id === inv._dbId);
+      if (!raw) { try { raw = await api('GET', '/api/invoices/' + inv._dbId); } catch (_) { raw = null; } }
+      const r = Object.assign({}, raw || {}, inv);
+      if (typeof openInvoiceModal === 'function') openInvoiceModal();   // a clean form first (fresh token, lines reset)
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : v; };
+      const ymd = v => (window.FinFlowDates ? (window.FinFlowDates._toYmd(v) || '') : String(v || '').slice(0, 10));
+      set('inv-client', r.client); set('inv-amount', r.amount != null ? Number(r.amount) : '');
+      set('inv-issue', ymd(r.issue_date)); set('inv-due', ymd(r.due_date));
+      set('inv-status', String(r.status || 'pending').toLowerCase()); set('inv-desc', r.notes);
+      const lines = Array.isArray(raw && raw.line_items) ? raw.line_items : (Array.isArray(r.line_items) ? r.line_items : []);
+      if (lines.length && window.ffInvLineItems && window.ffInvLineItems.load) window.ffInvLineItems.load(lines);
+      window._invEditId = inv._dbId;
+      const t = document.querySelector('#invoice-modal .modal-title'); if (t) t.textContent = 'Edit invoice' + (r.number ? ' ' + r.number : '');
+      const st = document.querySelector('#invoice-modal .modal-sub'); if (st) st.textContent = 'Changes are saved to this invoice and shown in its history';
+    };
+
     // Patch saveInvoice to persist to API
     window.saveInvoice = async function () {
       // F117 commit B: in-flight re-entry lock — a double-click / impatient re-click cannot fire a
@@ -127,6 +148,31 @@
       // F36: business issue date (default today, backdatable). Recognition keys on this.
       const issue_date = document.getElementById('inv-issue')?.value || (typeof todayLocal==='function'?todayLocal():null);
       const dueStr = due ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(due) : due) : 'TBD';   // F195: TZ-safe calendar date
+
+      // Batch 7: EDIT — the same form saved to the SAME invoice (PUT). The server re-derives the amount from the lines,
+      // keeps the ledger in step, refuses an amount below what is already paid (G3) and records old → new for History.
+      if (window._invEditId != null) {
+        const _id = window._invEditId;
+        window._savingInvoice = true;
+        const _eb = document.querySelector('#invoice-modal .btn-primary'); if (_eb) _eb.disabled = true;
+        try {
+          const _li = (window.ffInvLineItems && typeof window.ffInvLineItems.get === 'function') ? window.ffInvLineItems.get() : null;
+          const upd = await api('PUT', '/api/invoices/' + _id, Object.assign({ client, due_date: due || null, issue_date, status, notes },
+            _li ? { line_items: _li } : { amount: amountRaw, line_items: null }));
+          window._invEditId = null;
+          closeModal('invoice-modal');
+          notify('Invoice ' + ((upd && upd.number) || '') + ' updated ✦');
+          await loadInvoicesFromDB().catch(() => {});
+          if (typeof renderInvoices === 'function') renderInvoices();
+          window._refreshDashboardUI?.();
+          if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
+        } catch (e) {
+          notify(e.message || 'Could not update the invoice', true);   // e.g. G3: "This invoice has 250.00 USD paid against it…"
+        } finally {
+          window._savingInvoice = false; if (_eb) _eb.disabled = false;
+        }
+        return;
+      }
 
       // One idempotency token per submit-intent: minted lazily now, reused on any retry of THIS
       // modal, and reset to null on modal open (openInvoiceModal) and on success below. So a
@@ -267,6 +313,7 @@
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
             <button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>
+            <button class="btn btn-ghost btn-sm" onclick="editInvoice(${idx})">Edit</button>
             ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
               ? `<button class="btn btn-ghost btn-sm" onclick="openRecordPaymentModal(window.userInvoices[${idx}])">Record Payment</button>`
                 + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" onclick="ffInvoicePayLinkChoose(window.userInvoices[${idx}]._dbId)">Pay link ↗</button>`

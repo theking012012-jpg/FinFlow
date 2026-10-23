@@ -182,6 +182,8 @@
       +     '<button id="ff-docview-close" style="font-family:var(--font,inherit);font-size:12.5px;padding:8px 15px;border-radius:7px;border:1px solid var(--bd,#3a3128);background:var(--bg2,#221c14);color:var(--t1,#e8dcc4);cursor:pointer">Close ✕</button>'
       +   '</div>'
       +   '<iframe id="ff-docview-frame" title="Document" style="width:100%;height:78vh;border:none;border-radius:10px;background:#fff;box-shadow:0 18px 60px rgba(0,0,0,.5)"></iframe>'
+      // Batch 7: the document's change history — OUTSIDE the frame, so it never prints or reaches a customer's PDF.
+      +   '<div id="ff-docview-history" style="display:none;margin-top:10px;background:var(--bg1,#1a160f);border:1px solid var(--bd,#3a3128);border-radius:10px;padding:10px 14px;color:var(--t2,#cfc3ab);font-size:12px;line-height:1.7"></div>'
       + '</div>';
     document.body.appendChild(o);
     o.addEventListener('click', function(ev){ if (ev.target === o) close(); });
@@ -192,11 +194,51 @@
   function close(){ var o = $('ff-docview'); if (o) o.style.display = 'none'; }
   function openDoc(doc, kind){
     var o = overlay();
+    var _h = $('ff-docview-history'); if (_h) { _h.style.display = 'none'; _h.innerHTML = ''; }   // a previous document's history never lingers
     var frame = $('ff-docview-frame');
     try { frame.srcdoc = buildDocumentHTML(doc, kind); } catch(e){ console.warn('[docview]', e && e.message); return; }
     o.style.display = 'flex';
   }
   window.ffOpenDocView = openDoc;
+
+  // Batch 7 (better than standard): what changed on this document — old → new, who, when — read from the audit trail
+  // (the same record the Audit page shows). Owner / admin only (audit:read); anyone else simply sees no panel.
+  var HIST_FIELDS = { amount: 'Amount', client: 'Client', vendor: 'Vendor', issue_date: 'Issued', due_date: 'Due', status: 'Status', notes: 'Notes', number: 'Number' };
+  function _histVal(k, v){
+    if (v == null || v === '') return '—';
+    if (k === 'amount') { var n = Number(v); return isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(v); }
+    if (k === 'issue_date' || k === 'due_date') return dlabel(v);
+    return String(v).slice(0, 80);
+  }
+  function _obj(x){ if (!x) return {}; if (typeof x === 'string') { try { return JSON.parse(x) || {}; } catch (_) { return {}; } } return x; }
+  window.ffDocHistory = async function (table, id) {
+    var panel = $('ff-docview-history'); if (!panel || id == null) return;
+    try {
+      var r = await fetch('/api/audit-trail?table=' + encodeURIComponent(table) + '&record_id=' + encodeURIComponent(id), { credentials: 'include' });
+      if (!r.ok) return;   // no audit access → no panel (never an error on someone's screen)
+      var rows = await r.json(); if (!Array.isArray(rows) || !rows.length) return;
+      var lines = rows.map(function (a) {
+        var when = String(a.changed_at || a.created_at || '').slice(0, 10), who = a.actor_name || 'Someone';
+        var act = String(a.action || '').toUpperCase(), parts = [];
+        if (act === 'CREATE') parts.push('created');
+        else if (act === 'RECALC' && a.field_name) parts.push('status / paid ' + esc(String(a.old_value || '—')) + ' → ' + esc(String(a.new_value || '—')) + ' (from payments)');
+        else {
+          var o = _obj(a.old_data), n = _obj(a.new_data);
+          Object.keys(HIST_FIELDS).forEach(function (k) {
+            if (!(k in n) && !(k in o)) return;
+            var ov = _histVal(k, o[k]), nv = _histVal(k, n[k]);
+            if (ov !== nv) parts.push(HIST_FIELDS[k] + ' ' + esc(ov) + ' → ' + esc(nv));
+          });
+          if (!parts.length && a.field_name) parts.push(esc(a.field_name) + ' ' + esc(String(a.old_value || '—')) + ' → ' + esc(String(a.new_value || '—')));
+        }
+        if (!parts.length) return '';
+        return '<div>' + esc(dlabel(when) || when) + ' · ' + esc(who) + ' — ' + parts.join('; ') + '</div>';
+      }).filter(Boolean);
+      if (!lines.length) return;
+      panel.innerHTML = '<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3,#8a7d66);margin-bottom:4px">History · not printed</div>' + lines.join('');
+      panel.style.display = 'block';
+    } catch (_) { /* history is a convenience — never blocks the document */ }
+  };
 
   // ── map a client-side invoice record → the renderer's shape ──
   function invoiceToDoc(inv){
@@ -229,6 +271,7 @@
       if (rec.issue_date == null && raw && raw.issue_date != null) rec.issue_date = raw.issue_date;
       if (rec.line_items == null && raw && raw.line_items != null) rec.line_items = raw.line_items;
       openDoc(invoiceToDoc(rec), 'invoice');
+      if (window.ffDocHistory) window.ffDocHistory('invoices', rec._dbId != null ? rec._dbId : rec.id);   // batch 7: what changed
     };
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install); else install();

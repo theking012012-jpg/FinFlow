@@ -765,6 +765,27 @@
     }
     loadInvoicesFromDB();
 
+    // Batch 7: open the invoice form PRE-FILLED for an existing invoice — every field and its line items (the shared
+    // editor's load(), as the LR9 quote edit) — titled with its number; saveInvoice then PUTs to the same invoice.
+    window.editInvoice = async function (idx) {
+      const inv = (window.userInvoices || [])[idx];
+      if (!inv || inv._dbId == null) { notify('That invoice could not be found — refresh and try again', true); return; }
+      let raw = (window._realInvoices || []).find(r => r.id === inv._dbId);
+      if (!raw) { try { raw = await api('GET', '/api/invoices/' + inv._dbId); } catch (_) { raw = null; } }
+      const r = Object.assign({}, raw || {}, inv);
+      if (typeof openInvoiceModal === 'function') openInvoiceModal();   // a clean form first (fresh token, lines reset)
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : v; };
+      const ymd = v => (window.FinFlowDates ? (window.FinFlowDates._toYmd(v) || '') : String(v || '').slice(0, 10));
+      set('inv-client', r.client); set('inv-amount', r.amount != null ? Number(r.amount) : '');
+      set('inv-issue', ymd(r.issue_date)); set('inv-due', ymd(r.due_date));
+      set('inv-status', String(r.status || 'pending').toLowerCase()); set('inv-desc', r.notes);
+      const lines = Array.isArray(raw && raw.line_items) ? raw.line_items : (Array.isArray(r.line_items) ? r.line_items : []);
+      if (lines.length && window.ffInvLineItems && window.ffInvLineItems.load) window.ffInvLineItems.load(lines);
+      window._invEditId = inv._dbId;
+      const t = document.querySelector('#invoice-modal .modal-title'); if (t) t.textContent = 'Edit invoice' + (r.number ? ' ' + r.number : '');
+      const st = document.querySelector('#invoice-modal .modal-sub'); if (st) st.textContent = 'Changes are saved to this invoice and shown in its history';
+    };
+
     // Patch saveInvoice to persist to API
     window.saveInvoice = async function () {
       // F117 commit B: in-flight re-entry lock — a double-click / impatient re-click cannot fire a
@@ -788,6 +809,31 @@
       // F36: business issue date (default today, backdatable). Recognition keys on this.
       const issue_date = document.getElementById('inv-issue')?.value || (typeof todayLocal==='function'?todayLocal():null);
       const dueStr = due ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(due) : due) : 'TBD';   // F195: TZ-safe calendar date
+
+      // Batch 7: EDIT — the same form saved to the SAME invoice (PUT). The server re-derives the amount from the lines,
+      // keeps the ledger in step, refuses an amount below what is already paid (G3) and records old → new for History.
+      if (window._invEditId != null) {
+        const _id = window._invEditId;
+        window._savingInvoice = true;
+        const _eb = document.querySelector('#invoice-modal .btn-primary'); if (_eb) _eb.disabled = true;
+        try {
+          const _li = (window.ffInvLineItems && typeof window.ffInvLineItems.get === 'function') ? window.ffInvLineItems.get() : null;
+          const upd = await api('PUT', '/api/invoices/' + _id, Object.assign({ client, due_date: due || null, issue_date, status, notes },
+            _li ? { line_items: _li } : { amount: amountRaw, line_items: null }));
+          window._invEditId = null;
+          closeModal('invoice-modal');
+          notify('Invoice ' + ((upd && upd.number) || '') + ' updated ✦');
+          await loadInvoicesFromDB().catch(() => {});
+          if (typeof renderInvoices === 'function') renderInvoices();
+          window._refreshDashboardUI?.();
+          if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
+        } catch (e) {
+          notify(e.message || 'Could not update the invoice', true);   // e.g. G3: "This invoice has 250.00 USD paid against it…"
+        } finally {
+          window._savingInvoice = false; if (_eb) _eb.disabled = false;
+        }
+        return;
+      }
 
       // One idempotency token per submit-intent: minted lazily now, reused on any retry of THIS
       // modal, and reset to null on modal open (openInvoiceModal) and on success below. So a
@@ -928,6 +974,7 @@
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
             <button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>
+            <button class="btn btn-ghost btn-sm" onclick="editInvoice(${idx})">Edit</button>
             ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
               ? `<button class="btn btn-ghost btn-sm" onclick="openRecordPaymentModal(window.userInvoices[${idx}])">Record Payment</button>`
                 + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" onclick="ffInvoicePayLinkChoose(window.userInvoices[${idx}]._dbId)">Pay link ↗</button>`
@@ -3483,6 +3530,7 @@ function clearAIChat(){
             <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[window._billDisplayStatus(b)] || 'b-amber'}">${esc(window._billDisplayStatus(b))}</span></span>
             <div style="display:flex;gap:4px">
               <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
+              <button class="btn btn-ghost btn-sm" onclick="editBill(${b.id})">Edit</button>
               ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
               ${window.FinFlowDates.isInventoryBill(b) ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>`}
             </div>
@@ -3524,7 +3572,26 @@ function clearAIChat(){
       const ro = document.getElementById('bill-recurring-opts'); if (ro) ro.style.display = 'none';
       const bf = document.getElementById('bill-freq'); if (bf) bf.value = 'Monthly';
       window._billIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new bill never reuses the last token
+      window._billEditId = null;    // batch 7: "New bill" is never an edit of the last bill opened
+      { const t = document.querySelector('#bill-modal .modal-title'); if (t) t.textContent = 'New Bill'; }
+      try { if (window.ffBillLineItems && window.ffBillLineItems.reset) window.ffBillLineItems.reset(); } catch (_) {}
       openModal('bill-modal');
+    };
+
+    // Batch 7: open the bill form PRE-FILLED for an existing bill (fields + line items); saveBill then PUTs to it.
+    window.editBill = async function (id) {
+      let b = (_billsData || []).find(r => r.id === id);
+      if (!b) { try { await loadBills(); } catch (_) {} b = (_billsData || []).find(r => r.id === id); }
+      if (!b) { notify('That bill could not be found — refresh and try again', true); return; }
+      window.openNewBillModal();
+      const set = (fid, v) => { const el = document.getElementById(fid); if (el) el.value = v == null ? '' : v; };
+      const ymd = v => (window.FinFlowDates ? (window.FinFlowDates._toYmd(v) || '') : String(v || '').slice(0, 10));
+      set('bill-vendor', b.vendor); set('bill-amount', b.amount != null ? Number(b.amount) : '');
+      set('bill-issue', ymd(b.issue_date)); set('bill-due', ymd(b.due_date));
+      set('bill-status', String(b.status || 'unpaid').toLowerCase()); set('bill-notes', b.notes);
+      if (Array.isArray(b.line_items) && b.line_items.length && window.ffBillLineItems && window.ffBillLineItems.load) window.ffBillLineItems.load(b.line_items);
+      window._billEditId = b.id;
+      const t = document.querySelector('#bill-modal .modal-title'); if (t) t.textContent = 'Edit bill — ' + (b.vendor || '');
     };
 
     // Next occurrence date for a recurring bill (mirrors server nextRunDate).
@@ -3560,6 +3627,26 @@ function clearAIChat(){
       const recurring = !!document.getElementById('bill-recurring')?.checked;
       const frequency = document.getElementById('bill-freq')?.value || 'Monthly';
       const endDate   = document.getElementById('bill-end-date')?.value || null;
+      // Batch 7: EDIT — saved to the SAME bill (PUT). The server keeps the ledger in step, refuses an amount below what is
+      // paid (G3) and keeps a stock purchase's amount/date with the purchase (M34); its reason reaches the owner as is.
+      if (window._billEditId != null) {
+        const _id = window._billEditId;
+        window._savingBill = true;
+        const _eb = document.querySelector('#bill-modal .ff-save-btn'); if (_eb) _eb.disabled = true;
+        try {
+          const _bli = (window.ffBillLineItems && window.ffBillLineItems.get && window.ffBillLineItems.get()) || null;
+          await api('PUT', '/api/bills/' + _id, Object.assign({ vendor, due_date, issue_date, status, notes }, _bli ? { line_items: _bli } : { amount, line_items: null }));
+          window._billEditId = null;
+          closeModal('bill-modal');
+          notify(`Bill from ${esc(vendor)} updated ✦`);
+          await loadBills().catch(() => {});
+          renderBills();
+          window._refreshDashboardUI?.();
+          if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
+        } catch (e) { notify(e.message || 'Could not update the bill', true); }
+        finally { window._savingBill = false; if (_eb) _eb.disabled = false; }
+        return;
+      }
       // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
       // on modal open (openNewBillModal) and on success below. Double-submit reuses it (→ DB dedupes);
       // a genuine new bill from a reopened modal gets a fresh token and is allowed.
@@ -3995,6 +4082,7 @@ function clearAIChat(){
         due_date: b.due_date || null, status: b.status || '', notes: b.notes || '',
         amount: b.amount, tax: b.tax || 0, line_items: b.line_items || null, currency: b.currency || null,
       }, 'bill');
+      if (window.ffDocHistory) window.ffDocHistory('bills', b.id);   // batch 7: what changed
     };
     window.viewQuote = function (id) {
       const q = (_quotesData || []).find(x => x.id === id); if (!q) return;

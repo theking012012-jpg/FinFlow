@@ -2693,6 +2693,9 @@ function openInvoiceModal(){
   // the next Create mints a NEW one — two genuinely separate invoices carry DIFFERENT tokens and
   // both land. saveInvoice also clears it on success; this covers reopen-after-a-failed-submit.
   window._invIdemKey = null;
+  window._invEditId = null;   // batch 7: "+ New invoice" is never an edit of the last invoice opened
+  { const t=document.querySelector('#invoice-modal .modal-title'); if(t) t.textContent='New invoice';
+    const st=document.querySelector('#invoice-modal .modal-sub'); if(st) st.textContent='Create and track a new client invoice'; }
   const _sv=(id,v)=>{const el=document.getElementById(id); if(el) el.value=v;};
   _sv('inv-client','');
   _sv('inv-amount','');

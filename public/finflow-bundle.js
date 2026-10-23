@@ -291,6 +291,9 @@
       // B1b: this business's invoice-number prefix (repainted on a switch like the profile; "INV-" when unset).
       var _pfx = document.getElementById('s-inv-prefix');
       if (_pfx) _pfx.value = (ent && ent.invoice_prefix) || 'INV-';
+      // Batch 8: this business's payment terms (30 until set — what the field has always shown).
+      var _pt = document.getElementById('s-pay-terms');
+      if (_pt) _pt.value = (ent && ent.payment_terms != null) ? String(ent.payment_terms) : '30';
       if (typeof window.updateBrandName === 'function') { try { window.updateBrandName(); } catch (_) {} }
     }
     // Exposed so the entity switcher can repaint the panel without a page reload (index.html switchEntity).
@@ -480,8 +483,10 @@
             // B1b: the invoice-number prefix is this business's too (it was a field nothing read). Sent only when the field
             // exists; the server refuses anything but plain text, and the message reaches the owner below.
             const _pfx = document.getElementById('s-inv-prefix');
-            await api('PUT', '/api/entities/' + _ent._dbId, _pfx ? Object.assign({ invoice_prefix: _pfx.value.trim() }, _profile) : _profile);
+            const _ptEl = document.getElementById('s-pay-terms');   // batch 8: payment terms travel with the prefix
+            await api('PUT', '/api/entities/' + _ent._dbId, Object.assign({}, _profile, _pfx ? { invoice_prefix: _pfx.value.trim() } : {}, _ptEl && _ptEl.value !== '' ? { payment_terms: _ptEl.value.trim() } : {}));
             if (_pfx) _ent.invoice_prefix = _pfx.value.trim();
+            if (_ptEl && _ptEl.value !== '') _ent.payment_terms = Number(_ptEl.value);
             // Keep the in-memory entity in lockstep so the next document renders the new letterhead
             // without a page reload (the letterhead reads ENTITIES[i].profile, not the DB).
             _ent.profile = Object.assign({}, _ent.profile || {}, _profile);
@@ -747,7 +752,7 @@
                                           // defeating the overpay guard (under-warn) and 400ing on settle.
             due:    r.due_date
                       ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date
-                      : 'TBD',
+                      : 'No due date',
             due_date: r.due_date,
             status: r.status,
             number: r.number || null,   // B1b: the invoice's number
@@ -808,7 +813,7 @@
       const notes  = document.getElementById('inv-desc')?.value?.trim() || '';
       // F36: business issue date (default today, backdatable). Recognition keys on this.
       const issue_date = document.getElementById('inv-issue')?.value || (typeof todayLocal==='function'?todayLocal():null);
-      const dueStr = due ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(due) : due) : 'TBD';   // F195: TZ-safe calendar date
+      const dueStr = due ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(due) : due) : 'No due date';   // F195: TZ-safe calendar date
 
       // Batch 7: EDIT — the same form saved to the SAME invoice (PUT). The server re-derives the amount from the lines,
       // keeps the ledger in step, refuses an amount below what is already paid (G3) and records old → new for History.
@@ -6567,7 +6572,7 @@ function clearAIChat(){
           amount_paid: r.amount_paid,
           due:      r.due_date
             ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
-            : 'TBD',
+            : 'No due date',
           due_date: r.due_date,
           status:   r.status,
           number:   r.number || null,   // B1b: the invoice's number

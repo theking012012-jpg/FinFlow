@@ -169,7 +169,7 @@
           amount_paid: r.amount_paid,
           due:      r.due_date
             ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
-            : 'TBD',
+            : 'No due date',
           due_date: r.due_date,
           status:   r.status,
           number:   r.number || null,   // B1b: the invoice's number

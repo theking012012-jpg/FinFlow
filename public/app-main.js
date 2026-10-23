@@ -1545,7 +1545,7 @@ async function loadEntityData(idx){
     userInvoices = invoices.map(r=>({
       _dbId:r.id, client:r.client, amount:r.amount,
       amount_paid: r.amount_paid,   // F48 follow-up: carry so markInvoicePaid settles only the REMAINING balance (partials don't overpay→400)
-      due: r.due_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date) : 'TBD',   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
+      due: r.due_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date) : 'No due date',   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
       due_date:r.due_date, status:r.status, notes:r.notes||'', number:r.number||null,   // B1b
       color: r.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)',
     }));
@@ -2688,6 +2688,19 @@ function markInvoicePaid(idx){
   renderInvoices();
   notify('Invoice marked as paid');
 }
+// Batch 8: this business's payment terms (Settings → Payment terms; 30 until set) and the due date they give. The server
+// applies the same rule when a due date is left blank — the note says it before anyone saves.
+function _bizPaymentTerms(){ try { const a=(window.ENTITIES||[]).find(e=>e&&e.active); return (a&&a.payment_terms!=null&&isFinite(a.payment_terms))?Number(a.payment_terms):30; } catch(_){ return 30; } }
+window._bizPaymentTerms=_bizPaymentTerms;
+window._invDueHint=function(){
+  const el=document.getElementById('inv-due-hint'); if(!el) return;
+  const iss=(document.getElementById('inv-issue')||{}).value||'', due=(document.getElementById('inv-due')||{}).value||'';
+  const t=_bizPaymentTerms(), fl=v=>(window.FinFlowDates?window.FinFlowDates.fmtLabel(v,{year:true}):v);
+  if(due){ el.textContent='Due '+fl(due)+(t?'':' (your terms: due on receipt)'); return; }
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(iss); if(!m){ el.textContent=''; return; }
+  const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]+t)).toISOString().slice(0,10);   // calendar arithmetic, no timezone
+  el.textContent='Due '+fl(d)+' ('+(t?'Net '+t:'due on receipt')+') — from your payment terms in Settings. Pick a date to change it.';
+};
 function openInvoiceModal(){
   // F117 commit B: a fresh invoice modal = a fresh submit-intent. Clear the idempotency token so
   // the next Create mints a NEW one — two genuinely separate invoices carry DIFFERENT tokens and
@@ -2704,6 +2717,7 @@ function openInvoiceModal(){
   _sv('inv-status','pending');
   _sv('inv-desc','');
   try { if (window.ffInvLineItems) window.ffInvLineItems.reset(); } catch(_){}  // F194: clear line-items editor + unlock amount
+  window._invDueHint();   // batch 8: the due date the terms give, shown before saving
   openModal('invoice-modal');
 }
 function saveInvoice(){
@@ -2718,7 +2732,7 @@ function saveInvoice(){
   const amount=amountRaw;
   const due=document.getElementById('inv-due').value;
   const status=document.getElementById('inv-status').value;
-  const dueStr=due?new Date(due).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'TBD';
+  const dueStr=due?(window.FinFlowDates?window.FinFlowDates.fmtLabel(due):due):'No due date';   // batch 8 (+ F195: a calendar date, never an instant)
   if(!userInvoices) userInvoices = [];
   userInvoices.push({client,amount,due:dueStr,color:status==='overdue'?'var(--red)':'var(--t2)',status});
   closeModal('invoice-modal');
@@ -6313,7 +6327,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   // Fixed wording only (no user data) — a quote states its validity, an invoice its payment terms.
   const _termsHTML = _isQuote
     ? '<strong style="color:#333">Validity:</strong> This quote is valid for 30 days'
-    : '<strong style="color:#333">Payment terms:</strong> Due within 30 days · Bank transfer or card accepted via client portal';
+    : '<strong style="color:#333">Payment terms:</strong> '+(_bizPaymentTerms()?'Due within '+_bizPaymentTerms()+' days':'Due on receipt')+' · Bank transfer or card accepted via client portal';   // batch 8: this business's terms (a number — no user text)
   const poweredBy = settings.poweredBy !== false;
   const logoHTML = logoDataURL
     ? `<img src="${logoDataURL}" style="max-height:52px;max-width:160px;object-fit:contain">`

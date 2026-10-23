@@ -1871,10 +1871,13 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   const _oc = normalizeOpeningCash((req.body || {}).opening_cash);
   if (_oc.error) return res.status(400).json({ error: _oc.error });
   // B1b: this business's invoice-number prefix — letters, numbers and - / # _ . (up to 12). Empty → back to "INV-".
+  const _pt = (req.body || {}).payment_terms;   // batch 8: whole days, 0 (due on receipt) to 365
+  if (_pt != null && _pt !== '' && !(/^[0-9]{1,3}$/.test(String(_pt)) && Number(_pt) <= 365)) return res.status(400).json({ error: 'Payment terms are a number of days from 0 (due on receipt) to 365.', code: 'BAD_PAYMENT_TERMS' });
   const _ip = (req.body || {}).invoice_prefix;
   if (_ip != null && !/^[A-Za-z0-9\-\/#_. ]{0,12}$/.test(String(_ip))) return res.status(400).json({ error: 'The invoice prefix can use letters, numbers and - / # _ . (up to 12 characters).', code: 'BAD_INVOICE_PREFIX' });
   await db.updateById('entities', row.id, {
     ...(_ip != null && { invoice_prefix: String(_ip).trim() }),
+    ...(_pt != null && _pt !== '' && { payment_terms: Number(_pt) }),
     ...(name && {name}), ...(currency && {currency}), ...(color && {color}),
     ...(timezone !== undefined && { timezone: timezone ? String(timezone) : null }),
     ...(country !== undefined && { country: country ? String(country).toUpperCase() : null }),
@@ -2107,6 +2110,16 @@ async function assignInvoiceNumber(q, userId, entityId, invoiceId, sourceNumber)
   }
   return null;
 }
+async function invoiceDueFromTerms(entityId, issueYmd) {
+  const iso = FinFlowDates._toYmd(issueYmd); if (!iso) return null;
+  let terms = 30;
+  if (entityId != null) {
+    const { rows: [e] } = await pool.query(`SELECT data->>'payment_terms' AS t FROM entities WHERE id = $1`, [entityId]);
+    if (e && e.t != null && e.t !== '' && Number.isInteger(Number(e.t))) terms = Number(e.t);
+  }
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + terms)).toISOString().slice(0, 10);   // calendar arithmetic, no timezone involved
+}
 app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
   // F194: when line_items are supplied, the DERIVED Σ qty×rate is the canonical amount (Rule 2).
@@ -2185,9 +2198,12 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   // N102: an invoice sent without an issue date is issued on the ENTITY's today — stored, so the books, GL and
   // period lock all read one explicit date instead of deriving the UTC day from created_at.
   const _issueYmd = issue_date || await entityTodayYmd(eid);
+  // Batch 8 (B1c): an invoice left without a due date is due on issue date + THIS business's payment terms (Settings;
+  // 30 days until the owner sets them — what the Settings field has always shown). A calendar date: string in, string out.
+  const _dueYmd = due_date || await invoiceDueFromTerms(eid, _issueYmd);
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: _issueYmd, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: _dueYmd||null, status, notes: notes.slice(0,500), issue_date: _issueYmd, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(

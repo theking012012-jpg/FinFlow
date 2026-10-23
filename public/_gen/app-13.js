@@ -89,6 +89,7 @@ async function _loadEntitiesFromDBImpl(){
       country:      e.country || null,
       opening_cash: (e.opening_cash != null && e.opening_cash !== '' ? Number(e.opening_cash) : null),
       invoice_prefix: e.invoice_prefix || '',   // B1b: this business's invoice-number prefix (Settings)
+      payment_terms: (e.payment_terms != null && e.payment_terms !== '' ? Number(e.payment_terms) : null),   // batch 8
       data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
       // F196 Tier 2: the entity's OWN letterhead profile. A document is issued BY this entity, so
       // its business name/address/contact/tax-id must travel with it rather than being read from the

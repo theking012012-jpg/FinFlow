@@ -86,7 +86,7 @@
                                           // defeating the overpay guard (under-warn) and 400ing on settle.
             due:    r.due_date
                       ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date
-                      : 'TBD',
+                      : 'No due date',
             due_date: r.due_date,
             status: r.status,
             number: r.number || null,   // B1b: the invoice's number
@@ -147,7 +147,7 @@
       const notes  = document.getElementById('inv-desc')?.value?.trim() || '';
       // F36: business issue date (default today, backdatable). Recognition keys on this.
       const issue_date = document.getElementById('inv-issue')?.value || (typeof todayLocal==='function'?todayLocal():null);
-      const dueStr = due ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(due) : due) : 'TBD';   // F195: TZ-safe calendar date
+      const dueStr = due ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(due) : due) : 'No due date';   // F195: TZ-safe calendar date
 
       // Batch 7: EDIT — the same form saved to the SAME invoice (PUT). The server re-derives the amount from the lines,
       // keeps the ledger in step, refuses an amount below what is already paid (G3) and records old → new for History.

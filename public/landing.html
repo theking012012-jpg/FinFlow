@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
   <!-- SEO -->
-  <meta name="description" content="FinFlow is the only accounting platform with Claude AI built in. Multi-entity accounting, live bank sync, MRR dashboard, payroll and more. Try free for 30 days.">
+  <meta name="description" content="FinFlow is accounting with an AI assistant that reads your own books. Separate books per business in their own currency, bank sync, invoicing, payroll and more. Try free for 30 days.">
   <meta name="keywords" content="accounting software, small business finance, AI accounting, multi-entity accounting, invoicing software, expense tracking, payroll software">
   <meta name="author" content="FinFlow Inc.">
   <meta name="robots" content="index, follow">
@@ -22,13 +22,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://finflow.io/">
   <meta property="og:title" content="FinFlow — Financial intelligence for modern business">
-  <meta property="og:description" content="The only accounting platform with Claude AI built in. Multi-entity, live bank sync, MRR dashboard. Try free for 30 days.">
+  <meta property="og:description" content="Accounting with an AI assistant that reads your own books. Separate books per business, bank sync, invoicing and payroll. Try free for 30 days.">
   <meta property="og:image" content="https://finflow.io/og-image.png">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="FinFlow — Financial intelligence for modern business">
-  <meta name="twitter:description" content="The only accounting platform with Claude AI built in. Try free for 30 days.">
+  <meta name="twitter:description" content="Accounting with an AI assistant that reads your own books. Try free for 30 days.">
   <meta name="twitter:image" content="https://finflow.io/og-image.png">
 
   <title>FinFlow — Financial intelligence for modern business</title>
@@ -163,6 +163,10 @@ section{padding:100px 5vw}
 .test-role{font-size:11px;color:#9a8a78}
 .stars{color:var(--acc);font-size:12px;margin-bottom:.85rem;letter-spacing:2px}
 .comp-table{width:100%;border-collapse:collapse;margin-top:3rem}
+.incl-list{list-style:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 32px;margin-top:2.5rem;padding:0}
+.incl-list li{position:relative;padding-left:22px;font-size:14px;color:var(--t2);line-height:1.5}
+.incl-list li::before{content:"✓";position:absolute;left:0;color:var(--acc)}
+@media(max-width:640px){.incl-list{grid-template-columns:1fr}}
 .comp-table th{padding:14px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9a8a78;border-bottom:1px solid var(--bd);text-align:center;vertical-align:bottom}
 .comp-table th:first-child{text-align:left;width:28%}
 .comp-table th.ff{color:var(--acc);background:rgba(200,164,74,.1);border-top:3px solid var(--acc);border-left:1px solid rgba(200,164,74,.3);border-right:1px solid rgba(200,164,74,.3);font-size:13px;text-transform:none;letter-spacing:0}
@@ -176,7 +180,7 @@ section{padding:100px 5vw}
 .cta-h2 em{color:var(--acc-light)}
 .cta-sub{font-size:16px;color:var(--t2);margin-bottom:2.5rem;font-weight:300}
 footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
-.f-grid{display:grid;grid-template-columns:2fr repeat(3,1fr);gap:3rem;margin-bottom:3rem}
+.f-grid{display:grid;grid-template-columns:2fr repeat(2,1fr);gap:3rem;margin-bottom:3rem}
 .f-brand{font-size:13px;color:#9a8a78;line-height:1.7;margin-top:.75rem;max-width:240px;font-weight:300}
 .f-col-title{font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.85rem}
 .f-links{display:flex;flex-direction:column;gap:.4rem}
@@ -214,7 +218,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     <a href="#features">Features</a>
     <a href="#ai">AI</a>
     <a href="#pricing">Pricing</a>
-    <a href="#compare">Compare</a>
+    <a href="#included">What's included</a>
   <a href="/accountants">Accountants</a></div>
   <div class="nav-ctas">
     <a href="/app" class="btn-ghost-nav">Sign in</a>
@@ -230,7 +234,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
   <div class="hero-content">
     <div class="hero-badge"><div class="hero-badge-dot"></div>Now with Claude AI built in</div>
     <h1 class="hero-h1">Your business finances,<br><em>finally intelligent</em></h1>
-    <p class="hero-sub">FinFlow is the only accounting platform with a real AI that knows your books — forecast, analyse, and act on your finances in plain English.</p>
+    <p class="hero-sub">An accounting platform with an AI assistant that reads your own books — ask about your numbers in plain English.</p>
     <div class="hero-ctas">
       <a href="/app?signup=1" class="btn-hero-p" style="text-decoration:none;display:inline-flex;align-items:center">Start 30-day free trial</a>
       <button class="btn-hero-g" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">See how it works ↓</button>
@@ -244,6 +248,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
         <div class="d-dot" style="background:#d4964a"></div>
         <div class="d-dot" style="background:#7db87d"></div>
         <div class="d-url"><span>app.finflow.io/dashboard</span></div>
+        <div class="d-example" style="margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9a8a78">Example data</div>
       </div>
       <div class="d-body">
         <div class="d-sidebar">
@@ -275,14 +280,11 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
 </section>
 
 <div class="logos">
-  <div class="logos-lbl">Trusted by teams at</div>
   <div class="logos-row">
-    <span class="logo-pill">TechCorp</span>
-    <span class="logo-pill">Globex LLC</span>
-    <span class="logo-pill">Initech Group</span>
-    <span class="logo-pill">NovaTech</span>
-    <span class="logo-pill">Pinnacle Co</span>
-    <span class="logo-pill">Summit Inc</span>
+    <span class="logo-pill">~50 currencies</span>
+    <span class="logo-pill">Separate books per business</span>
+    <span class="logo-pill">Bank sync via Plaid</span>
+    <span class="logo-pill">Powered by Claude</span>
   </div>
 </div>
 
@@ -290,18 +292,18 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
   <div class="sec-wrap">
     <div class="sec-label reveal">Everything you need</div>
     <h2 class="sec-h2 reveal d1">Built for businesses that<br><em>move fast</em></h2>
-    <p class="sec-sub reveal d2">Every feature is connected. Your invoices feed your cash flow, your expenses feed your tax filing, your payroll feeds your personal finance — all in one place.</p>
+    <p class="sec-sub reveal d2">Every feature is connected. Your invoices feed your cash flow and your expenses feed your tax estimate. Your salary from a paid payroll run lands in your personal finances — and nothing else crosses between business and personal.</p>
     <div class="feat-grid reveal d3">
       <div class="feat-card">
         <div class="feat-icon"><svg viewBox="0 0 16 16"><rect x="1" y="4" width="14" height="10" rx="1.2"/><line x1="1" y1="8" x2="15" y2="8"/><path d="M4 11h3"/><path d="M10 11l1 1 2-2"/></svg></div>
-        <div class="feat-h3">Live bank sync</div>
-        <p class="feat-p">Connect 12,000+ banks via Plaid. Transactions auto-categorise and flow into your P&L in real time. No CSV imports. No manual reconciliation.</p>
+        <div class="feat-h3">Bank sync</div>
+        <p class="feat-p">Connect your bank via Plaid where it is available. Bank lines arrive automatically with suggested categories and matches; you confirm them, and reconcile against your statement in a few clicks. CSV import when you need it.</p>
         <span class="feat-tag">Powered by Plaid</span>
       </div>
       <div class="feat-card">
         <div class="feat-icon"><svg viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><path d="M9 11l1.5 1.5 2.5-2.5"/></svg></div>
         <div class="feat-h3">AI receipt scanner</div>
-        <p class="feat-p">Drop a photo of any receipt. Claude Vision reads it and extracts vendor, amount, date and tax status in seconds — then logs it automatically.</p>
+        <p class="feat-p">Drop a photo of a receipt. Claude Vision reads the vendor, amount and date, and whether it looks tax-deductible — you check it and add it in one click.</p>
         <span class="feat-tag">✦ Claude Vision</span>
       </div>
       <div class="feat-card">
@@ -313,20 +315,20 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
       <div class="feat-card">
         <div class="feat-icon"><svg viewBox="0 0 16 16"><path d="M1 12 Q4 4 8 7 Q11 10 15 3"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg></div>
         <div class="feat-h3">MRR & SaaS metrics</div>
-        <p class="feat-p">Built-in MRR dashboard with new, churned, and expansion revenue. Track churn, LTV:CAC and ARR without a separate BI tool or spreadsheet.</p>
+        <p class="feat-p">MRR and active subscriptions from your Stripe data, without a separate BI tool or spreadsheet.</p>
         <span class="feat-tag">SaaS-ready</span>
       </div>
       <div class="feat-card">
         <div class="feat-icon"><svg viewBox="0 0 16 16"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg></div>
         <div class="feat-h3">Team roles & permissions</div>
-        <p class="feat-p">Invite your accountant or CFO with role-based access. Owner, Admin, Accountant and Viewer tiers with granular permissions. 7-year audit trail included.</p>
+        <p class="feat-p">Invite your accountant or CFO with role-based access: Owner, Admin, Accountant and Viewer roles. Every change goes into an audit trail that cannot be edited or deleted.</p>
         <span class="feat-tag">RBAC + Audit trail</span>
       </div>
       <div class="feat-card">
         <div class="feat-icon"><svg viewBox="0 0 16 16"><rect x="1" y="10" width="3" height="5" rx="1"/><rect x="6" y="6" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="13" rx="1"/><line x1="1" y1="8" x2="15" y2="8" stroke-dasharray="2,2"/></svg></div>
         <div class="feat-h3">Budget vs actuals</div>
-        <p class="feat-p">Set annual budgets per category. FinFlow tracks variance in real time and flags when you're drifting — before it becomes a problem.</p>
-        <span class="feat-tag">AI variance alerts</span>
+        <p class="feat-p">Set annual budgets per category and see budget against actual for every one of them as the year goes.</p>
+        <span class="feat-tag">Budget vs actual</span>
       </div>
     </div>
   </div>
@@ -346,7 +348,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     </div>
     <div class="reveal d2">
       <div class="ai-chat">
-        <div class="ai-chat-hdr"><div class="ai-dot"></div>FinFlow AI — powered by Claude</div>
+        <div class="ai-chat-hdr"><div class="ai-dot"></div>FinFlow AI — powered by Claude<span style="margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9a8a78">Example conversation</span></div>
         <div class="ai-msgs">
           <div class="ai-msg ai-user">Why did expenses spike last month?</div>
           <div class="ai-msg ai-bot">March expenses hit $28,400 — up 34% from Feb. The breakdown:<br><br>• Travel: $4,200 (team offsite, approved Apr 2)<br>• AWS: $2,800 vs $1,100 avg (traffic surge Mar 18)<br>• Legal: $3,100 one-time (IP filing)<br><br>Stripping these out, core operating costs are flat at $18,300. No structural issue — March was just event-heavy.</div>
@@ -359,76 +361,27 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
   </div>
 </section>
 
-<section style="background:var(--bg1);border-top:1px solid var(--bd);padding:80px 5vw">
+<section id="included" style="background:var(--bg1);border-top:1px solid var(--bd)">
   <div class="sec-wrap">
-    <div class="stats-grid reveal">
-      <div class="stat-card"><div class="stat-val">9.4</div><div class="stat-lbl">Overall rating vs competitors</div></div>
-      <div class="stat-card"><div class="stat-val">37%</div><div class="stat-lbl">Cheaper than QuickBooks Advanced</div></div>
-      <div class="stat-card"><div class="stat-val">14s</div><div class="stat-lbl">Avg time to scan & log a receipt</div></div>
-      <div class="stat-card"><div class="stat-val">750+</div><div class="stat-lbl">App integrations available</div></div>
-    </div>
+    <div class="sec-label reveal">What's included</div>
+    <h2 class="sec-h2 reveal d1">One place for the<br><em>whole of your money</em></h2>
+    <ul class="incl-list reveal d2">
+      <li>An AI assistant that answers from your own books</li>
+      <li>Separate books for each business, each in its own currency, timezone and public holidays</li>
+      <li>A consolidated view across your businesses</li>
+      <li>Invoices, quotes, credit notes and bills, with payments recorded against them</li>
+      <li>Bank sync via Plaid and statement reconciliation</li>
+      <li>Receipt scanning with Claude Vision</li>
+      <li>Stripe payments feed and an MRR dashboard</li>
+      <li>Payroll runs, with your own salary landing in your personal finances</li>
+      <li>Budgets against actuals, P&amp;L, balance sheet and cash-flow reports</li>
+      <li>Roles for your team and accountant, and an audit trail that cannot be edited</li>
+      <li>CSV import, and a command palette (⌘K) to get anywhere fast</li>
+      <li>Personal finances in the same app, walled off from the business</li>
+    </ul>
   </div>
 </section>
 
-<section id="compare" style="background:var(--bg1);border-top:1px solid var(--bd)">
-  <div class="sec-wrap">
-    <div class="sec-label reveal">Side by side</div>
-    <h2 class="sec-h2 reveal d1">Why teams switch<br><em>to FinFlow</em></h2>
-        <table class="comp-table reveal d2">
-      <colgroup>
-        <col style="width:30%">
-        <col style="width:17.5%">
-        <col style="width:17.5%">
-        <col style="width:17.5%">
-        <col style="width:17.5%">
-      </colgroup>
-      <thead>
-        <tr>
-          <th scope="col" style="text-align:left">Feature</th>
-          <th scope="col" class="ff">FinFlow<br><span style="font-size:13px;font-family:var(--font-d);font-style:italic;font-weight:300;text-transform:none;letter-spacing:0;color:var(--acc-light)">$249/mo</span></th>
-          <th scope="col">QuickBooks<br><span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0">$275/mo</span></th>
-          <th scope="col">Xero<br><span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0">$25–$90/mo</span></th>
-          <th scope="col">FreshBooks<br><span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0">$60/mo</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td style="text-align:left">Real AI assistant (live financial context)</td><td class="ff cy">✓ Claude</td><td class="cp">Limited</td><td class="cn">✗</td><td class="cn">✗</td></tr>
-        <tr><td style="text-align:left">Multi-entity (separate ledgers, same plan)</td><td class="ff cy">✓ Up to 5</td><td class="cn">✗ Extra sub</td><td class="cn">✗ Extra org</td><td class="cn">✗</td></tr>
-        <tr><td style="text-align:left">AI receipt &amp; invoice scanner</td><td class="ff cy">✓ Vision AI</td><td class="cp">Basic OCR</td><td class="cp">Basic OCR</td><td class="cn">✗</td></tr>
-        <tr><td style="text-align:left">Live Stripe payment feed</td><td class="ff cy">✓</td><td class="cp">Manual sync</td><td class="cp">Partial</td><td class="cn">✗</td></tr>
-        <tr><td style="text-align:left">MRR / SaaS dashboard</td><td class="ff cy">✓ Built-in</td><td class="cn">✗</td><td class="cn">✗</td><td class="cn">✗</td></tr>
-        <tr><td style="text-align:left">Command palette (⌘K)</td><td class="ff cy">✓</td><td class="cn">✗</td><td class="cn">✗</td><td class="cn">✗</td></tr>
-        <tr><td style="text-align:left">Budget vs actuals</td><td class="ff cy">✓</td><td class="cy">✓</td><td class="cy">✓</td><td class="cn">✗</td></tr>
-        <tr><td style="text-align:left">RBAC + 7-year audit trail</td><td class="ff cy">✓</td><td class="cy">✓</td><td class="cy">✓</td><td class="cn">✗</td></tr>
-        <tr><td style="text-align:left">Design quality</td><td class="ff" style="color:var(--acc)">★★★★★</td><td>★★★</td><td>★★★</td><td>★★★★</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section>
-  <div class="sec-wrap">
-    <div class="sec-label reveal">What they say</div>
-    <h2 class="sec-h2 reveal d1">Real businesses,<br><em>real results</em></h2>
-    <div class="tests">
-      <div class="test reveal">
-        <div class="stars">★★★★★</div>
-        <p class="test-q">"We switched from QuickBooks after 6 years. The AI alone saves us 3 hours a week. When I asked it to explain our expense spike it gave a breakdown that would have taken our accountant a full day."</p>
-        <div class="test-auth"><div class="test-av" style="background:rgba(200,164,74,.15);color:var(--acc)">SC</div><div><div class="test-name">Sarah Chen</div><div class="test-role">CFO, TechNova · 42 employees</div></div></div>
-      </div>
-      <div class="test reveal d1">
-        <div class="stars">★★★★★</div>
-        <p class="test-q">"Running 3 entities on Xero cost us $410/month. FinFlow handles all three for $249 and the consolidated P&L is something Xero couldn't do at any price. It's not close."</p>
-        <div class="test-auth"><div class="test-av" style="background:rgba(94,170,158,.15);color:#5aaa9e">MR</div><div><div class="test-name">Marcus Reid</div><div class="test-role">Founder, FinScale Group · 3 entities</div></div></div>
-      </div>
-      <div class="test reveal d2">
-        <div class="stars">★★★★★</div>
-        <p class="test-q">"The receipt scanner is witchcraft. I photograph receipts, it categorises everything, and it's in my books in 14 seconds. My accountant thought I'd hired a bookkeeper."</p>
-        <div class="test-auth"><div class="test-av" style="background:rgba(158,143,191,.15);color:#9e8fbf">PN</div><div><div class="test-name">Priya Nair</div><div class="test-role">Founder & CEO, Orbit Labs · SaaS</div></div></div>
-      </div>
-    </div>
-  </div>
-</section>
 
 <section id="pricing" style="background:var(--bg1);border-top:1px solid var(--bd)">
   <div class="sec-wrap">
@@ -524,7 +477,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
 
 <section class="cta-band">
   <h2 class="cta-h2 reveal">Ready to make your finances<br><em>work for you?</em></h2>
-  <p class="cta-sub reveal d1">Join hundreds of businesses already running smarter with FinFlow.</p>
+  <p class="cta-sub reveal d1">Start running your books with FinFlow today.</p>
   <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap" class="reveal d2">
     <a href="/app?signup=1" class="btn-hero-p" style="font-size:15px;padding:16px 36px;text-decoration:none;display:inline-flex;align-items:center">Start your free trial</a>
     <a href="mailto:hello@finflow.io?subject=Demo Request" class="btn-hero-g" style="font-size:15px;padding:16px 28px;text-decoration:none;display:inline-flex;align-items:center">Book a demo</a>
@@ -544,11 +497,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     </div>
     <div>
       <div class="f-col-title">Product</div>
-      <div class="f-links"><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#ai">AI assistant</a><a href="#compare">Integrations</a></div>
-    </div>
-    <div>
-      <div class="f-col-title">Compare</div>
-      <div class="f-links"><a href="#compare">vs QuickBooks</a><a href="#compare">vs Xero</a><a href="#compare">vs FreshBooks</a><a href="#compare">vs Wave</a></div>
+      <div class="f-links"><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#ai">AI assistant</a><a href="#included">What's included</a></div>
     </div>
     <div>
       <div class="f-col-title">Company</div>

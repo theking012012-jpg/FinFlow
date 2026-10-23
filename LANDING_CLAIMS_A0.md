@@ -71,12 +71,63 @@ confirms them at publish time). Footer links "vs QuickBooks / vs Xero / vs Fresh
   — section 6 is "Free trial and subscriptions". Re-anchoring would point at the wrong text. Owner / lawyer: write the
   policy (then the link gets its anchor), or drop the phrase until it exists.
 
-## Decisions needed from the owner (everything else is ready to apply)
+## Decisions — status 2026-10-23
 
-1. Apply sections 1, 2 and 4 as proposed? (removals and truthful rewrites)
-2. Domain: finflow.io or finflow.app — and does hello@ reach an inbox?
-3. Annual billing: offer it (needs annual Stripe prices) or remove the toggle?
-4. Team member limits: enforce 3 / 15, or drop the numbers?
-5. AI quotas: the page's numbers or the code's (50 vs 500 on Pro; "Unlimited" vs 2,000 on Business)?
-6. Enterprise card: replace with "talk to us"?
-7. Support promises (priority / onboarding / account manager), "7-year" retention, legal entity name.
+1. ✅ **Sections 1, 2, 4 — applied** (`861ed95`; `verify-a0-landing-claims` 17/0). Section 4 also removed from the in-app
+   Pricing page, the same claim on its second surface (`b9590a6`).
+5. ✅ **AI quotas — the code's numbers** (owner ruling): Pro 500 questions · Business 2,000 + 50 scans · Scale 5,000 + 100,
+   on the landing cards, the in-app plan cards and the upgrade prompt; the browser's own 50-per-page-load cap removed
+   (`e890241`, `d2a047b`; `verify-ai-quotas-match-code` 13/0). Caveat: the caps are env-tunable (`AI_CAP_*`); if Railway
+   sets them, the stated numbers must follow.
+6. ⏳ Enterprise card — open.
+7. ⏳ Support promises, "7-year" retention, legal entity name — open.
+
+**Owner ruling 2026-10-23: annual billing, team-member limits, SaaS metrics, the Professional Conduct Policy and the domain
+are to be BUILT / ENFORCED, not removed.** The questions each build needs:
+
+### 2. Domain
+- a. Which domain will FinFlow launch on — finflow.io, finflow.app, or another? (The page, its search tags and `hello@`
+  say `.io`; the server sends e-mail from `.app`.)
+- b. Is that domain verified in Resend (SPF / DKIM), and which from-address — `noreply@`, `billing@`?
+- c. Does `hello@<domain>` reach an inbox today? Whose?
+- d. App address: `app.<domain>` (what the page's example shows) or `<domain>/app` (what the code serves today)?
+
+### 3. Annual billing
+- a. Keep 20% off — $756 / $2,388 / $3,840 a year (what the toggle shows)?
+- b. You create the three annual prices in Stripe (live mode); I wire Checkout to `STRIPE_PRICE_*_ANNUAL`. Same Stripe account?
+- c. Monthly → annual mid-cycle: switch now with a prorated charge (Stripe default), or at the next renewal?
+- d. Cancelling an annual plan: runs to the end of the paid year, no refund (industry norm) — or refund unused months?
+- e. Does the 30-day trial come first on annual too?
+
+### 4. Team-member limits (Pro 3 · Business 15)
+- a. Count active members AND pending invites? (recommended)
+- b. Does the owner count toward the 3 / 15?
+- c. Do accountants with client access through the marketplace count? (recommended: no — QBO / Xero give accountants free seats)
+- d. Trial (Business-level access) → 15? Scale → a number, or unlimited?
+- e. Downgrading while over the limit: block the downgrade until members are removed, or keep them and block new invites?
+
+### 5. SaaS metrics — churn, expansion, LTV:CAC
+- a. Source: Stripe subscriptions only, or also FinFlow's own recurring invoices?
+- b. History: start monthly snapshots now (figures after the first full month), and/or rebuild past months from Stripe's
+  subscription history (an owner-run backfill, Rule 8)?
+- c. Churn: customer churn (customers lost) AND revenue churn (MRR lost), monthly?
+- d. CAC: which expense categories count as acquiring customers — chosen per business in Settings (recommended,
+  default Marketing + Advertising)?
+- e. LTV: average revenue per customer × gross margin ÷ monthly revenue churn (the industry formula)?
+- f. Business plan and up only, as the MRR page is today?
+
+### 6. Professional Conduct Policy (accountant sign-up)
+- a. Who writes it: your lawyer (added to the lawyer brief), or I draft a first version for the lawyer to review?
+- b. Scope: independence and conflicts, confidentiality, credentials (and how they are checked), fee disclosure, client
+  data, complaints and removal from the directory — anything to add or drop?
+- c. Already-registered accountants accept it on their next sign-in, with version + time recorded?
+- d. Until it exists, remove the phrase from the sign-up so nobody agrees to a document that does not exist?
+
+### 7. Found while applying these (in-app, same class) — logged as FA-L2
+- a. **Pro features:** the landing Pro card lists bank sync and the receipt scanner, but the app blocks Pro from Banking,
+  MRR and the scanner (`index.html` showPage gate, scanner gate), while the server gives Pro 15 scans a month. Which is
+  right for Pro?
+- b. **In-app FAQ:** "upgrade or downgrade instantly" — there is no self-serve downgrade in the code; "data retained 90
+  days after cancellation", "AES-256" — need a policy / a check before they stay.
+- c. In-app upgrade prompt for MRR promises "churn & expansion tracking, cohort analysis" (not built — becomes true with 5).
+- d. In-app plan cards still say "7-year audit trail" (decision 7) and list the Enterprise features (decision 6).

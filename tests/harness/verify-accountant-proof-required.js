@@ -56,6 +56,7 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name))
 const PDF_B64 = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n').toString('base64');
 
 const BASE = {
+  conductAccepted: true, conductVersion: require('../../conduct-policy').VERSION,   // D-E: sign-up accepts the current Professional Conduct Policy
   firstName: 'Ada', lastName: 'Lovelace', password: 'harness-password-not-a-secret',
   firm: 'Lovelace & Co', country: 'GB', specialisation: 'tax', bio: 'Chartered.', experience: '10',
 };

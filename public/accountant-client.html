@@ -782,6 +782,7 @@
 
 <script src="/finflow-dates.js"></script>
 <script src="/finflow-currency.js"></script>
+<script src="/finflow-conduct-banner.js"></script>
 <script>
 // ── STATE ──────────────────────────────────────────────────────────────────
 let _data = null;
@@ -807,6 +808,8 @@ const BAR_COLORS = ['#c9a84c','#4a9c6d','#5aaa9e','#c45c5c','#7a6fa0','#8fbfaa',
 window.addEventListener('DOMContentLoaded', async () => {
   const meRes = await fetch('/api/accountants/me', { credentials: 'include' });
   if (!meRes.ok) { location.href = '/accountant-login'; return; }
+  // D-E: ask for the current Professional Conduct Policy (client books pause after the grace period); reload on accept.
+  try { const _me = await meRes.clone().json(); window.ffConductAccepted = function () { location.reload(); }; if (window.ffConductBanner) window.ffConductBanner(_me.conduct); } catch (_) {}
 
   const params = new URLSearchParams(location.search);
   _userId = params.get('client');

@@ -677,6 +677,10 @@
         <span style="color:var(--gold)">✦ Transparent Pricing badge</span> — Filling in at least one rate or package earns you this badge on your directory listing. Clients trust transparent accountants 3× more.
       </div>
 
+      <label class="conduct-accept" style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--text2);margin:4px 0 16px;cursor:pointer">
+        <input type="checkbox" id="conduct-accept" required style="margin-top:3px;accent-color:var(--gold)">
+        <span>I have read and accept the <a href="/conduct.html" target="_blank" rel="noopener" style="color:var(--gold)">Professional Conduct Policy</a> (version <span id="conduct-version">1.0</span>), including keeping work with FinFlow clients on the platform (section 8).</span>
+      </label>
       <button class="btn-primary" onclick="submitForm()">Submit application →</button>
       <button class="btn-secondary" onclick="goStep2Pricing()">← Back</button>
     </div>
@@ -721,12 +725,14 @@
     </div>
 
     <hr class="divider">
-    <p class="terms-note">By registering you agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="/terms.html#6" target="_blank" rel="noopener">Professional Conduct Policy</a>. FinFlow is a platform connecting professionals and clients — we do not provide accounting services.</p>
+    <p class="terms-note">By registering you agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a>. FinFlow is a platform connecting professionals and clients — we do not provide accounting services.</p>
   </div>
 
 </div>
 
 <script src="/finflow-currency.js"></script>
+<script src="/conduct-policy.js"></script>
+<script>try { document.getElementById('conduct-version').textContent = window.FinFlowConduct.VERSION; } catch (_) {}</script>
 <script>
   // ── RESUME UPLOAD ──────────────────────────────────────────────────────────
   window._resumeCredentials = '';
@@ -999,6 +1005,9 @@
     const btn = document.querySelector('#pane3 .btn-primary');
     const exp = document.getElementById('experience').value;
     if (!exp) { alert('Please select your years of experience.'); return; }
+    // D-E: an explicit acceptance of the current Professional Conduct Policy (the server checks the version too).
+    const _conductBox = document.getElementById('conduct-accept');
+    if (!_conductBox || !_conductBox.checked) { alert('Please read and accept the Professional Conduct Policy to submit your application.'); if (_conductBox) _conductBox.focus(); return; }
 
     if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
@@ -1017,6 +1026,8 @@
         credentials:   window._resumeCredentials || '',
         memberships:   window._resumeMemberships || '',
         credentialDoc: window._credentialDoc || undefined,   // Step F — persisted credential proof
+        conductAccepted: true,                                                     // D-E: the box above is ticked
+        conductVersion:  (window.FinFlowConduct && window.FinFlowConduct.VERSION) || '',
         ...collectPricing(),
         verification: {
           method:           selectedVerify,

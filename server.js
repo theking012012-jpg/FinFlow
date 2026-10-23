@@ -674,7 +674,7 @@ function _clientIp(req) {
   }
   return (req.ip || (req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/i, '') || null;
 }
-const _TRACK_SKIP_RE = /^\/(api|favicon|robots|sitemap|health|tier-config)/i;
+const _TRACK_SKIP_RE = /^\/(api|favicon|robots|sitemap|health|tier-config|conduct-policy)/i;
 app.use((req, res, next) => {
   if (req.method === 'GET' && !_TRACK_SKIP_RE.test(req.path) && !/\.[a-z0-9]{1,8}$/i.test(req.path)) {
     res.on('finish', () => {
@@ -715,6 +715,11 @@ app.get('/app', (req, res) => {
 app.get('/tier-config.js', (req, res) => {
   res.type('application/javascript');
   res.sendFile(path.join(__dirname, 'tier-config.js'));
+});
+// D-E: the Professional Conduct Policy's current version — same file accountant-routes.js require()s.
+app.get('/conduct-policy.js', (req, res) => {
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'conduct-policy.js'));
 });
 
 // ── STATIC FILES — served before session so DB issues never block index.html ──

@@ -113,7 +113,7 @@ const PW = 'harness-password-not-a-secret';
     // sign-up of a new accountant
     await since();
     const reg = new HarnessHttp(server.baseUrl, { xff: '203.0.113.63' });
-    const rr = await reg.post('/api/accountants/register', { firstName: 'Cy', lastName: 'Count', email: 'lc3f-new@finflow.test', password: PW, firm: 'Count & Co', country: 'US',
+    const rr = await reg.post('/api/accountants/register', { conductAccepted: true, conductVersion: require('../../conduct-policy').VERSION, firstName: 'Cy', lastName: 'Count', email: 'lc3f-new@finflow.test', password: PW, firm: 'Count & Co', country: 'US',
       specialisation: 'Small business', verification: { method: 'membership', membershipNumber: 'AICPA-123456' } });
     const newId = (await c.query(`SELECT id FROM accountants WHERE email = 'lc3f-new@finflow.test'`)).rows[0];
     eq('accountant sign-up succeeds', rr.status < 300, true);

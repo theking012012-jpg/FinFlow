@@ -20,6 +20,7 @@
 const { run } = require('./clientMoneyKit.js');
 
 const REG = (email, extra) => Object.assign({
+  conductAccepted: true, conductVersion: require('../../conduct-policy').VERSION,   // D-E: sign-up accepts the current Professional Conduct Policy
   firstName: 'Tara', lastName: 'Ledger', email, password: 'harness-password-not-a-secret', firm: 'Ledger & Co',
   country: 'Trinidad & Tobago', specialisation: 'Small business', bio: 'Caribbean SMEs', experience: '5-10',
   verification: { method: 'membership', membershipNumber: 'ICATT-1234' },

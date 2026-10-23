@@ -70,6 +70,13 @@
 const crypto = require('crypto');
 const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
 const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
+const Conduct = require('./conduct-policy');   // D-E — the Professional Conduct Policy's ONE version source
+// The accountant's conduct state from their row (accountants.conduct_*), as the browser and the access gate see it.
+// The grace is measured on the DATABASE clock (now_ms from the same query as conduct_prompted_at, which NOW() wrote) —
+// one clock for both ends of the comparison.
+const _NOW_MS = `(extract(epoch from now()) * 1000)::float8 AS now_ms`;
+const _conductOf = acc => Conduct.state({ version: acc && acc.conduct_version, acceptedAt: acc && acc.conduct_accepted_at, promptedAt: acc && acc.conduct_prompted_at },
+  acc && acc.now_ms != null ? Number(acc.now_ms) : undefined);
 
 // ── REFERRAL COMMISSION — the ONE writer (N79 / N79b / N82) ─────────────────────────────────────
 // Books at most ONE referral month for a client link per calendar month, and only while the client is
@@ -444,6 +451,11 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
     if (!verification || !verification.method) {
       return res.status(400).json({ error: 'Verification method is required.' });
     }
+    // D-E: an explicit acceptance of the CURRENT Professional Conduct Policy (it used to be "by registering you agree"
+    // to a policy that did not exist).
+    if (req.body.conductAccepted !== true || String(req.body.conductVersion || '') !== Conduct.VERSION) {
+      return res.status(400).json({ error: 'Please read and accept the Professional Conduct Policy (version ' + Conduct.VERSION + ').', code: 'CONDUCT_REQUIRED', version: Conduct.VERSION, url: Conduct.URL });
+    }
 
     // LA17 (live audit 2026-10-13 follow-up): the sign-up form has always sent pricing (hourly rate, up to 4 packages,
     // a note) and this route never read it — every accountant's pricing was dropped and the marketplace could only say
@@ -501,8 +513,9 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
         INSERT INTO accountants
           (email, password_hash, first_name, last_name, firm, country, specialisation,
            bio, experience, referral_code, referred_by, status, verification_method, verification_data,
-           hourly_rate, packages, pricing_note, has_pricing, rate_currency)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13,$14,$15,$16,$17,$18)
+           hourly_rate, packages, pricing_note, has_pricing, rate_currency,
+           conduct_version, conduct_accepted_at, conduct_prompted_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13,$14,$15,$16,$17,$18,$19,NOW(),NOW())
         RETURNING id
       `, [
         email.toLowerCase(), hash,
@@ -513,9 +526,12 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
         verification.method,
         JSON.stringify(verification),
         _hourly, JSON.stringify(_packages), _pricingNote, _hasPricing, _rateCur,   // LA17 / LA15c
+        Conduct.VERSION,                                                          // D-E
       ]);
 
       const accountantId = result.rows[0].id;
+      await client.query(`INSERT INTO conduct_acceptances (accountant_id, version, ip) VALUES ($1, $2, $3) ON CONFLICT (accountant_id, version) DO NOTHING`,
+        [accountantId, Conduct.VERSION, String(req.ip || '').slice(0, 64)]);   // D-E: the acceptance history
 
       // Step F: persist the credential proof (if supplied), accountant-scoped, in the
       // same transaction so the document and the accountant row commit atomically.
@@ -736,7 +752,14 @@ If you cannot find a field, use null. Be concise.`;
     // N73: fresh session id, accountant identity ONLY (any user id held by this browser is dropped).
     await require('./session-auth').establishSession(req, { accountantId: acc.id });
     try { recordAudit(pool, { userId: null, table: 'accountants', recordId: acc.id, action: 'LOGIN', req }); } catch (_) {}   // audit accountant LOGIN (ip)
+    // D-E: the first sign-in that meets a policy version they have not accepted starts their 14-day grace.
+    if (!_conductOf(acc).accepted && !acc.conduct_prompted_at) {
+      const { rows: [_p] } = await pool.query(`UPDATE accountants SET conduct_prompted_at = NOW() WHERE id = $1 AND conduct_prompted_at IS NULL RETURNING conduct_prompted_at`, [acc.id]);
+      if (_p) acc.conduct_prompted_at = _p.conduct_prompted_at;
+    }
+    acc.now_ms = (await pool.query(`SELECT ${_NOW_MS}`)).rows[0].now_ms;
     return res.json({
+      conduct: _conductOf(acc),
       id: acc.id,
       firstName: acc.first_name,
       lastName: acc.last_name,
@@ -754,13 +777,48 @@ If you cannot find a field, use null. Be concise.`;
       `SELECT id, first_name, last_name, email, firm, country, specialisation,
               bio, experience, referral_code, status, verified_at, created_at,
               hourly_rate, packages, pricing_note, has_pricing, rate_currency, avg_rating,
-              credentials, memberships
+              credentials, memberships, conduct_version, conduct_accepted_at, conduct_prompted_at, ${_NOW_MS}
        FROM accountants WHERE id = $1`,
       [req.session.accountantId]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Not found.' });
-    return res.json(result.rows[0]);
+    const { now_ms: _nm, ...meRow } = result.rows[0];
+    return res.json(Object.assign(meRow, { conduct: _conductOf(result.rows[0]) }));
   }));
+
+  // D-E: accept the CURRENT Professional Conduct Policy (idempotent — one history row per version).
+  app.post('/api/accountants/conduct/accept', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    if (String((req.body || {}).version || '') !== Conduct.VERSION) {
+      return res.status(400).json({ error: 'That is not the current version of the policy (' + Conduct.VERSION + '). Reload and read it again.', code: 'CONDUCT_VERSION', version: Conduct.VERSION });
+    }
+    const id = req.session.accountantId;
+    await pool.query(`INSERT INTO conduct_acceptances (accountant_id, version, ip) VALUES ($1, $2, $3) ON CONFLICT (accountant_id, version) DO NOTHING`,
+      [id, Conduct.VERSION, String(req.ip || '').slice(0, 64)]);
+    const { rows: [acc] } = await pool.query(
+      `UPDATE accountants SET conduct_version = $2::varchar,
+              conduct_accepted_at = CASE WHEN conduct_version = $2::varchar AND conduct_accepted_at IS NOT NULL THEN conduct_accepted_at ELSE NOW() END
+        WHERE id = $1 RETURNING conduct_version, conduct_accepted_at, conduct_prompted_at, ${_NOW_MS}`, [id, Conduct.VERSION]);
+    await _audit(pool, { userId: null, table: 'accountants', recordId: id, action: 'CONDUCT_ACCEPT', actorType: 'accountant', newData: { version: Conduct.VERSION }, req });
+    return res.json({ ok: true, conduct: _conductOf(acc) });
+  }));
+
+  // D-E: after the 14-day grace, an accountant who has not accepted the current policy cannot open or change client
+  // books. Messages (and the read receipts / typing / live stream that carry them) keep working so they can talk to
+  // the client. One gate for every client-books route — a new route under /clients/:userId is covered by default.
+  const _CONDUCT_OPEN = /^\/(message|messages|stream|typing|unread)$/;
+  const _conductGate = (scoped) => wrap(async (req, res, next) => {
+    if (!req.session.accountantId) return next();   // requireAccountant on the route answers 401
+    if (scoped) {                                    // under /clients: only a client's own routes, "/<id>/<what>"
+      const m = /^\/\d+(\/.*)$/.exec(req.path);
+      if (!m || _CONDUCT_OPEN.test(m[1])) return next();
+    }
+    const { rows: [acc] } = await pool.query(`SELECT conduct_version, conduct_accepted_at, conduct_prompted_at, ${_NOW_MS} FROM accountants WHERE id = $1`, [req.session.accountantId]);
+    const st = _conductOf(acc);
+    if (st.paused) return res.status(403).json({ error: 'Please accept the updated Professional Conduct Policy to open client books again. Messages still work.', code: 'CONDUCT_ACCEPTANCE_REQUIRED', conduct: st });
+    next();
+  });
+  app.use('/api/accountants/clients', _conductGate(true));
+  app.use(['/api/accountants/rollup', '/api/accountants/bill-client'], _conductGate(false));
 
 
   // ── 5. GET ACCOUNTANT'S CLIENTS ───────────────────────────────────────────

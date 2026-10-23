@@ -339,6 +339,21 @@ async function initDB() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_email    ON accountants(email)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_referral ON accountants(referral_code)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_status   ON accountants(status)`);
+    // D-E (2026-10-23): the Professional Conduct Policy — the version accepted, when, and when the accountant was first
+    // asked to accept the current version (the 14-day grace runs from then). History in conduct_acceptances.
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS conduct_version VARCHAR(20)`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS conduct_accepted_at TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS conduct_prompted_at TIMESTAMPTZ`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS conduct_acceptances (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
+        version       VARCHAR(20) NOT NULL,
+        accepted_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ip            TEXT,
+        UNIQUE (accountant_id, version)
+      )
+    `);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS preferred_partner BOOLEAN DEFAULT FALSE`);
     // Step G (F28): admin-CONFIRMED credentials, written at approval from the reviewed
     // document — distinct from the self-declared `credentials`/`memberships`/`verification_data`.

@@ -776,6 +776,7 @@
 
 <!-- F17: shared tier definition (same file the backend require()s) — one source of truth -->
 <script src="/tier-config.js"></script>
+<script src="/finflow-conduct-banner.js"></script>
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let accountant = null;
@@ -862,6 +863,9 @@ async function boot() {
       return;
     }
     accountant = await res.json();
+    // D-E: ask for the current Professional Conduct Policy; on acceptance, reload what the pause had blocked.
+    window.ffConductAccepted = function () { accountant.conduct = null; loadClients(); loadRollup(); };
+    if (window.ffConductBanner) window.ffConductBanner(accountant.conduct);
     initUI();
     loadClients();
     loadEarnings();

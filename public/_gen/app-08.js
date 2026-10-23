@@ -79,19 +79,15 @@ function toggleAIPanel(){
   document.getElementById('ai-panel').classList.toggle('open');
 }
 
-let _aiQueryCount = 0;
+// One AI cap: the server's monthly limit (ai-cap.js), answered with 402 AI_CAP_REACHED. The browser kept a second,
+// in-memory one (Pro stopped after 50 questions per page load, back to 0 on reload) — removed.
 window.sendAIQuery = async function(text){
   if(!text||!text.trim())return;
   text = sanitizeForAPI(text, 2000);
-  if(currentUserPlan==='pro'&&_aiQueryCount>=50){
-    if(typeof showUpgradeModal==='function') showUpgradeModal('ai_limit');
-    return;
-  }
   if(!apiRateLimit()){
     notify('Too many AI requests — please wait a moment before trying again.',true);
     return;
   }
-  if(currentUserPlan==='pro') _aiQueryCount++;
   const input=document.getElementById('ai-input');
   input.value='';
   document.getElementById('ai-suggestions').style.display='none';
@@ -116,6 +112,16 @@ window.sendAIQuery = async function(text){
       body: JSON.stringify({message: text, history: aiHistory})
     });
     const data = await res.json();
+    if(res.status===402 && data.code==='AI_CAP_REACHED'){
+      // The monthly limit, with its numbers and the way up (it was a bare "Error: Monthly AI limit reached").
+      const _top=String(currentUserPlan||'').toLowerCase()==='scale';
+      thinkDiv.className='ai-msg ai-msg-bot';
+      thinkDiv.textContent='You have used '+Number(data.used||0).toLocaleString('en-US')+' of '+Number(data.cap||0).toLocaleString('en-US')+' AI questions this month. '
+        +(_top?'They start again on the 1st.':'Upgrade for more, or they start again on the 1st.');
+      if(!_top && typeof showUpgradeModal==='function') showUpgradeModal('ai_limit');
+      msgs.scrollTop=msgs.scrollHeight;
+      return;
+    }
     if(!res.ok) throw new Error(data.error || 'Server error');
     const reply = data.reply || 'No response received.';
     aiHistory.push({role:'user',content:text},{role:'assistant',content:reply});

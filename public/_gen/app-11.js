@@ -5,7 +5,8 @@ const FEATURE_INFO = {
   mrr:           { title: 'MRR / SaaS Dashboard',    perks: ['MRR, churn & expansion tracking','Revenue cohort analysis','SaaS growth metrics'] },
   banking:       { title: 'Live Bank Sync',           perks: ['Connect any bank via Plaid','Automatic transaction import','Real-time balance sync'] },
   scanner:       { title: 'AI Receipt Scanner',       perks: ['Claude Vision extracts vendor, amount & date','Supports photos and PDFs','Auto-categorise in one tap'] },
-  ai_limit:      { title: 'Unlimited AI Queries',     perks: ['No monthly cap — ask anything','Full financial analysis access','Priority AI processing'] },
+  // Owner ruling 2026-10-23: the numbers the server enforces (ai-cap.js) — never "unlimited".
+  ai_limit:      { title: 'More AI questions',        perks: ['Business: 2,000 AI questions + 50 receipt scans a month','Scale: 5,000 AI questions + 100 receipt scans a month','Monthly limits start again on the 1st'] },
   invoice_limit: { title: 'Uncapped Invoicing',       perks: ['Beyond Pro\'s 500/mo fair-use ceiling','Unlimited recurring profiles','Priority invoice delivery'] },
   entity:        { title: 'Multiple Entities',        perks: ['Up to 5 separate ledgers','Consolidated multi-entity P&L','Independent chart of accounts per entity'] },
 };

@@ -912,14 +912,13 @@ const PRO_FEATURES=[
   {text:'Expense tracking',ok:true},
   {text:'Stripe live feed',ok:true},
   {text:'Budget vs actuals',ok:true},
-  {text:'50 AI queries / month',ok:true},
+  {text:'500 AI questions a month',ok:true},
   {text:'Multi-currency',ok:true},
   {text:'Bank sync via Plaid',ok:false},
   {text:'AI receipt & invoice scanner',ok:false},
   {text:'MRR / SaaS dashboard',ok:false},
   {text:'Multi-entity accounting',ok:false},
   {text:'Full RBAC — 4 role tiers',ok:false},
-  {text:'Unlimited AI queries',ok:false},
 ];
 
 const BIZ_FEATURES=[
@@ -929,7 +928,7 @@ const BIZ_FEATURES=[
   {text:'MRR / SaaS dashboard',ok:true},
   {text:'Bank sync via Plaid',ok:true},
   {text:'AI receipt & invoice scanner',ok:true},
-  {text:'Unlimited AI queries',ok:true},
+  {text:'2,000 AI questions + 50 receipt scans a month',ok:true},
   {text:'Full RBAC — 4 role tiers',ok:true},
   {text:'7-year audit trail',ok:true},
   {text:'Consolidated multi-entity P&L',ok:true},
@@ -941,7 +940,7 @@ const SCALE_FEATURES=[
   {text:'Up to 10 entities (separate ledgers)',ok:true},
   {text:'Everything in Business',ok:true},
   {text:'Consolidated group reporting',ok:true},
-  {text:'5,000 AI queries / month',ok:true},
+  {text:'5,000 AI questions + 100 receipt scans a month',ok:true},
   {text:'Priority support',ok:true},
   {text:'Onboarding assistance',ok:true},
 ];

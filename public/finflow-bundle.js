@@ -5310,9 +5310,18 @@ function clearAIChat(){
         // every category listed. It used to fold every non-direct leg into one "Bills & other" remainder, so
         // the statement's lines disagreed with the dashboard / Expenses page. If the client decomposition and
         // the server total ever differ, the gap stays VISIBLE as "Unreconciled difference" (never hidden).
-        const bd = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown(period) : null;
-        const catList = (bd && typeof window._expenseCategoryRows === 'function') ? window._expenseCategoryRows(bd, { all: true }).map(([c, a]) => [c, a]) : [['Payroll', pay]];
-        const _gap = Math.round((exp - catList.reduce((s, kv) => s + kv[1], 0)) * 100) / 100;
+        const _cats = () => { const b = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown(period) : null;
+          return (b && typeof window._expenseCategoryRows === 'function') ? window._expenseCategoryRows(b, { all: true }).map(([c, a]) => [c, a]) : [['Payroll', pay]]; };
+        let catList = _cats();
+        let _gap = Math.round((exp - catList.reduce((s, kv) => s + kv[1], 0)) * 100) / 100;
+        // Batch 9: a statement opened while the page is still LOADING its data (just after sign-in) showed a false
+        // "Unreconciled difference" — the server total was in, the page's own lists were not yet. Give the loaders up to
+        // 3 s to land, recomputing; a gap that remains after that is real and is shown, never hidden.
+        for (let _t = 0; Math.abs(_gap) >= 0.01 && _t < 12; _t++) {
+          await new Promise(r => setTimeout(r, 250));
+          catList = _cats();
+          _gap = Math.round((exp - catList.reduce((s, kv) => s + kv[1], 0)) * 100) / 100;
+        }
         if (Math.abs(_gap) >= 0.01) catList.push(['Unreconciled difference', _gap]);
         catList.sort((a, b) => b[1] - a[1]);
         const catBar = ([label, amt]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:var(--red)">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${gold};opacity:.75;width:${exp > 0 ? Math.max(2, Math.round((amt / exp) * 100)) : 0}%"></i></div></div>`;

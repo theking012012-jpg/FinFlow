@@ -12706,6 +12706,80 @@ async function canonicalAP(userId, entityId, { net = false } = {}) {
   const b = await computeBooks(userId, entityId, 'year');
   return net ? b.accountsPayableNet : b.accountsPayable;
 }
+// G9 (V1 class, Rule 6): the balance-sheet gate compared the trial balance, P&L, AR and AP — not cash and not payroll
+// liabilities — so a ledger carrying a balanced entry that no source document backs (or missing a payroll cash leg) was
+// served as the books. Two checks close it, each against the SOURCE DOCUMENTS, never the ledger itself:
+//  - Payroll Liabilities (2200), per business = Σ over its approved / paid runs (their LINES, basis C) of: gross once the
+//    period starts − wages paid − withholdings remitted, each once its cash reaches 2200 (cash paid before the period sits
+//    in prepaid 1250 until the period's first day — payrollCashEntries). Native currency on both sides.
+//  - every posted entry traces to a live source document of a type the app posts; an entry whose document is gone must be
+//    netted to zero by its reversal. Cash moves only through entries, so a cash leg nothing backs fails here.
+const GL_SOURCE_TABLES = Object.assign({
+  invoice: 'invoices', invoice_paidgap: 'invoices', invoice_payment: 'invoice_payments', expense: 'expenses',
+  bill: 'bills', bill_paidgap: 'bills', bill_payment: 'payments_made', credit_note: 'credit_notes', vendor_credit: 'vendor_credits',
+  sales_receipt: 'sales_receipts', journal: 'journals', payroll_run: 'payroll_runs', inventory_movement: 'inventory_movements',
+  fx_settle: 'fx_transactions',
+}, Object.fromEntries(PAYROLL_CASH_SOURCE_TYPES.map(t => [t, 'payroll_runs'])));
+async function glSourceGateChecks(userId, entityIds) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const ids = entityIds.filter(e => e != null).map(Number), withNull = entityIds.some(e => e == null);
+  const scope = (col, p) => '(' + col + ' = ANY($' + p + '::int[])' + (withNull ? ' OR ' + col + ' IS NULL' : '') + ')';
+  const flags = [], legs = [];
+  // payroll liabilities: the runs' own figure vs the ledger's 2200, per business, as of that business's today
+  const { rows: runs } = await pool.query(
+    `SELECT pr.id, pr.entity_id, pr.period, pr.run_date::text AS run_date, pr.paid_date::text AS paid_date, pr.paid_basis,
+            pr.withholdings_remitted_date::text AS remitted_date, lower(pr.status) AS status,
+            COALESCE(SUM(COALESCE(prl.gross,0)+COALESCE(prl.bonus,0)+COALESCE(prl.overtime,0)),0)::float AS gross,
+            COALESCE(SUM(COALESCE(prl.net_pay, COALESCE(prl.gross,0)+COALESCE(prl.bonus,0)+COALESCE(prl.overtime,0))),0)::float AS net
+       FROM payroll_runs pr LEFT JOIN payroll_run_lines prl ON prl.run_id = pr.id
+      WHERE pr.user_id = $1 AND lower(pr.status) IN ('approved','paid') AND ${scope('pr.entity_id', 2)}
+      GROUP BY pr.id`, [userId, ids]);
+  for (const eid of entityIds) {
+    const today = await entityTodayYmd(eid);
+    let owed = 0;
+    for (const r of runs) {
+      if ((r.entity_id == null ? null : Number(r.entity_id)) !== (eid == null ? null : Number(eid))) continue;
+      const gross = r2(r.gross), net = r2(r.net);
+      if (!(gross > 0)) continue;
+      const start = FinFlowDates.payrollPeriodYmd(r.period, r.run_date);
+      const reaches = cash => (start && cash < start) ? start : cash;   // prepaid cash settles 2200 on the period's first day
+      if (start && start <= today) owed += gross;
+      if (r.status !== 'paid') continue;
+      const paidAmt = r.paid_basis === 'net' ? net : gross;
+      const paidOn = FinFlowDates._toYmd(r.paid_date) || FinFlowDates._toYmd(r.run_date) || start;
+      if (paidAmt > 0 && paidOn && reaches(paidOn) <= today) owed -= paidAmt;
+      const wh = Math.max(0, r2(gross - net)), remOn = FinFlowDates._toYmd(r.remitted_date);
+      if (r.paid_basis === 'net' && remOn && wh > 0 && reaches(remOn) <= today) owed -= wh;
+    }
+    const { rows: [g] } = await pool.query(
+      `SELECT COALESCE(SUM(ll.credit - ll.debit),0)::float AS bal
+         FROM ledger_lines ll JOIN ledger_entries le ON le.id = ll.entry_id AND le.status = 'posted'
+         JOIN ledger_accounts la ON la.id = ll.account_id AND la.code = '2200'
+        WHERE le.user_id = $1 AND le.entity_id IS NOT DISTINCT FROM $2::int AND le.entry_date <= $3::date`, [userId, eid, today]);
+    legs.push(['payrollLiabilities' + (entityIds.length > 1 ? '[e' + eid + ']' : ''), r2(g.bal), r2(owed)]);
+  }
+  // every entry traces to its source document (or is netted out by its reversal)
+  const { rows: open } = await pool.query(
+    `SELECT DISTINCT source_type, source_id FROM (
+       SELECT le.source_type, le.source_id FROM ledger_entries le JOIN ledger_lines ll ON ll.entry_id = le.id
+        WHERE le.user_id = $1 AND le.status = 'posted' AND ${scope('le.entity_id', 2)}
+        GROUP BY le.source_type, le.source_id, ll.account_id
+       HAVING ABS(SUM(ll.debit) - SUM(ll.credit)) >= 0.005) t`, [userId, ids]);
+  const untraced = [], byTable = {};
+  for (const o of open) {
+    const table = GL_SOURCE_TABLES[o.source_type];
+    if (!table || o.source_id == null) { untraced.push(o.source_type + ':' + o.source_id); continue; }
+    (byTable[table] = byTable[table] || []).push(o);
+  }
+  for (const [table, list] of Object.entries(byTable)) {
+    const { rows } = await pool.query(`SELECT id FROM ${table} WHERE user_id = $1 AND id = ANY($2::int[])`, [userId, list.map(o => Number(o.source_id))]);
+    const live = new Set(rows.map(x => Number(x.id)));
+    for (const o of list) if (!live.has(Number(o.source_id))) untraced.push(o.source_type + ':' + o.source_id + ' (document gone)');
+  }
+  flags.push(['untraced', untraced.length === 0, untraced.length + ' entr' + (untraced.length === 1 ? 'y' : 'ies') + ' with no source document (cash or another balance moved by nothing): ' + untraced.slice(0, 3).join(', ')]);
+  return { flags, legs };
+}
+
 async function glBalanceSheet(userId, entityId, opts = {}) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   // L38: an accountant's fine-grained grant consolidates ONLY its permitted entities (plus unassigned rows) — both
@@ -12748,17 +12822,25 @@ async function glBalanceSheet(userId, entityId, opts = {}) {
   // N96: compare the ledger's AP with the SIGNED canonical position. With vendor credits above open
   // bills the ledger's AP is negative while the displayed AP floors at 0, so the old comparison
   // always failed and the balance sheet fell back to "cash not tracked".
+  // G9: cash and payroll liabilities against the source documents (per business, native currency).
+  let src;
+  try {
+    const scopeIds = !consolidated ? [entityId]
+      : permitted ? permitted.concat([null])
+      : (await pool.query(`SELECT id FROM entities WHERE user_id = $1 ORDER BY id`, [userId])).rows.map(x => x.id).concat([null]);
+    src = await glSourceGateChecks(userId, scopeIds);
+  } catch (e) { src = { flags: [['sourceChecks', false, 'could not run: ' + (e && e.message)]], legs: [] }; }
   const failed = glGateFailures([
     ['tb', f.trialBalance.balanced, glTbDetail(f.trialBalance)],
     ['fxCoverage', coverageOk, glCoverageDetail(f.fxCoverage)],
-  ], [
+  ].concat(src.flags), [
     ['income', f.incomeStatement.income, books.revenue], ['expenses', glExpNonFx, books.cogs + books.opex],
     ['ar', glAR, ar],
-  ].concat(consolidated ? [] : [['ap', glAP, apNet]]));
+  ].concat(consolidated ? [] : [['ap', glAP, apNet]], src.legs));
   const reconciled = failed.length === 0;
   if (!reconciled) {
     console.warn('[GL 5b] balance-sheet not reconciled (serving oracle) uid=' + userId + ' eid=' + entityId + ' failed: ' + failed.join('; '));
-    return oracle();
+    return Object.assign(oracle(), { gateFailed: failed });
   }
   // L6c: the statement's LINES are a partition of the SAME accounts the totals are summed from, so Σ lines = totals
   // by construction — no account can sit inside a total with no line (J1500 Equipment, J2100 Credit Card, J2200 Tax

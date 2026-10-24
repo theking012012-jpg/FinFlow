@@ -5875,6 +5875,83 @@ function clearAIChat(){
     try { await api('POST', '/api/billing/resume', {}); tip('Your plan will continue.'); await window.ffRenderBilling(); }
     catch (err) { tip('Could not keep the plan — ' + err.message, true); }
   };
+  // ══════════════════════════════════════════════════════
+  // 11c. SAAS METRICS (D-D) — MRR page → Growth & retention, from GET /api/saas-metrics (a COMPLETED month)
+  // ══════════════════════════════════════════════════════
+  const _ymLabel = m => { try { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }); } catch (_) { return m; } };
+  const _ymPrev = (m, k) => { const [y, mo] = m.split('-').map(Number); const t = y * 12 + (mo - 1) - k; return Math.floor(t / 12) + '-' + String(t % 12 + 1).padStart(2, '0'); };
+  window.ffRenderSaas = async function (month) {
+    const body = document.getElementById('saas-body'), sel = document.getElementById('saas-month'), title = document.getElementById('saas-title');
+    if (!body) return;
+    const today = (window._entityToday ? window._entityToday() : new Date().toISOString().slice(0, 10)).slice(0, 7);
+    const m = month || _ymPrev(today, 1);   // the last COMPLETED month
+    if (sel && !sel.options.length) for (let i = 1; i <= 12; i++) { const v = _ymPrev(today, i); const o = document.createElement('option'); o.value = v; o.textContent = _ymLabel(v); sel.appendChild(o); }
+    if (sel) sel.value = m;
+    let d;
+    try { d = await api('GET', '/api/saas-metrics?month=' + encodeURIComponent(m)); }
+    catch (err) { body.innerHTML = `<div style="color:var(--t3)">${e(err.message)}</div>`; return; }
+    window._saas = d;
+    const x = d.metrics || {}, cur = d.currency || 'USD';
+    const sym = (window.CURRENCIES && window.CURRENCIES[cur] && window.CURRENCIES[cur].symbol) || (cur === 'USD' ? '$' : cur + ' ');
+    const money = v => sym + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const whole = v => sym + Math.round(Number(v || 0)).toLocaleString('en-US');
+    const pc = v => (v == null ? '—' : Number(v).toFixed(2) + '%');
+    const nm = k => (d.names && d.names[k]) || String(k).replace(/^(ff|stripe):/, '');
+    if (title) title.textContent = 'Growth & retention — ' + _ymLabel(m);
+    const flagFor = re => (x.flags || []).find(f => re.test(f));
+    const tile = (id, label, val, key, hint) => `<button type="button" class="mrr-metric" id="${id}" data-working="${key || ''}" style="text-align:left;cursor:${key ? 'pointer' : 'default'};border:1px solid var(--bd);background:none;border-radius:var(--radius);padding:10px" title="${e(hint || 'Show how this is worked out')}">
+        <div class="mrr-val" style="font-size:18px">${val}</div><div class="mrr-label">${e(label)}</div></button>`;
+    const ltvTxt = x.ltv != null ? money(x.ltv) : `<span style="font-size:12px;color:var(--t3)">${e(flagFor(/Lifetime value/) || 'Not available')}</span>`;
+    const cacTxt = x.cac != null ? money(x.cac) : `<span style="font-size:12px;color:var(--t3)">${e(flagFor(/new customers/) || 'Not available')}</span>`;
+    const mvRow = (label, amt, keys, color) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)"><span><span style="color:var(--t1)">${e(label)}</span> <span style="color:var(--t3)">${(keys || []).map(k => e(nm(k))).join(', ') || '—'}</span></span><span style="font-family:var(--font-mono);color:${color}">${money(amt)}</span></div>`;
+    const cohorts = (d.cohorts || []).slice(-12);
+    const maxOff = cohorts.reduce((mx, g) => Math.max(mx, g.months.length), 0);
+    const cohortHtml = cohorts.length ? `<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11.5px;min-width:420px"><thead><tr><th style="text-align:left;padding:4px 6px;color:var(--t3)">Started</th><th style="padding:4px 6px;color:var(--t3)">Customers</th>${Array.from({ length: maxOff }, (_, i) => `<th style="padding:4px 6px;color:var(--t3)">M${i}</th>`).join('')}</tr></thead><tbody>`
+      + cohorts.map(g => `<tr><td style="padding:4px 6px;color:var(--t1)">${e(_ymLabel(g.start).replace(/ (\d{4})$/, ' $1'))}</td><td style="padding:4px 6px;text-align:center">${g.size}</td>${g.months.map(r => `<td style="padding:4px 6px;text-align:center;background:rgba(201,168,76,${(r.customerPct || 0) / 400})" title="Revenue retained: ${r.mrrPct == null ? '—' : r.mrrPct + '%'}">${r.customerPct}%</td>`).join('')}</tr>`).join('')
+      + `</tbody></table><div style="font-size:11px;color:var(--t3);margin-top:4px">Share of each starting group of customers still paying; hover a cell for the share of their revenue kept.</div></div>` : '<div style="color:var(--t3)">No subscription history yet.</div>';
+    const st = d.settings || {};
+    body.innerHTML =
+      `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">`
+      + tile('saas-nrr', 'Net revenue retention', pc(x.nrr), 'nrr') + tile('saas-grr', 'Gross revenue retention', pc(x.grr), 'grr')
+      + tile('saas-customer-churn', 'Customer churn', pc(x.customerChurnRate), 'customerChurnRate') + tile('saas-revenue-churn', 'Revenue churn', pc(x.revenueChurnRate), 'revenueChurnRate')
+      + tile('saas-arpa', 'Revenue per customer (ARPA)', x.arpa != null ? money(x.arpa) : '—', 'arpa') + tile('saas-cac', 'Cost to win a customer (CAC)', cacTxt, x.cac != null ? 'cac' : '')
+      + tile('saas-payback', 'Months to earn back CAC', x.paybackMonths != null ? Number(x.paybackMonths).toFixed(1) + ' months' : '—', x.paybackMonths != null ? 'paybackMonths' : '')
+      + tile('saas-ltv', 'Lifetime value (LTV)', ltvTxt, x.ltv != null ? 'ltv' : '')
+      + `</div><div id="saas-working" style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid var(--acc);border-radius:var(--radius);font-size:12px"></div>`
+      + `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">`
+      +   `<div id="saas-movement"><div style="font-weight:600;color:var(--t1);margin-bottom:4px">What changed in ${e(_ymLabel(m))}</div>`
+      +     mvRow('New', x.newMrr, x.newCustomers, 'var(--green)') + mvRow('Came back', x.reactivation, [], 'var(--green)') + mvRow('Expanded', x.expansion, x.expandedCustomers, 'var(--acc)')
+      +     mvRow('Reduced', -(x.contraction || 0), x.contractedCustomers, 'var(--amber)') + mvRow('Left', -(x.churnedMrr || 0), x.churnedCustomers, 'var(--red)') + `</div>`
+      +   `<div id="saas-cohorts"><div style="font-weight:600;color:var(--t1);margin-bottom:4px">Retention by starting month</div>${cohortHtml}</div>`
+      + `</div>`
+      + `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">`
+      +   `<div style="flex:1 1 260px"><label class="flabel" for="saas-cats">Expense categories that count as winning customers</label><input class="finput" id="saas-cats" value="${e((st.acquisitionCategories || []).join(', '))}"></div>`
+      +   `<div style="width:150px"><label class="flabel" for="saas-payroll-pct">Share of payroll (%)</label><input class="finput" id="saas-payroll-pct" type="number" min="0" max="100" value="${Number(st.salesPayrollPct || 0)}"></div>`
+      +   `<button class="btn btn-ghost btn-sm" onclick="ffSaveSaasSettings()">Save</button></div>`
+      + `<div style="font-size:11px;color:var(--t3);margin-top:6px">Sources: ${d.sources && d.sources.finflowLines || 0} recurring invoices in FinFlow${d.sources && d.sources.stripeConnected ? ', ' + (d.sources.stripeLines || 0) + ' Stripe subscription invoices' : ''}${d.sources && d.sources.otherCurrencySkipped ? ' · ' + d.sources.otherCurrencySkipped + ' Stripe invoices in another currency not included' : ''}${d.sources && d.sources.stripeError ? ' · Stripe could not be read: ' + e(d.sources.stripeError) : ''}. Gross margin from your books: ${d.grossMargin == null ? '—' : (d.grossMargin * 100).toFixed(1) + '%'}.</div>`;
+    body.querySelectorAll('[data-working]').forEach(b => { const k = b.getAttribute('data-working'); if (!k) return; b.onclick = () => {
+      const wv = (x.working || {})[k], box = document.getElementById('saas-working');
+      if (!wv || !box) return;
+      const inp = Object.entries(wv.inputs || {}).filter(([kk, v]) => typeof v !== 'object' || Array.isArray(v)).map(([kk, v]) => `<div><span style="color:var(--t3)">${e(kk)}</span>: ${e(Array.isArray(v) ? v.join(', ') : v)}</div>`).join('');
+      box.innerHTML = `<div style="color:var(--t1);font-weight:600;margin-bottom:4px">${e(b.querySelector('.mrr-label').textContent)}</div><div style="margin-bottom:6px">${e(wv.formula)}</div>${inp}`;
+      box.style.display = 'block'; }; });
+    // the breakdown tiles + the churn card, for the same completed month (ONE writer — the engine)
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('mrr-new', whole((x.newMrr || 0) + (x.reactivation || 0)));
+    set('mrr-churned', whole(x.churnedMrr || 0));
+    set('mrr-expansion', whole(x.expansion || 0));
+    set('mrr-net', whole((x.newMrr || 0) + (x.reactivation || 0) + (x.expansion || 0) - (x.contraction || 0) - (x.churnedMrr || 0)));
+    set('mrr-churn', pc(x.customerChurnRate));
+    set('mrr-churn-note', 'Customers lost in ' + _ymLabel(m));
+  };
+  window.ffSaveSaasSettings = async function () {
+    const cats = String((document.getElementById('saas-cats') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean);
+    const pctP = Number((document.getElementById('saas-payroll-pct') || {}).value || 0);
+    try { await api('PUT', '/api/saas-metrics/settings', { acquisitionCategories: cats, salesPayrollPct: pctP }); tip('Saved'); await window.ffRenderSaas((document.getElementById('saas-month') || {}).value); }
+    catch (err) { tip('Could not save — ' + err.message, true); }
+  };
+  { const _spSaas = window.showPage;
+    if (typeof _spSaas === 'function') window.showPage = function (id) { const r = _spSaas.apply(this, arguments); if (id === 'mrr') window.ffRenderSaas(); return r; }; }
   { const _spBilling = window.showPage;
     if (typeof _spBilling === 'function') window.showPage = function (id) { const r = _spBilling.apply(this, arguments); if (id === 'settings') window.ffRenderBilling(); return r; }; }
 

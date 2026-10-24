@@ -16,7 +16,9 @@ const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), '
 const fn = (html.match(/async function loadMRRData\(\)\{[\s\S]*?\n\}/) || [''])[0];
 A('[STRUCTURAL] loadMRRData populates #mrr-by-customer', /getElementById\('mrr-by-customer'\)/.test(fn) && /_byCust/.test(fn));
 A('[STRUCTURAL] loadMRRData sets active-customers count (#mrr-customers)', /getElementById\('mrr-customers'\)/.test(fn));
-A('[STRUCTURAL] loadMRRData sets Net MRR (#mrr-net)', /getElementById\('mrr-net'\)/.test(fn));
+// D-D (2026-10-23): Net MRR is now net new MRR for a completed month, written ONLY by the SaaS engine (ffRenderSaas —
+// executed in verify-dd3-saas-ui). loadMRRData used to put today's run-rate there, the same figure as the MRR card.
+A('[STRUCTURAL] loadMRRData no longer writes Net MRR (#mrr-net) — one writer, the SaaS engine', !/getElementById\('mrr-net'\)/.test(fn));
 A('[STRUCTURAL] does not fabricate churn/new/expansion (left honest)', !/mrr-churned'\)[^;]*=[^;]*monthlyTotal|mrr-new'\)[^;]*=[^;]*monthlyTotal/.test(fn));
 
 // LOGIC replication of the grouping.

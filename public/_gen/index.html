@@ -1560,6 +1560,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="card-header"><h2 class="card-title">MRR trend (12 months)</h2></div>
           <div class="canvas-wrap"><canvas id="mrrChart" role="img" aria-label="Line chart showing monthly recurring revenue trend">MRR trend chart</canvas></div>
         </div>
+        
+        <div class="card" id="saas-section">
+          <div class="card-header"><h2 class="card-title" id="saas-title">Growth &amp; retention</h2>
+            <select class="finput" id="saas-month" style="max-width:180px" onchange="ffRenderSaas(this.value)"></select></div>
+          <div id="saas-body" style="font-size:12.5px;color:var(--t2)">Loading…</div>
+        </div>
       </template>
 
       <!-- MULTI-ENTITY PAGE -->

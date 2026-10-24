@@ -466,8 +466,8 @@ async function loadMRRData(){
     // New/Churned/Expansion require period-over-period cohort history that is NOT retained server-side
     // (see the F127 note above) — left as "—" rather than fabricated.
     const _mc = document.getElementById('mrr-customers'); if(_mc) _mc.textContent = Object.keys(_byCust).length;
-    const _netEl = document.getElementById('mrr-net');
-    if(_netEl) _netEl.textContent = (_dispCcy && !_fxOk) ? '—' : (_sym+Math.round(monthlyTotal).toLocaleString());
+    // D-D: Net MRR (net new MRR for a completed month), New / Churned / Expansion and the churn card are written by the SaaS
+    // engine (ffRenderSaas) — ONE writer. This used to put today's run-rate here, the same figure as the MRR card.
   } catch(e){
     // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch:
     // a dropped connection must not read as "no subscriptions" ($0).

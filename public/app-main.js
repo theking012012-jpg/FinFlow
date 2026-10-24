@@ -4863,7 +4863,10 @@ function updateAI(d=getPeriodData()){
   const margin = _rev > 0 ? Math.round(_profit/_rev*100) : 0;
   const insights=currentPeriod==='year'?[
     (()=>{ const _gr=_fyGrowth(); return _gr!==null?`Year-to-date revenue: ${S(_rev)} — ${_gr.pct>=0?"+":""}${_gr.pct}% growth, ${MONTH_FULL[_gr.to]} vs ${MONTH_FULL[_gr.from]}.`:`Year-to-date revenue: ${S(_rev)} — not enough complete months yet to measure growth.`; })(),
-    (()=>{ let _mi=0,_xi=0; for(let i=0;i<12;i++){ if(REV[i]>REV[_xi])_xi=i; if(REV[i]<REV[_mi])_mi=i; } return REV.some(v=>v>0)?`Best month: ${MONTH_FULL[_xi]} at ${S(REV[_xi])}. Weakest: ${MONTH_FULL[_mi]} at ${S(REV[_mi])}.`:`Add paid invoices to see your best and weakest months.`; })(),
+    // FA-M12a: it ranks REVENUE, so it says revenue; and only months that have happened — the highest over the fiscal
+    // months so far (this month included), the lowest over COMPLETED months (a month in progress or a future month at $0
+    // is not "the lowest"). It used to scan all 12 slots: a future month at $0 came out "weakest".
+    (()=>{ const _fc=_fyContext(); const _n=Math.max(1,Math.min(12,(_fc&&_fc.monthsInFY)||12)); const _done=Math.max(0,_n-1); let _xi=0; for(let i=0;i<_n;i++){ if(REV[i]>REV[_xi])_xi=i; } let _mi=-1; for(let i=0;i<_done;i++){ if(_mi<0||REV[i]<REV[_mi])_mi=i; } if(!REV.slice(0,_n).some(v=>v>0)) return `Add invoices to see your highest and lowest revenue months.`; return `Highest revenue month: ${MONTH_FULL[_xi]} at ${S(REV[_xi])}.`+(_mi>=0?` Lowest revenue month: ${MONTH_FULL[_mi]} at ${S(REV[_mi])}.`:''); })(),
     `Net profit margin: ${margin}%. Annual profit: ${S(_profit)}. Business is ${_profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
     _rev > 0 ? `Payroll-to-revenue: ${Math.round(((_bd&&_bd.payroll)||0)/_rev*100)}%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
     (()=>{ const _low=(inventory||[]).filter(i=>i.low); return _low.length?`${_low.length} item${_low.length>1?'s':''} low on stock: ${_low.slice(0,3).map(i=>i.name).join(', ')}${_low.length>3?'…':''}.`:`No low-stock items.`; })(),

@@ -9253,16 +9253,16 @@ window.updateScenario = function(){
   set('sc-runway', runway===-1 ? 'N/A' : runway===99?'∞ mo':runway+' mo');
   { const _rc=document.getElementById('sc-runway-chg'); if(_rc) _rc.textContent = runway===-1 ? 'Cash not tracked' : 'At current burn'; }
   set('sc-rev-chg', (revGrowth>=0?'+':'')+Math.round(revGrowth*100)+'% growth');
-  set('sc-profit-chg', Math.round(projProfit/projRev*100)+'% margin');
+  set('sc-profit-chg', projRev > 0 ? Math.round(projProfit/projRev*100)+'% margin' : 'No revenue to measure a margin');   // FA-M12b: never NaN%
 
   set('sc-r-rev', S(projRev));
   set('sc-r-profit', S(projProfit));
-  set('sc-r-runway', runway===99?'∞':runway+' mo');
+  set('sc-r-runway', runway===-1 ? 'N/A' : runway===99?'∞':runway+' mo');   // FA-M12b: the same answer as the top card
   document.getElementById('sc-r-rev-d').innerHTML = delta(projRev, BASE.rev);
   document.getElementById('sc-r-profit-d').innerHTML = delta(projProfit, BASE.rev-BASE.exp);
   // Baseline runway = current cash ÷ current monthly burn (no hardcoded 14)
   const baseRunway = BASE.burn > 0 ? Math.round(BASE.cash / BASE.burn) : 0;
-  const _runDelta = runway === 99 ? '<span style="color:var(--green)">∞</span>' : (runway - baseRunway >= 0 ? '<span style="color:var(--green)">▲ ' : '<span style="color:var(--red)">▼ ') + Math.abs(runway - baseRunway) + ' mo</span>';
+  const _runDelta = runway === -1 ? '<span style="color:var(--t3)">Cash not tracked</span>' : runway === 99 ? '<span style="color:var(--green)">∞</span>' : (runway - baseRunway >= 0 ? '<span style="color:var(--green)">▲ ' : '<span style="color:var(--red)">▼ ') + Math.abs(runway - baseRunway) + ' mo</span>';
   document.getElementById('sc-r-runway-d').innerHTML = _runDelta;
 
   renderScenarioChart(projRev, projExp);

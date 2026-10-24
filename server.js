@@ -6203,7 +6203,26 @@ async function runBillingJob(nowMs) {
     await recordAudit(pool, { userId: u.id, table: 'billing', recordId: u.id, action: 'RENEWAL_NOTICE', newData: { renewsOn: b.period_end, amount } });
     reminded++;
   }
-  return { landed: rows.length, warned, erased, reminded };
+  // D-D part 4: freeze each business's last CLOSED month (its own calendar) once — only when every source was read.
+  let frozen = 0;
+  const { rows: ents } = await pool.query(`SELECT e.id AS eid, e.user_id AS uid, e.data AS d, u.data->>'plan' AS plan FROM entities e JOIN users u ON u.id = e.user_id WHERE e.user_id IS NOT NULL`);
+  for (const en of ents) {
+    if (!Plans.has(en.plan, 'saasMetrics')) continue;
+    let todayE; try { todayE = await entityTodayYmd(en.eid); } catch (_) { continue; }
+    const closed = SaaS.ymAdd(todayE.slice(0, 7), -1);
+    const { rows: [have] } = await pool.query(`SELECT 1 FROM saas_snapshots WHERE user_id = $1 AND entity_id = $2 AND month = $3`, [en.uid, en.eid, closed]);
+    if (have) continue;
+    try {
+      const { lines, sources: src } = await _saasLines(en.uid, en.eid, en.d || {}, todayE);
+      if (src.stripeError) { console.warn('[billing] SaaS snapshot for business ' + en.eid + ' held — Stripe could not be read: ' + src.stripeError); continue; }
+      if (!lines.length) continue;
+      const ser = SaaS.mrrSeries(lines, closed, closed)[closed] || {};
+      const names = {}; for (const l of lines) if (ser[l.customer] != null) names[l.customer] = l.name;
+      await pool.query(`INSERT INTO saas_snapshots (user_id, entity_id, month, data) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, entity_id, month) DO NOTHING`, [en.uid, en.eid, closed, JSON.stringify({ mrr: ser, names })]);
+      frozen++;
+    } catch (e) { console.error('[billing] SaaS snapshot for business ' + en.eid + ' failed:', e.message); }
+  }
+  return { landed: rows.length, warned, erased, reminded, frozen };
 }
 app.get('/api/team/seats', requireAuth, wrap(async (req, res) => {
   const s = await seatState(scopeId(req), req.userPlan, null);
@@ -7572,6 +7591,10 @@ app.get('/api/saas-metrics', requireAuth, wrap(async (req, res) => {
   const first = lines.reduce((m, l) => (!m || l.start < m ? l.start : m), null);
   const from = first ? (SaaS.ymDiff(first.slice(0, 7), SaaS.ymAdd(month, -35)) > 0 ? SaaS.ymAdd(month, -35) : first.slice(0, 7)) : month;
   const series = SaaS.mrrSeries(lines, from, month);
+  // D-D part 4: a CLOSED month that has been frozen is read from its snapshot — later edits to its sources never rewrite it.
+  const { rows: _snaps } = await pool.query(`SELECT month, data FROM saas_snapshots WHERE user_id = $1 AND entity_id = $2 AND month >= $3 AND month <= $4 ORDER BY month`, [uid, eid, from, month]);
+  sources.frozenMonths = [];
+  for (const sn of _snaps) { series[sn.month] = Object.assign({}, sn.data.mrr || {}); sources.frozenMonths.push(sn.month); for (const [k, v] of Object.entries(sn.data.names || {})) if (!lines.some(l => l.customer === k)) lines.push({ customer: k, name: v, amount: 0, start: sn.month + '-01', end: null }); }
   const books = await computeBooks(uid, eid, 'year');
   const rev = Number(books.revenue) || 0, cogs = Number(books.cogs) || 0;
   const grossMargin = rev > 0 ? Math.round(((rev - cogs) / rev) * 10000) / 10000 : null;

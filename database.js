@@ -341,6 +341,18 @@ async function initDB() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_status   ON accountants(status)`);
     // D-E (2026-10-23): the Professional Conduct Policy — the version accepted, when, and when the accountant was first
     // asked to accept the current version (the 14-day grace runs from then). History in conduct_acceptances.
+    // D-D (2026-10-23): a closed month's SaaS figures, frozen per business — { mrr: {customer: amount}, names: {...} }.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS saas_snapshots (
+        id         SERIAL PRIMARY KEY,
+        user_id    INTEGER NOT NULL,
+        entity_id  INTEGER NOT NULL,
+        month      VARCHAR(7) NOT NULL,
+        data       JSONB NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (user_id, entity_id, month)
+      )
+    `);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS conduct_version VARCHAR(20)`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS conduct_accepted_at TIMESTAMPTZ`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS conduct_prompted_at TIMESTAMPTZ`);

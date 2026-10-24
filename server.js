@@ -6163,7 +6163,7 @@ async function runBillingJob(nowMs) {
           html: String(emailHtml`<p>Hi ${u.data.name || 'there'},</p>
 <p>Your FinFlow plan ended, so your books have been read-only. They will be <strong>deleted on ${_long(deleteOn)}</strong>.</p>
 <p><strong>To keep them:</strong> choose a plan before then — everything is still there: <a href="${appUrl}/app#pricing">${appUrl}/app#pricing</a></p>
-<p><strong>To take a copy:</strong> sign in and go to Settings → Export to download all of your records. You can do this until ${_long(deleteOn)}.</p>
+<p><strong>To take a copy:</strong> sign in and go to Settings → Your data → Download my data (or export CSV / PDF from any page). You can do this until ${_long(deleteOn)}.</p>
 <p>The record of changes made to your books (the audit trail) is kept as a financial record after deletion.</p>`),
         });
       } catch (e) { console.error('[billing] retention warning to user ' + u.id + ' failed — deletion stays on hold:', e.message); continue; }

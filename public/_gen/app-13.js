@@ -924,13 +924,17 @@ const ENT_FEATURES=[
   {text:'Annual audit support',ok:true},
 ];
 
+// D-G step 6: the trial's real limits, from plans.js (it used to promise "full Business tier access").
+function _trialFaq(){ const t=(window.FinFlowPlans&&window.FinFlowPlans.PLANS.trial)||{entities:1,ai:30,scans:3,days:30};
+  return 'Yes — no credit card needed. For '+(t.days||30)+' days you get every feature with '+t.entities+' business, '+t.ai+' AI questions and '+t.scans+' receipt scans. Then choose a plan, or your account becomes read-only — nothing is deleted.'; }
 const FAQ=[
-  {q:'Can I switch plans at any time?',a:'Yes — upgrade or downgrade instantly. If you upgrade mid-cycle you\'re charged the prorated difference. Downgrades take effect at the next billing date.'},
-  {q:'What happens to my data if I cancel?',a:'Your data is retained for 90 days after cancellation. You can export everything as CSV, PDF, or JSON at any point — including after cancelling.'},
-  {q:'Is the 30-day trial really free?',a:'100%. No credit card required. You get full Business tier access for 30 days, then choose a plan or your account moves to read-only mode.'},
+  {q:'Can I switch plans at any time?',a:'Yes, from here or Settings → Plan &amp; billing — you see exactly what changes before you confirm. Upgrades take effect now and you pay only the difference for the rest of the period. Downgrades take effect at the end of the period you have paid for; if your team has more editors than the smaller plan allows, you choose who keeps edit access and everyone else becomes a Viewer.'},
+  {q:'What happens to my data if I cancel?',a:'When your plan ends, your books stay available read-only for 90 days — view and export everything any time (Settings → Your data → Download my data, or CSV / PDF from any page). We e-mail you 14 days before anything is deleted, and choosing a plan before then keeps everything. The audit trail of changes to your books is kept as a financial record.'},
+  {q:'Is the 30-day trial really free?',a:_trialFaq()},
   {q:'Do you charge per entity on Business?',a:'No — Business includes up to 5 separate entities with fully independent ledgers, currencies, and chart of accounts. No per-entity fees.'},
   {q:'What AI model powers FinFlow AI?',a:'FinFlow uses Claude by Anthropic — one of the most capable AI models available. All AI runs through FinFlow backend — no API key needed on your end.'},
-  {q:'Is my financial data secure?',a:'All data is encrypted at rest and in transit using industry-standard AES-256. FinFlow never sells or shares your data. AI features run entirely on FinFlow\'s own servers — you never need to provide an API key.'},
+  {q:'Can I leave a yearly plan?',a:'Yes — you can leave any time. We refund what you paid for the year minus each month started, charged at the monthly price — so you never pay for months you do not use. Your price is fixed for the year, and we e-mail you 30 days before it renews with a one-click link to stop the renewal.'},
+  {q:'Is my financial data secure?',a:'Your data is encrypted in transit (TLS) and, at rest, by our database provider Supabase (AES-256). Sign-in supports two-factor authentication, and every change to your books is recorded in an audit trail that cannot be edited. FinFlow never sells your data. AI features run through FinFlow — you never need to provide an API key.'},
 ];
 
 let isAnnual=false;

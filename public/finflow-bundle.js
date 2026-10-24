@@ -5832,7 +5832,7 @@ function clearAIChat(){
       } else if (b.readOnly) {
         h = `<div style="font-size:15px;color:var(--t1);font-weight:500">No active plan — your books are read-only</div><div>You can view and export everything. Choose a plan to make changes again.</div>`
           // D-G step 4: when a PAID plan ended, the books are kept 90 days, then deleted — say when, and how to keep them.
-          + (b.deleteOn ? `<div style="margin-top:6px;color:var(--amber)">Your plan ended on ${e(_bDate(b.accessEndedAt))}. Your books will be deleted on <strong>${e(_bDate(b.deleteOn))}</strong> unless you choose a plan before then — we e-mail you 14 days before. Export a copy any time from Settings → Export.</div>` : '');
+          + (b.deleteOn ? `<div style="margin-top:6px;color:var(--amber)">Your plan ended on ${e(_bDate(b.accessEndedAt))}. Your books will be deleted on <strong>${e(_bDate(b.deleteOn))}</strong> unless you choose a plan before then — we e-mail you 14 days before. Export a copy any time: Settings → Your data → Download my data.</div>` : '');
       } else {
         h = `<div style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)}</div>` + (b.trialEnds ? `<div>Ends on ${e(_bDate(b.trialEnds))}. No card needed until you choose a plan.</div>` : '');
       }

@@ -1122,20 +1122,23 @@ app.post('/api/stripe/checkout', requireAuth, wrap(async (req, res) => {
   if (!stripe) return res.status(400).json({ error: 'Stripe not configured.' });
   const { plan } = req.body;
   if (!plan || !['pro', 'business', 'scale'].includes(plan)) {
-    return res.status(400).json({ error: 'Invalid plan. Must be "pro" or "business".' });
+    return res.status(400).json({ error: 'Invalid plan. Choose Pro, Business or Scale.' });
   }
-  const priceId = process.env['STRIPE_PRICE_' + plan.toUpperCase()];   // STRIPE_PRICE_PRO | _BUSINESS | _SCALE
-  if (!priceId) return res.status(500).json({ error: notSetUp('Checkout for this plan', 'STRIPE_PRICE_' + plan.toUpperCase()) });   // C24
+  // D-B: monthly or yearly — the plan's own Stripe price for that interval; a missing yearly price is refused (never the
+  // monthly price charged instead).
+  const interval = req.body.interval === 'year' ? 'year' : 'month';
+  const priceId = Billing.priceFor(process.env, plan, interval);   // STRIPE_PRICE_<PLAN>[_ANNUAL]
+  if (!priceId) return res.status(interval === 'year' ? 503 : 500).json({ error: notSetUp('Checkout for this plan' + (interval === 'year' ? ' billed yearly' : ''), 'STRIPE_PRICE_' + plan.toUpperCase() + (interval === 'year' ? '_ANNUAL' : '')) });   // C24
   const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     payment_method_types: ['card'],
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: req.session.userEmail,
-    metadata: { userId: String(req.session.userId), plan },
+    metadata: { userId: String(req.session.userId), plan, interval },
     // FA-S1: Stripe does not copy the session's metadata onto the subscription it creates — without this every
     // customer.subscription.* event arrived with no userId and was ignored.
-    subscription_data: { metadata: { userId: String(req.session.userId), plan } },
+    subscription_data: { metadata: { userId: String(req.session.userId), plan, interval } },
     success_url: appUrl + '/app?upgraded=1',
     cancel_url: appUrl + '/app#pricing',
   });
@@ -6002,6 +6005,43 @@ async function eraseAccountData(uid) {
   } finally { client.release(); }
 }
 
+// D-B: the renewal e-mail's one-click cancel — no sign-in; a signed token for THAT account and THAT renewal. Stops the
+// renewal (cancel at the period end); the paid year is kept. The page's script is a file (CSP without inline scripts).
+async function _renewalCtx(u, t) {
+  const uid = /^[1-9][0-9]*$/.test(String(u || '')) ? Number(u) : null;
+  if (!uid) return null;
+  const { rows: [r] } = await pool.query(`SELECT data FROM users WHERE id = $1`, [uid]);
+  const d = r && r.data, b = (d && d.billing) || {};
+  if (!d || b.interval !== 'year' || !Billing.renewalTokenOk(process.env.SESSION_SECRET, uid, b.period_end, t)) return null;
+  return { uid, data: d, billing: b, sub: d.stripe_subscription_id || b.subscription_id };
+}
+const _pageEsc = v => String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+app.get('/billing/cancel', acceptLimiter, wrap(async (req, res) => {
+  const ctx = await _renewalCtx(req.query.u, req.query.t);
+  const _long = isoS => new Date(isoS).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const page = body => '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FinFlow — stop your renewal</title>'
+    + '<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0e0e0c;color:#f0ead6;max-width:520px;margin:0 auto;padding:48px 20px;line-height:1.6}h1{font-weight:500;font-size:24px}button{background:#c9a84c;color:#0e0e0c;border:0;border-radius:8px;padding:12px 18px;font-weight:600;font-size:15px;cursor:pointer}p{color:#c9c0a8}#msg{margin-top:16px}</style></head><body>' + body + '</body></html>';
+  if (!ctx) return res.status(403).send(page('<h1>This link is not valid</h1><p>It may have been changed, or it belongs to an earlier renewal. Sign in to FinFlow and open Settings → Plan &amp; billing to manage your plan.</p>'));
+  if (ctx.billing.cancel_at_period_end) return res.send(page('<h1>Your plan will not renew</h1><p>It ends on ' + _pageEsc(_long(ctx.billing.period_end)) + '. You keep everything until then.</p>'));
+  const plan = Plans.planFor(ctx.data.plan);
+  res.send(page('<h1>Stop your yearly renewal?</h1><p>Your FinFlow ' + _pageEsc(plan.name) + ' plan is set to renew on <strong>' + _pageEsc(_long(ctx.billing.period_end)) + '</strong> for $'
+    + (plan.annualMonthly * 12).toLocaleString('en-US') + '. If you stop the renewal you keep everything you have paid for until that date, and you will not be charged again.</p>'
+    + '<button id="stop" data-u="' + _pageEsc(ctx.uid) + '" data-t="' + _pageEsc(req.query.t) + '">Stop the renewal</button><div id="msg"></div><script src="/billing-cancel.js"></script>'));
+}));
+app.get('/billing-cancel.js', (req, res) => {
+  res.type('application/javascript').send("(function(){var b=document.getElementById('stop');if(!b)return;b.onclick=async function(){b.disabled=true;var m=document.getElementById('msg');try{var r=await fetch('/api/billing/cancel-renewal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:b.dataset.u,t:b.dataset.t})});var d=await r.json();if(!r.ok)throw new Error(d.error||('Error '+r.status));b.remove();m.textContent='Done — your plan will not renew. You keep everything until it ends.';}catch(e){m.textContent='Could not stop the renewal: '+e.message;b.disabled=false;}};})();");
+});
+app.post('/api/billing/cancel-renewal', acceptLimiter, wrap(async (req, res) => {
+  const ctx = await _renewalCtx((req.body || {}).u, (req.body || {}).t);
+  if (!ctx) return res.status(403).json({ error: 'This link is not valid. Sign in and use Settings → Plan & billing.' });
+  if (!stripe || !ctx.sub) return res.status(503).json({ error: 'Billing is not available right now — please try again or sign in to manage your plan.' });
+  if (!ctx.billing.cancel_at_period_end) {
+    await stripe.subscriptions.update(ctx.sub, { cancel_at_period_end: true }, { idempotencyKey: 'renewal-cancel-' + ctx.sub + '-' + ctx.billing.period_end });
+    await pool.query(`UPDATE users SET data = data || jsonb_build_object('billing', COALESCE(data->'billing', '{}'::jsonb) || '{"cancel_at_period_end": true}'::jsonb) WHERE id = $1`, [ctx.uid]);
+    await recordAudit(pool, { userId: ctx.uid, table: 'billing', recordId: ctx.uid, action: 'CANCEL', newData: { mode: 'period_end', via: 'renewal_email', accessUntil: ctx.billing.period_end } });
+  }
+  res.json({ ok: true, accessUntil: ctx.billing.period_end });
+}));
 // D-G step 3 / D-B: change plan from the app — the SAME subscription is moved (the old button sent a subscriber to a
 // second checkout). Upgrades and monthly → yearly happen now, prorated by Stripe; downgrades and yearly → monthly at the
 // period end (the plan is kept until then). Previewed first; recomputed on confirm.
@@ -6137,7 +6177,33 @@ async function runBillingJob(nowMs) {
       erased++;
     }
   }
-  return { landed: rows.length, warned, erased };
+
+  // D-B: 30 days before a yearly renewal — the amount, the date, and a one-click cancel link. Once per renewal.
+  const { rows: yearly } = await pool.query(
+    `SELECT id, data FROM users WHERE data->'billing'->>'interval' = 'year' AND COALESCE(data->>'plan', 'trial') IN ('pro', 'business', 'scale')`);
+  let reminded = 0;
+  for (const u of yearly) {
+    if (!Billing.renewalDue(u.data, Date.parse(nowIso))) continue;
+    if (!resendClient || !u.data.email || !process.env.SESSION_SECRET) { console.warn('[billing] renewal reminder for user ' + u.id + ' NOT sent (no e-mail service / address / secret)'); continue; }
+    const b = u.data.billing, plan = Plans.planFor(u.data.plan);
+    const amount = '$' + (plan.annualMonthly * 12).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const appUrl = process.env.APP_URL || '';
+    const link = appUrl + '/billing/cancel?u=' + u.id + '&t=' + Billing.renewalToken(process.env.SESSION_SECRET, u.id, b.period_end);
+    try {
+      await resendClient.emails.send({
+        from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to: u.data.email,
+        subject: 'Your FinFlow ' + plan.name + ' plan renews on ' + _long(b.period_end) + ' (' + amount + ')',
+        html: String(emailHtml`<p>Hi ${u.data.name || 'there'},</p>
+<p>Your yearly FinFlow <strong>${plan.name}</strong> plan renews on <strong>${_long(b.period_end)}</strong> for <strong>${amount}</strong>, charged to the card on file. Your price stays the same for the year.</p>
+<p>Nothing to do if you want to continue.</p>
+<p>Don't want it to renew? <a href="${link}">Stop the renewal in one click</a> — you keep everything you have paid for until ${_long(b.period_end)}.</p>`),
+      });
+    } catch (e) { console.error('[billing] renewal reminder to user ' + u.id + ' failed:', e.message); continue; }
+    await pool.query(`UPDATE users SET data = data || jsonb_build_object('billing', COALESCE(data->'billing', '{}'::jsonb) || jsonb_build_object('renewal_notice_for', $2::text)) WHERE id = $1`, [u.id, b.period_end]);
+    await recordAudit(pool, { userId: u.id, table: 'billing', recordId: u.id, action: 'RENEWAL_NOTICE', newData: { renewsOn: b.period_end, amount } });
+    reminded++;
+  }
+  return { landed: rows.length, warned, erased, reminded };
 }
 app.get('/api/team/seats', requireAuth, wrap(async (req, res) => {
   const s = await seatState(scopeId(req), req.userPlan, null);

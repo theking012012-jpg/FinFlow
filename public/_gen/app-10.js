@@ -7,7 +7,8 @@ async function startTrial(plan) {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan }),
+      // D-B: the monthly / yearly choice on the Pricing page — checkout uses that interval's price
+      body: JSON.stringify({ plan, interval: window._ffBillingInterval === 'year' ? 'year' : 'month' }),
     });
     const data = await res.json();
     if (data.url) {

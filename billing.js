@@ -164,5 +164,27 @@ function previewAmounts(inv) {
   return { chargeNow: round2(Math.max(0, Number(inv && inv.amount_due) || 0) / 100), credit: round2(credit / 100), currency: (inv && inv.currency) || 'usd' };
 }
 
+// ── D-B: the yearly renewal reminder (30 days before) and its one-click cancel link ──
+const RENEWAL_NOTICE_DAYS = 30;
+// Due when a paid YEARLY plan, not set to cancel, renews within 30 days and has not been reminded for THIS renewal.
+function renewalDue(data, nowMs) {
+  const d = data || {}, b = d.billing || {};
+  if (!Plans.PAID.includes(Plans.planFor(d.plan).id) || b.interval !== 'year' || b.cancel_at_period_end) return false;
+  const end = Date.parse(b.period_end);
+  if (isNaN(end) || end <= nowMs || end - nowMs > RENEWAL_NOTICE_DAYS * DAY) return false;
+  return b.renewal_notice_for !== b.period_end;
+}
+// The link's token: an HMAC of the account and THAT renewal's date — it cannot be moved to another account or reused
+// for a later renewal. `secret` = SESSION_SECRET.
+const crypto = require('crypto');
+function renewalToken(secret, userId, periodEnd) {
+  return crypto.createHmac('sha256', String(secret)).update('renewal-cancel:' + userId + ':' + periodEnd).digest('base64url');
+}
+function renewalTokenOk(secret, userId, periodEnd, token) {
+  if (!secret || !periodEnd || typeof token !== 'string') return false;
+  const want = Buffer.from(renewalToken(secret, userId, periodEnd)), got = Buffer.from(token);
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
+}
+
 module.exports = { priceMap, priceFor, subscriptionFacts, syncSubscription, billingState, monthsStarted, cancelPreview, changeWhen, previewAmounts, RANK,
-                   RETENTION_DAYS, WARNING_DAYS, deleteOnFor, retentionDue };
+                   RETENTION_DAYS, WARNING_DAYS, deleteOnFor, retentionDue, RENEWAL_NOTICE_DAYS, renewalDue, renewalToken, renewalTokenOk };

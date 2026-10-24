@@ -938,6 +938,7 @@ let isAnnual=false;
 window.toggleBilling=function(){
   const cb=document.getElementById('billing-toggle');
   isAnnual=cb?cb.checked:!isAnnual;
+  window._ffBillingInterval = isAnnual ? 'year' : 'month';   // D-B: read by startTrial (a different script)
   // D-A: prices from plans.js
   const _P=(window.FinFlowPlans&&window.FinFlowPlans.PLANS)||{pro:{monthly:79,annualMonthly:63},business:{monthly:249,annualMonthly:199},scale:{monthly:400,annualMonthly:320}};
   const _pr=id=>isAnnual?_P[id].annualMonthly:_P[id].monthly;

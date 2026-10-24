@@ -1046,28 +1046,53 @@
         const period = (typeof currentPeriod !== 'undefined' && currentPeriod) ? currentPeriod : 'year';
         const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year to date' };
         const w = (typeof window._periodWindow === 'function') ? window._periodWindow(period) : null;
+        // FA-M8: EVERY revenue leg that names a customer counts for that customer — invoices (+), cash sales receipts (+)
+        // and credit notes (−), each on computeRevenue's own rule (same allowlists, same date field, same window) — and a
+        // name matches case- and space-insensitively ("Acme" = "ACME "). Only what names no customer stays apart, named
+        // for what it is. Before: invoices only, so a credit note and a named cash sale fell into one "unattributed" line.
         const REC = ['pending', 'overdue', 'partial', 'paid'];
-        const byCust = {};
-        let invoiced = 0;
+        const REC_CREDIT = ['open', 'applied'];
+        const _ck = s => String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase();
+        const byCust = {}, shown = {};
+        let attributed = 0, noCustSales = 0;
+        const _nameAmt = {};   // of the spellings of one customer, the one carrying the most revenue is shown
+        const add = (name, amt) => {
+          const k = _ck(name); if (!k) return false;
+          const disp = String(name).trim().replace(/\s+/g, ' ');
+          _nameAmt[k] = _nameAmt[k] || {}; _nameAmt[k][disp] = (_nameAmt[k][disp] || 0) + Math.abs(amt);
+          shown[k] = Object.entries(_nameAmt[k]).sort((x, y) => y[1] - x[1])[0][0];
+          byCust[k] = (byCust[k] || 0) + amt; attributed += amt; return true;
+        };
         (window._realInvoices || []).forEach(i => {
           if (!REC.includes((i.status || '').toLowerCase())) return;
           if (w && !w.inWin(i.issue_date || i.created_at || i.date)) return;
-          const amt = parseFloat(i.amount) || 0;
-          const c = i.client || '—'; byCust[c] = (byCust[c] || 0) + amt; invoiced += amt;
+          add(i.client, parseFloat(i.amount) || 0);
         });
-        const total = (typeof window.computeRevenue === 'function') ? window.computeRevenue(period) : invoiced;
-        const entries = Object.entries(byCust).sort((a, b) => b[1] - a[1]);
-        const denomS = Math.max(1, total, invoiced);
+        (window.receipts || []).forEach(r => {
+          if (w && !w.inWin(r.date)) return;
+          const amt = parseFloat(r.amount) || 0;
+          if (!add(r.customer, amt)) noCustSales += amt;
+        });
+        (window.creditNotes || []).forEach(cn => {
+          if (!REC_CREDIT.includes((cn.status || '').toLowerCase())) return;
+          if (w && !w.inWin(cn.date || cn.created_at)) return;
+          add(cn.customer, -(parseFloat(cn.amount) || 0));
+        });
+        const total = (typeof window.computeRevenue === 'function') ? window.computeRevenue(period) : attributed + noCustSales;
+        const entries = Object.entries(byCust).filter(([, amt]) => Math.abs(amt) >= 0.005).sort((a, b) => b[1] - a[1]).map(([k, amt]) => [shown[k], amt]);
+        const denomS = Math.max(1, total, attributed);
         const custRows = entries.map(([c, amt]) => shareRow(c, amt, denomS, 'var(--green)')).join('');
-        const remainder = Math.round((total - invoiced) * 100) / 100;
-        const remRow = Math.abs(remainder) >= 0.01 ? row('Cash sales / credits (unattributed)', m(remainder), { color: 'var(--t2)' }) : '';
+        const noCustRow = Math.abs(noCustSales) >= 0.01 ? row('Cash sales — no customer', m(noCustSales), { color: 'var(--t2)' }) : '';
+        // What is left is revenue that has no customer by nature (posted manual journals' income) — shown so Σ rows == Total.
+        const remainder = Math.round((total - attributed - noCustSales) * 100) / 100;
+        const remRow = noCustRow + (Math.abs(remainder) >= 0.01 ? row('Manual journal entries (no customer)', m(remainder), { color: 'var(--t2)' }) : '');
         _rptBody(
           tiles([
             tile('Total Revenue', m(total), PERIOD_LABEL[period] || period, 'var(--green)'),
             tile('Top Customer', entries.length ? m(entries[0][1]) : m(0), entries.length ? String(entries[0][0]) : '—'),
           ])
           + hdr('Revenue by customer — ' + (PERIOD_LABEL[period] || period))
-          + (custRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No invoiced revenue in this period.</div>')
+          + (custRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No revenue from named customers in this period.</div>')
           + remRow
           + row('Total Revenue', m(total), { bold: true, color: 'var(--green)' }));
         return;

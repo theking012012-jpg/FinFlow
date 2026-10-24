@@ -102,6 +102,7 @@
       // Batch 8: this business's payment terms (30 until set — what the field has always shown).
       var _pt = document.getElementById('s-pay-terms');
       if (_pt) _pt.value = (ent && ent.payment_terms != null) ? String(ent.payment_terms) : '30';
+      if (typeof window._ffSyncOwnerAlert === 'function') window._ffSyncOwnerAlert();   // FA-B1: this business's overdue alert
       if (typeof window.updateBrandName === 'function') { try { window.updateBrandName(); } catch (_) {} }
     }
     // Exposed so the entity switcher can repaint the panel without a page reload (index.html switchEntity).

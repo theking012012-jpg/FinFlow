@@ -4467,6 +4467,150 @@ app.get('/api/books-review', requireAuth, wrap(async (req, res) => {
 // payment-reminders.js module (executed in tests/harness/verify-payment-reminders.js). This route
 // layer does I/O only. No money KPI is recomputed (Rule 2): `outstanding` is the invoice's own
 // amount - amount_paid. Send is supervised and idempotent — never auto-fired, never bulk.
+// ── FA-B1: AUTOMATIC CUSTOMER EMAILS (auto-emails.js) ─────────────────────────────────────────────────────────────────
+// Per business, opt-in, run hourly (one replica). Reminder N days after due · overdue notice · payment receipt · monthly
+// statement · the owner's overdue alert. EVERY send is claimed once in auto_email_log (UNIQUE user + business + kind +
+// record + stage) BEFORE it is sent — a second replica, a re-run or a retry can never mail twice (Rule 9). A failed send
+// releases its claim so the next hour tries again; a claim left by a crash is released after an hour.
+const AutoEmails = require('./auto-emails');
+function _aeDate(ymd) { const p = String(ymd || '').slice(0, 10).split('-').map(Number); return p.length === 3 && p[0] ? new Date(Date.UTC(p[0], p[1] - 1, p[2])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : ''; }
+function _aeHtml(text) { return '<div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a140a;line-height:1.55">'
+  + String(text).split('\n').map(l => '<p style="margin:0 0 10px">' + l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</p>').join('') + '</div>'; }
+async function runAutoEmails() {
+  if (!resendClient) return { skipped: 'no email service', sent: 0, failed: 0 };
+  await pool.query(`DELETE FROM auto_email_log WHERE status = 'claimed' AND created_at < NOW() - interval '1 hour'`);
+  const { rows: ents } = await pool.query(`SELECT id, user_id, data FROM entities WHERE data ? 'auto_emails'`);
+  let sent = 0, failed = 0;
+  const from = process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>';
+  for (const e of ents) {
+    const settings = AutoEmails.settingsFor(e.data);
+    if (!AutoEmails.KINDS.some(k => settings[k].on)) continue;
+    const tpls = AutoEmails.templatesFor(e.data);
+    const uid = e.user_id, eid = e.id, business = e.data.name || '', cur = String(e.data.currency || 'USD').toUpperCase();
+    const money = n => cur + ' ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const today = await entityTodayYmd(eid);
+    const scoped = r => r.entity_id === eid;
+    const [invoices, customers] = await Promise.all([db.allByUser('invoices', uid, scoped), db.allByUser('customers', uid, scoped)]);
+    const { rows: [own] } = await pool.query(`SELECT data->>'email' AS email FROM users WHERE id = $1`, [uid]);
+    const ownerEmail = own && own.email ? String(own.email) : null;
+    const claim = async (kind, ref, stage, to) => (await pool.query(
+      `INSERT INTO auto_email_log (user_id, entity_id, kind, ref_id, stage, to_addr) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id`,
+      [uid, eid, kind, String(ref), String(stage), to])).rows[0];
+    const deliver = async (row, to, msg) => {
+      try {
+        await resendClient.emails.send({ from, to, reply_to: ownerEmail || undefined, subject: msg.subject, html: _aeHtml(msg.body), text: msg.body });
+        await pool.query(`UPDATE auto_email_log SET status = 'sent', sent_at = NOW() WHERE id = $1`, [row.id]); sent++;
+      } catch (err) {
+        await pool.query(`DELETE FROM auto_email_log WHERE id = $1`, [row.id]); failed++;
+        console.error('[auto-emails] send failed (will retry):', err && err.message);
+      }
+    };
+    const custOf = inv => resolveCustomer(inv.client, customers);
+    const custName = (c, fallback) => (c && (c.company || [c.fname, c.lname].filter(Boolean).join(' '))) || fallback || 'there';
+    // reminder N days after due · overdue notice
+    for (const kind of ['reminder', 'overdue']) {
+      for (const { inv, late } of AutoEmails.dueInvoiceEmails(kind, invoices, settings, today)) {
+        const c = custOf(inv), to = c && c.email ? String(c.email).trim() : null; if (!to) continue;
+        const row = await claim(kind, inv.id, kind, to); if (!row) continue;
+        await deliver(row, to, AutoEmails.render(tpls[kind], { customer_name: custName(c, inv.client), business_name: business, invoice_number: inv.number || '',
+          amount_due: money(AutoEmails.owed(inv)), due_date: _aeDate(inv.due_date), days_overdue: late }));
+      }
+    }
+    // payment receipt — each payment recorded in the last week, once
+    if (settings.receipt.on) {
+      const { rows: pays } = await pool.query(
+        `SELECT id, invoice_id, amount, payment_date::text AS d FROM invoice_payments WHERE user_id = $1 AND entity_id = $2 AND payment_date >= ($3::date - $4::int) AND payment_date <= $3::date`,
+        [uid, eid, today, AutoEmails.CATCH_UP_DAYS]);
+      for (const p of pays) {
+        const inv = invoices.find(i => i.id === p.invoice_id); if (!inv) continue;
+        const c = custOf(inv), to = c && c.email ? String(c.email).trim() : null; if (!to) continue;
+        const row = await claim('receipt', p.id, 'receipt', to); if (!row) continue;
+        await deliver(row, to, AutoEmails.render(tpls.receipt, { customer_name: custName(c, inv.client), business_name: business, invoice_number: inv.number || '',
+          amount_paid: money(p.amount), payment_date: _aeDate(p.d), amount_due: money(AutoEmails.owed(inv)) }));
+      }
+    }
+    // monthly statement — on the 1st of the business's month (catching up to the 7th), one per customer with something owed
+    if (AutoEmails.statementDue(settings, today)) {
+      const month = today.slice(0, 7), byCust = new Map();
+      for (const inv of invoices) {
+        if (!['pending', 'overdue', 'partial'].includes(String(inv.status || '').toLowerCase()) || AutoEmails.owed(inv) <= 0.005) continue;
+        const c = custOf(inv); if (!c || !c.email) continue;
+        const k = c.id; if (!byCust.has(k)) byCust.set(k, { c, lines: [], total: 0 });
+        const g = byCust.get(k); g.lines.push(inv); g.total += AutoEmails.owed(inv);
+      }
+      for (const { c, lines, total } of byCust.values()) {
+        const to = String(c.email).trim(); const row = await claim('statement', c.id, month, to); if (!row) continue;
+        const list = lines.sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
+          .map(i => '• ' + (i.number || 'Invoice') + ' — due ' + (_aeDate(i.due_date) || 'no due date') + ' — ' + money(AutoEmails.owed(i))).join('\n');
+        await deliver(row, to, AutoEmails.render(tpls.statement, { customer_name: custName(c), business_name: business, statement_lines: list, total_due: money(total),
+          month: new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) }));
+      }
+    }
+    // the owner's overdue alert — one digest a day of invoices that went overdue in the last week and were not alerted yet
+    if (settings.owner_alert.on && ownerEmail) {
+      const fresh = invoices.filter(i => ['pending', 'overdue', 'partial'].includes(String(i.status || '').toLowerCase()) && AutoEmails.owed(i) > 0.005 && i.due_date)
+        .map(i => ({ i, late: AutoEmails.daysBetween(today, String(i.due_date).slice(0, 10)) })).filter(x => x.late >= 1 && x.late <= AutoEmails.CATCH_UP_DAYS);
+      const news = [];
+      for (const x of fresh) { const r = await claim('owner_alert_item', x.i.id, 'overdue', ownerEmail); if (r) news.push({ ...x, row: r }); }
+      if (news.length) {
+        const row = await claim('owner_alert', today, 'day', ownerEmail);
+        if (row) {
+          const body = 'These invoices at ' + (business || 'your business') + ' are now overdue:\n\n'
+            + news.map(x => '• ' + (x.i.number || 'Invoice') + ' — ' + (x.i.client || '') + ' — ' + money(AutoEmails.owed(x.i)) + ' — ' + x.late + ' day' + (x.late === 1 ? '' : 's') + ' late').join('\n')
+            + '\n\nOpen Payment Reminders in FinFlow to chase them.';
+          await deliver(row, ownerEmail, { subject: news.length + ' invoice' + (news.length === 1 ? '' : 's') + ' now overdue — ' + (business || 'FinFlow'), body });
+          for (const x of news) await pool.query(`UPDATE auto_email_log SET status = 'sent', sent_at = NOW() WHERE id = $1`, [x.row.id]);
+        } else { for (const x of news) await pool.query(`DELETE FROM auto_email_log WHERE id = $1`, [x.row.id]); }
+      }
+    }
+  }
+  return { sent, failed };
+}
+
+app.get('/api/auto-emails', requireAuth, wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'Choose a business first.', code: 'NO_BUSINESS_IN_VIEW' });
+  const { rows: [e] } = await pool.query(`SELECT data FROM entities WHERE id = $1 AND user_id = $2`, [req.entityId, scopeId(req)]);
+  if (!e) return res.status(404).json({ error: 'Business not found.' });
+  res.json({ settings: AutoEmails.settingsFor(e.data), templates: AutoEmails.templatesFor(e.data), placeholders: AutoEmails.PLACEHOLDERS,
+    allowed: AutoEmails.ALLOWED, email_configured: !!resendClient });
+}));
+app.put('/api/auto-emails', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'Choose a business first.', code: 'NO_BUSINESS_IN_VIEW' });
+  const { rows: [e] } = await pool.query(`SELECT id, data FROM entities WHERE id = $1 AND user_id = $2`, [req.entityId, scopeId(req)]);
+  if (!e) return res.status(404).json({ error: 'Business not found.' });
+  const b = req.body || {}, patchData = {};
+  if (b.settings != null) { const v = AutoEmails.validateSettings(b.settings); if (v.error) return res.status(400).json({ error: v.error }); patchData.auto_emails = Object.assign({}, (e.data && e.data.auto_emails) || {}, v.settings); }
+  if (b.templates != null) {
+    const out = Object.assign({}, (e.data && e.data.email_templates) || {});
+    for (const [k, t] of Object.entries(b.templates)) { const v = AutoEmails.validateTemplate(k, t); if (v.error) return res.status(400).json({ error: v.error }); out[k] = v.template; }
+    patchData.email_templates = out;
+  }
+  if (!Object.keys(patchData).length) return res.status(400).json({ error: 'Nothing to save.' });
+  await db.updateById('entities', e.id, patchData);
+  await recordAudit(pool, { userId: scopeId(req), entityId: e.id, table: 'entities', recordId: e.id, action: 'UPDATE', field: 'auto_emails', newData: patchData, req });
+  const { rows: [after] } = await pool.query(`SELECT data FROM entities WHERE id = $1`, [e.id]);
+  res.json({ settings: AutoEmails.settingsFor(after.data), templates: AutoEmails.templatesFor(after.data) });
+}));
+// Send a sample of one email to the OWNER's own address — never to a customer.
+app.post('/api/auto-emails/test', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  const kind = String((req.body || {}).kind || '');
+  if (!AutoEmails.ALLOWED[kind]) return res.status(400).json({ error: 'Unknown email.' });
+  if (!resendClient) return res.status(503).json({ error: notSetUp('Sending email', 'RESEND_API_KEY'), code: 'EMAIL_NOT_CONFIGURED' });
+  const to = req.session && req.session.userEmail; if (!to) return res.status(400).json({ error: 'Your account has no email address.' });
+  const { rows: [e] } = await pool.query(`SELECT data FROM entities WHERE id = $1 AND user_id = $2`, [req.entityId, scopeId(req)]);
+  const tpl = req.body && req.body.template ? AutoEmails.validateTemplate(kind, req.body.template) : { template: AutoEmails.templatesFor(e && e.data)[kind] };
+  if (tpl.error) return res.status(400).json({ error: tpl.error });
+  const cur = String((e && e.data && e.data.currency) || 'USD').toUpperCase();
+  const sample = { customer_name: 'Sample Customer', business_name: (e && e.data && e.data.name) || 'Your business', invoice_number: 'INV-0042',
+    amount_due: cur + ' 1,250.00', due_date: _aeDate(await entityTodayYmd(req.entityId)), days_overdue: 7, amount_paid: cur + ' 500.00',
+    payment_date: _aeDate(await entityTodayYmd(req.entityId)), statement_lines: '• INV-0042 — due 1 Jul 2026 — ' + cur + ' 1,250.00', total_due: cur + ' 1,250.00', month: 'July 2026' };
+  const msg = AutoEmails.render(tpl.template, sample);
+  try { await resendClient.emails.send({ from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to, subject: '[Test] ' + msg.subject, html: _aeHtml(msg.body), text: msg.body }); }
+  catch (err) { return res.status(502).json({ error: 'The email service could not send it — try again shortly.' }); }
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'entities', recordId: req.entityId || null, action: 'EMAIL_TEST_SENT', newData: { kind, to }, req });
+  res.json({ ok: true, to });
+}));
+
 async function _reminderContext(req) {
   const uid = scopeId(req);
   const scope = _entityScopeFilter(req);
@@ -14315,6 +14459,7 @@ const _jobs = {
   reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
   billing:   () => runExclusive(pool, 'billing-daily', () => runBillingJob()),   // D-G: pending plan changes (+ retention, renewals)
   referrals: () => runExclusive(pool, 'referral-payouts', () => runReferralJob()),   // FA-L3d: book the month + send referral pay
+  autoEmails: () => runExclusive(pool, 'auto-emails', () => runAutoEmails()),   // FA-B1: the customer emails a business turned on
 };
 // FA-L3d: book this month's referral pay and send it by Stripe Connect transfer (referral-payouts.js — idempotent,
 // so the hourly tick, the CRON_SECRET route and a second replica can all run it safely).
@@ -14358,6 +14503,7 @@ if (require.main === module) {
     setInterval(() => _jobs.billing().catch(_logJob('billing')), 60 * 60 * 1000);
     // FA-L3d: referral pay — the first hourly tick of a month books it, every tick sends what is due.
     _jobs.referrals().catch(_logJob('referrals'));
+    setInterval(() => _jobs.autoEmails().catch(_logJob('auto-emails')), 60 * 60 * 1000);   // FA-B1 (first run on the hour after boot)
     setInterval(() => _jobs.referrals().catch(_logJob('referrals')), 60 * 60 * 1000);
     _jobs.fxLive().catch(_logJob('fx-live'));
     setInterval(() => _jobs.fxLive().catch(_logJob('fx-live')), 24 * 60 * 60 * 1000);
@@ -14390,6 +14536,7 @@ module.exports.glBalanceSheet = glBalanceSheet;   // GL Phase 5b - reconcile-gat
 module.exports.runRecurringScheduler = runRecurringScheduler;
 module.exports.runBillingJob = runBillingJob;   // D-G test surface: drive the billing job
 module.exports.runReferralJob = runReferralJob;   // FA-L3d test surface: drive the referral job without the lock
+module.exports.runAutoEmails = runAutoEmails;   // FA-B1 test surface
 module.exports.recordExternalInvoicePayment = recordExternalInvoicePayment;   // GL - external (Stripe/webhook) payment writer (test surface)
 module.exports.postSourceLedger = postSourceLedger;   // GL - non-primary-path canonical poster (test surface)
 // Test hook: expose the pure recurrence-date helper so the Rule 10 timezone-free math can be

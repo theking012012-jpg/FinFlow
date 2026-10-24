@@ -452,6 +452,12 @@ async function initDB() {
     // FA-L3d: referral pay sent by Stripe Connect transfer (referral-payouts.js). One payout per accountant per
     // month; at most one unfinished payout per accountant; each referral row records the payout that paid it.
     // Same statements as scripts/migrations/2026-10-24-referral-payouts.sql.
+    // FA-B1: every automatic customer email is claimed here once before it is sent (Rule 9). Same statement as
+    // scripts/migrations/2026-10-24-auto-email-log.sql.
+    await client.query(`CREATE TABLE IF NOT EXISTS auto_email_log (
+      id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, entity_id INTEGER, kind VARCHAR(24) NOT NULL, ref_id TEXT NOT NULL,
+      stage VARCHAR(24) NOT NULL, to_addr TEXT, status VARCHAR(12) NOT NULL DEFAULT 'claimed', created_at TIMESTAMPTZ DEFAULT NOW(), sent_at TIMESTAMPTZ,
+      UNIQUE (user_id, entity_id, kind, ref_id, stage))`);
     await client.query(`CREATE TABLE IF NOT EXISTS referral_payouts (
       id                 SERIAL PRIMARY KEY,
       accountant_id      INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,

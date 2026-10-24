@@ -6422,14 +6422,83 @@ const invTemplatesData=[
   {id:'retainer',name:'Retainer Agreement',type:'Quote',preview:'Multi-page quote with terms',default:true,
    accentColor:'#c8a44a',font:'serif'},
 ];
-const emailTemplatesData=[
-  {name:'Invoice Reminder (7 days)',trigger:'Auto — 7 days after due'},
-  {name:'Payment Received',trigger:'Auto — on payment'},
-  {name:'Quote Follow-up',trigger:'Auto — 3 days after sending'},
-  {name:'Welcome — New Client',trigger:'Manual'},
-  {name:'Overdue Notice',trigger:'Auto — 14 days overdue'},
-  {name:'Monthly Statement',trigger:'Auto — 1st of month'},
-];
+// ── FA-B1: AUTOMATIC EMAILS (Templates page + the Settings overdue alert) ─────────────────────────────────────────────
+// What FinFlow REALLY sends, per business (server: auto-emails.js + the hourly job). Off until turned on. The editor saves
+// to the business and "Send test" mails the owner a sample — no "coming soon".
+const _AE_LABELS = { reminder: ['Payment reminder', 'days after the due date'], overdue: ['Overdue notice', 'days overdue'],
+  receipt: ['Payment receipt', 'when a payment is recorded'], statement: ['Monthly statement', 'on the 1st of each month'] };
+window._ffAutoEmails = null;
+async function _ffLoadAutoEmails(){
+  try { const r = await fetch('/api/auto-emails', { credentials: 'include' }); window._ffAutoEmails = r.ok ? await r.json() : null; }
+  catch(_) { window._ffAutoEmails = null; }
+  return window._ffAutoEmails;
+}
+async function _ffSaveAutoEmails(body){
+  const r = await fetch('/api/auto-emails', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { notify(j.error || 'Could not save', true); return null; }
+  window._ffAutoEmails = Object.assign({}, window._ffAutoEmails || {}, j);
+  return j;
+}
+window._ffRenderAutoEmails = async function(){
+  const el = document.getElementById('email-templates-list'); if (!el) return;
+  const d = window._ffAutoEmails || await _ffLoadAutoEmails();
+  if (!d) { el.innerHTML = '<div style="padding:9px 0;font-size:12px;color:var(--t3)">Choose a business to set up its automatic emails.</div>'; return; }
+  const s = d.settings || {};
+  el.innerHTML = (d.email_configured ? '' : '<div style="padding:8px 0;font-size:11.5px;color:var(--amber)">Email sending is not set up on this server yet — these will send once it is.</div>')
+    + Object.keys(_AE_LABELS).map(k => {
+      const [name, when] = _AE_LABELS[k], st = s[k] || {}, dayKey = k === 'reminder' ? 'days_after_due' : k === 'overdue' ? 'days_overdue' : null;
+      return '<div style="padding:9px 0;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px">'
+        + '<div style="min-width:0"><div style="font-size:13px;font-weight:500;color:var(--t1)">' + esc(name) + '</div><div style="font-size:11px;color:var(--t3)">'
+        + (st.on ? 'On' : 'Off') + ' · ' + (dayKey ? '<input class="finput" type="number" min="1" max="90" step="1" value="' + Number(st[dayKey] || 0) + '" aria-label="' + esc(name) + ' — days" style="width:58px;padding:2px 6px;font-size:11px;display:inline-block" onchange="_ffSetAutoEmail(\'' + k + '\', null, this.value)"> ' : '') + esc(when) + '</div></div>'
+        + '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">'
+        + '<label class="toggle" title="' + (st.on ? 'Turn off' : 'Turn on') + '"><input type="checkbox" data-ae="' + k + '"' + (st.on ? ' checked' : '') + ' onchange="_ffSetAutoEmail(\'' + k + '\', this.checked)" aria-label="' + esc(name) + ' on or off"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>'
+        + '<button class="btn btn-ghost btn-sm" onclick="openEmailTemplateEditor(\'' + k + '\')">Edit</button></div></div>';
+    }).join('');
+};
+window._ffSetAutoEmail = async function(kind, on, days){
+  const cur = ((window._ffAutoEmails || {}).settings || {})[kind] || {};
+  const next = Object.assign({}, cur);
+  if (on != null) next.on = !!on;
+  if (days != null) next[kind === 'reminder' ? 'days_after_due' : 'days_overdue'] = parseInt(days, 10);
+  const ok = await _ffSaveAutoEmails({ settings: { [kind]: next } });
+  if (ok) notify((_AE_LABELS[kind] ? _AE_LABELS[kind][0] : 'Email') + (next.on ? ' is on' : ' is off'));
+  window._ffRenderAutoEmails();
+};
+// the Settings switch: email ME when an invoice goes overdue (this business)
+window._ffSetOwnerAlert = async function(on){ await _ffSaveAutoEmails({ settings: { owner_alert: { on: !!on } } }); notify(on ? 'You will get an email when an invoice goes overdue' : 'Overdue emails to you are off'); };
+window._ffSyncOwnerAlert = async function(){ const d = await _ffLoadAutoEmails(); /* always this business */ const cb = document.getElementById('s-email-alerts'); if (cb && d && d.settings) cb.checked = !!(d.settings.owner_alert || {}).on; };
+
+window.openEmailTemplateEditor = async function(kind){
+  const d = window._ffAutoEmails || await _ffLoadAutoEmails(); if (!d || !d.templates || !d.templates[kind]) return;
+  const t = d.templates[kind], name = (_AE_LABELS[kind] || [kind])[0];
+  const existing = document.getElementById('email-tmpl-editor'); if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'email-tmpl-editor';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px)';
+  const chips = (d.allowed[kind] || []).map(p => '<code title="' + esc((d.placeholders || {})[p] || '') + '" style="font-size:11px;background:var(--bg2);padding:1px 5px;border-radius:4px">{{' + p + '}}</code>').join(' ');
+  overlay.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Edit ' + esc(name) + '" style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:560px;box-shadow:var(--shadow-lg);overflow:hidden">'
+    + '<div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:500;color:var(--t1)">Edit — ' + esc(name) + '</div>'
+    + '<button onclick="document.getElementById(\'email-tmpl-editor\').remove()" class="btn btn-ghost btn-sm">✕ Close</button></div>'
+    + '<div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">'
+    + '<div class="field-wrap"><label class="field-label" for="ae-subject">Subject line</label><input class="finput" id="ae-subject" maxlength="200" value="' + esc(t.subject) + '"></div>'
+    + '<div class="field-wrap"><label class="field-label" for="ae-body">Message</label><textarea class="finput" id="ae-body" rows="8" maxlength="5000" style="resize:vertical;line-height:1.6">' + esc(t.body) + '</textarea></div>'
+    + '<div style="font-size:11px;color:var(--t3);line-height:1.8">This email can fill: ' + chips + '</div>'
+    + '<div style="display:flex;gap:8px"><button class="btn btn-primary" style="flex:1;justify-content:center" onclick="_ffSaveEmailTemplate(\'' + kind + '\')">Save</button>'
+    + '<button class="btn btn-ghost" onclick="_ffTestEmailTemplate(\'' + kind + '\')">Send a test to me</button></div></div></div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+};
+const _aeForm = () => ({ subject: (document.getElementById('ae-subject') || {}).value || '', body: (document.getElementById('ae-body') || {}).value || '' });
+window._ffSaveEmailTemplate = async function(kind){
+  const ok = await _ffSaveAutoEmails({ templates: { [kind]: _aeForm() } });
+  if (ok) { notify('Saved ✦'); const o = document.getElementById('email-tmpl-editor'); if (o) o.remove(); }
+};
+window._ffTestEmailTemplate = async function(kind){
+  const r = await fetch('/api/auto-emails/test', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, template: _aeForm() }) });
+  const j = await r.json().catch(() => ({}));
+  notify(r.ok ? 'Test sent to ' + j.to : (j.error || 'Could not send the test'), !r.ok);
+};
 
 // Per-template settings (logo, color, poweredBy)
 const templateSettings = {};
@@ -6457,14 +6526,8 @@ function renderTemplates(){
         </div>
       </div>
     </div>`).join('');
-  const el=document.getElementById('email-templates-list');
-  if(el)el.innerHTML=emailTemplatesData.map(t=>`
-    <div style="padding:9px 0;border-bottom:1px solid var(--bd)">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(t.name)}</div><div style="font-size:11px;color:var(--t3)">${t.trigger}</div></div>
-        <button class="btn btn-ghost btn-sm" onclick="openEmailTemplateEditor('${esc(t.name)}')">Edit</button>
-      </div>
-    </div>`).join('');
+  window._ffAutoEmails = null;   // FA-B1: re-read for the business in view
+  if(typeof window._ffRenderAutoEmails==='function') window._ffRenderAutoEmails();
 }
 
 // ── INVOICE HTML RENDERER ─────────────────────────────────────────
@@ -6787,49 +6850,13 @@ window.saveTemplateSettings = function(id){
   notify('Preview updated — saving templates is coming soon');
 };
 
-window.openEmailTemplateEditor = function(name){
-  const existing = document.getElementById('email-tmpl-editor');
-  if(existing) existing.remove();
-  const overlay = document.createElement('div');
-  overlay.id='email-tmpl-editor';
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px)';
-  overlay.innerHTML=`
-    <div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:560px;box-shadow:var(--shadow-lg);overflow:hidden">
-      <div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:14px;font-weight:500;color:var(--t1)">Edit — ${name}</div>
-        <button onclick="document.getElementById('email-tmpl-editor').remove()" style="padding:5px 10px;background:none;border:1px solid var(--bd2);border-radius:var(--radius);cursor:pointer;color:var(--t2);font-family:var(--font);font-size:12px">✕ Close</button>
-      </div>
-      <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
-        <div class="field-wrap"><label class="field-label">Subject line</label><input class="finput" aria-label="Email subject line" value="Invoice {{invoice_number}} — Payment due {{due_date}}"></div>
-        <div class="field-wrap"><label class="field-label">Email body</label>
-          <textarea class="finput" aria-label="Email body" rows="7" style="resize:vertical;line-height:1.6">Hi {{client_name}},
-
-Please find your invoice {{invoice_number}} for {{amount}} attached.
-Payment is due by {{due_date}}.
-
-You can view and pay your invoice online:
-{{portal_link}}
-
-Thank you for your business,
-{{business_name}}</textarea>
-        </div>
-        <div style="font-size:11px;color:var(--t3)">Available variables: {{client_name}} {{invoice_number}} {{amount}} {{due_date}} {{portal_link}} {{business_name}}</div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="document.getElementById('email-tmpl-editor').remove();notify('Editable email templates are coming soon')">Save template</button>
-          <button class="btn btn-ghost" onclick="notify('Test-email sending is coming soon')">Send test</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
-};
+// FA-B1: the old email editor (Save / Send test said "coming soon") is replaced by the one above.
 
 function openNewTemplateModal(){
   notify('Template builder — choose a base style to start ✦');
   // Just open the classic editor as a starting point
   setTimeout(()=>openTemplateEditor('classic'),300);
 }
-function openNewEmailTemplateModal(){ openEmailTemplateEditor('New Email Template'); }
 
 // ════════════════════════════════════════════
 // CLOSE MODALS ON OVERLAY CLICK

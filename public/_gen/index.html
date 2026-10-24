@@ -3922,7 +3922,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div id="inv-templates-list"></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><h2 class="card-title">Email Templates</h2><button class="btn btn-primary btn-sm" onclick="openNewEmailTemplateModal()">+ New Email</button></div>
+            <div class="card-header"><div><h2 class="card-title">Automatic emails</h2><div class="card-sub">Sent to your customers for this business, when you turn them on</div></div></div>
             <div id="email-templates-list"></div>
           </div>
         </div>
@@ -3988,7 +3988,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <div class="setting-row"><div><div class="setting-label">Dark mode</div><div class="setting-desc">Espresso dark theme</div></div><label class="toggle"><input type="checkbox" id="s-dark" checked onchange="toggleTheme()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
               <div class="setting-row"><div><div class="setting-label">Compact sidebar</div><div class="setting-desc">Tighter navigation spacing</div></div><label class="toggle"><input type="checkbox" id="s-compact" onchange="toggleCompact()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
               <div class="setting-row"><div><div class="setting-label">Show cents</div><div class="setting-desc">Display $1,234.56 format</div></div><label class="toggle"><input type="checkbox" id="s-cents" onchange="refreshAllPeriodData()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
-              <div class="setting-row"><div><div class="setting-label">Email alerts</div><div class="setting-desc">Notify on overdue invoices</div></div><label class="toggle"><input type="checkbox" id="s-email-alerts" checked><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+              <div class="setting-row"><div><div class="setting-label">Email alerts</div><div class="setting-desc">Email me when an invoice of this business goes overdue</div></div><label class="toggle"><input type="checkbox" id="s-email-alerts" onchange="window._ffSetOwnerAlert&&window._ffSetOwnerAlert(this.checked)"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
               <div class="setting-row"><div><div class="setting-label">AI auto-insights</div><div class="setting-desc">Generate insights on load</div></div><label class="toggle"><input type="checkbox" id="s-ai-auto" checked><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
             </div>
             <div class="settings-section">

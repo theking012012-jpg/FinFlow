@@ -7487,6 +7487,111 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
     ...(txns.dateOrder ? { dateOrder: txns.dateOrder, dateOrderAssumed: txns.dateOrderAssumed, decimalMark: txns.decimalMark, rejectedBadDate: txns.badDates } : {}) });
 }));
 
+// ── D-D: SAAS METRICS (owner decision 2026-10-23) ─────────────────────────────────────────────────────────────────
+// From the business's real data: FinFlow recurring invoices (invoices a recurring profile made — recurring_invoice_id)
+// and its connected Stripe account's PAID subscription invoices (rebuilt from Stripe's history, read-only). Each invoice
+// is spread over the period it covers (saas-metrics.js). Acquisition spend = expenses in the chosen categories (+ an
+// optional share of payroll from the run LINES — Rule 12); gross margin from the books. Business plan and up (+ trial).
+const SaaS = require('./saas-metrics');
+const _SAAS_DEFAULTS = { acquisitionCategories: ['Marketing', 'Advertising'], salesPayrollPct: 0 };
+async function _saasSettings(uid, eid) { const { value } = await _providerBlobE(uid, 'saas_settings', eid); return Object.assign({}, _SAAS_DEFAULTS, value || {}); }
+const _ymdAddMonths = (ymd, k) => { const [y, m, d] = ymd.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1 + k, 1)); const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  return t.getUTCFullYear() + '-' + String(t.getUTCMonth() + 1).padStart(2, '0') + '-' + String(Math.min(d, last)).padStart(2, '0'); };
+const _FREQ_MONTHS = { weekly: 0, monthly: 1, quarterly: 3, 'semi-annually': 6, biannually: 6, annually: 12, yearly: 12, annual: 12 };
+// An instant (Stripe's period timestamps) → the business's calendar date (Rule 10: whose day — the business's).
+const _ymdInTz = (unix, tz) => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(unix * 1000)); } catch (_) { return new Date(unix * 1000).toISOString().slice(0, 10); } };
+async function _saasLines(uid, eid, ent, todayYmd) {
+  const lines = [], sources = { finflowLines: 0, stripeConnected: false, stripeLines: 0, otherCurrencySkipped: 0, stripeError: null };
+  const { rows } = await pool.query(
+    `SELECT i.data AS d, r.data AS r FROM invoices i LEFT JOIN recurring_invoices r ON r.id = (i.data->>'recurring_invoice_id')::int AND r.user_id = i.user_id
+      WHERE i.user_id = $1 AND i.entity_id = $2 AND i.data->>'recurring_invoice_id' IS NOT NULL
+        AND lower(COALESCE(i.data->>'status','')) IN ('pending','overdue','partial','paid')`, [uid, eid]);
+  for (const x of rows) {
+    const start = FinFlowDates._toYmd(x.d.issue_date || x.d.date);
+    if (!start || start > todayYmd) continue;
+    const fm = _FREQ_MONTHS[String((x.r && x.r.frequency) || 'Monthly').toLowerCase()];
+    const end = fm === 0 ? null : _ymdAddMonths(start, fm == null ? 1 : fm);
+    lines.push({ customer: 'ff:' + _contactKey(x.d.client), name: String(x.d.client || ''), amount: (parseFloat(x.d.amount) || 0), start, end, source: 'finflow' });
+    sources.finflowLines++;
+  }
+  if (stripeConnectConfigured()) {
+    const { value } = await _providerBlobE(uid, 'stripe_conn', eid);
+    if (value && value.stripe_user_id) {
+      sources.stripeConnected = true;
+      const cur = String(ent.currency || 'USD').toLowerCase();
+      try {
+        let after = null;
+        for (let page = 0; page < 10; page++) {
+          const resp = await fetch('https://api.stripe.com/v1/invoices?status=paid&limit=100' + (after ? '&starting_after=' + encodeURIComponent(after) : ''), {
+            headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id } });
+          let j = {}; try { j = await resp.json(); } catch (_) {}
+          if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
+          for (const inv of j.data || []) {
+            for (const l of (inv.lines && inv.lines.data) || []) {
+              if (l.type !== 'subscription' && !l.subscription) continue;
+              if (String(l.currency || inv.currency || '').toLowerCase() !== cur) { sources.otherCurrencySkipped++; continue; }
+              if (!l.period || !l.period.start) continue;
+              const st = _ymdInTz(l.period.start, ent.timezone), en = l.period.end ? _ymdInTz(l.period.end, ent.timezone) : null;
+              if (st > todayYmd) continue;
+              lines.push({ customer: 'stripe:' + (inv.customer || 'unknown'), name: inv.customer_name || inv.customer_email || String(inv.customer || ''), amount: stripeMinorToMajor(l.amount, l.currency || inv.currency), start: st, end: en, source: 'stripe' });
+              sources.stripeLines++;
+            }
+          }
+          if (!j.has_more || !(j.data || []).length) break;
+          after = j.data[j.data.length - 1].id;
+        }
+      } catch (e) { sources.stripeError = e.message; }
+    }
+  }
+  return { lines, sources };
+}
+async function _acquisitionSpend(uid, eid, ymM, st) {
+  const cats = (st.acquisitionCategories || []).map(c => String(c).toLowerCase());
+  const { rows: [e] } = await pool.query(
+    `SELECT COALESCE(sum((data->>'amount')::numeric), 0)::float AS s FROM expenses
+      WHERE user_id = $1 AND entity_id = $2 AND lower(COALESCE(data->>'category','')) = ANY($3::text[]) AND left(data->>'expense_date', 7) = $4`, [uid, eid, cats, ymM]);
+  let payroll = 0;
+  const pctP = Number(st.salesPayrollPct) || 0;
+  if (pctP > 0) {
+    const { rows: runs } = await pool.query(`SELECT r.period, r.run_date, COALESCE(sum(l.gross + COALESCE(l.bonus,0) + COALESCE(l.overtime,0)), 0)::float AS g
+       FROM payroll_runs r JOIN payroll_run_lines l ON l.run_id = r.id WHERE r.user_id = $1 AND r.entity_id = $2 AND r.status IN ('approved','paid') GROUP BY r.id, r.period, r.run_date`, [uid, eid]);
+    for (const r of runs) { const ps = FinFlowDates.payrollPeriodYmd(r.period, r.run_date); if (ps && ps.slice(0, 7) === ymM) payroll += r.g; }
+  }
+  return { total: Math.round((e.s + payroll * pctP / 100) * 100) / 100, expenses: e.s, payrollShare: Math.round(payroll * pctP) / 100 };
+}
+app.get('/api/saas-metrics', requireAuth, wrap(async (req, res) => {
+  if (!Plans.has(req.userPlan, 'saasMetrics')) return res.status(402).json({ code: 'PLAN_FEATURE', error: 'SaaS metrics are part of the Business plan and up.' });
+  const uid = scopeId(req), eid = req.entityId;
+  if (eid == null) return res.status(400).json({ error: 'Choose a business first.' });
+  const { rows: [er] } = await pool.query(`SELECT data FROM entities WHERE id = $1 AND user_id = $2`, [eid, uid]);
+  const ent = (er && er.data) || {};
+  const todayYmd = await entityTodayYmd(eid);
+  const month = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? String(req.query.month) : todayYmd.slice(0, 7);
+  const st = await _saasSettings(uid, eid);
+  const { lines, sources } = await _saasLines(uid, eid, ent, todayYmd);
+  const first = lines.reduce((m, l) => (!m || l.start < m ? l.start : m), null);
+  const from = first ? (SaaS.ymDiff(first.slice(0, 7), SaaS.ymAdd(month, -35)) > 0 ? SaaS.ymAdd(month, -35) : first.slice(0, 7)) : month;
+  const series = SaaS.mrrSeries(lines, from, month);
+  const books = await computeBooks(uid, eid, 'year');
+  const rev = Number(books.revenue) || 0, cogs = Number(books.cogs) || 0;
+  const grossMargin = rev > 0 ? Math.round(((rev - cogs) / rev) * 10000) / 10000 : null;
+  const spend = await _acquisitionSpend(uid, eid, month, st);
+  const metrics = SaaS.metricsFor(series, month, { grossMargin, acquisitionSpend: spend.total });
+  if (metrics.working.cac) metrics.working.cac.inputs = Object.assign({}, metrics.working.cac.inputs, { categories: st.acquisitionCategories, fromExpenses: spend.expenses, payrollShare: spend.payrollShare });
+  const names = {}; for (const l of lines) names[l.customer] = l.name;
+  res.json({ month, currency: String(ent.currency || 'USD').toUpperCase(), metrics, names, grossMargin,
+             series: Object.keys(series).sort().map(m => ({ month: m, mrr: Math.round(Object.values(series[m]).reduce((a, b) => a + b, 0) * 100) / 100, customers: Object.keys(series[m]).length })),
+             cohorts: SaaS.cohorts(series), sources, settings: st });
+}));
+app.put('/api/saas-metrics/settings', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
+  const b = req.body || {};
+  const cats = Array.isArray(b.acquisitionCategories) ? [...new Set(b.acquisitionCategories.map(c => String(c).trim().slice(0, 60)).filter(Boolean))].slice(0, 20) : _SAAS_DEFAULTS.acquisitionCategories;
+  const pctP = Math.max(0, Math.min(100, Number(b.salesPayrollPct) || 0));
+  const next = { acquisitionCategories: cats, salesPayrollPct: pctP };
+  await _saveProviderBlobE(scopeId(req), 'saas_settings', next, req.entityId, req);
+  res.json(next);
+}));
+
 // ── MRR / SAAS ────────────────────────────────────────────────────────────────
 app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
   const rows = await db.allByUser('user_settings', scopeId(req), r => r.key === 'mrr_data');

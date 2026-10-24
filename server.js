@@ -323,6 +323,12 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     // F11: a completed subscription checkout means the client is now paying —
     // record it and reactivate any suspended referral relationship.
     if (upgradeUserId && session.mode === 'subscription') {
+      // FA-S1: remember which subscription and customer bill this user, so later subscription events (which may carry
+      // no metadata) and account deletion can find it.
+      if (session.subscription || session.customer) {
+        await pool.query(`UPDATE users SET data = data || jsonb_strip_nulls(jsonb_build_object('stripe_subscription_id', $2::text, 'stripe_customer_id', $3::text)) WHERE id = $1`,
+          [upgradeUserId, session.subscription ? String(session.subscription.id || session.subscription) : null, session.customer ? String(session.customer.id || session.customer) : null]);
+      }
       await setSubscriptionStatus(upgradeUserId, 'active');
       await reactivateClientForUser(upgradeUserId);
     }
@@ -349,7 +355,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   // F11: subscription lifecycle — the authoritative source for subscriptionStatus.
   if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
     const sub = event.data.object;
-    const subUserId = parseInt(sub.metadata?.userId, 10);
+    const subUserId = await userIdForSubscription(sub);   // FA-S1
     if (subUserId) {
       await setSubscriptionStatus(subUserId, sub.status);
       // N101: remember WHICH subscription bills this user, so deleting the account can cancel it.
@@ -393,7 +399,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   if (event.type === 'customer.subscription.deleted') {
     // Downgrade user back to trial/free when subscription cancelled
     const sub = event.data.object;
-    const cancelUserId = parseInt(sub.metadata?.userId, 10);
+    const cancelUserId = await userIdForSubscription(sub);   // FA-S1
     if (cancelUserId) {
       // Owner decision 2026-10-06: a cancelled subscription is READ-ONLY (same as an expired trial).
       // The upgrade path nulls trial_ends, and checkPlan only restricts `trial && trial_ends < now`, so
@@ -1087,6 +1093,20 @@ const wrap = fn => async (req, res, next) => {
   try { await fn(req, res, next); } catch (e) { next(e); }
 };
 
+// FA-S1: which user a Stripe subscription belongs to — its metadata (set at checkout from now on), else the subscription
+// id or customer id stored on the user (Checkout-created subscriptions from before the fix carry no metadata).
+async function userIdForSubscription(sub) {
+  const m = parseInt(sub && sub.metadata && sub.metadata.userId, 10);
+  if (m) return m;
+  const subId = sub && sub.id ? String(sub.id) : null;
+  const cus = sub && sub.customer ? String(sub.customer.id || sub.customer) : null;
+  if (!subId && !cus) return null;
+  const { rows: [r] } = await pool.query(
+    `SELECT id FROM users WHERE ($1::text IS NOT NULL AND data->>'stripe_subscription_id' = $1) OR ($2::text IS NOT NULL AND data->>'stripe_customer_id' = $2)
+      ORDER BY (data->>'stripe_subscription_id' = $1) DESC NULLS LAST LIMIT 1`, [subId, cus]);
+  return r ? r.id : null;
+}
+
 // ── STRIPE CHECKOUT ───────────────────────────────────────────────────────────
 // Registered here (not earlier) so session + express.json + requireAuth are active.
 app.post('/api/stripe/checkout', requireAuth, wrap(async (req, res) => {
@@ -1104,6 +1124,9 @@ app.post('/api/stripe/checkout', requireAuth, wrap(async (req, res) => {
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: req.session.userEmail,
     metadata: { userId: String(req.session.userId), plan },
+    // FA-S1: Stripe does not copy the session's metadata onto the subscription it creates — without this every
+    // customer.subscription.* event arrived with no userId and was ignored.
+    subscription_data: { metadata: { userId: String(req.session.userId), plan } },
     success_url: appUrl + '/app?upgraded=1',
     cancel_url: appUrl + '/app#pricing',
   });

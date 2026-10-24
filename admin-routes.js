@@ -461,14 +461,44 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   app.get('/api/admin/reports', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
       SELECT r.id, r.reason, r.category, r.status AS report_status, r.resolved_at, r.resolved_by, r.created_at,
+             r.respond_by, r.acknowledged_at, r.accountant_notified_at,
              a.id AS accountant_id, a.first_name, a.last_name, a.firm, a.email, a.status,
              u.data->>'name' AS reporter_name, u.data->>'email' AS reporter_email
       FROM accountant_reports r
       JOIN accountants a ON a.id = r.accountant_id
       LEFT JOIN users u ON u.id = r.reporter_id
-      ORDER BY (r.status = 'open') DESC, r.created_at DESC LIMIT 100
+      ORDER BY (r.status = 'open') DESC, (r.acknowledged_at IS NULL) DESC, r.respond_by ASC NULLS LAST, r.created_at DESC LIMIT 100
     `);
-    return res.json(result.rows);
+    // D-E: overdue = open, not yet acknowledged, and past the date the client was promised
+    const now = Date.now();
+    return res.json(result.rows.map(r => Object.assign(r, { overdue: r.report_status === 'open' && !r.acknowledged_at && !!r.respond_by && new Date(r.respond_by).getTime() < now })));
+  }));
+
+  // D-E: the two promises of conduct policy §9, each done once and logged. Acknowledge → the client is emailed that the
+  // report is being looked at. Tell the accountant → they are emailed the category and asked for their response; the
+  // client is never named (the policy's 'unless that would put the client at risk' is the admin's call: don't press it).
+  const _rptMail = async (to, subject, html) => {
+    if (!resendClient || !process.env.EMAIL_FROM || !to) return false;
+    try { await resendClient.emails.send({ from: process.env.EMAIL_FROM, to, subject, html: String(html), reply_to: process.env.SUPPORT_EMAIL || undefined }); return true; }
+    catch (e) { console.error('[admin report email]', e.message); return false; }
+  };
+  app.post('/api/admin/reports/:id/acknowledge', requireAdmin, wrap(async (req, res) => {
+    const _rid = parseInt(req.params.id, 10) || 0;
+    const { rows: [r] } = await pool.query(`UPDATE accountant_reports SET acknowledged_at = NOW() WHERE id = $1 AND acknowledged_at IS NULL RETURNING id, reporter_id, category`, [_rid]);
+    if (!r) return res.json({ success: true, already: true });
+    const { rows: [u] } = await pool.query(`SELECT data->>'email' AS email FROM users WHERE id = $1`, [r.reporter_id]);
+    const mailed = await _rptMail(u && u.email, 'We received your report', emailHtml`<p>Thank you — we have received your report (reference R-${r.id}) and are looking into it.</p><p>We may contact you for more detail. You can keep working with your accountant in FinFlow meanwhile.</p>`);
+    await adminAudit(req, 'report_acknowledge', 'report', _rid, { after: { acknowledged: true, emailed: mailed } });
+    res.json({ success: true, emailed: mailed });
+  }));
+  app.post('/api/admin/reports/:id/notify-accountant', requireAdmin, wrap(async (req, res) => {
+    const _rid = parseInt(req.params.id, 10) || 0;
+    const { rows: [r] } = await pool.query(`UPDATE accountant_reports SET accountant_notified_at = NOW() WHERE id = $1 AND accountant_notified_at IS NULL RETURNING id, accountant_id, category`, [_rid]);
+    if (!r) return res.json({ success: true, already: true });
+    const { rows: [a] } = await pool.query(`SELECT email, first_name FROM accountants WHERE id = $1`, [r.accountant_id]);
+    const mailed = await _rptMail(a && a.email, 'A client has raised a concern (R-' + r.id + ')', emailHtml`<p>Hello ${(a && a.first_name) || ''},</p><p>A client has raised a concern about your work on FinFlow (category: ${r.category || 'other'}, reference R-${r.id}). Under the Professional Conduct Policy (section 9) we ask for your response.</p><p>Please reply to this email within 14 days with your account of what happened. No decision has been made.</p>`);
+    await adminAudit(req, 'report_notify_accountant', 'report', _rid, { after: { accountant_notified: true, emailed: mailed } });
+    res.json({ success: true, emailed: mailed });
   }));
 
   app.post('/api/admin/reports/:id/dismiss', requireAdmin, wrap(async (req, res) => {

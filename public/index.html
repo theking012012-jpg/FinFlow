@@ -11157,7 +11157,7 @@ window._marketModal = function(opts){
 window.reportAccountant = async function(accountantId, name) {
   const res = await window._marketModal({
     title: 'Report ' + (name || 'this accountant'),
-    subtitle: 'Tell us what went wrong. Our team reviews reports within 24 hours.',
+    subtitle: 'Tell us what went wrong. We acknowledge every report within 2 business days.',   // D-E: the conduct policy's promise (§9)
     categories: [
       { value: 'service',  label: 'Poor or incomplete service' },
       { value: 'billing',  label: 'Billing / overcharging dispute' },
@@ -11173,7 +11173,7 @@ window.reportAccountant = async function(accountantId, name) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ accountantId, reason: res.text, category: res.category }),
   }).then(r => r.json()).then(data => {
-    if(typeof notify==='function') notify(data.error || '✓ Report submitted — our team will review within 24 hours');
+    if(typeof notify==='function') notify(data.error || ('✓ ' + (data.promise || 'Report received. We acknowledge every report within 2 business days.')));
   }).catch(() => {
     if(typeof notify==='function') notify('Could not submit report');
   });

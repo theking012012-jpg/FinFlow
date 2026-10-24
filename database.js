@@ -559,6 +559,11 @@ async function initDB() {
     await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(120)`);
     await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS resolution  TEXT`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountant_reports_status ON accountant_reports(status)`);
+    // D-E: the acknowledgement date promised (conduct policy §9: 2 business days), when it was acknowledged, when the
+    // accountant was told. Same statements as scripts/migrations/2026-10-24-report-deadlines.sql.
+    await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS respond_by TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS accountant_notified_at TIMESTAMPTZ`);
 
     // Accountant transaction flags (admin oversight queue). A flag is ALSO delivered to the client as a
     // chat message (accountant_messages); this row is the admin-side record the "Flagged Transactions"

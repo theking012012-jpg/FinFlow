@@ -1222,10 +1222,12 @@ async function loadReports() {
         <td style="text-transform:capitalize">${esc(r.category || 'other')}</td>
         <td style="max-width:240px">${esc(r.reason)}</td>
         <td><span style="font-size:11px;padding:2px 8px;border-radius:9px;background:${stBg};color:${stFg};text-transform:capitalize">${esc(st)}</span></td>
-        <td>${new Date(r.created_at).toLocaleDateString()}</td>
+        <td>${new Date(r.created_at).toLocaleDateString()}${r.respond_by ? `<div style="font-size:11px;color:${r.overdue ? '#e05a4a' : 'var(--t3)'}">${r.acknowledged_at ? 'Acknowledged ' + new Date(r.acknowledged_at).toLocaleDateString() : (r.overdue ? 'OVERDUE — acknowledge by ' : 'Acknowledge by ') + new Date(r.respond_by).toLocaleString()}</div>` : ''}${r.accountant_notified_at ? `<div style="font-size:11px;color:var(--t3)">Accountant told ${new Date(r.accountant_notified_at).toLocaleDateString()}</div>` : ''}</td>
         <td>
           ${isOpen
-            ? `<button class="action-btn suspend" onclick="verifyAction(${r.accountant_id},'suspend')">Suspend</button>
+            ? `${r.acknowledged_at ? '' : `<button class="action-btn approve" onclick="ackReport(${r.id})">Acknowledge</button>`}
+          ${r.accountant_notified_at ? '' : `<button class="action-btn" onclick="notifyAccountantReport(${r.id})">Tell accountant</button>`}
+          <button class="action-btn suspend" onclick="verifyAction(${r.accountant_id},'suspend')">Suspend</button>
           <button class="action-btn approve" onclick="resolveReport(${r.id})">Resolve</button>
           <button class="action-btn" onclick="dismissReport(${r.id})">Dismiss</button>`
             : `<span style="font-size:11px;color:var(--t3)">${esc(r.resolved_by || 'admin')}${r.resolved_at ? ' · ' + new Date(r.resolved_at).toLocaleDateString() : ''}</span>`}
@@ -1233,6 +1235,18 @@ async function loadReports() {
       </tr>`; }).join('')
     : '<tr><td colspan="7" class="empty">No reports filed</td></tr>';
   } catch(e) { console.error('Reports error', e); }
+}
+
+// D-E: the conduct policy's two promises, each once (the server keeps the first)
+async function ackReport(id) {
+  const r = await fetch(`/api/admin/reports/${id}/acknowledge`, { method: 'POST', credentials: 'include' }).then(x => x.json()).catch(() => ({}));
+  toast(r.emailed ? 'Acknowledged — the client was emailed' : 'Acknowledged (no email sent — check Resend)', r.emailed ? 'success' : 'error');
+  loadReports();
+}
+async function notifyAccountantReport(id) {
+  const r = await fetch(`/api/admin/reports/${id}/notify-accountant`, { method: 'POST', credentials: 'include' }).then(x => x.json()).catch(() => ({}));
+  toast(r.emailed ? 'The accountant was asked for their response' : 'Marked told (no email sent — check Resend)', r.emailed ? 'success' : 'error');
+  loadReports();
 }
 
 async function dismissReport(id) {

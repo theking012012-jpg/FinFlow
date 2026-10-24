@@ -1872,13 +1872,18 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const _RPT_CATS = ['service', 'billing', 'conduct', 'privacy', 'other'];
     const _rptCat = _RPT_CATS.includes(String(category)) ? String(category) : 'other';
 
-    await pool.query(`
-      INSERT INTO accountant_reports (accountant_id, reporter_id, reason, category, status, created_at)
-      VALUES ($1, $2, $3, $4, 'open', NOW())
-    `, [accountantId, req.session.userId, reason.trim().slice(0, 1000), _rptCat]);
+    // D-E: the conduct policy (§9) promises an acknowledgement within 2 business days — 16 business hours, the same
+    // Mon–Fri 09:00–17:00 clock as support replies (support-sla.js, SUPPORT_TZ). Stored, shown to the client as a date.
+    const _sla = require('./support-sla'), _tz = process.env.SUPPORT_TZ || 'UTC';
+    const _due = _sla.replyBy(Date.now(), 16, _tz);
+    const { rows: [_rep] } = await pool.query(`
+      INSERT INTO accountant_reports (accountant_id, reporter_id, reason, category, status, created_at, respond_by)
+      VALUES ($1, $2, $3, $4, 'open', NOW(), $5) RETURNING id
+    `, [accountantId, req.session.userId, reason.trim().slice(0, 1000), _rptCat, new Date(_due)]);
     await _audit(pool, { userId: req.session.userId, table: 'accountant_reports', action: 'REPORT', newData: { accountant_id: Number(accountantId), category: _rptCat }, req });   // LC3f (the reason stays on the report itself)
 
-    return res.json({ success: true });
+    return res.json({ success: true, id: _rep && _rep.id, respond_by: new Date(_due).toISOString(),
+      promise: 'Report received. We acknowledge every report within 2 business days — by ' + _sla.describe(_due, _tz) + '.' });
   }));
 
   // ── PUBLIC DIRECTORY — verified accountants only ───────────────────────────

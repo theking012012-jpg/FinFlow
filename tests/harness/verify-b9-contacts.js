@@ -14,7 +14,7 @@
  * real routes) + raw rows from before this batch: invoices "ACME Limited", "Legacy Client"; bill "Old Vendor".
  */
 const { run } = require('./clientMoneyKit.js');
-let bizB = null;
+let bizB = null, dbc = null;
 
 run('Batch 9 — contacts saved from invoices and bills, picked in forms, legacy names saved with a preview', async ({ w, d, settle, eq, A, http }) => {
   const custs = async () => ((await http.get('/api/customers')).json || []);
@@ -38,6 +38,8 @@ run('Batch 9 — contacts saved from invoices and bills, picked in forms, legacy
   const sv = await http.post('/api/customers/save-unsaved', { names: ['Legacy Client'] });
   eq('4  "Save all" (the owner chose Legacy Client) → created 1', [sv.status, (sv.json || {}).created], [200, 1], [404, undefined]);
   eq('4b ACME Limited was not chosen → not created; still listed', ((await http.get('/api/customers/unsaved')).json || []).map(u => u.name), ['ACME Limited']);
+  const aud = dbc ? (await dbc.query(`SELECT count(*)::int AS n FROM audit_trail WHERE table_name = 'customers' AND action = 'CREATE' AND COALESCE(new_data::text, new_value, '') LIKE '%Legacy Client%'`)).rows[0].n : -1;
+  eq('4c "Save all" writes an audit row for each contact it creates (Legacy Client: 1)', aud, 1, 0);
 
   const bill = (await http.post('/api/bills', { vendor: 'Fresh Vendor', amount: 60, status: 'unpaid', issue_date: '2026-07-21', idempotency_key: 'b9-b1' })).json || {};
   eq('5  a bill to a new vendor saves the vendor, linked', [(await vend()).filter(v => v.name === 'Fresh Vendor').length, !!((bill.row || bill).vendor_id)], [1, true], [0, false]);
@@ -88,5 +90,6 @@ run('Batch 9 — contacts saved from invoices and bills, picked in forms, legacy
   await raw('invoices', { client: 'ACME Limited', amount: 120, status: 'pending', issue_date: '2026-06-02', due_date: '2026-07-02', number: 'OLD-1' });
   await raw('invoices', { client: 'Legacy Client', amount: 80, status: 'pending', issue_date: '2026-06-03', due_date: '2026-07-03', number: 'OLD-2' });
   await raw('bills', { vendor: 'Old Vendor', amount: 90, status: 'unpaid', issue_date: '2026-06-04', due_date: '2026-07-04' });
+  dbc = client;
   bizB = (await client.query(`INSERT INTO entities (user_id, entity_id, data) VALUES ($1, NULL, $2) RETURNING id`, [userId, { name: 'Business B', currency: 'USD', timezone: 'UTC', country: 'US', is_active: 0 }])).rows[0].id;
 } });

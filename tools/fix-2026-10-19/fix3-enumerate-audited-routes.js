@@ -15,7 +15,9 @@ const fs = require('fs');
 // LC3e: does `src` call the connection write path with `req` as the final argument? Finds each call's closing paren by
 // counting parens, skipping strings, template literals and comments (a `)` inside a comment once broke a counter here).
 function callsWritePathWithReq(src) {
-  const re = /\b(_saveProviderBlobE|_mutatePlaidItemsE|_mutateSettingsBlob)\(/g;
+  // ensureContact (batch 9): the one contact writer — records a CREATE audit row per contact it makes, with req;
+  // _saveUnsaved ("Save all") writes only through it (verified by execution: verify-b9-contacts 4c).
+  const re = /\b(_saveProviderBlobE|_mutatePlaidItemsE|_mutateSettingsBlob|ensureContact|_saveUnsaved)\(/g;
   let m;
   while ((m = re.exec(src))) {
     let i = m.index + m[0].length, depth = 1, q = null;
@@ -28,7 +30,8 @@ function callsWritePathWithReq(src) {
       if (ch === "'" || ch === '"' || ch === '`') { q = ch; continue; }
       if (ch === '(') depth++; else if (ch === ')') depth--;
     }
-    if (depth === 0 && /,\s*req\s*$/.test(src.slice(start, i - 1))) return true;
+    // req passed as ANY argument (ensureContact(…, req, q) and _saveUnsaved(kind, req, res) take it mid-list)
+    if (depth === 0 && /(^|,)\s*req\s*(,|$)/.test(src.slice(start, i - 1))) return true;
   }
   return false;
 }

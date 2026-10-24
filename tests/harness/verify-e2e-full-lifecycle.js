@@ -201,6 +201,7 @@ async function main() {
     section('5 · ACCOUNTANT SIDE — register (pending) → blocked login → verify → login');
     // ═══════════════════════════════════════════════════════════════════════════════════════
     const accReg = await a1.post('/api/accountants/register', {
+      conductAccepted: true, conductVersion: require('../../conduct-policy').VERSION,   // D-E: sign-up accepts the current policy
       firstName: 'Grace', lastName: 'Ledger', email: 'e2e-acc1@finflow.test', password: 'acct-pw-123456',
       firm: 'Ledger & Co', country: 'US', specialisation: 'Tax', bio: 'CPA', experience: '10+ years',
       verification: { method: 'membership', membershipNumber: 'CPA-778899' },

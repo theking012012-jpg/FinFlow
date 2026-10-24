@@ -4984,7 +4984,7 @@ function renderCustomers(filter='', _fromUnsaved){
   document.getElementById('cust-total').textContent=customers.length+unsaved.length;
   const _ts=document.getElementById('cust-total-sub');
   if(_ts) _ts.textContent=unsaved.length?(customers.length+' saved · '+unsaved.length+' from invoices, not saved yet'):(cu.error&&cu.eid===eid?'Invoice clients could not be loaded':'In your CRM');
-  document.getElementById('cust-active').textContent=customers.filter(c=>c.status==='active').length;
+  document.getElementById('cust-active').textContent=customers.filter(c=>c.billed_recently).length;   // FA-M12d: billed in the last 12 months (server book), not the CRM status field
   document.getElementById('cust-revenue').textContent=S(customers.reduce((a,c)=>a+Number(c.revenue),0)+unsaved.reduce((a,u)=>a+Number(u.revenue),0));
   // Batch 9 (D3): one click saves them all — with a preview that holds back look-alikes of saved customers.
   const unsavedHead=unsaved.length?`<div class="ff-saveall-head" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;margin:4px 0;background:var(--bg2);border-radius:var(--radius)"><div><div style="font-weight:500;color:var(--t1)">${unsaved.length} name${unsaved.length===1?'':'s'} from invoices not saved as customers</div><div style="font-size:11.5px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" onclick="openSaveAllContacts('customer')">Save all…</button></div>`:'';   // a header, not a contact row

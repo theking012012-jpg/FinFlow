@@ -2608,21 +2608,32 @@ async function customerRevenueBook(uid, eid) {
   }
   const today = await entityTodayYmd(eid);
   const RECOGNISED = new Set(['pending', 'overdue', 'partial', 'paid']);
-  const rev = {}, unsaved = new Map();
+  // FA-M12d: the SAME revenue legs as Sales by Customer (FA-M8) — issued invoices (+), cash sales receipts that name the
+  // customer (+), Open / Applied credit notes (−) — so the Customers page and the report agree. A customer is ACTIVE when
+  // billed (an invoice or a cash sale) in the last 12 months — a calendar cutoff compared as date strings (Rule 10).
+  const rev = {}, last = {}, unsaved = new Map();
+  const cutoff = (Number(today.slice(0, 4)) - 1) + today.slice(4);
+  const leg = (name, amt, d, billed, isInvoice) => {
+    if (d == null || d > today) return;
+    const k = key(name), cid = byName.has(k) ? byName.get(k) : byCompany.get(k);
+    if (cid != null) { rev[cid] = (rev[cid] || 0) + amt; if (billed && (!last[cid] || d > last[cid])) last[cid] = d; return; }
+    if (!k) return;
+    const u = unsaved.get(k) || { name: String(name).trim().replace(/\s+/g, ' '), revenue: 0, invoices: 0 };
+    u.revenue += amt; if (isInvoice) u.invoices += 1; unsaved.set(k, u);
+  };
   for (const i of await db.allByUser('invoices', uid, scoped)) {
     if (!RECOGNISED.has(String(i.status || '').toLowerCase())) continue;
-    const d = FinFlowDates._toYmd(i.issue_date || i.created_at);
-    if (d == null || d > today) continue;
-    const k = key(i.client), cid = byName.has(k) ? byName.get(k) : byCompany.get(k);
-    const amt = parseFloat(i.amount) || 0;
-    if (cid != null) { rev[cid] = (rev[cid] || 0) + amt; continue; }
-    if (!k) continue;
-    const u = unsaved.get(k) || { name: String(i.client).trim().replace(/\s+/g, ' '), revenue: 0, invoices: 0 };
-    u.revenue += amt; u.invoices += 1; unsaved.set(k, u);
+    leg(i.client, parseFloat(i.amount) || 0, FinFlowDates._toYmd(i.issue_date || i.created_at), true, true);
   }
+  for (const r of await db.allByUser('sales_receipts', uid, scoped)) leg(r.customer, parseFloat(r.amount) || 0, FinFlowDates._toYmd(r.date || r.created_at), true, false);
+  for (const cn of await db.allByUser('credit_notes', uid, scoped)) {
+    if (!['open', 'applied'].includes(String(cn.status || '').toLowerCase())) continue;
+    leg(cn.customer, -(parseFloat(cn.amount) || 0), FinFlowDates._toYmd(cn.date || cn.created_at), false, false);
+  }
+  for (const [k, u] of [...unsaved]) if (!u.invoices && Math.abs(u.revenue) < 0.005) unsaved.delete(k);   // a credit alone is not "a client"
   const r2 = n => Math.round((n || 0) * 100) / 100;
   return {
-    customers: customers.map(c => ({ ...c, revenue: r2(rev[c.id]) })).sort((a, b) => b.revenue - a.revenue),
+    customers: customers.map(c => ({ ...c, revenue: r2(rev[c.id]), last_billed: last[c.id] || null, billed_recently: !!(last[c.id] && last[c.id] >= cutoff) })).sort((a, b) => b.revenue - a.revenue),
     unsaved: [...unsaved.values()].map(u => { const core = _contactCore(u.name); const like = core ? customers.find(c => _contactCore(_custName(c)) === core) : null;
       return Object.assign({ ...u, revenue: r2(u.revenue) }, like ? { similar_to: _custName(like) } : {}); }).sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name)),
   };

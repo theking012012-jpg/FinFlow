@@ -9,9 +9,11 @@
  *   Acme Ltd   1,000 (Jan) + 600 (Jul) = 1,600 · 2 invoices
  *   Beta Co    300                       ·  1 invoice
  *   Gamma      9,999 DRAFT → excluded (bug if counted: 11,899)
- *   → Total Customers 2 (bug: 0) · Lifetime Revenue $1,900 (bug: $0)
+ *   − the seed's Open credit note to Acme Ltd, 80 (7 Jul): FA-M12d counts the same legs as Sales by Customer
+ *     (invoices + named cash sales − credit notes), so Acme Ltd = 1,520 and the total 1,820 (it was 1,900, invoices only)
+ *   → Total Customers 2 (bug: 0) · Lifetime Revenue $1,820 (bug: $0)
  * Then Acme Ltd is saved as a customer (company = "Acme Ltd", as the Save button pre-fills): it moves from the
- * unsaved list to the saved one with its 1,600, and the totals stay 2 / $1,900 (no double count: bug would be $3,500).
+ * unsaved list to the saved one with its 1,520, and the totals stay 2 / $1,820 (no double count: bug would be $3,340).
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-la4-customers-from-invoices.js
  */
@@ -21,7 +23,7 @@ run('LA4 — Customers page counts invoice clients that are not saved as custome
   const openCustomers = async () => { w.showPage('customers'); await settle(40, 50); };
   await openCustomers();
   eq('Total Customers', all('cust-total'), '2', '0');
-  eq('Lifetime Revenue', all('cust-revenue'), '$1,900', '$0');
+  eq('Lifetime Revenue', all('cust-revenue'), '$1,820', '$0');
   eq('caption says they are not saved yet', all('cust-total-sub'), '0 saved · 2 from invoices, not saved yet');
   const rows = [...d.querySelectorAll('#customers-list .cust-row')].map(r => r.querySelector('.cust-name').textContent.trim());
   eq('rows: the two invoice clients, largest first; the draft-only client is not listed', rows, ['Acme Ltd', 'Beta Co']);
@@ -38,7 +40,7 @@ run('LA4 — Customers page counts invoice clients that are not saved as custome
   if (typeof w.loadEntityData === 'function') await w.loadEntityData((w.ENTITIES || []).findIndex(e => e.active));
   await openCustomers();
   eq('after saving: Total Customers still 2', all('cust-total'), '2');
-  eq('after saving: Lifetime Revenue still $1,900 (no double count)', all('cust-revenue'), '$1,900', '$3,500');
+  eq('after saving: Lifetime Revenue still $1,820 (no double count)', all('cust-revenue'), '$1,820', '$3,340');
   eq('after saving: caption', all('cust-total-sub'), '1 saved · 1 from invoices, not saved yet');
   const badges = [...d.querySelectorAll('#customers-list .cust-row')].map(r => [r.querySelector('.cust-name').textContent.trim(), r.querySelector('.badge').textContent.trim()]);
   eq('after saving: Acme is a saved customer, Beta still unsaved', badges, [['Acme Ltd', 'active'], ['Beta Co', 'Not saved']]);

@@ -42,7 +42,9 @@ the customer's total as before; nothing old is changed. (14) **document numbers 
 receipts, quotes, journals and payments run CN-0001, CN-0002 … per business (skipping any number already used). Existing
 documents keep the numbers they have — some old ones share a number (they came from the clock); nothing is renumbered. (15) **concern reports (D-E)** — Admin → Reports shows each report's "acknowledge by" date (2 business days,
 what the client is promised) and OVERDUE; use **Acknowledge** (emails the client) and **Tell accountant** (asks for their
-response, without naming the client). Set SUPPORT_EMAIL so the accountant's reply reaches you (it is the reply-to).
+response, without naming the client). Set SUPPORT_EMAIL so the accountant's reply reaches you (it is the reply-to). (16) **refunded accountant bills (FA-L3i)** — a refund or lost dispute now
+takes the bill out of the accountant's earned and FinFlow's commission automatically; run
+`2026-10-24-earning-refunds.sql` if `SKIP_INIT_DDL` is set. Refunds made before this deploy are not back-applied (Rule 8).
 
 ## ⚡ UPDATE 2026-10-21
 

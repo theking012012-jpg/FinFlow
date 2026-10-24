@@ -479,6 +479,13 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     }
   }
 
+  // FA-L3i: a dispute LOST takes the money back like a refund — an accountant bill stops counting (books are never moved
+  // on a dispute merely opened, above).
+  if (event.type === 'charge.dispute.closed') {
+    const d = event.data.object || {};
+    if (d.status === 'lost') await require('./earnings-figures').recordEarningRefund(pool, d.payment_intent, d.amount);
+  }
+
   // Refund — a Stripe invoice payment was refunded. Reverse it so AR reflects the money returned:
   // find the original external payment by charge id and book a reversing (negative) invoice_payment,
   // idempotent on the refund id. recalcInvoiceStatus re-sums (incl. the negative) → amount_paid drops
@@ -528,7 +535,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       console.error('[Stripe] refund reversal failed:', e.message);
       throw e;
     } finally { cli.release(); }
-    if (!orig) {
+    // FA-L3i: a refunded accountant bill stops counting as earned / commission (cumulative amount_refunded)
+    const _billRefunded = await require('./earnings-figures').recordEarningRefund(pool, ch.payment_intent, ch.amount_refunded);
+    if (!orig && !_billRefunded) {
       console.warn('[Stripe] charge.refunded for ' + chargeId + ' — no auto-reversible invoice payment found; manual review');
     } else if (ins && ins.rowCount) {
       await recalcInvoiceStatus(pool, orig.invoice_id, orig.user_id);

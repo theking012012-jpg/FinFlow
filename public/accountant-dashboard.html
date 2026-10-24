@@ -1369,6 +1369,8 @@ function toast(msg, type = '') {
 // FA-L3d: what happened to each earning, in words — referral pay is sent by Stripe transfer.
 function _earningStatus(e) {
   if (e.status === 'paid' && e.payout_sent_at) return 'Sent to Stripe · ' + new Date(e.payout_sent_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (e.status === 'refunded') return 'Refunded to the client — not earned';   // FA-L3i
+  if (e.status === 'paid' && e.refunded_cents > 0) return 'Paid · partly refunded';
   if (e.status === 'paid') return 'Paid';
   if (e.status === 'awaiting_payment') return 'Client has not paid yet';
   if (e.payout_status === 'claimed' || e.payout_status === 'failed') return 'Sending to Stripe';

@@ -11,7 +11,9 @@
  *   All      → Consulting, Gadget (catalogue), Widget (stock)  = 3   bug: 2 (no Widget)
  *   Products → Gadget, Widget                                         bug: Gadget only
  *   Services → Consulting
- *   Low stock card: Widget (4 < 10) = 1                              bug: 0 (catalogue items carry no stock)
+ *   Low stock card: Widget (4 units) + Gadget (0 of 50) = 2 — G5 (2026-10-24): the card is Inventory's low-stock
+ *   alerts, ONE rule (FinFlowDates.isLowStock); it used to count only stock-only rows below 10 (1), missing Gadget,
+ *   which is low but listed as its catalogue item.                  bug: 0 (catalogue items carry no stock)
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-la16-items-one-list.js
  */
@@ -26,7 +28,7 @@ run('LA16 — Items lists stocked products too (one product list)', async ({ w, 
   eq('All: catalogue items + the stock-only product, Gadget once', rows(),
     [['Consulting', 'Service', '—'], ['Gadget', 'Product', '—'], ['Widget', 'Stock item', '4 units']],
     [['Consulting', 'Service', '—'], ['Gadget', 'Product', '—']]);
-  eq('Low Stock card counts stocked products', all('items-lowstock'), '1', '0');
+  eq('Low Stock card = the Inventory low-stock alerts (Widget, Gadget)', all('items-lowstock'), '2', '0');
   w.filterItems('product'); await settle(5, 30);
   eq('Products filter includes the stock item', rows().map(r => r[0]), ['Gadget', 'Widget'], ['Gadget']);
   w.filterItems('service'); await settle(5, 30);

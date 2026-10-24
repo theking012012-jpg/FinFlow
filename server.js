@@ -2746,7 +2746,10 @@ app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   }
   const newUnits = row.units;
   const newMax   = b.max_units != null ? parseInt(b.max_units)||row.max_units : row.max_units;
-  const patch = { units: newUnits, max_units: newMax, low_stock: newUnits < newMax * 0.1 ? 1 : 0 };
+  // G5 / FA-B7: the reorder level is its own field (whole units, 0+; empty clears it) — the alert reads it first
+  if (b.reorder_level != null && b.reorder_level !== '' && !(/^[0-9]{1,9}$/.test(String(b.reorder_level)))) return res.status(400).json({ error: 'The reorder level is a whole number of units (0 or more).', code: 'BAD_REORDER_LEVEL' });
+  const newReorder = b.reorder_level === undefined ? row.reorder_level : (b.reorder_level === '' || b.reorder_level === null ? null : Number(b.reorder_level));
+  const patch = { units: newUnits, max_units: newMax, reorder_level: newReorder, low_stock: FinFlowDates.isLowStock({ units: newUnits, reorder_level: newReorder, max_units: newMax }) ? 1 : 0 };
   if (b.name != null) patch.name = b.name;
   if (b.cost != null) patch.cost = parseFloat(b.cost);
   await db.updateById('inventory', row.id, patch);
@@ -13392,10 +13395,10 @@ async function recordStockMovement({ userId, item, entityId = null, type, qty, u
     `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key, movement_date, contra_code)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11) RETURNING *`,
     [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem, _mvDay, type === 'purchase' ? contraCode : null]);   // M34/M54
-  const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m FROM inventory WHERE id = $1`, [item.id]);
+  const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m, data->>'reorder_level' AS r FROM inventory WHERE id = $1`, [item.id]);
   const _units = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
   const newUnits = type === 'purchase' ? _units + qty : Math.max(0, _units - qty);
-  await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: newUnits < _max * 0.1 ? 1 : 0 });
+  await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: FinFlowDates.isLowStock({ units: newUnits, reorder_level: _cur && _cur.r, max_units: _max }) ? 1 : 0 });   // G5: the one rule
   try {
     const _mDate = FinFlowDates._toYmd(movement.movement_date) || FinFlowDates._toYmd(movement.moved_at);   // M32
     if ((type === 'sale' || type === 'adjustment') && cogs != null && +cogs > 0) {

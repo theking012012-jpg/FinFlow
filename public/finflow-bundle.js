@@ -1166,6 +1166,7 @@
             name:  r.name,
             units: r.units,
             max:   r.max_units || 200,
+            reorder_level: r.reorder_level != null && r.reorder_level !== '' ? Number(r.reorder_level) : null,   // G5
             cost:  r.cost,
             low:   !!r.low_stock,
           }));
@@ -1320,7 +1321,7 @@
         loadInventoryFromDB(); // async — will re-render when data arrives
       }
       if (!window.inventory) window.inventory = [];
-      const lowCount = window.inventory.filter(i => i.low || (parseFloat(i.units) || 0) < 5).length;
+      const lowCount = window.inventory.filter(i => i.low).length;   // G5: the server's flag, set by the one rule (FinFlowDates.isLowStock)
       // KPI cards: Total SKUs · Inventory value (units × cost) · Low stock · COGS
       const _invKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _invKpi('inv-skus', window.inventory.length);
@@ -1545,6 +1546,7 @@
       document.getElementById('edit-inv-units').value = item.units != null ? item.units : '';
       document.getElementById('edit-inv-cost').value  = item.cost  != null ? item.cost  : '';
       document.getElementById('edit-inv-max').value   = item.max   != null ? item.max   : 200;
+      { const _r = document.getElementById('edit-inv-reorder'); if (_r) _r.value = item.reorder_level != null ? item.reorder_level : ''; }   // G5
       openModal('edit-inv-modal');
     };
 
@@ -1557,12 +1559,15 @@
       const cost  = parseFloat(document.getElementById('edit-inv-cost')?.value)  || 0;
       const max   = Math.max(1, parseInt(document.getElementById('edit-inv-max')?.value)   || 200);
       try {
-        await api('PUT', `/api/inventory/${item._dbId}`, { name, cost, max_units: max });   // N69: units change only via stock movements
+        const _rv = (document.getElementById('edit-inv-reorder') || {}).value;   // G5: '' clears it
+        const reorder_level = _rv == null || String(_rv).trim() === '' ? '' : parseInt(_rv, 10);
+        await api('PUT', `/api/inventory/${item._dbId}`, { name, cost, max_units: max, reorder_level });   // N69: units change only via stock movements
         item.name  = name;
         item.units = units;
         item.cost  = cost;
         item.max   = max;
-        item.low   = units < max * 0.1;
+        item.reorder_level = reorder_level === '' ? null : reorder_level;
+        item.low   = window.FinFlowDates.isLowStock({ units, reorder_level: item.reorder_level, max_units: max });   // G5: the one rule
         closeModal('edit-inv-modal');
         if (typeof renderInventory === 'function') renderInventory();
         notify(`${esc(name)} updated ✦`);
@@ -1624,7 +1629,7 @@
       const skus = new Set(data.map(i => k(i.sku)).filter(Boolean)), names = new Set(data.map(i => k(i.name)));
       return (window.inventory || []).filter(iv => iv && iv._dbId != null && !(iv.sku ? skus.has(k(iv.sku)) : names.has(k(iv.name))))
         .map(iv => ({ _stock: true, _invDbId: iv._dbId, name: iv.name, sku: iv.sku || '', type: 'Stock item',
-          stock: parseFloat(iv.units) || 0, status: (parseFloat(iv.units) || 0) < 10 ? 'Low Stock' : 'Active' }));
+          stock: parseFloat(iv.units) || 0, status: 'Active', low: !!iv.low }));   // G5: low stock is shown, never a status
     }
     function renderStockItemRow(i) {
       return `<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
@@ -1632,7 +1637,7 @@
         <span><span class="badge b-amber">Stock item</span></span>
         <span style="color:var(--t3)" title="Stock is valued on Inventory; add it as an item to set a sale price">—</span>
         <span style="color:var(--t2)">${i.stock} units</span>
-        <span><span class="badge ${i.status === 'Active' ? 'b-green' : 'b-amber'}">${esc(i.status)}</span></span>
+        <span><span class="badge ${i.status === 'Active' ? 'b-green' : 'b-amber'}">${esc(i.status)}</span>${i.low ? ' <span class="badge b-amber" title="At or below its reorder level">Low</span>' : ''}</span>
         <div class="table-actions"><button class="btn btn-ghost btn-sm" onclick="showPage('inventory')">Inventory</button></div>
       </div>`;
     }
@@ -1659,7 +1664,7 @@
       const _itKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _itKpi('items-total', all.length);
       _itKpi('items-active', all.filter(i => i.status === 'Active').length);
-      _itKpi('items-lowstock', all.filter(i => i.stock !== null && i.stock !== undefined && i.stock < 10).length);
+      _itKpi('items-lowstock', (window.inventory || []).filter(i => i.low).length);   // G5: the same figure as Inventory's alerts
       const _withMargin = data.filter(i => (parseFloat(i.price) || 0) > 0 && i.cost != null && (parseFloat(i.cost) || 0) > 0);
       const _avgMargin = _withMargin.length
         ? Math.round(_withMargin.reduce((s, i) => s + (i.price - i.cost) / i.price * 100, 0) / _withMargin.length)

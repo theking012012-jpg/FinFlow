@@ -1588,7 +1588,7 @@ async function loadEntityData(idx){
     customers = custs.map(c=>({...c, _dbId:c.id}));
 
     // Replace inventory
-    inventory = invt.map(r=>({_dbId:r.id, sku:r.sku, name:r.name, units:r.units, max:r.max_units||200, cost:r.cost, low:!!r.low_stock}));
+    inventory = invt.map(r=>({_dbId:r.id, sku:r.sku, name:r.name, units:r.units, max:r.max_units||200, reorder_level:(r.reorder_level!=null&&r.reorder_level!=='')?Number(r.reorder_level):null, cost:r.cost, low:!!r.low_stock}));   // G5
     // C1: the Inventory page (finflow-api-wiring-medium.js renderInventory, the runtime winner) reads window.inventory,
     // which only the boot loader set — so after a business switch the page kept the PREVIOUS business's stock.
     window.inventory = inventory;

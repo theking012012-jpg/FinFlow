@@ -222,6 +222,17 @@
   // by the movement) and reaches the P&L once, as COGS when sold. Every bill still counts in accounts payable.
   var RECOGNIZED_BILL_STATUSES = ['unpaid', 'due_soon', 'overdue', 'partial', 'paid'];
   var isInventoryBill = function (b) { return !!(b && b.inventory_movement_id != null && b.inventory_movement_id !== ''); };
+  // G5 / FA-B7: ONE low-stock rule. An item is low when its units fall to its reorder level (set by the person); an item
+  // with no reorder level keeps the original rule — below 10% of its capacity (max_units). The server's low_stock flag,
+  // the Inventory page, the Items page and the AI all read this.
+  var isLowStock = function (it) {
+    if (!it) return false;
+    var u = Number(it.units != null ? it.units : it.stock) || 0;
+    var rl = it.reorder_level;
+    if (rl != null && rl !== '' && isFinite(Number(rl))) return u <= Number(rl);
+    var mx = Number(it.max_units != null ? it.max_units : it.max) || 0;
+    return mx > 0 ? u < mx * 0.1 : false;
+  };
   var isOpexBill = function (b) { return !!b && RECOGNIZED_BILL_STATUSES.indexOf(String(b.status || '').toLowerCase()) !== -1 && !isInventoryBill(b); };
 
   // M60 (personal bank feed): a personal transaction is income or an expense. Bank-feed rows written before M60 (an
@@ -272,6 +283,7 @@
     RECOGNIZED_BILL_STATUSES: RECOGNIZED_BILL_STATUSES,
     isInventoryBill: isInventoryBill,
     isOpexBill: isOpexBill,
+    isLowStock: isLowStock,
     resolvedToday: resolvedToday,
     payrollPeriodYmd: payrollPeriodYmd,
     resolvePeriod: resolvePeriod,

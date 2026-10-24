@@ -610,7 +610,7 @@
         <div class="stat-card">
           <div class="stat-label">Pending Payout</div>
           <div class="stat-value" id="earn-pending">—</div>
-          <div class="stat-sub">Next payment: 1st of month</div>
+          <div class="stat-sub" id="earn-pending-sub">Sent to your Stripe account each month</div>
         </div>
       </div>
       <div class="section-title">Earnings History</div>
@@ -1204,7 +1204,7 @@ async function loadEarnings() {
           <td><span class="badge ${e.type === 'referral' ? 'badge-gold' : 'badge-green'}">${e.type === 'referral' ? 'Referral' : 'Service'}</span></td>
           <td>${esc(e.description || '—')}</td>
           <td class="gold">$${(e.amount_cents / 100).toFixed(2)}</td>
-          <td><span class="badge ${e.status === 'paid' ? 'badge-green' : 'badge-amber'}">${e.status}</span></td>
+          <td><span class="badge ${e.status === 'paid' ? 'badge-green' : 'badge-amber'}"${e.payout_transfer_id ? ` title="Stripe transfer ${esc(e.payout_transfer_id)}"` : ''}>${esc(_earningStatus(e))}</span></td>
         </tr>`).join('');
 
     document.getElementById('earnings-tbody').innerHTML = rows;
@@ -1366,6 +1366,16 @@ function toast(msg, type = '') {
   setTimeout(() => el.classList.remove('show'), 3000);
 }
 
+// FA-L3d: what happened to each earning, in words — referral pay is sent by Stripe transfer.
+function _earningStatus(e) {
+  if (e.status === 'paid' && e.payout_sent_at) return 'Sent to Stripe · ' + new Date(e.payout_sent_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (e.status === 'paid') return 'Paid';
+  if (e.status === 'awaiting_payment') return 'Client has not paid yet';
+  if (e.payout_status === 'claimed' || e.payout_status === 'failed') return 'Sending to Stripe';
+  if (e.type === 'referral') return 'Due — sent this month';
+  return e.status;
+}
+
 // ── STRIPE CONNECT ───────────────────────────────────────────────────────────
 async function checkStripeStatus() {
   try {
@@ -1385,6 +1395,9 @@ async function checkStripeStatus() {
     // The banner/badge are position:fixed over the top of the content — pad the scroll area so they
     // never cover the page header.
     if (main) main.style.paddingTop = (data.connected ? 40 : 44) + 'px';
+    // FA-L3d: referral pay goes out by Stripe transfer only once Stripe has enabled transfers to this account
+    const sub = document.getElementById('earn-pending-sub');
+    if (sub) sub.textContent = data.transfersEnabled ? 'Sent to your Stripe account automatically each month' : 'Finish connecting Stripe to receive it';
   } catch(e) {}
 }
 

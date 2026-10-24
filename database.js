@@ -449,6 +449,26 @@ async function initDB() {
     // Stripe PaymentIntent id — lets the payment_intent.succeeded webhook find the row
     // and reconcile the estimated Stripe fee to the real balance-transaction fee.
     await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS payment_intent_id TEXT`);
+    // FA-L3d: referral pay sent by Stripe Connect transfer (referral-payouts.js). One payout per accountant per
+    // month; at most one unfinished payout per accountant; each referral row records the payout that paid it.
+    // Same statements as scripts/migrations/2026-10-24-referral-payouts.sql.
+    await client.query(`CREATE TABLE IF NOT EXISTS referral_payouts (
+      id                 SERIAL PRIMARY KEY,
+      accountant_id      INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
+      period_month       DATE NOT NULL,
+      amount_cents       INTEGER NOT NULL,
+      currency           VARCHAR(3) NOT NULL DEFAULT 'usd',
+      status             VARCHAR(12) NOT NULL DEFAULT 'claimed',
+      stripe_transfer_id TEXT,
+      attempts           INTEGER NOT NULL DEFAULT 1,
+      last_error         TEXT,
+      created_at         TIMESTAMPTZ DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ DEFAULT NOW(),
+      sent_at            TIMESTAMPTZ,
+      UNIQUE (accountant_id, period_month)
+    )`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_referral_payouts_one_open ON referral_payouts (accountant_id) WHERE status IN ('claimed', 'failed')`);
+    await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS payout_id INTEGER REFERENCES referral_payouts(id) ON DELETE SET NULL`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_reviews (

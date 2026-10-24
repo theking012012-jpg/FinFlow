@@ -14254,7 +14254,14 @@ const _jobs = {
   fxLive:    () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates()),
   reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
   billing:   () => runExclusive(pool, 'billing-daily', () => runBillingJob()),   // D-G: pending plan changes (+ retention, renewals)
+  referrals: () => runExclusive(pool, 'referral-payouts', () => runReferralJob()),   // FA-L3d: book the month + send referral pay
 };
+// FA-L3d: book this month's referral pay and send it by Stripe Connect transfer (referral-payouts.js — idempotent,
+// so the hourly tick, the CRON_SECRET route and a second replica can all run it safely).
+function runReferralJob() {
+  const rp = require('./referral-payouts');
+  return rp.runReferralJob(pool, stripe, rp.hooksFor({ pool, recordAudit, resendClient }));
+}
 function startReconcileMonitor(resend) {
   const hours = Number(process.env.GL_RECONCILE_INTERVAL_HOURS || 6);
   setTimeout(() => _jobs.reconcile(resend).catch(e => captureErr(e)), 60 * 1000);                 // first pass a minute after boot
@@ -14289,6 +14296,9 @@ if (require.main === module) {
     // D-G: billing — pending plan changes land on their date; hourly (only due rows are read).
     _jobs.billing().catch(_logJob('billing'));
     setInterval(() => _jobs.billing().catch(_logJob('billing')), 60 * 60 * 1000);
+    // FA-L3d: referral pay — the first hourly tick of a month books it, every tick sends what is due.
+    _jobs.referrals().catch(_logJob('referrals'));
+    setInterval(() => _jobs.referrals().catch(_logJob('referrals')), 60 * 60 * 1000);
     _jobs.fxLive().catch(_logJob('fx-live'));
     setInterval(() => _jobs.fxLive().catch(_logJob('fx-live')), 24 * 60 * 60 * 1000);
     // Security: periodic audit-anomaly scan → email alert (no-op unless SECURITY_ALERT_EMAIL is set)
@@ -14319,6 +14329,7 @@ module.exports.glBalanceSheet = glBalanceSheet;   // GL Phase 5b - reconcile-gat
 // prod — it still runs on boot + on its interval; this only makes it drivable under test).
 module.exports.runRecurringScheduler = runRecurringScheduler;
 module.exports.runBillingJob = runBillingJob;   // D-G test surface: drive the billing job
+module.exports.runReferralJob = runReferralJob;   // FA-L3d test surface: drive the referral job without the lock
 module.exports.recordExternalInvoicePayment = recordExternalInvoicePayment;   // GL - external (Stripe/webhook) payment writer (test surface)
 module.exports.postSourceLedger = postSourceLedger;   // GL - non-primary-path canonical poster (test surface)
 // Test hook: expose the pure recurrence-date helper so the Rule 10 timezone-free math can be

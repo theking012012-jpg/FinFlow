@@ -456,9 +456,9 @@ td.amber{color:var(--amber)}
             <div class="stat-sub">Service commissions collected</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Referral Payouts Owed</div>
+            <div class="stat-label">Referral Pay Owed</div>
             <div class="stat-val" id="earn-referral">—</div>
-            <div class="stat-sub">To be paid to accountants</div>
+            <div class="stat-sub">Booked, not yet sent — Stripe transfers go out hourly</div>
           </div>
           <div class="stat-card green">
             <div class="stat-label">Already Paid Out</div>
@@ -474,6 +474,13 @@ td.amber{color:var(--amber)}
           <table>
             <thead><tr><th><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"></th><th>Accountant</th><th>Type</th><th>Description</th><th>Amount</th><th>Period</th><th>Status</th></tr></thead>
             <tbody id="earnings-tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="table-wrap" style="margin-top:16px">
+          <div class="table-header"><span class="table-title">Referral payouts (Stripe transfers)</span></div>
+          <table>
+            <thead><tr><th>Accountant</th><th>Month</th><th>Amount</th><th>Status</th><th>Stripe transfer / reason</th><th>Attempts</th></tr></thead>
+            <tbody id="payouts-tbody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1307,24 +1314,35 @@ async function loadEarnings() {
   try {
     const sa = document.getElementById('select-all'); if(sa) sa.checked = false;
     const res = await fetch('/api/admin/earnings', { credentials: 'include' });
-    const { records, summary } = await res.json();
+    const { records, summary, payouts } = await res.json();
     const s = summary || {};
 
     document.getElementById('earn-commission').textContent = '$' + ((parseInt(s.commission_cents)||0)/100).toFixed(2);
-    document.getElementById('earn-referral').textContent = '$' + ((parseInt(s.referral_cents)||0)/100).toFixed(2);
+    document.getElementById('earn-referral').textContent = '$' + ((parseInt(s.referral_owed_cents)||0)/100).toFixed(2);   // FA-L3d: owed = pending only
     document.getElementById('earn-paid').textContent = '$' + ((parseInt(s.paid_cents)||0)/100).toFixed(2);
 
     document.getElementById('earnings-tbody').innerHTML = records.length ? records.map(e => `
       <tr>
-        <td><input type="checkbox" class="earn-check" value="${e.id}"></td>
+        <td>${e.status === 'pending' && !e.payout_id ? `<input type="checkbox" class="earn-check" value="${e.id}" aria-label="Select to mark paid by hand">` : ''}</td>
         <td class="primary">${esc(e.first_name)} ${esc(e.last_name)}<div style="font-size:11px;color:var(--t3)">${esc(e.firm||'')}</div></td>
         <td><span class="badge ${e.type==='referral'?'b-gold':'b-green'}">${e.type==='referral'?'Referral':'Commission'}</span></td>
         <td>${esc(e.description||'—')}</td>
         <td class="gold">$${(e.amount_cents/100).toFixed(2)}</td>
         <td>${e.period_month ? new Date(e.period_month).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—'}</td>
-        <td><span class="badge ${e.status==='paid'?'b-green':'b-amber'}">${e.status}</span></td>
+        <td><span class="badge ${e.status==='paid'?'b-green':'b-amber'}">${e.status === 'paid' ? 'paid' : e.payout_id ? 'sending by Stripe' : e.status === 'awaiting_payment' ? 'client has not paid' : e.status}</span></td>
       </tr>`).join('')
     : '<tr><td colspan="7" class="empty">No earnings records</td></tr>';
+    const ym = v => { const m = /^(\d{4})-(\d{2})/.exec(String(v || '')); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—'; };
+    document.getElementById('payouts-tbody').innerHTML = (payouts || []).length ? payouts.map(p => `
+      <tr>
+        <td class="primary">${esc(p.first_name)} ${esc(p.last_name)}<div style="font-size:11px;color:var(--t3)">${esc(p.firm||'')}</div></td>
+        <td>${ym(p.period_month)}</td>
+        <td class="gold">$${(p.amount_cents/100).toFixed(2)}</td>
+        <td><span class="badge ${p.status==='sent'?'b-green':p.status==='failed'?'b-red':'b-amber'}">${p.status === 'claimed' ? 'sending' : esc(p.status)}</span></td>
+        <td style="font-size:12px">${p.status === 'sent' ? esc(p.stripe_transfer_id || '') : esc(p.last_error || '—')}</td>
+        <td>${Number(p.attempts) || 0}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" class="empty">No referral payouts yet</td></tr>';
   } catch(e) { console.error('Earnings error', e); }
 }
 
@@ -1341,7 +1359,7 @@ async function markSelectedPaid() {
     body: JSON.stringify({ ids }),
   });
   const data = await res.json();
-  toast(`${data.updated} records marked as paid`, 'success');
+  toast(`${data.updated} record(s) marked as paid` + ((data.refused || []).length ? ` · ${data.refused.length} refused (sent by Stripe transfer, already paid, or not paid by the client)` : ''), (data.refused || []).length ? 'error' : 'success');
   loadEarnings();
 }
 

@@ -497,11 +497,20 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // ── EARNINGS & PAYOUTS ────────────────────────────────────────────────────
   app.get('/api/admin/earnings', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
-      SELECT ae.id, ae.type, ae.amount_cents, ae.description, ae.status, ae.period_month, ae.created_at,
+      SELECT ae.id, ae.type, ae.amount_cents, ae.description, ae.status, ae.period_month, ae.created_at, ae.payout_id,
+             rp.status AS payout_status,
              a.first_name, a.last_name, a.firm
       FROM accountant_earnings ae
       JOIN accountants a ON a.id = ae.accountant_id
+      LEFT JOIN referral_payouts rp ON rp.id = ae.payout_id
       ORDER BY ae.created_at DESC LIMIT 200
+    `);
+    // FA-L3d: the Stripe transfers that pay referral pay — a failed one names Stripe's reason and needs a person
+    const payouts = await pool.query(`
+      SELECT rp.id, rp.period_month, rp.amount_cents, rp.currency, rp.status, rp.stripe_transfer_id, rp.attempts, rp.last_error,
+             rp.sent_at, rp.updated_at, a.first_name, a.last_name, a.firm
+      FROM referral_payouts rp JOIN accountants a ON a.id = rp.accountant_id
+      ORDER BY (rp.status = 'failed') DESC, rp.updated_at DESC LIMIT 100
     `);
 
     const summary = await pool.query(`
@@ -511,26 +520,31 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
         COALESCE(SUM(CASE WHEN status='pending' THEN amount_cents ELSE 0 END),0) AS pending_cents,
         COALESCE(SUM(CASE WHEN status='paid' THEN amount_cents ELSE 0 END),0) AS paid_cents,
         COALESCE(SUM(CASE WHEN type='service_commission' THEN amount_cents ELSE 0 END),0) AS commission_cents,
-        COALESCE(SUM(CASE WHEN type='referral' THEN amount_cents ELSE 0 END),0) AS referral_cents
+        COALESCE(SUM(CASE WHEN type='referral' THEN amount_cents ELSE 0 END),0) AS referral_cents,
+        -- FA-L3d: referral pay still owed = booked, not yet paid (was: every referral row, paid ones included)
+        COALESCE(SUM(CASE WHEN type='referral' AND status='pending' THEN amount_cents ELSE 0 END),0) AS referral_owed_cents
       FROM accountant_earnings
     `);
 
-    return res.json({ records: result.rows, summary: summary.rows[0] });
+    return res.json({ records: result.rows, summary: summary.rows[0], payouts: payouts.rows });
   }));
 
   // Mark payouts as paid
   app.post('/api/admin/earnings/mark-paid', requireAdmin, wrap(async (req, res) => {
     const { ids } = req.body || {};
     if (!ids || !ids.length) return res.status(400).json({ error: 'No IDs provided.' });
-    const _eb = (await pool.query(`SELECT id, accountant_id, type, amount_cents, status FROM accountant_earnings WHERE id = ANY($1) ORDER BY id`, [ids])).rows;
-    await pool.query(
-      `UPDATE accountant_earnings SET status = 'paid' WHERE id = ANY($1)`,
-      [ids]
-    );
+    // FA-L3d: referral pay is sent by Stripe transfer (referral-payouts.js). Marking by hand is for pay sent OUTSIDE
+    // Stripe only: a row a transfer is paying (payout_id set) or a bill the client has not paid ('awaiting_payment')
+    // is refused, so nothing is paid twice and nothing unpaid is marked paid.
+    const _eb = (await pool.query(`SELECT id, accountant_id, type, amount_cents, status FROM accountant_earnings WHERE id = ANY($1) AND status = 'pending' AND payout_id IS NULL ORDER BY id`, [ids])).rows;
+    const _ok = _eb.map(e => e.id);
+    if (_ok.length) await pool.query(`UPDATE accountant_earnings SET status = 'paid' WHERE id = ANY($1) AND status = 'pending' AND payout_id IS NULL`, [_ok]);
+    const _refused = ids.filter(i => !_ok.includes(Number(i)));
     // Audit: a payout state change is a money action — each payout's amount and prior status, before → after (LC3g).
-    await adminAudit(req, 'earnings_mark_paid', 'earnings', ids.length === 1 ? ids[0] : null, {
-      notes: 'Marked ' + ids.length + ' earning(s) paid: #' + ids.join(', #'), before: _eb, after: _eb.map(e => Object.assign({}, e, { status: 'paid' })) });
-    return res.json({ success: true, updated: ids.length });
+    await adminAudit(req, 'earnings_mark_paid', 'earnings', _ok.length === 1 ? _ok[0] : null, {
+      notes: 'Marked ' + _ok.length + ' earning(s) paid: #' + _ok.join(', #') + (_refused.length ? ' · refused #' + _refused.join(', #') + ' (sent by Stripe transfer, already paid, or not paid by the client)' : ''),
+      before: _eb, after: _eb.map(e => Object.assign({}, e, { status: 'paid' })) });
+    return res.json({ success: true, updated: _ok.length, refused: _refused });
   }));
 
   // ── AI & COST TRACKING ────────────────────────────────────────────────────

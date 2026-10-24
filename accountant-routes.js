@@ -78,36 +78,11 @@ const _NOW_MS = `(extract(epoch from now()) * 1000)::float8 AS now_ms`;
 const _conductOf = acc => Conduct.state({ version: acc && acc.conduct_version, acceptedAt: acc && acc.conduct_accepted_at, promptedAt: acc && acc.conduct_prompted_at },
   acc && acc.now_ms != null ? Number(acc.now_ms) : undefined);
 
-// ── REFERRAL COMMISSION — the ONE writer (N79 / N79b / N82) ─────────────────────────────────────
-// Books at most ONE referral month for a client link per calendar month, and only while the client is
-// PAYING (subscriptionStatus='active') and referral months remain. Runs inside the caller's
-// transaction and locks the link row first, so activation and the monthly run — or two overlapping
-// runs — cannot both book the same month. Before: activation booked "month 1" without checking the
-// subscription and without advancing referral_month (so the monthly run paid month 1 again), and the
-// monthly run had no transaction and an ON CONFLICT with no unique index behind it (a second run in
-// the same month paid everyone twice and advanced referral_month twice).
-// Returns true when a month was booked.
-async function _bookReferralMonth(conn, accountantId, userId) {
-  const { rows: [link] } = await conn.query(
-    `SELECT ac.referral_month, ac.referral_months_total, ac.status, u.data->>'subscriptionStatus' AS sub
-       FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
-      WHERE ac.accountant_id = $1 AND ac.user_id = $2
-      FOR UPDATE OF ac`, [accountantId, userId]);
-  if (!link || link.status !== 'active' || link.sub !== 'active') return false;
-  if (!(Number(link.referral_month) < Number(link.referral_months_total))) return false;
-  const { rows: [dup] } = await conn.query(
-    `SELECT 1 FROM accountant_earnings
-      WHERE accountant_id = $1 AND client_id = $2 AND type = 'referral'
-        AND period_month = date_trunc('month', NOW()) LIMIT 1`, [accountantId, userId]);
-  if (dup) return false;
-  const nextMonth = Number(link.referral_month) + 1;
-  await conn.query(
-    `INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
-     VALUES ($1, $2, 'referral', 1000, $3, date_trunc('month', NOW()))`,
-    [accountantId, userId, `Referral commission — month ${nextMonth} of ${link.referral_months_total}`]);
-  await conn.query(`UPDATE accountant_clients SET referral_month = $1 WHERE accountant_id = $2 AND user_id = $3`, [nextMonth, accountantId, userId]);
-  return true;
-}
+// ── REFERRAL COMMISSION — the ONE writer (N79 / N79b / N82), now in referral-payouts.js (FA-L3d) ───────────────
+// Books at most ONE referral month for a client link per calendar month, only while the client is PAYING, inside
+// the caller's transaction with the link row locked — so activation and the monthly job cannot both book a month.
+const referralPayouts = require('./referral-payouts');
+const _bookReferralMonth = referralPayouts.bookReferralMonth;
 const aiCap = require('./ai-cap'); // F18 — central AI cost caps
 const { appUrl } = require('./app-url'); // F29 — single source of truth for app links
 const { emailHtml } = require('./email-html'); // N85 — every email body escapes its interpolations
@@ -1442,10 +1417,12 @@ If you cannot find a field, use null. Be concise.`;
 
     let query = `
       SELECT ae.*, ac.user_id,
-             u.data->>'name' AS client_name
+             u.data->>'name' AS client_name,
+             rp.status AS payout_status, rp.stripe_transfer_id AS payout_transfer_id, rp.sent_at AS payout_sent_at   -- FA-L3d
       FROM accountant_earnings ae
       LEFT JOIN accountant_clients ac ON ac.user_id = ae.client_id AND ac.accountant_id = ae.accountant_id
       LEFT JOIN users u ON u.id = ae.client_id
+      LEFT JOIN referral_payouts rp ON rp.id = ae.payout_id
       WHERE ae.accountant_id = $1
     `;
     const params = [req.session.accountantId];
@@ -1480,13 +1457,10 @@ If you cannot find a field, use null. Be concise.`;
 
 
   // ── 12. MONTHLY REFERRAL PAYOUT CRON ──────────────────────────────────────
-  // Call this via a cron job on the 1st of each month (or a Betterstack scheduled job).
-  // POST /api/accountants/run-monthly-payouts  (protected by CRON_SECRET header)
-  //
-  // GOLDEN RULE: Commission only pays on ACTIVE, PAYING clients.
-  // If a client has cancelled their subscription, their $10/month stops immediately.
-  // We check Stripe subscription status (stored in users.data.subscriptionStatus)
-  // before creating any payout record. No active subscription = no commission.
+  // FA-L3d: the server runs this job itself every hour (server.js _jobs.referrals) — it books this month's $10 per
+  // active, PAYING client once, then sends each accountant's pending referral pay to their connected Stripe account
+  // by Connect transfer (referral-payouts.js). This route is a manual trigger for the same job, behind CRON_SECRET.
+  // No active subscription = no commission that month.
   app.post('/api/accountants/run-monthly-payouts', wrap(async (req, res) => {
     const secret = req.headers['x-cron-secret'];
     if (!process.env.CRON_SECRET) return res.status(503).json({ error: 'Cron not configured.' });
@@ -1500,55 +1474,9 @@ If you cannot find a field, use null. Be concise.`;
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const client = await pool.connect();
-    try {
-      // Find all active client relationships that still have referral months remaining.
-      // Join to users table to check live subscription status — only pay if subscribed.
-      const rows = await client.query(`
-        SELECT ac.accountant_id, ac.user_id, ac.referral_month, ac.referral_months_total,
-               u.data->>'subscriptionStatus' AS sub_status,
-               u.data->>'plan'               AS plan
-        FROM accountant_clients ac
-        JOIN users u ON u.id = ac.user_id
-        WHERE ac.status = 'active'
-          AND ac.referral_month < ac.referral_months_total
-          AND u.data->>'subscriptionStatus' = 'active'
-      `);
-      // F17: pay only on PAYING clients (subscriptionStatus='active'). Trialing,
-      // canceled, past_due, unpaid, or missing are excluded — no commission this month.
-
-      let payoutsCreated = 0;
-      let payoutsSkipped = 0;
-
-      // Each link in its own transaction through the shared writer (row lock + one-per-month check), so a
-      // re-run or an overlapping run books nothing twice and one failing row does not stop the others.
-      for (const row of rows.rows) {
-        try {
-          await client.query('BEGIN');
-          const booked = await _bookReferralMonth(client, row.accountant_id, row.user_id);
-          await client.query('COMMIT');
-          if (booked) payoutsCreated++;
-        } catch (e) {
-          try { await client.query('ROLLBACK'); } catch (_) {}
-          console.error('[referral payouts] link', row.accountant_id, row.user_id, 'failed:', e.message);
-        }
-      }
-
-      // Also count how many eligible relationships were skipped due to inactive subscription
-      const skippedResult = await client.query(`
-        SELECT COUNT(*) FROM accountant_clients ac
-        JOIN users u ON u.id = ac.user_id
-        WHERE ac.status = 'active'
-          AND ac.referral_month < ac.referral_months_total
-          AND u.data->>'subscriptionStatus' IS DISTINCT FROM 'active'
-      `);
-      payoutsSkipped = parseInt(skippedResult.rows[0].count) || 0;
-
-      await _audit(pool, { userId: null, table: 'accountant_earnings', action: 'PAYOUT_RUN', newData: { created: payoutsCreated, skipped: payoutsSkipped }, req });   // LC3f: the system's monthly run
-      return res.json({ success: true, payoutsCreated, payoutsSkipped });
-    } finally {
-      client.release();
-    }
+    const r = await referralPayouts.runReferralJob(pool, stripe, referralPayouts.hooksFor({ pool, recordAudit: _audit, resendClient }));
+    await _audit(pool, { userId: null, table: 'accountant_earnings', action: 'PAYOUT_RUN', newData: { created: r.booked, skipped: r.skippedNotPaying, sent: r.sent, waiting: r.waiting, failed: r.failed }, req });   // LC3f: the system's monthly run
+    return res.json({ success: true, payoutsCreated: r.booked, payoutsSkipped: r.skippedNotPaying, sent: r.sent, waiting: r.waiting, failed: r.failed });
   }));
 
 
@@ -2604,6 +2532,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
           accountId: acct.stripe_account_id,
           chargesEnabled: stripeAcct?.charges_enabled || false,
           payoutsEnabled: stripeAcct?.payouts_enabled || false,
+          transfersEnabled: stripeAcct?.capabilities?.transfers === 'active',   // FA-L3d: referral pay can be sent
           requirements: stripeAcct?.requirements?.currently_due || []
         });
       }

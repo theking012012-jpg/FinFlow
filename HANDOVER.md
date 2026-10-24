@@ -22,10 +22,14 @@ retention warnings / deletion only for plans that END from now on — no existin
 (14-day grace); plan gates by plans.js (Pro now has Banking + scanner); team seats enforced; AI caps no longer env-tunable.
 
 **Owner steps now (all listed in AUDIT_MASTER rows):** (1) schema — `initDB()` creates the new tables at boot unless
-`SKIP_INIT_DDL` is set; if it is, run the migrations in `scripts/migrations/2026-10-23-*.sql`; (2) `link-stripe-subscriptions.js`
+`SKIP_INIT_DDL` is set; if it is, run the migrations in `scripts/migrations/2026-10-23-*.sql` and `2026-10-24-*.sql`; (2) `link-stripe-subscriptions.js`
 (FA-S1, dry run first); (3) the invoice-numbering tools (B1b); (4) yearly Stripe prices → `STRIPE_PRICE_PRO_ANNUAL` /
 `_BUSINESS_ANNUAL` / `_SCALE_ANNUAL`; (5) `DATABASE_CA_CERT` (FA-DB1); (6) `SUPPORT_TZ` (support hours' timezone; default UTC);
-(7) the domain + Resend (D-J, pending the domain purchase).
+(7) the domain + Resend (D-J, pending the domain purchase); (8) **referral pay now goes out by itself (FA-L3d)** — the
+server books it hourly and sends Stripe Connect transfers FROM FinFlow's own Stripe balance: keep USD available there,
+or payouts fail (they retry hourly and show in Admin → Earnings → Referral payouts with Stripe's reason). Check one
+real transfer in Stripe test mode first, and cross-border accounts (FA-L3h). An outside cron calling
+`/run-monthly-payouts` is no longer needed.
 
 ## ⚡ UPDATE 2026-10-21
 

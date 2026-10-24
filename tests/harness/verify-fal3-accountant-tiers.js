@@ -39,7 +39,9 @@ const stats = ((d.getElementById('acc-stats') || {}).textContent || '').replace(
 A('4b the stat strip: $0 monthly fee · 0% on your first ' + T.ONBOARDING_FREE_BELOW + ' clients · ' + T.TIERS.map(t => Math.round(t.commissionRate * 100) + '%')[0] + ' → ' + T.TIERS.map(t => Math.round(t.commissionRate * 100) + '%').slice(-1)[0] + ' commission · ' + maxRef + ' max referral per client',
   /\$0/.test(stats) && new RegExp('0%\\s*Commission on your first ' + T.ONBOARDING_FREE_BELOW).test(stats) && /10% → 2%/.test(stats) && stats.includes(maxRef), stats.slice(0, 200) || 'no #acc-stats');
 A('4c Preferred Partner is described as awarded by the team, not automatic at 4.5 stars', !/with a 4\.5\+ star rating earn a Preferred Partner/.test(text) && /Preferred Partner/.test(text), (text.match(/[^.]*Preferred Partner[^.]*\./) || [''])[0]);
-const ex = 50000, bronze = T.splitBilling(ex, T.TIERS[0].commissionRate, T.estimateStripeFeeCents(ex)), free = T.splitBilling(ex, 0, T.estimateStripeFeeCents(ex));
+// FA-L3d: referral pay is SENT by Stripe transfer (referral-payouts.js; verify-fal3d-referral-payouts executes it)
+A('4e the FAQ says referral pay is sent to the connected Stripe account automatically (was: "paid on the 1st" with nothing paying it)', /sends what you are owed to your connected Stripe account by transfer, automatically/.test(text) && !/Referral commissions are paid on the 1st/.test(text), (text.match(/[^.]*1st of every month[^.]*\./) || [''])[0]);
+const ex = 50000, bronze =T.splitBilling(ex, T.TIERS[0].commissionRate, T.estimateStripeFeeCents(ex)), free = T.splitBilling(ex, 0, T.estimateStripeFeeCents(ex));
 const calc = ((d.getElementById('commission-example') || {}).textContent || '').replace(/\s+/g, ' ');
 A('5  the $500 example is tier-config\'s own split: Stripe ' + money(bronze.stripeFeeCents) + ' · FinFlow ' + money(bronze.commissionCents) + ' · you ' + money(bronze.accountantNetCents) + ' (bug: 4% → $480.00)',
   calc.includes(money(bronze.stripeFeeCents)) && calc.includes(money(bronze.commissionCents)) && calc.includes(money(bronze.accountantNetCents)), calc.slice(0, 300));

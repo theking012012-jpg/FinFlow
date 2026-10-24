@@ -8658,6 +8658,7 @@ window.toggleBilling=function(){
   if(proSub)proSub.textContent=isAnnual?_yr('pro',pro):'Billed monthly';
   if(bizSub)bizSub.textContent=isAnnual?_yr('business',biz):'Billed monthly';
   if(scaleSub)scaleSub.textContent=isAnnual?_yr('scale',scale):'Billed monthly';
+  if(typeof _updatePricingCTAs==='function') _updatePricingCTAs();   // D-G: a subscriber's buttons follow the monthly / yearly choice
 };
 
 function check(ok){
@@ -8698,25 +8699,79 @@ window.toggleFAQ=function(i){
   if(arr)arr.style.transform=open?'':'rotate(180deg)';
 };
 
-function _updatePricingCTAs(){
+async function _updatePricingCTAs(){
   const plan = String((typeof currentUserPlan!=='undefined'?currentUserPlan:'') || '').toLowerCase();
   const rank = { pro:1, business:2, scale:3, enterprise:4 };
   const name = { pro:'Pro', business:'Business', scale:'Scale', enterprise:'Enterprise' };
   const cur = rank[plan] || 0;   // 0 = trial/free → not on a paid plan yet, so the free-trial CTA is valid
+  // D-G step 3: a SUBSCRIBER changes the plan of the subscription they have (preview first) — never a second checkout.
+  let bill = window._billing || null;
+  if (cur > 0 && !bill) { try { const r = await fetch('/api/billing', { credentials: 'include' }); if (r.ok) bill = window._billing = await r.json(); } catch (_) {} }
+  const subscribed = !!(bill && bill.subscribed);
+  const want = (typeof isAnnual !== 'undefined' && isAnnual) ? 'year' : 'month';
   const setMuted  = (b,txt) => { b.textContent=txt; b.onclick=null; b.disabled=true; b.style.opacity='.55'; b.style.cursor='default'; };
-  const setAction = (b,tier,txt) => { b.disabled=false; b.style.opacity=''; b.style.cursor=''; b.textContent=txt; b.onclick=()=>startTrial(tier); };
+  const setAction = (b,tier,txt,fn) => { b.disabled=false; b.style.opacity=''; b.style.cursor=''; b.textContent=txt; b.onclick=fn || (()=>startTrial(tier)); };
   [['cta-pro','pro'],['cta-biz','business'],['cta-scale','scale']].forEach(([id,tier])=>{
     const b=document.getElementById(id); if(!b) return;
     const r=rank[tier];
+    const change = () => ffChangePlan(tier, (typeof isAnnual !== 'undefined' && isAnnual) ? 'year' : 'month');
     if(cur===0) setAction(b,tier,'Start free trial');          // trial/free user — free trial still applies
-    else if(r===cur) setMuted(b,'Current plan');               // the plan they already pay for
-    else if(r>cur) setAction(b,tier,'Upgrade to '+name[tier]); // upgrades are self-serve
-    else setMuted(b,'Included in your plan');                  // lower tier — NO self-serve downgrade; a higher plan already includes it
+    else if(r===cur) {
+      if (subscribed && bill.interval && bill.interval !== want) setAction(b,tier, want === 'year' ? 'Switch to yearly' : 'Switch to monthly', change);
+      else setMuted(b,'Current plan');                         // the plan they already pay for
+    }
+    else if(!subscribed) { if (r>cur) setAction(b,tier,'Upgrade to '+name[tier]); else setMuted(b,'Included in your plan'); }   // no subscription to change (e.g. set by support)
+    else if(r>cur) setAction(b,tier,'Upgrade to '+name[tier], change);
+    else setAction(b,tier,'Switch to '+name[tier], change);    // a downgrade — at the end of the paid period
   });
   const be=document.getElementById('cta-ent');
   if(be && cur===4) setMuted(be,'Current plan');               // on Enterprise → "Current plan"; else leave "Contact sales"
 }
 window._updatePricingCTAs=_updatePricingCTAs;
+
+// D-G step 3 / D-B: what a plan change does — previewed (Stripe's own proration for "now"; the date for "at the period
+// end"), then confirmed. A downgrade below the editors in use asks who keeps edit access.
+function _pcMoney(v){ return '$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function _pcDate(v){ try { return new Date(v).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'}); } catch(_) { return String(v||'').slice(0,10); } }
+window.ffChangePlan = async function(plan, interval){
+  let box=document.getElementById('plan-change-box');
+  if(!box){ box=document.createElement('div'); box.id='plan-change-box'; box.className='card'; box.style.cssText='margin-bottom:1.25rem;border:1px solid var(--acc)';
+    const grid=document.getElementById('plan-grid'); if(grid&&grid.parentNode) grid.parentNode.insertBefore(box, grid.nextSibling); else document.body.appendChild(box); }
+  box.innerHTML='<div style="font-size:13px;color:var(--t2)">Working out the change…</div>';
+  box.scrollIntoView && box.scrollIntoView({block:'nearest'});
+  try{
+    const r=await fetch('/api/billing/change-preview',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan,interval})});
+    const p=await r.json();
+    if(!r.ok){ box.innerHTML='<div style="font-size:13px;color:var(--red)">'+esc(p.error||('Could not prepare the change ('+r.status+').'))+'</div>'; return; }
+    const per = p.interval==='year' ? 'a year' : 'a month';
+    let what;
+    if(p.when==='now'){
+      what = 'Switch to <strong>'+esc(p.planName)+'</strong>'+(p.interval==='year'?' billed yearly':'')+' now. You are charged <strong>'+_pcMoney(p.chargeNow)+'</strong> today'
+        + (p.credit>0 ? ', after a '+_pcMoney(p.credit)+' credit for the unused part of your current plan' : '') + '. Then $'+Number(p.price).toLocaleString('en-US')+' '+per+'.';
+    } else {
+      what = 'Switch to <strong>'+esc(p.planName)+'</strong>'+(p.interval==='year'?' billed yearly':' billed monthly')+' on <strong>'+esc(_pcDate(p.effective))+'</strong>, at the end of what you have paid for. You keep your current plan until then, and nothing is charged now. From then: $'+Number(p.price).toLocaleString('en-US')+' '+per+'.';
+      if(p.seatsOver>0) what += '<div style="margin-top:10px">'+esc(p.planName)+' includes '+p.newSeats+' people who can edit, plus you. Choose who keeps edit access — everyone else becomes a Viewer (they keep seeing the books).</div>'
+        + '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">'+(p.editors||[]).map(ed=>'<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--t1)"><input type="checkbox" data-editor="'+Number(ed.id)+'"> '+esc(ed.name||ed.email||('Member '+ed.id))+' <span style="color:var(--t3)">'+esc(ed.email||'')+'</span></label>').join('')+'</div>';
+    }
+    box.innerHTML='<div style="font-size:13px;color:var(--t1);line-height:1.6">'+what+'</div>'
+      + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="plan-change-confirm">Confirm</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'plan-change-box\').remove()">Not now</button></div>';
+    document.getElementById('plan-change-confirm').onclick=async function(){
+      const keep=[...box.querySelectorAll('input[data-editor]:checked')].map(i=>Number(i.dataset.editor));
+      if(p.seatsOver>0 && (!keep.length || keep.length>p.newSeats)){ notify('Choose up to '+p.newSeats+' people who keep edit access.',true); return; }
+      this.disabled=true;
+      try{
+        const c=await fetch('/api/billing/change',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan,interval,confirm:true,keepEditors:keep})});
+        const d=await c.json();
+        if(!c.ok) throw new Error(d.error||('HTTP '+c.status));
+        notify(d.when==='now' ? 'You are on '+p.planName+' now ✦' : 'You will move to '+p.planName+' on '+_pcDate(d.effective)+'.');
+        box.remove(); window._billing=null;
+        if(typeof window.ffRenderBilling==='function') window.ffRenderBilling();
+        try { const me=await fetch('/api/auth/me',{credentials:'include'}).then(x=>x.json()); if(me&&me.user&&me.user.plan) currentUserPlan=me.user.plan; } catch(_) {}
+        _updatePricingCTAs();
+      }catch(e){ notify('Could not change the plan — '+e.message,true); this.disabled=false; }
+    };
+  }catch(e){ box.innerHTML='<div style="font-size:13px;color:var(--red)">Could not prepare the change — '+esc(e.message)+'</div>'; }
+};
 
 // D-A: Pro / Business / Scale side by side, row for row from plans.js (replaces the unsourced competitor table).
 function renderPlanCompare(){

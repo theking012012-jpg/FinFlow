@@ -38,6 +38,7 @@ const ALLOWED = {
       "POST /api/stripe/checkout",
       "POST /api/cogs/calculate",
       "POST /api/csp-report",
+      "POST /api/billing/change-preview",
       "POST /api/entities/:id/activate",
       "POST /api/help/ask",
       "POST /api/my-access/switch",

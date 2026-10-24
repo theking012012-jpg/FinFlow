@@ -5992,6 +5992,108 @@ app.post('/api/billing/resume', requireAuth, wrap(async (req, res) => {
   await recordAudit(pool, { userId: ctx.uid, table: 'billing', recordId: ctx.uid, action: 'RESUME', newData: { periodEnd: b.period_end }, req });
   res.json({ ok: true });
 }));
+// D-G step 3 / D-B: change plan from the app — the SAME subscription is moved (the old button sent a subscriber to a
+// second checkout). Upgrades and monthly → yearly happen now, prorated by Stripe; downgrades and yearly → monthly at the
+// period end (the plan is kept until then). Previewed first; recomputed on confirm.
+async function _editorsOf(uid) {
+  const { rows } = await pool.query(
+    `SELECT id, data->>'name' AS name, data->>'email' AS email FROM team_members
+      WHERE user_id = $1 AND data->>'role' = 'admin'
+        AND (COALESCE(data->>'status', 'active') = 'active'
+             OR (data->>'status' = 'pending' AND (data->>'invite_expires' IS NULL OR (data->>'invite_expires')::timestamptz > $2::timestamptz)))
+      ORDER BY id`, [uid, new Date().toISOString()]);
+  return rows;
+}
+async function _changePreview(ctx, body) {
+  const plan = String((body || {}).plan || '').toLowerCase(), interval = (body || {}).interval === 'year' ? 'year' : 'month';
+  if (!Plans.PAID.includes(plan)) return { status: 400, body: { error: 'Choose Pro, Business or Scale.' } };
+  const price = Billing.priceFor(process.env, plan, interval);
+  if (!price) return { status: 503, body: { error: notSetUp('This plan' + (interval === 'year' ? ' billed yearly' : ''), 'STRIPE_PRICE_' + plan.toUpperCase() + (interval === 'year' ? '_ANNUAL' : '')) } };
+  const b = ctx.data.billing || {};
+  const from = { plan: Plans.planFor(ctx.data.plan).id, interval: b.interval || 'month' };
+  const when = Billing.changeWhen(from, { plan, interval });
+  if (!when) return { status: 409, body: { error: 'You are already on this plan.', code: 'SAME_PLAN' } };
+  const entLimit = Plans.limit(plan, 'entities');
+  const entCount = (await pool.query(`SELECT count(*)::int AS n FROM entities WHERE user_id = $1`, [ctx.uid])).rows[0].n;
+  if (entLimit != null && entCount > entLimit) {
+    return { status: 409, body: { code: 'ENTITIES_OVER_LIMIT', error: Plans.PLANS[plan].name + ' includes ' + entLimit + ' business' + (entLimit === 1 ? '' : 'es') + '; you have ' + entCount + '. '
+      + 'Remove the businesses you no longer need first (export them before you do), or choose a plan that includes ' + entCount + '. Nothing has changed.' } };
+  }
+  const out = { when, plan, interval, planName: Plans.PLANS[plan].name, price: interval === 'year' ? Plans.PLANS[plan].annualMonthly * 12 : Plans.PLANS[plan].monthly,
+                effective: when === 'now' ? new Date().toISOString() : (b.period_end || null), chargeNow: 0, credit: 0, priceId: price, seatsOver: 0 };
+  if (when === 'now') {
+    const q = { customer: ctx.data.stripe_customer_id, subscription: ctx.sub, subscription_details: { items: [{ id: b.item_id, price }], proration_behavior: 'always_invoice' } };
+    const inv = typeof stripe.invoices.createPreview === 'function' ? await stripe.invoices.createPreview(q)
+      : await stripe.invoices.retrieveUpcoming({ customer: q.customer, subscription: ctx.sub, subscription_items: q.subscription_details.items, subscription_proration_behavior: 'always_invoice' });
+    Object.assign(out, Billing.previewAmounts(inv));
+  } else {
+    const seats = Plans.limit(plan, 'seats');
+    const editors = await _editorsOf(ctx.uid);
+    out.newSeats = seats;
+    out.seatsOver = seats == null ? 0 : Math.max(0, editors.length - seats);
+    if (out.seatsOver > 0) out.editors = editors;
+  }
+  return { status: 200, body: out };
+}
+app.post('/api/billing/change-preview', requireAuth, wrap(async (req, res) => {
+  const ctx = await _billingCtx(req, res); if (!ctx) return;
+  const r = await _changePreview(ctx, req.body);
+  const { priceId, ...shown } = r.body;
+  res.status(r.status).json(shown);
+}));
+app.post('/api/billing/change', requireAuth, wrap(async (req, res) => {
+  if (!req.body || req.body.confirm !== true) return res.status(400).json({ error: 'Confirm the change first.', code: 'CONFIRM_REQUIRED' });
+  const ctx = await _billingCtx(req, res); if (!ctx) return;
+  const r = await _changePreview(ctx, req.body);
+  if (r.status !== 200) return res.status(r.status).json(r.body);
+  const p = r.body, b = ctx.data.billing || {};
+  let keep = null;
+  if (p.seatsOver > 0) {
+    const ids = new Set(p.editors.map(e => e.id));
+    keep = Array.isArray(req.body.keepEditors) ? [...new Set(req.body.keepEditors.map(Number))].filter(id => ids.has(id)) : [];
+    if (!keep.length || keep.length > p.newSeats) {
+      return res.status(400).json({ code: 'KEEP_EDITORS_REQUIRED', error: 'Choose up to ' + p.newSeats + ' people who keep edit access on ' + p.planName + '. Everyone else becomes a Viewer when the change takes effect — nobody loses access.', editors: p.editors, newSeats: p.newSeats });
+    }
+  }
+  const key = 'change-' + ctx.sub + '-' + p.priceId + '-' + String(b.period_start || '');
+  if (p.when === 'now') {
+    await stripe.subscriptions.update(ctx.sub, { items: [{ id: b.item_id, price: p.priceId }], proration_behavior: 'always_invoice', metadata: { userId: String(ctx.uid), plan: p.plan } }, { idempotencyKey: key });
+    await pool.query(`UPDATE users SET data = data || jsonb_build_object('plan', $2::text, 'trial_ends', null::text,
+        'billing', (COALESCE(data->'billing', '{}'::jsonb) - 'pending_change') || jsonb_build_object('plan', $2::text, 'interval', $3::text, 'price_id', $4::text)) WHERE id = $1`,
+      [ctx.uid, p.plan, p.interval, p.priceId]);
+  } else {
+    await stripe.subscriptions.update(ctx.sub, { items: [{ id: b.item_id, price: p.priceId }], proration_behavior: 'none', metadata: { userId: String(ctx.uid), plan: p.plan } }, { idempotencyKey: key });
+    await pool.query(`UPDATE users SET data = data || jsonb_build_object('billing', COALESCE(data->'billing', '{}'::jsonb) || jsonb_build_object('pending_change', $2::jsonb)) WHERE id = $1`,
+      [ctx.uid, JSON.stringify({ plan: p.plan, interval: p.interval, effective: p.effective, price_id: p.priceId, keep_editors: keep })]);
+  }
+  await recordAudit(pool, { userId: ctx.uid, table: 'billing', recordId: ctx.uid, action: 'PLAN_CHANGE', newData: { from: ctx.data.plan, to: p.plan, interval: p.interval, when: p.when, effective: p.effective, chargeNow: p.chargeNow, credit: p.credit, keepEditors: keep }, req });
+  res.json({ ok: true, when: p.when, effective: p.effective, plan: p.plan, interval: p.interval });
+}));
+// D-G step 3: the billing job — lands downgrades whose date has passed (plan, interval; editors beyond the new plan's
+// seats become Viewers, keeping the owner's choice). Idempotent: a landed change is removed. Exported for tests.
+async function runBillingJob(nowMs) {
+  const nowIso = new Date(nowMs == null ? Date.now() : nowMs).toISOString();
+  const { rows } = await pool.query(
+    `SELECT id, data FROM users WHERE data->'billing'->'pending_change' IS NOT NULL
+        AND (data->'billing'->'pending_change'->>'effective')::timestamptz <= $1::timestamptz`, [nowIso]);
+  for (const u of rows) {
+    const pc = u.data.billing.pending_change;
+    const keep = Array.isArray(pc.keep_editors) ? pc.keep_editors.map(Number) : null;
+    if (keep) {
+      for (const ed of await _editorsOf(u.id)) {
+        if (keep.includes(ed.id)) continue;
+        const { rows: [old] } = await pool.query(`SELECT * FROM team_members WHERE id = $1`, [ed.id]);
+        await pool.query(`UPDATE team_members SET data = data || '{"role":"viewer"}'::jsonb WHERE id = $1`, [ed.id]);
+        await recordAudit(pool, { userId: u.id, table: 'team_members', recordId: ed.id, action: 'UPDATE', field: 'role', oldValue: 'admin', newValue: 'viewer', oldData: old ? rowToObj(old) : null });
+      }
+    }
+    await pool.query(`UPDATE users SET data = data || jsonb_build_object('plan', $2::text,
+        'billing', (COALESCE(data->'billing', '{}'::jsonb) - 'pending_change') || jsonb_build_object('plan', $2::text, 'interval', $3::text, 'price_id', $4::text)) WHERE id = $1`,
+      [u.id, pc.plan, pc.interval, pc.price_id || null]);
+    await recordAudit(pool, { userId: u.id, table: 'billing', recordId: u.id, action: 'PLAN_CHANGE', newData: { to: pc.plan, interval: pc.interval, landed: nowIso, keepEditors: keep } });
+  }
+  return { landed: rows.length };
+}
 app.get('/api/team/seats', requireAuth, wrap(async (req, res) => {
   const s = await seatState(scopeId(req), req.userPlan, null);
   res.json(Object.assign(s, { free: ['viewer', 'accountant'] }));
@@ -13805,6 +13907,7 @@ const _jobs = {
   recurring: () => runExclusive(pool, 'recurring-scheduler', () => runRecurringScheduler()),
   fxLive:    () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates()),
   reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
+  billing:   () => runExclusive(pool, 'billing-daily', () => runBillingJob()),   // D-G: pending plan changes (+ retention, renewals)
 };
 function startReconcileMonitor(resend) {
   const hours = Number(process.env.GL_RECONCILE_INTERVAL_HOURS || 6);
@@ -13837,6 +13940,9 @@ if (require.main === module) {
     _jobs.recurring().catch(_logJob('recurring'));
     setInterval(() => _jobs.recurring().catch(_logJob('recurring')), 60 * 60 * 1000);
     // FX-live: pull USD-base rates on boot + daily so conversion never depends on hand-entered rates.
+    // D-G: billing — pending plan changes land on their date; hourly (only due rows are read).
+    _jobs.billing().catch(_logJob('billing'));
+    setInterval(() => _jobs.billing().catch(_logJob('billing')), 60 * 60 * 1000);
     _jobs.fxLive().catch(_logJob('fx-live'));
     setInterval(() => _jobs.fxLive().catch(_logJob('fx-live')), 24 * 60 * 60 * 1000);
     // Security: periodic audit-anomaly scan → email alert (no-op unless SECURITY_ALERT_EMAIL is set)
@@ -13866,6 +13972,7 @@ module.exports.glBalanceSheet = glBalanceSheet;   // GL Phase 5b - reconcile-gat
 // Test hook: expose the recurring scheduler for harness verification (no behavior change in
 // prod — it still runs on boot + on its interval; this only makes it drivable under test).
 module.exports.runRecurringScheduler = runRecurringScheduler;
+module.exports.runBillingJob = runBillingJob;   // D-G test surface: drive the billing job
 module.exports.recordExternalInvoicePayment = recordExternalInvoicePayment;   // GL - external (Stripe/webhook) payment writer (test surface)
 module.exports.postSourceLedger = postSourceLedger;   // GL - non-primary-path canonical poster (test surface)
 // Test hook: expose the pure recurrence-date helper so the Rule 10 timezone-free math can be

@@ -369,6 +369,7 @@
       // Outstanding/overdue are derived from window._realInvoices (set by the dashboard wiring).
       // FA-M12c: avg days to pay = for each invoice PAID IN FULL, the days from its issue date to its last payment,
       // averaged — calendar dates as strings (Rule 10), from the payments on this page. It was never computed.
+      // FA-M12e: none paid → "—". A skipped (null) slot kept the PREVIOUS business's figure after a switch.
       // L5: the card is labelled "This month" — sum this calendar month's payments, not all time.
       const _prTotal = _paymentsRecvData.filter(r => inThisMonth(r.payment_date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _prInvs = window._realInvoices || [];
@@ -384,7 +385,7 @@
       const _spans = _prInvs.filter(i => String(i.status || '').toLowerCase() === 'paid' && _lastPay[i.id] && /^\d{4}-\d{2}-\d{2}/.test(String(i.issue_date || '')))
         .map(i => Math.max(0, _dayN(_lastPay[i.id]) - _dayN(String(i.issue_date).slice(0, 10))));
       const _avgDays = _spans.length ? Math.round(_spans.reduce((s, x) => s + x, 0) / _spans.length) : null;
-      setKpiCards('page-payments-received', [S(_prTotal), S(_prOut), S(_prOver), _avgDays == null ? null : _avgDays + (_avgDays === 1 ? ' day' : ' days')]);
+      setKpiCards('page-payments-received', [S(_prTotal), S(_prOut), S(_prOver), _avgDays == null ? '—' : _avgDays + (_avgDays === 1 ? ' day' : ' days')]);
       { const _sub = document.querySelectorAll('#page-payments-received .mc-change')[3];
         if (_sub) _sub.textContent = _spans.length ? (_spans.length + ' paid invoice' + (_spans.length === 1 ? '' : 's')) : 'No paid invoices yet'; }
       window._refreshDashboardUI?.();

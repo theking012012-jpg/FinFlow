@@ -152,7 +152,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
     // Monthly new users for chart (last 6 months)
     const monthlyUsers = await pool.query(`
-      SELECT DATE_TRUNC('month', created_at) AS month, COUNT(*) AS count
+      SELECT (DATE_TRUNC('month', created_at AT TIME ZONE 'UTC'))::date AS month, COUNT(*) AS count   -- FA-L3f: a calendar month (DATE string), not an instant
       FROM users WHERE created_at >= NOW() - INTERVAL '6 months'
       GROUP BY month ORDER BY month ASC
     `);

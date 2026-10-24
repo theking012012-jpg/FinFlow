@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="/vendor/chart.umd.js" defer></script>
 <script src="kyc-registry.js"></script>
+<script src="/finflow-dates.js"></script>
 <style>
 :root {
   --bg:#0a0806;--bg1:#111009;--bg2:#181410;--bg3:#201a12;
@@ -950,7 +951,7 @@ async function loadTraffic() {
 
     // Daily chart
     const daily = d.daily || [];
-    const labels = daily.map(x => new Date(x.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const labels = daily.map(x => FinFlowDates.calendarLabel(x.day, { month: 'short', day: 'numeric' }));   // FA-L3f: view_day is a DATE
     const visitors = daily.map(x => parseInt(x.visitors));
     if (typeof Chart !== 'undefined' && document.getElementById('traffic-chart')) {
       const ctx = document.getElementById('traffic-chart').getContext('2d');
@@ -1020,7 +1021,7 @@ async function loadOverview() {
 
     // Chart
     const monthly = d.users.monthly || [];
-    const labels = monthly.map(m => new Date(m.month).toLocaleDateString('en-US',{month:'short',year:'2-digit'}));
+    const labels = monthly.map(m => FinFlowDates.calendarLabel(m.month, { month: 'short', year: '2-digit' }));   // FA-L3f
     const counts = monthly.map(m => parseInt(m.count));
     const ctx = document.getElementById('overview-chart').getContext('2d');
     if (_overviewChart) _overviewChart.destroy();
@@ -1328,11 +1329,11 @@ async function loadEarnings() {
         <td><span class="badge ${e.type==='referral'?'b-gold':'b-green'}">${e.type==='referral'?'Referral':'Commission'}</span></td>
         <td>${esc(e.description||'—')}</td>
         <td class="gold">$${(e.amount_cents/100).toFixed(2)}</td>
-        <td>${e.period_month ? new Date(e.period_month).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—'}</td>
+        <td>${e.period_month ? FinFlowDates.calendarLabel(e.period_month, { month: 'short', year: 'numeric' }) : '—'}</td>
         <td><span class="badge ${e.status==='paid'?'b-green':'b-amber'}">${e.status === 'paid' ? 'paid' : e.payout_id ? 'sending by Stripe' : e.status === 'awaiting_payment' ? 'client has not paid' : e.status}</span></td>
       </tr>`).join('')
     : '<tr><td colspan="7" class="empty">No earnings records</td></tr>';
-    const ym = v => { const m = /^(\d{4})-(\d{2})/.exec(String(v || '')); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—'; };
+    const ym = v => FinFlowDates.calendarLabel(v, { month: 'short', year: 'numeric' }) || '—';   // FA-L3f: the shared calendar-label writer
     document.getElementById('payouts-tbody').innerHTML = (payouts || []).length ? payouts.map(p => `
       <tr>
         <td class="primary">${esc(p.first_name)} ${esc(p.last_name)}<div style="font-size:11px;color:var(--t3)">${esc(p.firm||'')}</div></td>
@@ -1513,8 +1514,10 @@ function applyLogFilters() {
   const notes = (document.getElementById('log-notes-search').value||'').toLowerCase();
   const filtered = data.filter(l => {
     if (action && l.action !== action) return false;
-    if (from && new Date(l.created_at) < new Date(from)) return false;
-    if (to && new Date(l.created_at) > new Date(to + 'T23:59:59')) return false;
+    // FA-L3f: both ends are this admin's own calendar day — the same clock the Time column is shown in. Before, "from"
+    // was UTC midnight (new Date('YYYY-MM-DD')) while "to" was local, so the window was skewed west of UTC.
+    if (from && new Date(l.created_at) < new Date(from + 'T00:00:00')) return false;
+    if (to && new Date(l.created_at) > new Date(to + 'T23:59:59.999')) return false;
     if (notes && !(l.notes||'').toLowerCase().includes(notes)) return false;
     return true;
   });

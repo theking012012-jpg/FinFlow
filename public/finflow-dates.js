@@ -86,6 +86,19 @@
     return isNaN(d.getTime()) ? null : _utcYmd(d);
   };
 
+  // FA-L3f: a calendar date (a DATE column, a month bucket) as a display label. Built from its 'YYYY-MM-DD' and
+  // formatted AT UTC, so every viewer reads the same day / month. new Date('2026-10-01').toLocaleDateString() is UTC
+  // midnight shown in the viewer's zone — "Sep 2026" for anyone west of UTC.
+  var calendarLabel = function (v, options, locale) {
+    var ymd = _toYmd(v);
+    if (!ymd) return null;
+    var p = ymd.split('-');
+    var o = {};
+    for (var k in (options || {})) if (Object.prototype.hasOwnProperty.call(options, k)) o[k] = options[k];
+    o.timeZone = 'UTC';
+    return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).toLocaleDateString(locale || 'en-US', o);
+  };
+
   // 1 ── resolvedToday(serverNow, tzOrOffset) → 'YYYY-MM-DD'
   // The resolved "today" from the SERVER clock (the caller must pass server time, never the
   // browser clock). Phase 1 resolves UTC — viewer-independent by construction.
@@ -245,6 +258,7 @@
     payrollPeriodYmd: payrollPeriodYmd,
     resolvePeriod: resolvePeriod,
     inWindow: inWindow,
+    calendarLabel: calendarLabel,
     _toYmd: _toYmd,   // exposed for tests (calendar-date reducer)
     fmtLabel: fmtLabel,   // F195: timezone-safe calendar-date display label
   };

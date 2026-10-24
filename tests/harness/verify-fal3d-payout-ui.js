@@ -23,6 +23,8 @@ function page(file, api, inject) {
   let html = fs.readFileSync(path.join(ROOT, 'public', file), 'utf8');
   const stub = `<script>window.fetch=function(u,o){var p=String(u).split('?')[0];var data=(${JSON.stringify(api)})[p];return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(data==null?{}:data);}});};window.open=function(){};</script>`;
   html = html.replace(/<head>/i, () => '<head>' + stub);
+  // the REAL shared date helper (FA-L3f) — jsdom does not fetch <script src>
+  html = html.replace('<script src="/finflow-dates.js"></script>', () => '<script>' + fs.readFileSync(path.join(ROOT, 'public', 'finflow-dates.js'), 'utf8') + '</script>');
   if (inject) html = inject(html);
   return new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: new VirtualConsole(), url: 'https://finflow.test/' + file }).window;
 }

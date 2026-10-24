@@ -1437,10 +1437,13 @@ If you cannot find a field, use null. Be concise.`;
     const result = await pool.query(query, params);
 
     const total = result.rows.reduce((sum, r) => sum + r.amount_cents, 0);
+    // FA-L3f: the booking month as a DATE string — the dashboard's "This Month" compares to it, not the viewer's clock
+    const { rows: [cp] } = await pool.query(`SELECT date_trunc('month', NOW())::date AS p`);
     return res.json({
       earnings: result.rows,
       totalCents: total,
       totalFormatted: '$' + (total / 100).toFixed(2),
+      currentPeriod: cp.p,
     });
   }));
 

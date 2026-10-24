@@ -776,6 +776,7 @@
 
 <!-- F17: shared tier definition (same file the backend require()s) — one source of truth -->
 <script src="/tier-config.js"></script>
+<script src="/finflow-dates.js"></script>
 <script src="/finflow-conduct-banner.js"></script>
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────────
@@ -1183,11 +1184,12 @@ async function loadEarnings() {
     earnings = data.earnings || [];
 
     const total = data.totalFormatted || '$0.00';
-    const mtd = '$' + (earnings.filter(e => {
-      const d = new Date(e.period_month);
-      const now = new Date();
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    }).reduce((s, e) => s + e.amount_cents, 0) / 100).toFixed(2);
+    // FA-L3f (Rule 10): "this month" is the server's booking month, compared as 'YYYY-MM' strings — never a Date
+    // (new Date('2026-10-01') is 30 Sep for a viewer west of UTC, so October's pay dropped out of the card).
+    const FD = window.FinFlowDates;
+    const thisMonth = String(data.currentPeriod || FD._toYmd(new Date())).slice(0, 7);
+    const mtd = '$' + (earnings.filter(e => e.period_month && String(FD._toYmd(e.period_month)).slice(0, 7) === thisMonth)
+      .reduce((s, e) => s + e.amount_cents, 0) / 100).toFixed(2);
 
     const pending = '$' + (earnings.filter(e => e.status === 'pending').reduce((s, e) => s + e.amount_cents, 0) / 100).toFixed(2);
 
@@ -1200,7 +1202,7 @@ async function loadEarnings() {
       ? '<tr class="loading-row"><td colspan="5">No earnings yet. Invite clients to start earning.</td></tr>'
       : earnings.map(e => `
         <tr>
-          <td>${e.period_month ? new Date(e.period_month).toLocaleDateString('en-US', {month:'short',year:'numeric'}) : '—'}</td>
+          <td>${e.period_month ? FD.calendarLabel(e.period_month, { month: 'short', year: 'numeric' }) : '—'}</td>
           <td><span class="badge ${e.type === 'referral' ? 'badge-gold' : 'badge-green'}">${e.type === 'referral' ? 'Referral' : 'Service'}</span></td>
           <td>${esc(e.description || '—')}</td>
           <td class="gold">$${(e.amount_cents / 100).toFixed(2)}</td>

@@ -3521,7 +3521,14 @@ app.post('/api/support', wrap(async (req, res) => {
     if (_uid) { const u = (await pool.query(`SELECT data->>'email' AS e FROM users WHERE id=$1`, [req.session.userId])).rows[0]; email = (u && u.e) || ''; }
     else { const a = (await pool.query(`SELECT data->>'email' AS e FROM accountants WHERE id=$1`, [_aid])).rows[0]; email = (a && a.e) || ''; }
   } catch (_) {}
-  const { row } = await db.insert('support_requests', { user_id: uid, accountant_id: _aid || null, actor, subject: subject || '(no subject)', message, category, email, status: 'open' });
+  // D-H: the reply target from the account's plan (plans.js, business hours) — stored on the ticket and told to the customer.
+  let _plan = 'pro';
+  if (_uid) { try { const pr = (await pool.query(`SELECT data->>'plan' AS p FROM users WHERE id=$1`, [uid])).rows[0]; _plan = Plans.planFor(pr && pr.p).id; } catch (_) {} }
+  const _sup = Plans.planFor(_plan).support || { replyHours: 8 };
+  const _tz = process.env.SUPPORT_TZ || 'UTC';
+  const _due = require('./support-sla').replyBy(Date.now(), _sup.replyHours, _tz);
+  const replyBy = new Date(_due).toISOString();
+  const { row } = await db.insert('support_requests', { user_id: uid, accountant_id: _aid || null, actor, subject: subject || '(no subject)', message, category, email, status: 'open', plan: _plan, reply_by: replyBy });
   try { logAudit(req, 'CREATE', 'support_requests', row && row.id, null, { category, actor }); } catch (_) {}
   if (resendClient && process.env.ADMIN_EMAIL) {
     try {
@@ -3533,7 +3540,7 @@ app.post('/api/support', wrap(async (req, res) => {
       });
     } catch (e) { console.error('[support] admin email failed:', e.message); }
   }
-  res.status(201).json({ ok: true, id: row && row.id });
+  res.status(201).json({ ok: true, id: row && row.id, replyBy, promise: 'We will reply by ' + require('./support-sla').describe(_due, _tz) + '.' });
 }));
 
 app.get('/api/support', wrap(async (req, res) => {
@@ -3543,7 +3550,7 @@ app.get('/api/support', wrap(async (req, res) => {
   const q = _uid
     ? await pool.query(`SELECT id, data, created_at FROM support_requests WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100`, [scopeId(req)])
     : await pool.query(`SELECT id, data, created_at FROM support_requests WHERE data->>'accountant_id'=$1 ORDER BY created_at DESC LIMIT 100`, [String(_aid)]);
-  res.json({ requests: (q.rows || []).map(r => ({ id: r.id, subject: r.data.subject, message: r.data.message, category: r.data.category, status: r.data.status || 'open', response: r.data.response || '', resolved_at: r.data.resolved_at || null, created_at: r.created_at })) });
+  res.json({ requests: (q.rows || []).map(r => ({ id: r.id, subject: r.data.subject, message: r.data.message, category: r.data.category, status: r.data.status || 'open', replyBy: r.data.reply_by || null, response: r.data.response || '', resolved_at: r.data.resolved_at || null, created_at: r.created_at })) });
 }));
 
 // ── HELP: getting-started progress (live, read from real data) ─────────────────

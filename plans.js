@@ -17,29 +17,35 @@
   // unlimited on every plan (D-C). Pending invites count toward seats.
   // ai = monthly AI questions; scans = monthly receipt scans (env-tunable in ai-cap.js — the defaults live here).
   // invoiceCeiling = a fair-use ceiling on invoices created per month (anti-abuse; null = none).
+  // support.replyHours = the reply target in BUSINESS hours (Mon–Fri 09:00–17:00, support timezone) — every ticket gets
+  // its reply-by time from this (D-H); onboardingCall = a 30-minute onboarding call is offered.
   // annualMonthly = the per-month price when billed yearly (20% off, D-B); the year costs annualMonthly × 12.
   const PLANS = {
     trial: {
       id: 'trial', name: 'Free trial', monthly: 0, annualMonthly: 0, days: 30,
       entities: 1, seats: 15, ai: 30, scans: 3, invoiceCeiling: UNLIMITED,
+      support: { replyHours: 8 },
       features: { invoicing: true, bankSync: true, scanner: true, stripeFeed: true, budgets: true, multiCurrency: true,
                   roles: true, auditTrail: true, mrr: true, saasMetrics: true, consolidation: false },
     },
     pro: {
       id: 'pro', name: 'Pro', monthly: 79, annualMonthly: 63,
       entities: 1, seats: 3, ai: 500, scans: 15, invoiceCeiling: 500,
+      support: { replyHours: 8 },
       features: { invoicing: true, bankSync: true, scanner: true, stripeFeed: true, budgets: true, multiCurrency: true,
                   roles: true, auditTrail: true, mrr: false, saasMetrics: false, consolidation: false },
     },
     business: {
       id: 'business', name: 'Business', monthly: 249, annualMonthly: 199,
       entities: 5, seats: 15, ai: 2000, scans: 50, invoiceCeiling: UNLIMITED,
+      support: { replyHours: 4 },
       features: { invoicing: true, bankSync: true, scanner: true, stripeFeed: true, budgets: true, multiCurrency: true,
                   roles: true, auditTrail: true, mrr: true, saasMetrics: true, consolidation: true },
     },
     scale: {
       id: 'scale', name: 'Scale', monthly: 400, annualMonthly: 320,
       entities: 10, seats: UNLIMITED, ai: 5000, scans: 100, invoiceCeiling: UNLIMITED,
+      support: { replyHours: 2, onboardingCall: true },
       features: { invoicing: true, bankSync: true, scanner: true, stripeFeed: true, budgets: true, multiCurrency: true,
                   roles: true, auditTrail: true, mrr: true, saasMetrics: true, consolidation: true },
     },
@@ -52,6 +58,8 @@
   function limit(plan, key) { return planFor(plan)[key]; }   // null = unlimited
 
   const n = v => Number(v).toLocaleString('en-US');
+  // 8 business hours = "reply within 1 business day"; otherwise the hours.
+  function supportReply(h) { return h === 8 ? 'reply within 1 business day' : 'reply within ' + h + ' business hour' + (h === 1 ? '' : 's'); }
   // The lines a plan card shows — one wording for the landing page, the in-app cards and the comparison.
   function cardLines(plan) {
     const p = planFor(plan);
@@ -64,6 +72,8 @@
     if (p.features.invoicing) L.push('Invoices, quotes and bills' + (p.invoiceCeiling ? ' (fair use: ' + n(p.invoiceCeiling) + ' invoices a month)' : ''));
     if (p.features.mrr) L.push('MRR and SaaS metrics');
     if (p.features.consolidation) L.push('Consolidated view across your businesses');
+    if (p.support) L.push('Email support — ' + supportReply(p.support.replyHours));
+    if (p.support && p.support.onboardingCall) L.push('A 30-minute onboarding call');
     return L;
   }
   // The comparison table: rows of [label, value per plan] — values are text ('✓', '—', numbers).
@@ -87,7 +97,9 @@
       ['Roles and an audit trail that cannot be edited', P.map(p => yes(p.features.roles && p.features.auditTrail))],
       ['MRR and SaaS metrics', P.map(p => yes(p.features.mrr))],
       ['Consolidated view across businesses', P.map(p => yes(p.features.consolidation))],
+      ['Support reply time (business hours)', P.map(p => p.support ? (p.support.replyHours === 8 ? '1 business day' : p.support.replyHours + ' hours') : '—')],
+      ['Onboarding call', P.map(p => yes(p.support && p.support.onboardingCall))],
     ];
   }
-  return { PLANS, PAID, UNLIMITED, planFor, has, limit, cardLines, comparisonRows };
+  return { PLANS, PAID, UNLIMITED, planFor, has, limit, cardLines, comparisonRows, supportReply };
 });

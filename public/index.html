@@ -5148,7 +5148,7 @@ window.helpEscalate=function(btn){
   if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
   fetch('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({subject:'Help request (via Ask FinFlow)',message:'[Escalated from the Ask FinFlow assistant]\n\n'+transcript,category:'ai-escalation'})})
     .then(function(r){ return r.ok?r.json():Promise.reject(); })
-    .then(function(){ _helpConvo.push({role:'system',content:'\u2713 Sent to support with this conversation \u2014 we\u2019ll reply by email. Track it under \u201cYour requests\u201d below.'}); _helpRenderThread(); if(typeof renderTickets==='function') renderTickets(); })
+    .then(function(d){ _helpConvo.push({role:'system',content:'\u2713 Sent to support with this conversation \u2014 '+((d&&d.promise)||'we\u2019ll reply by email.')+' Track it under \u201cYour requests\u201d below.'}); _helpRenderThread(); if(typeof renderTickets==='function') renderTickets(); })
     .catch(function(){ if(btn){ btn.disabled=false; btn.textContent='Still need help? Send this to support \u2192'; } if(typeof notify==='function') notify('Could not send \u2014 please use the contact form below.',true); });
 };
 function renderAskPanel(){
@@ -5265,7 +5265,8 @@ function wireContact(){
     try{
       var r=await fetch('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({subject:subj,message:msg,category:'help-center'})});
       if(!r.ok){ var j=await r.json().catch(function(){return {};}); if(st){ st.style.color='var(--red)'; st.textContent=j.error||'Could not send \u2014 please email us instead.'; } btn.disabled=false; btn.textContent='Send message'; return; }
-      if(st){ st.style.color='var(--green)'; st.textContent='Sent \u2713 We\u2019ll reply by email.'; }
+      var _ok=await r.json().catch(function(){return {};});
+      if(st){ st.style.color='var(--green)'; st.textContent='Sent \u2713 '+(_ok.promise||'We\u2019ll reply by email.'); }   // D-H: the reply-by time
       var s1=document.getElementById('hc-subject'), m1=document.getElementById('hc-msg'); if(s1)s1.value=''; if(m1)m1.value='';
       btn.textContent='Sent \u2713';
       renderTickets();

@@ -933,13 +933,23 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     if (status) { params.push(status); conds.push(`data->>'status' = $${params.length}`); }
     if (actor)  { params.push(actor);  conds.push(`data->>'actor'  = $${params.length}`); }
     const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+    // D-H: the queue is worked in reply-by order (soonest due first; tickets with no target last), and late ones counted.
     const q = await pool.query(
-      `SELECT id, user_id, data, created_at FROM support_requests ${where} ORDER BY created_at DESC LIMIT 300`, params);
+      `SELECT id, user_id, data, created_at FROM support_requests ${where}
+        ORDER BY (data->>'reply_by') IS NULL, (data->>'reply_by')::timestamptz ASC, created_at DESC LIMIT 300`, params);
     const openCount = (await pool.query(`SELECT COUNT(*)::int n FROM support_requests WHERE data->>'status'='open' OR data->>'status' IS NULL`)).rows[0].n;
+    const _now = new Date().toISOString();
+    const overdueCount = (await pool.query(`SELECT COUNT(*)::int n FROM support_requests WHERE COALESCE(data->>'status','open') = 'open' AND data->>'first_response_at' IS NULL
+        AND data->>'reply_by' IS NOT NULL AND (data->>'reply_by')::timestamptz < $1::timestamptz`, [_now])).rows[0].n;
     res.json({
-      openCount,
+      openCount, overdueCount,
       requests: q.rows.map(r => ({
         id: r.id,
+        plan: r.data.plan || null,
+        replyBy: r.data.reply_by || null,
+        firstResponseAt: r.data.first_response_at || null,
+        slaMet: r.data.sla_met == null ? null : r.data.sla_met,
+        overdue: (r.data.status || 'open') === 'open' && !r.data.first_response_at && !!r.data.reply_by && r.data.reply_by < _now,
         user_id: r.user_id,
         actor: r.data.actor || 'client',
         subject: r.data.subject || '(no subject)',
@@ -968,6 +978,8 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     const data = Object.assign({}, cur.data);
     if (status) { data.status = status; data.resolved_at = status === 'resolved' ? new Date().toISOString() : null; }
     if (response != null) data.response = response;
+    // D-H: the FIRST reply records when, and whether it met the ticket's reply-by target.
+    if (response && !data.first_response_at) { data.first_response_at = new Date().toISOString(); if (data.reply_by) data.sla_met = data.first_response_at <= data.reply_by; }
     await pool.query(`UPDATE support_requests SET data=$2 WHERE id=$1`, [id, data]);
     await adminAudit(req, 'support_update', 'support_request', id, {   // LC3g
       before: { status: cur.data && cur.data.status, response: (cur.data && cur.data.response) || null }, after: { status: data.status, response: data.response || null } });

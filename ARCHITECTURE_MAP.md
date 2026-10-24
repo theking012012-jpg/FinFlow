@@ -447,8 +447,8 @@ Postgres `session` table ([server.js:196-203](server.js#L196),
 Additional env vars: `STRIPE_WEBHOOK_SECRET` (signature verify,
 [92](server.js#L92)), `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS`
 ([266](server.js#L266)), `APP_URL` (redirect URLs). The webhook upgrades/cancels
-the user's plan and logs a 4% `platform_fees` row for accountant Connect billing
-([106-132](server.js#L106)).
+the user's plan. (FA-L3b, 2026-10-24: a 4% `platform_fees` writer here never ran and is deleted; FinFlow's
+accountant-billing commission is `accountant_earnings.commission_cents`, written at bill time.)
 
 **Resend** ([server.js:16-22](server.js#L16)). Initialized only if
 `RESEND_API_KEY` is set; if the package isn't installed it logs

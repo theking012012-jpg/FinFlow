@@ -1161,7 +1161,7 @@ async function initDB() {
     }
   }
 
-  // platform_fees: internal 4% revenue ledger (moved out of the Stripe webhook hot path).
+  // platform_fees: no longer written (FA-L3b - its only writer was dead code); kept so existing rows stay readable.
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS platform_fees (
       id            SERIAL PRIMARY KEY,

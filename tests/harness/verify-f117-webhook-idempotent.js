@@ -1,14 +1,19 @@
 'use strict';
 /**
  * verify-f117-webhook-idempotent.js — F117 (non-money routes). Stripe RETRIES webhook delivery, so a
- * replay of the same event.id must NOT re-run the handlers. The non-idempotent risk is the
- * platform_fees INSERT on checkout.session.completed: a redelivery would double-log platform revenue.
- * The webhook now claims each event.id durably (INSERT ON CONFLICT DO NOTHING) and acks 200 on a
- * replay without processing.
+ * replay of the same event.id must NOT re-run the handlers. The webhook claims each event.id durably
+ * (INSERT ON CONFLICT DO NOTHING) and acks 200 on a replay without processing.
+ *
+ * FA-L3b (2026-10-24): this harness used to prove the claim with a platform_fees INSERT fired by
+ * metadata.accountantId — a key NO real checkout writes (bill-client writes accountant_id; the only
+ * accountantId is the KYC identity session). That 4% writer never ran in production and is deleted;
+ * FinFlow's commission is accountant_earnings.commission_cents (written at bill time). The replay is now
+ * proven with the REAL subscription-checkout shape (server.js checkout: metadata {userId, plan, interval}).
  *
  * EXECUTED against real Postgres + the REAL signed webhook route (constructEvent verifies the HMAC).
- * Discriminating (Rule 14): pre-fix a second delivery of the same event.id inserts a 2nd platform_fees
- * row → A2 red.
+ * Discriminating (Rule 4/14): the user moves to 'business' after the first delivery; a replay that re-ran
+ * the handler would put them back on 'pro' → A2 red. A session carrying the legacy accountantId key wrote a
+ * 4% platform_fees row before FA-L3b → A4 red (one row of 200 cents on a $50 bill).
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-f117-webhook-idempotent.js
  */
@@ -35,28 +40,40 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
       const header = stripe.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_WEBHOOK_SECRET });
       return fetch(server.baseUrl + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': header }, body: payload });
     };
+    const uid = (await c.query(`INSERT INTO users (user_id,entity_id,data) VALUES (NULL,NULL,$1) RETURNING id`, [{ email: 'f117@finflow.test', plan: 'trial', role: 'owner' }])).rows[0].id;
     const mkEvent = (id) => JSON.stringify({
       id, type: 'checkout.session.completed',
-      data: { object: { payment_status: 'paid', metadata: { accountantId: '4242' }, amount_total: 5000 } },
+      data: { object: { id: 'cs_f117', mode: 'subscription', payment_status: 'paid', subscription: 'sub_f117', customer: 'cus_f117',
+        metadata: { userId: String(uid), plan: 'pro', interval: 'month' }, amount_total: 1900 } },
     });
-    const feeRows = async () => (await c.query(`SELECT count(*)::int AS n FROM platform_fees WHERE accountant_id = 4242`)).rows[0].n;
+    const plan = async () => (await c.query(`SELECT data->>'plan' AS p FROM users WHERE id = $1`, [uid])).rows[0].p;
     const evtRows = async (id) => (await c.query(`SELECT count(*)::int AS n FROM stripe_webhook_events WHERE event_id = $1`, [id])).rows[0].n;
 
-    // 1 — first delivery processes: one platform_fees row, event recorded.
+    // 1 — first delivery processes: the user is on Pro, event recorded.
     const r1 = await post(mkEvent('evt_f117_A'));
     A('first delivery → 200', r1.status === 200, `status ${r1.status}`);
-    A('A1: first delivery inserted exactly one platform_fees row', (await feeRows()) === 1, `count=${await feeRows()}`);
+    A('A1: first delivery processed (trial → pro)', (await plan()) === 'pro', `plan=${await plan()}`);
     A('event recorded in stripe_webhook_events', (await evtRows('evt_f117_A')) === 1, `count=${await evtRows('evt_f117_A')}`);
 
-    // 2 — REPLAY of the SAME event.id: deduped, no second platform_fees row.
+    // the customer then moves to Business (a later, separate change)
+    await c.query(`UPDATE users SET data = data || '{"plan":"business"}' WHERE id = $1`, [uid]);
+
+    // 2 — REPLAY of the SAME event.id: deduped, the later change stands.
     const r2 = await post(mkEvent('evt_f117_A'));
     const j2 = await r2.json().catch(() => ({}));
     A('replay → 200 with {duplicate:true}', r2.status === 200 && j2.duplicate === true, `status ${r2.status} body ${JSON.stringify(j2)}`);
-    A('A2: replay did NOT insert a second platform_fees row (still 1)', (await feeRows()) === 1, `count=${await feeRows()} — replay double-logged revenue`);
+    A('A2: replay did NOT re-run the handler (still business; bug: back to pro)', (await plan()) === 'business', `plan=${await plan()} — replay re-applied an old checkout`);
 
     // 3 — a DIFFERENT event.id is a distinct event and DOES process (per-event, not a global block).
     const r3 = await post(mkEvent('evt_f117_B'));
-    A('A3: a different event.id processes (fees now 2)', r3.status === 200 && (await feeRows()) === 2, `count=${await feeRows()}`);
+    A('A3: a different event.id processes (back to pro)', r3.status === 200 && (await plan()) === 'pro', `plan=${await plan()}`);
+
+    // 4 — FA-L3b: the dead 4% platform_fees writer is gone (a session carrying accountantId logs nothing).
+    const legacy = JSON.stringify({ id: 'evt_f117_C', type: 'checkout.session.completed',
+      data: { object: { payment_status: 'paid', metadata: { accountantId: '4242' }, amount_total: 5000 } } });
+    const r4 = await post(legacy);
+    const fees = (await c.query(`SELECT count(*)::int AS n FROM platform_fees`)).rows[0].n;
+    A('A4: no flat-4% platform_fees row is written (bug: 1 row, 200 cents on a $50 bill)', r4.status === 200 && fees === 0, `status ${r4.status} rows=${fees}`);
 
     // STRUCTURAL
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');

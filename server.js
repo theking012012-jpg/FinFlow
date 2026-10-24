@@ -254,7 +254,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   }
 
   // F117: idempotent webhook. Stripe retries delivery, so a replay of the same event.id must not
-  // re-run the handlers (e.g. a second platform_fees INSERT). Claim the event durably BEFORE
+  // re-run the handlers (e.g. re-apply an old checkout's plan over a later change). Claim the event durably BEFORE
   // processing: INSERT ... ON CONFLICT DO NOTHING RETURNING — no row back ⇒ already handled ⇒ ack 200
   // (a 2xx tells Stripe to stop retrying) and stop. The money paths keep their own per-writer keys
   // (invoice_payments/session id, earnings/payment_intent id), so this event-level guard is additive.
@@ -289,26 +289,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     console.log(`[Stripe] ${event.type} ${event.data.object && event.data.object.id} not paid yet (payment_status=${event.data.object && event.data.object.payment_status}) — waiting for async_payment_succeeded`);
   } else if (_checkoutEvt) {
     const session = event.data.object;
-    const accountantId = session.metadata?.accountantId;
-    const billedCents  = session.amount_total;
-    if (accountantId) {
-      // 4% is FinFlow's platform revenue — NOT the accountant's earnings.
-      // Stripe Connect deducts it automatically via application_fee_amount.
-      // We log it here in platform_fees for internal revenue audit only.
-      const feeCents = Math.round(billedCents * 0.04);
-      // platform_fees table is created in initDB() (database.js) — no DDL in this hot path.
-      await pool.query(`
-        INSERT INTO platform_fees (accountant_id, client_id, billed_cents, fee_cents, description, period_month)
-        VALUES ($1, $2, $3, $4, $5, date_trunc('month', NOW()))
-      `, [
-        accountantId,
-        session.metadata?.clientUserId || null,
-        billedCents,
-        feeCents,
-        session.metadata?.description || 'Platform fee (4%)',
-      ]);
-      console.log(`[Stripe] Platform fee logged: $${(feeCents/100).toFixed(2)} (4% of $${(billedCents/100).toFixed(2)}) — accountant ${accountantId}`);
-    }
+    // FA-L3b: a flat-4% platform_fees writer stood here, keyed on metadata.accountantId - a key no checkout writes
+    // (bill-client writes accountant_id), so it never ran; the commission Stripe takes is the tier's, recorded once
+    // in accountant_earnings.commission_cents when the bill is created (accountant-routes.js bill-client).
 
     // Upgrade user plan when they pay for a subscription
     const planUpgrade = session.metadata?.plan; // 'pro' or 'business'

@@ -995,16 +995,20 @@ If you cannot find a field, use null. Be concise.`;
       // given only when every row in the window shares one currency; otherwise they are null and the per-currency
       // figures are the answer.
       const _ytdTo = new Date().toISOString().slice(0, 10), _ytdFrom = _ytdTo.slice(0, 4) + '-01-01';   // calendar strings (Rule 10)
-      const { rows: _pSums } = await pool.query(
-        // M60: mirrors FinFlowDates.personalTxType — a pre-M60 personal bank-feed 'credit' is income, not spending.
-        `SELECT COALESCE(NULLIF(data->>'currency',''),'USD') AS cur, COALESCE(lower(data->>'tx_type'), '') IN ('income', 'credit') AS is_inc,
-                COALESCE(SUM(CASE WHEN (data->>'amount') ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$' THEN (data->>'amount')::numeric END),0)::float AS amt
-           FROM personal_transactions
+      // FA-M14: the Personal page's own rule (FinFlowDates.personalTxKind — income / expense / transfer; transfers are
+      // neither), applied to every row in the window. It was a SQL mirror of the income/expense split alone.
+      const { rows: _pRows } = await pool.query(
+        `SELECT data FROM personal_transactions
           WHERE user_id = $1 AND entity_id IS NULL AND COALESCE(NULLIF(data->>'tx_date',''), to_char(created_at,'YYYY-MM-DD')) >= $2
-            AND COALESCE(NULLIF(data->>'tx_date',''), to_char(created_at,'YYYY-MM-DD')) <= $3
-          GROUP BY 1, 2`, [userId, _ytdFrom, _ytdTo]);
+            AND COALESCE(NULLIF(data->>'tx_date',''), to_char(created_at,'YYYY-MM-DD')) <= $3`, [userId, _ytdFrom, _ytdTo]);
+      const _FD = require('./public/finflow-dates.js');
       const _incByCur = {}, _expByCur = {};
-      for (const r of _pSums) { const t = r.is_inc ? _incByCur : _expByCur; t[r.cur] = Math.round(((t[r.cur] || 0) + r.amt) * 100) / 100; }
+      for (const { data: r } of _pRows) {
+        const kind = _FD.personalTxKind(r); if (kind === 'transfer') continue;
+        const amt = /^\s*-?[0-9]+(\.[0-9]+)?\s*$/.test(String(r.amount)) ? Number(r.amount) : 0;
+        const cur = (r.currency && String(r.currency)) || 'USD', t = kind === 'income' ? _incByCur : _expByCur;
+        t[cur] = Math.round(((t[cur] || 0) + amt) * 100) / 100;
+      }
       const _curs = new Set([...Object.keys(_incByCur), ...Object.keys(_expByCur)]);
       const _single = _curs.size <= 1;
       const _inc = _single ? Object.values(_incByCur).reduce((a, v) => a + v, 0) : null;
@@ -1019,7 +1023,7 @@ If you cannot find a field, use null. Be concise.`;
         expense:      _exp == null ? null : _exp.toFixed(2),
         currency:     _single ? ([..._curs][0] || null) : null,
         incomeByCurrency: _incByCur, expenseByCurrency: _expByCur, window: { from: _ytdFrom, to: _ytdTo },
-        transactions: ptx.rows.map(r => ({ ...r.data, id: r.id, tx_type: require('./public/finflow-dates.js').personalTxType(r.data) })),   // M60
+        transactions: ptx.rows.map(r => ({ ...r.data, id: r.id, tx_type: require('./public/finflow-dates.js').personalTxType(r.data), kind: require('./public/finflow-dates.js').personalTxKind(r.data) })),   // M60 · FA-M14
         accounts:     pacc.rows.map(r => ({ ...r.data, id: r.id })),
       };
     }

@@ -3691,9 +3691,11 @@ const PERS_CATS=[
   {key:'Shopping',     type:'expense',color:'var(--amber)', bg:'var(--amber-bg)', icon:'bag'},
   {key:'Subscriptions',type:'expense',color:'var(--acc2)',  bg:'var(--acc-bg)',   icon:'repeat'},
   {key:'Other',        type:'expense',color:'var(--t2)',    bg:'var(--bg3)',      icon:'dots'},
+  {key:'Transfer',     type:'expense',color:'var(--t3)',    bg:'var(--bg3)',      icon:'repeat'},   // FA-M14: not spending
   {key:'Salary',       type:'income', color:'var(--green)', bg:'var(--green-bg)', icon:'cash'},
   {key:'Freelance',    type:'income', color:'var(--teal)',  bg:'var(--teal-bg)',  icon:'briefcase'},
   {key:'Other Income', type:'income', color:'var(--green)', bg:'var(--green-bg)', icon:'coins'},
+  {key:'Transfer',     type:'income', color:'var(--t3)',    bg:'var(--bg3)',      icon:'repeat'},   // FA-M14: not income
 ];
 function persCatMeta(cat){ return PERS_CATS.find(c=>c.key===cat) || PERS_CATS.find(c=>c.key==='Other'); }
 function persCatIconSvg(icon){
@@ -3799,7 +3801,7 @@ function renderTxmPills(){
 }
 function openTransactionModal(type,editTx){
   const isEdit=!!(editTx&&editTx._dbId);
-  const t=isEdit?editTx.type:(type||'expense');
+  const t=isEdit?(editTx.flow||editTx.type):(type||'expense');   // FA-M14: a transfer edits on its money direction
   const setV=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
   setV('tx-edit-id', isEdit?editTx._dbId:'');
   // Carry over anything already typed in the quick-add bar for a smooth handoff.
@@ -4088,7 +4090,7 @@ function _renderPersTxList(){
   let running=0;   // accumulated in USD so mixed-currency rows are additive
   el.innerHTML=txs.map(t=>{
     const _c=_txCurOf(t);
-    running+=(t.type==='income'?1:-1)*_safeFX(t.amount,_c,'USD');
+    running+=((t.flow||t.type)==='income'?1:-1)*_safeFX(t.amount,_c,'USD');   // FA-M14: a transfer still moves money
     const m=persCatMeta(t.cat);
     // Ledger shows each row in its OWN currency (the exact figure entered), with a
     // muted ≈ conversion into the view currency when they differ, and the ISO code on
@@ -4102,7 +4104,7 @@ function _renderPersTxList(){
         <div class="tx-icon" style="background:${m.bg};color:${m.color}">${persCatIconSvg(m.icon)}</div>
         <div style="min-width:0"><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}${_codeTag}</div></div>
       </div>
-      <div class="tx-amt ${t.type==='income'?'up':'dn'}" style="margin-right:6px">${t.type==='income'?'+':'-'}${_native}${_conv}</div>
+      <div class="tx-amt ${t.type==='transfer'?'':((t.flow||t.type)==='income'?'up':'dn')}" style="margin-right:6px"${t.type==='transfer'?' title="A transfer — not counted as spending or income"':''}>${(t.flow||t.type)==='income'?'+':'-'}${_native}${_conv}</div>
       ${t._dbId?`<button class="tx-act tx-edit" onclick="editPersTx(${t._dbId})" title="Edit transaction" aria-label="Edit transaction"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button>`:''}
       ${t._dbId?`<button class="tx-act tx-del" onclick="deletePersonalTransaction(${t._dbId})" style="font-size:12px" title="Delete transaction" aria-label="Delete transaction">✕</button>`:''}
     </div>`;
@@ -4210,7 +4212,7 @@ async function loadPersonalFinance(){
       console.warn('[PersFinance] /api/personal-transactions returned',r.status,'— continuing without transactions');
     } else {
       const txs=await r.json();
-      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,currency:t.currency||'USD',type:window.FinFlowDates.personalTxType(t),date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
+      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,currency:t.currency||'USD',type:window.FinFlowDates.personalTxKind(t),flow:window.FinFlowDates.personalTxType(t),date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
     }
     // Active recurring profiles feed the period-KPI projection (base × months).
     try{

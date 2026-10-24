@@ -233,6 +233,22 @@
     return v === 'credit' || v === 'income' ? 'income' : 'expense';
   };
 
+  // FA-M14: moving money between your own accounts, paying a card or a loan, funding a deposit is neither spending nor
+  // income. A row is a TRANSFER when its category says so — chosen by the person ("Transfer") or by the bank feed
+  // (Plaid TRANSFER_IN / TRANSFER_OUT / LOAN_PAYMENTS) — or, when it has no real category ("Other" / none), when its
+  // description reads as one (a "… fee" never does). The person can always set or clear the category.
+  var PERSONAL_TRANSFER_CATS = ['transfer', 'transfer_in', 'transfer_out', 'loan_payments'];
+  var _TRANSFER_DESC = /\b(transfer|xfer|tfr|payment\s*-?\s*thank\s*you|credit\s*card\s*payment|card\s*payment|to\s+savings|from\s+savings|certificate\s+of\s+deposit|cd\s+deposit)\b/i;
+  var isPersonalTransfer = function (t) {
+    var c = String((t && (t.category != null ? t.category : t.cat)) || '').trim().toLowerCase();
+    if (PERSONAL_TRANSFER_CATS.indexOf(c) !== -1) return true;
+    if (c && c !== 'other') return false;
+    var d = String((t && (t.description != null ? t.description : t.desc)) || '');
+    return _TRANSFER_DESC.test(d) && !/\bfees?\b/i.test(d);
+  };
+  // income | expense | transfer — what a personal row COUNTS as (personalTxType stays its money direction).
+  var personalTxKind = function (t) { return isPersonalTransfer(t) ? 'transfer' : personalTxType(t); };
+
   // M62: the currency a bank in this country books in — the default for the Personal "Your bank" card (the person can
   // change it: a bank account has its own currency). One table for the server and the card; it covers every country the
   // app offers. Unknown → null (the caller asks, never guesses).
@@ -248,6 +264,8 @@
 
   return {
     personalTxType: personalTxType,
+    isPersonalTransfer: isPersonalTransfer,
+    personalTxKind: personalTxKind,
     currencyForCountry: currencyForCountry,
     deductibleFactor: deductibleFactor,
     normalizeDeductible: normalizeDeductible,

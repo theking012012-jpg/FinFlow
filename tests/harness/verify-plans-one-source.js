@@ -42,6 +42,11 @@ run('D-A — one plan definition; every surface says what plans.js says', async 
   const ldCmp = ld.getElementById('plan-compare');
   const ldRows = ldCmp ? [...ldCmp.querySelectorAll('tbody tr')].map(tr => [...tr.children].map(td => norm(td.textContent))) : [];
   eq('2c landing has the plan comparison, row for row from plans.js', ldRows, Plans.comparisonRows().map(([l, v]) => [l, ...v]));
+  // D-H: the Enterprise card states only what Enterprise includes (plans.js) — not the old unbuilt list
+  const ldEnt = ld.querySelector('.p-card[data-plan="enterprise"]');
+  eq('2e landing Enterprise card lines = plans.js', ldEnt ? [...ldEnt.querySelectorAll('.p-feat')].map(e => norm(e.textContent).replace(/^✓\s*/, '')) : [], Plans.cardLines('enterprise'));
+  const ldAll = norm(ld.body.textContent);
+  A('2f no unbuilt Enterprise promise on the landing page (white-label, on-premise, 99.9% SLA, SAML, custom AI prompts)', !/White-label|On-premise|99\.9%|SAML|Custom AI context/i.test(ldAll), (ldAll.match(/White-label|On-premise|99\.9%|SAML|Custom AI context/i) || [''])[0]);
   const gen = require(path.join(ROOT, 'scripts', 'gen-plan-cards.js'));
   const cur = fs.readFileSync(path.join(ROOT, 'public', 'landing.html'), 'utf8');
   A('2d landing.html is exactly what the generator writes from plans.js (nobody edited a card by hand)', gen.render(cur) === cur, 'run: node scripts/gen-plan-cards.js');
@@ -52,6 +57,7 @@ run('D-A — one plan definition; every surface says what plans.js says', async 
   for (const [id, el] of [['pro', 'pro-features'], ['business', 'biz-features'], ['scale', 'scale-features']]) {
     eq('3  in-app ' + id + ' card lines = plans.js', lines(d.getElementById(el)), Plans.cardLines(id));
   }
+  eq('3e in-app Enterprise card lines = plans.js (not the old unbuilt list)', lines(d.getElementById('ent-features')), Plans.cardLines('enterprise'));
   const appCmp = d.getElementById('plan-compare-app');
   const appRows = appCmp ? [...appCmp.querySelectorAll('tbody tr')].map(tr => [...tr.children].map(td => norm(td.textContent))) : [];
   eq('3b in-app plan comparison, row for row from plans.js (replaces the removed competitor table)', appRows, Plans.comparisonRows().map(([l, v]) => [l, ...v]));

@@ -1264,6 +1264,13 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
     if (!user || !bcrypt.compareSync(password, user.password)) { await _failed(user ? 'wrong_password' : 'unknown_account'); return res.status(401).json({ error: 'Invalid email or password.' }); }
+    // D-H: a MEMBER of an account that requires single sign-on for their e-mail domain signs in through it. The account
+    // owner is never refused (the way back in if the provider fails).
+    { const _sc = await _ssoConfigForDomain(require('./sso').domainOf(user.email));
+      if (_sc && _sc.enforce && _sc.owner !== user.id) {
+        const { rows: [_m] } = await pool.query(`SELECT 1 FROM team_members WHERE user_id = $1 AND data->>'member_user_id' = $2::text AND data->>'status' = 'active' LIMIT 1`, [_sc.owner, String(user.id)]);
+        if (_m) { await _failed('sso_required'); return res.status(403).json({ code: 'SSO_REQUIRED', error: 'Your company signs in to FinFlow with single sign-on. Use "Sign in with SSO".' }); }
+      } }
     // Owner MFA gate (mirrors the accountant flow): once the owner has enabled TOTP, a correct
     // password is NOT enough — a valid 6-digit code is required before the session is granted. The
     // deny returns {mfaRequired:true} so the login UI can reveal the code field. Byte-identical to
@@ -7511,6 +7518,116 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
   if (eid == null && imported > 0) await _persHist(req, uid, 'bank_import', 'IMPORT', null, { format: format || null, imported, skipped, total: txns.length });
   res.status(201).json({ ok: true, imported, skipped, total: txns.length,
     ...(txns.dateOrder ? { dateOrder: txns.dateOrder, dateOrderAssumed: txns.dateOrderAssumed, decimalMark: txns.decimalMark, rejectedBadDate: txns.badDates } : {}) });
+}));
+
+// ── D-H: SINGLE SIGN-ON (OpenID Connect) for Enterprise accounts ─────────────────────────────────────────────────
+// The owner connects the company's identity provider (Settings → Security). Members of the configured e-mail domains
+// sign in through it; with "require SSO" on, those members can no longer use a password (the owner always can — the way
+// back in). New people can join as Viewers if the owner allows it. The client secret is stored encrypted (the MFA
+// helper) and never returned. sso.js does the protocol: PKCE + state + nonce, signature-verified ID token.
+const SSO = require('./sso');
+const _ssoRedirect = req => (process.env.APP_URL || (req.protocol + '://' + req.get('host'))).replace(/\/+$/, '') + '/api/auth/sso/callback';
+async function _ssoConfigOf(ownerId) { const { value } = await _providerBlobE(ownerId, 'sso_config', null); return value || null; }
+async function _ssoConfigForDomain(domain) {
+  if (!domain) return null;
+  const { rows } = await pool.query(`SELECT user_id, data FROM user_settings WHERE data->>'key' = 'sso_config' AND entity_id IS NULL`);
+  for (const r of rows) {
+    let v = null; try { v = JSON.parse(r.data.value); } catch (_) {}
+    if (v && v.enabled && Array.isArray(v.domains) && v.domains.includes(domain)) return Object.assign({ owner: r.user_id }, v);
+  }
+  return null;
+}
+const _ssoShown = (v, req) => v ? { enabled: !!v.enabled, issuer: v.issuer, client_id: v.client_id, domains: v.domains || [], enforce: !!v.enforce, jitViewer: !!v.jitViewer, hasSecret: !!v.client_secret_enc, redirectUri: _ssoRedirect(req) }
+  : { enabled: false, redirectUri: _ssoRedirect(req) };
+app.get('/api/sso/config', requireAuth, wrap(async (req, res) => {
+  if (req.accountRole && req.accountRole !== 'owner') return res.status(403).json({ error: 'Only the account owner can see single sign-on settings.' });
+  res.json(_ssoShown(await _ssoConfigOf(scopeId(req)), req));
+}));
+app.put('/api/sso/config', requireAuth, wrap(async (req, res) => {
+  if (req.accountRole && req.accountRole !== 'owner') return res.status(403).json({ error: 'Only the account owner can set up single sign-on.' });
+  if (!Plans.has(req.userPlan, 'sso')) return res.status(402).json({ code: 'PLAN_FEATURE', error: 'Single sign-on is part of the Enterprise plan — talk to us to set it up.' });
+  const b = req.body || {}, uid = scopeId(req);
+  const cur = await _ssoConfigOf(uid);
+  if (b.enabled === false) {
+    const next = Object.assign({}, cur || {}, { enabled: false });
+    await _saveProviderBlobE(uid, 'sso_config', next, null, req);
+    await recordAudit(pool, { userId: uid, table: 'sso', recordId: uid, action: 'UPDATE', newData: { enabled: false }, req });
+    return res.json(_ssoShown(next, req));
+  }
+  const issuer = String(b.issuer || '').trim().replace(/\/+$/, '');
+  if (!SSO.issuerAllowed(issuer)) return res.status(400).json({ error: 'The issuer must be an https:// address (your identity provider\'s "issuer URL").' });
+  const clientId = String(b.client_id || '').trim().slice(0, 300);
+  if (!clientId) return res.status(400).json({ error: 'Enter the client ID from your identity provider.' });
+  const domains = [...new Set((Array.isArray(b.domains) ? b.domains : String(b.domains || '').split(',')).map(d => String(d).trim().toLowerCase().replace(/^@/, '')).filter(d => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)))].slice(0, 20);
+  if (!domains.length) return res.status(400).json({ error: 'Enter at least one e-mail domain your team signs in with (for example yourcompany.com).' });
+  const ownerEmailDomain = SSO.domainOf(req.session.userEmail);
+  const secret = String(b.client_secret || '');
+  const secretEnc = secret ? totp.encSecret(secret) : (cur && cur.client_secret_enc);
+  if (!secretEnc) return res.status(400).json({ error: 'Enter the client secret from your identity provider.' });
+  try { await SSO.discover(issuer); } catch (e) { return res.status(400).json({ error: 'Could not reach your identity provider: ' + e.message }); }
+  const next = { enabled: true, issuer, client_id: clientId, client_secret_enc: secretEnc, domains, enforce: !!b.enforce, jitViewer: !!b.jitViewer };
+  await _saveProviderBlobE(uid, 'sso_config', next, null, req);
+  await recordAudit(pool, { userId: uid, table: 'sso', recordId: uid, action: cur ? 'UPDATE' : 'CREATE', newData: { issuer, client_id: clientId, domains, enforce: next.enforce, jitViewer: next.jitViewer, secretChanged: !!secret, ownerDomainCovered: domains.includes(ownerEmailDomain) }, req });
+  res.json(_ssoShown(next, req));
+}));
+app.post('/api/auth/sso/start', loginLimiter, wrap(async (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  const cfg = await _ssoConfigForDomain(SSO.domainOf(email));
+  if (!cfg) return res.status(404).json({ error: 'Single sign-on is not set up for this e-mail domain — sign in with your password.' });
+  let disc; try { disc = await SSO.discover(cfg.issuer); } catch (e) { return res.status(502).json({ error: 'Your identity provider is not answering right now: ' + e.message }); }
+  const pk = SSO.newPkce(), state = SSO.randomToken(), nonce = SSO.randomToken();
+  req.session.sso = { owner: cfg.owner, state, nonce, verifier: pk.verifier, email, at: Date.now() };
+  await saveSession(req);
+  res.json({ url: SSO.authorizeUrl(disc, cfg, { state, nonce, challenge: pk.challenge, redirectUri: _ssoRedirect(req), loginHint: email }) });
+}));
+app.get('/api/auth/sso/callback', loginLimiter, wrap(async (req, res) => {
+  const s = req.session && req.session.sso;
+  const fail = async (reason) => {
+    try { await recordAudit(pool, { userId: s ? s.owner : null, table: 'users', action: 'LOGIN_FAILED', actorOverride: 'anonymous', newData: { reason: 'sso: ' + reason, email: s && s.email }, req }); } catch (_) {}
+    if (req.session) delete req.session.sso;
+    return res.redirect(302, '/app?sso_error=' + encodeURIComponent(reason));
+  };
+  if (!s || !req.query.state || req.query.state !== s.state) return fail('This sign-in could not be matched — please start again.');
+  if (Date.now() - s.at > 10 * 60 * 1000) return fail('This sign-in took too long — please start again.');
+  if (!req.query.code) return fail(String(req.query.error_description || req.query.error || 'The identity provider did not complete the sign-in.'));
+  const cfg = await _ssoConfigOf(s.owner);
+  if (!cfg || !cfg.enabled) return fail('Single sign-on has been turned off for this account.');
+  let claims;
+  try {
+    const disc = await SSO.discover(cfg.issuer);
+    const tok = await SSO.exchangeCode(disc, cfg, totp.decSecret(cfg.client_secret_enc), { code: String(req.query.code), verifier: s.verifier, redirectUri: _ssoRedirect(req) });
+    claims = await SSO.verifyIdToken(tok.id_token, disc, { audience: cfg.client_id, nonce: s.nonce });
+  } catch (e) { return fail(e.message); }
+  const email = String(claims.email).toLowerCase();
+  if (!(cfg.domains || []).includes(SSO.domainOf(email))) return fail('This e-mail domain is not set up for single sign-on on this account.');
+  const { rows: [own] } = await pool.query(`SELECT id, data FROM users WHERE id = $1`, [s.owner]);
+  let userId = null;
+  if (own && String(own.data.email || '').toLowerCase() === email) userId = own.id;
+  if (!userId) {
+    const { rows: [tm] } = await pool.query(`SELECT id, data FROM team_members WHERE user_id = $1 AND lower(data->>'email') = $2 ORDER BY (data->>'status' = 'active') DESC LIMIT 1`, [s.owner, email]);
+    const findOrCreate = async () => {
+      const { rows: [ex] } = await pool.query(`SELECT id FROM users WHERE lower(data->>'email') = $1 ORDER BY id LIMIT 1`, [email]);
+      if (ex) return ex.id;
+      return createUserUnique(pool, email, { password: bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 12), name: String(claims.name || email).slice(0, 100), plan: 'trial', trial_ends: new Date(Date.now() + 30 * 86400000).toISOString(), role: 'owner', sso: true });
+    };
+    if (tm && tm.data.status === 'active' && tm.data.member_user_id) userId = Number(tm.data.member_user_id);
+    else if (tm && tm.data.status === 'pending') {
+      userId = await findOrCreate();
+      await pool.query(`UPDATE team_members SET data = (data - 'invite_token_hash' - 'invite_expires') || jsonb_build_object('member_user_id', $2::text, 'status', 'active') WHERE id = $1`, [tm.id, String(userId)]);
+    } else if (cfg.jitViewer) {
+      userId = await findOrCreate();
+      const { row } = await db.insert('team_members', { user_id: s.owner, email, name: String(claims.name || email).slice(0, 100), role: 'viewer', status: 'active', member_user_id: String(userId), joined_via: 'sso' });
+      await recordAudit(pool, { userId: s.owner, table: 'team_members', recordId: row.id, action: 'CREATE', newData: { email, role: 'viewer', via: 'sso' }, req });
+    } else return fail('You are not a member of this FinFlow account yet — ask its owner to invite you.');
+  }
+  const { rows: [u] } = await pool.query(`SELECT * FROM users WHERE id = $1`, [userId]);
+  const user = u ? rowToObj(u) : null;
+  if (!user || _isBlockedUser(user)) return fail('This account cannot sign in.');
+  delete req.session.sso;
+  await establishSession(req, { userId: user.id, userRole: user.role || 'owner', userEmail: user.email });
+  await recordAudit(pool, { userId: user.id, table: 'users', recordId: user.id, action: 'LOGIN', newData: { via: 'sso', account: s.owner }, req });
+  await saveSession(req);
+  res.redirect(302, '/app');
 }));
 
 // ── D-D: SAAS METRICS (owner decision 2026-10-23) ─────────────────────────────────────────────────────────────────

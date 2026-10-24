@@ -23,6 +23,7 @@ const CAPS = {
   pro:        _pc('pro'),
   business:   _pc('business'),
   scale:      _pc('scale'),
+  enterprise: _pc('enterprise'),
   accountant: { shared: int(process.env.AI_CAP_ACCOUNTANT_SHARED, 300), scan: int(process.env.AI_CAP_ACCOUNTANT_SCAN, 10) },
 };
 
@@ -30,7 +31,7 @@ const CAPS = {
 // lowest (trial) tier. Keeps 'pro' and 'business' distinct (the Pro-vs-Business check).
 function planTier(plan) {
   const p = String(plan || '').toLowerCase();
-  return (p === 'pro' || p === 'business' || p === 'scale') ? p : 'trial';
+  return (p === 'pro' || p === 'business' || p === 'scale' || p === 'enterprise') ? p : 'trial';
 }
 
 function capFor(plan, kind) {

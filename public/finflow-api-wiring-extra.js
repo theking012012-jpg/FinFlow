@@ -1786,6 +1786,35 @@
     try { await api('PUT', '/api/saas-metrics/settings', { acquisitionCategories: cats, salesPayrollPct: pctP }); tip('Saved'); await window.ffRenderSaas((document.getElementById('saas-month') || {}).value); }
     catch (err) { tip('Could not save — ' + err.message, true); }
   };
+  // ══════════════════════════════════════════════════════
+  // 11d. SINGLE SIGN-ON (D-H) — Settings → Single sign-on, for the Enterprise owner
+  // ══════════════════════════════════════════════════════
+  window.ffRenderSso = async function () {
+    const el = document.getElementById('sso-panel');
+    if (!el) return;
+    let c;
+    try { c = await api('GET', '/api/sso/config'); } catch (err) { el.textContent = err.message; return; }
+    const ent = window.FinFlowPlans && window.FinFlowPlans.has(typeof currentUserPlan !== 'undefined' ? currentUserPlan : '', 'sso');
+    if (!ent) { el.innerHTML = `<div>Sign in through your company's identity provider (Google Workspace, Microsoft Entra ID, Okta and other OpenID Connect providers). Single sign-on is part of the Enterprise plan — <a href="#" onclick="showPage('pricing');return false" style="color:var(--acc)">talk to us</a>.</div>`; return; }
+    el.innerHTML = `<div style="margin-bottom:8px">${c.enabled ? '<strong style="color:var(--green)">On</strong> for ' + e((c.domains || []).join(', ')) : 'Off'} — your team signs in through your identity provider (OpenID Connect: Google Workspace, Microsoft Entra ID, Okta, Auth0…). SAML is not supported.</div>
+      <div style="font-size:11.5px;color:var(--t3);margin-bottom:8px">In your provider, register this redirect URL: <code id="sso-redirect">${e(c.redirectUri || '')}</code></div>
+      <div class="field-wrap"><label class="field-label" for="sso-issuer">Issuer URL</label><input class="finput" id="sso-issuer" placeholder="https://login.example.com" value="${e(c.issuer || '')}"></div>
+      <div class="field-group"><div class="field-wrap"><label class="field-label" for="sso-client">Client ID</label><input class="finput" id="sso-client" value="${e(c.client_id || '')}"></div>
+        <div class="field-wrap"><label class="field-label" for="sso-secret">Client secret</label><input class="finput" id="sso-secret" type="password" placeholder="${c.hasSecret ? 'Saved — leave blank to keep' : ''}"></div></div>
+      <div class="field-wrap"><label class="field-label" for="sso-domains">E-mail domains (comma-separated)</label><input class="finput" id="sso-domains" placeholder="yourcompany.com" value="${e((c.domains || []).join(', '))}"></div>
+      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-enforce" ${c.enforce ? 'checked' : ''}> Require single sign-on for these domains (you, the owner, can always use your password)</label>
+      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-jit" ${c.jitViewer ? 'checked' : ''}> New people from these domains can join as Viewers</label>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" onclick="ffSaveSso()">Save</button>${c.enabled ? '<button class="btn btn-ghost btn-sm" onclick="ffSaveSso(false)">Turn off</button>' : ''}</div>`;
+  };
+  window.ffSaveSso = async function (on) {
+    const v = id => (document.getElementById(id) || {}).value || '';
+    const body = on === false ? { enabled: false } : { issuer: v('sso-issuer').trim(), client_id: v('sso-client').trim(), client_secret: v('sso-secret'), domains: v('sso-domains'),
+      enforce: !!(document.getElementById('sso-enforce') || {}).checked, jitViewer: !!(document.getElementById('sso-jit') || {}).checked };
+    try { await api('PUT', '/api/sso/config', body); tip(on === false ? 'Single sign-on turned off' : 'Single sign-on saved ✦'); await window.ffRenderSso(); }
+    catch (err) { tip('Could not save — ' + err.message, true); }
+  };
+  { const _spSso = window.showPage;
+    if (typeof _spSso === 'function') window.showPage = function (id) { const r = _spSso.apply(this, arguments); if (id === 'settings') window.ffRenderSso(); return r; }; }
   { const _spSaas = window.showPage;
     if (typeof _spSaas === 'function') window.showPage = function (id) { const r = _spSaas.apply(this, arguments); if (id === 'mrr') window.ffRenderSaas(); return r; }; }
   { const _spBilling = window.showPage;

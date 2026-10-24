@@ -911,18 +911,7 @@ const PRO_FEATURES=_planCard('pro');
 const BIZ_FEATURES=_planCard('business');
 const SCALE_FEATURES=_planCard('scale');
 
-const ENT_FEATURES=[
-  {text:'Unlimited entities',ok:true},
-  {text:'Unlimited team members',ok:true},
-  {text:'White-label (your branding)',ok:true},
-  {text:'Dedicated account manager',ok:true},
-  {text:'Custom AI context & prompts',ok:true},
-  {text:'SSO / SAML integration',ok:true},
-  {text:'SLA with 99.9% uptime guarantee',ok:true},
-  {text:'Custom integrations & API',ok:true},
-  {text:'On-premise deployment option',ok:true},
-  {text:'Annual audit support',ok:true},
-];
+const ENT_FEATURES=_planCard('enterprise');   // D-H: what Enterprise really includes (plans.js) — the old list promised unbuilt features
 
 // D-G step 6: the trial's real limits, from plans.js (it used to promise "full Business tier access").
 function _trialFaq(){ const t=(window.FinFlowPlans&&window.FinFlowPlans.PLANS.trial)||{entities:1,ai:30,scans:3,days:30};

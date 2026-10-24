@@ -21,6 +21,8 @@ function between(s, name, body) {
 
 function render(src) {
   let s = src;
+  // D-H: the Enterprise card's lines come from plans.js too (custom price — no price span)
+  s = between(s, 'plan:enterprise', Plans.cardLines('enterprise').map(t => '          <div class="p-feat"><span class="p-check">✓</span>' + esc(t) + '</div>').join('\n') + '\n');
   for (const id of Plans.PAID) {
     const lines = Plans.cardLines(id).map(t => '          <div class="p-feat"><span class="p-check">✓</span>' + esc(t) + '</div>').join('\n');
     s = between(s, 'plan:' + id, lines + '\n');

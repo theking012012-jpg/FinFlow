@@ -620,7 +620,11 @@ async function doLogin(){
   try{
     const res = await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})});
     const data = await res.json();
-    if(!res.ok){ if(errEl) errEl.textContent=data.error||'Sign-in failed.'; return; }
+    if(!res.ok){
+      if(errEl) errEl.textContent=data.error||'Sign-in failed.';
+      if(data.code==='SSO_REQUIRED'){ const sb=document.getElementById('sso-btn'); if(sb){ sb.className='btn btn-primary'; sb.focus(); } }   // D-H
+      return;
+    }
     if(data.today) window._serverToday = data.today; // F116: prime server-truth date on fresh login (mirrors auth/me path)
     const r = 'owner';
     currentRole = r;
@@ -643,6 +647,27 @@ async function doLogin(){
     if(btn){ btn.disabled=false; btn.textContent='Sign in →'; }
   }
 }
+
+// D-H: single sign-on — find the company's identity provider from the work e-mail and go there. The provider sends the
+// person back to /api/auth/sso/callback, which signs them in (or returns here with ?sso_error=… saying why not).
+window._ffGo = url => { window.location.assign(url); };
+async function ffSsoSignIn(){
+  const email = document.getElementById('login-email')?.value?.trim();
+  const errEl = document.getElementById('login-error');
+  if(errEl) errEl.textContent='';
+  if(!email){ if(errEl) errEl.textContent='Enter your work e-mail, then choose single sign-on.'; document.getElementById('login-email')?.focus(); return; }
+  try{
+    const res = await fetch('/api/auth/sso/start',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const d = await res.json().catch(()=>({}));
+    if(!res.ok || !d.url){ if(errEl) errEl.textContent=d.error||'Single sign-on is not available right now.'; return; }
+    window._ffGo(d.url);
+  }catch(e){ if(errEl) errEl.textContent='Network error — please try again.'; }
+}
+window.ffSsoSignIn = ffSsoSignIn;
+// a failed single sign-on comes back with the reason
+(function(){ try { const m = /[?&]sso_error=([^&]*)/.exec(location.search); if(!m) return;
+  const show = () => { const el = document.getElementById('login-error'); if(el) el.textContent = 'Single sign-on did not complete: ' + decodeURIComponent(m[1].replace(/\+/g,' ')); };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show(); } catch(_){} })();
 
 async function doRegister(){
   const name  = document.getElementById('reg-name')?.value?.trim();

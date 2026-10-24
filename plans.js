@@ -49,8 +49,18 @@
       features: { invoicing: true, bankSync: true, scanner: true, stripeFeed: true, budgets: true, multiCurrency: true,
                   roles: true, auditTrail: true, mrr: true, saasMetrics: true, consolidation: true },
     },
+    // D-H: Enterprise — custom-priced, set up with us (not self-serve). Everything in Scale, without limits, plus single
+    // sign-on and the fastest support. monthly null = "talk to us".
+    enterprise: {
+      id: 'enterprise', name: 'Enterprise', monthly: null, annualMonthly: null, custom: true,
+      entities: UNLIMITED, seats: UNLIMITED, ai: 20000, scans: 500, invoiceCeiling: UNLIMITED,
+      support: { replyHours: 1, onboardingCall: true, namedContact: true },
+      features: { invoicing: true, bankSync: true, scanner: true, stripeFeed: true, budgets: true, multiCurrency: true,
+                  roles: true, auditTrail: true, mrr: true, saasMetrics: true, consolidation: true, sso: true },
+    },
   };
-  const PAID = ['pro', 'business', 'scale'];
+  const PAID = ['pro', 'business', 'scale'];          // self-serve (checkout, the plan comparison)
+  const CUSTOM = ['enterprise'];                       // set up with us
 
   // Unknown / missing / legacy plan strings resolve to the trial row (the lowest), never to a paid plan.
   function planFor(plan) { const p = String(plan || '').toLowerCase(); return PLANS[p] || PLANS.trial; }
@@ -64,7 +74,7 @@
   function cardLines(plan) {
     const p = planFor(plan);
     const L = [];
-    L.push(p.entities === 1 ? '1 business' : 'Up to ' + p.entities + ' businesses, each with its own books');
+    L.push(p.entities == null ? 'Unlimited businesses, each with its own books' : p.entities === 1 ? '1 business' : 'Up to ' + p.entities + ' businesses, each with its own books');
     L.push(p.seats == null ? 'Unlimited team members' : p.seats + ' team members plus you');
     L.push('Viewers and your accountant free');
     L.push(n(p.ai) + ' AI questions + ' + n(p.scans) + ' receipt scans a month');
@@ -74,6 +84,8 @@
     if (p.features.consolidation) L.push('Consolidated view across your businesses');
     if (p.support) L.push('Email support — ' + supportReply(p.support.replyHours));
     if (p.support && p.support.onboardingCall) L.push('A 30-minute onboarding call');
+    if (p.support && p.support.namedContact) L.push('A named contact at FinFlow');
+    if (p.features.sso) L.push('Single sign-on with your identity provider (Google Workspace, Microsoft Entra ID, Okta and other OpenID Connect providers)');
     return L;
   }
   // The comparison table: rows of [label, value per plan] — values are text ('✓', '—', numbers).
@@ -101,5 +113,5 @@
       ['Onboarding call', P.map(p => yes(p.support && p.support.onboardingCall))],
     ];
   }
-  return { PLANS, PAID, UNLIMITED, planFor, has, limit, cardLines, comparisonRows, supportReply };
+  return { PLANS, PAID, CUSTOM, UNLIMITED, planFor, has, limit, cardLines, comparisonRows, supportReply };
 });

@@ -4044,6 +4044,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <button class="btn btn-ghost" onclick="window.location.href='/api/auth/export'">⬇ Download my data</button>
             </div>
             
+            <div class="settings-section" id="sso-section" style="margin-top:1rem">
+              <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.2"></rect><path d="M5 7V5a3 3 0 016 0v2"></path></svg>Single sign-on</div>
+              <div id="sso-panel" style="font-size:12.5px;color:var(--t2);line-height:1.6">Loading…</div>
+            </div>
+            
             <div class="settings-section" id="billing-section" style="margin-top:1rem">
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="1.5" y="3.5" width="13" height="9" rx="1.2"></rect><line x1="1.5" y1="6.5" x2="14.5" y2="6.5"></line></svg>Plan &amp; billing</div>
               <div id="billing-panel" style="font-size:13px;color:var(--t2);line-height:1.6">Loading…</div>
@@ -4127,6 +4132,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <a href="#" style="font-size:11px;color:var(--acc);text-decoration:none" onclick="showForgotPassword();return false">Forgot password?</a>
     </div>
     <button class="btn btn-primary" id="login-btn" style="width:100%;justify-content:center;padding:9px;font-size:13px" onclick="doLogin()">Sign in →</button>
+    <!-- D-H: single sign-on (Enterprise) — uses the e-mail above to find the company's identity provider -->
+    <button class="btn btn-ghost" id="sso-btn" style="width:100%;justify-content:center;padding:8px;font-size:12.5px;margin-top:8px" onclick="ffSsoSignIn()">Sign in with single sign-on</button>
     <div style="text-align:center;margin-top:1rem;font-size:11px;color:var(--t2)">
       No account? <a href="#" style="color:var(--acc);text-decoration:none" onclick="showRegister();return false">Create one free →</a>
     </div>

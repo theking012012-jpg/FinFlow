@@ -437,7 +437,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     // in the admin dropdown — a Scale customer's row showed "Trial" pre-selected, so one Save downgraded
     // them. Setting 'trial' stamps trial_ends when there is none: checkPlan only restricts a trial WITH an
     // end date, so a null end meant unlimited write access (the N4 class). An existing end is kept.
-    if (!['trial', 'pro', 'business', 'scale'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
+    if (!['trial', 'pro', 'business', 'scale', 'enterprise'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
     const uidT = (parseInt(req.params.id, 10) || 0);
     const _b = await _userState(uidT);
     if (plan === 'trial') {

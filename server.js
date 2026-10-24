@@ -5876,6 +5876,32 @@ app.post('/api/my-access/switch', requireAuth, wrap(async (req, res) => {
 // on the OWNING account. The invite token hash is a bearer secret and never enters the trail.
 const _tmAuditView = (row) => { if (!row) return null; const o = Object.assign({}, row.data && typeof row.data === 'object' ? rowToObj(row) : row); delete o.invite_token_hash; return o; };   // raw pg row or an already-flattened one (ownedBy)
 async function _tmRow(id) { const { rows: [r] } = await pool.query(`SELECT * FROM team_members WHERE id = $1 LIMIT 1`, [id]); return r || null; }
+// ── D-C: EDIT SEATS (owner decision 2026-10-23) ─────────────────────────────────────────────────────────────────
+// A seat is someone who can change the books — role 'admin' — whether active or invited (an unexpired pending invite
+// holds its seat). The owner never counts; viewers and accountants are free and unlimited. The limit is plans.js.
+// ONE check for every door that can hand out edit access: the invite, the role change, the bare insert (Rule 9).
+async function seatState(ownerId, plan, exceptTmId) {
+  const { rows: [r] } = await pool.query(
+    `SELECT count(*)::int AS n FROM team_members
+      WHERE user_id = $1 AND data->>'role' = 'admin' AND id IS DISTINCT FROM $2::int
+        AND (COALESCE(data->>'status', 'active') = 'active'
+             OR (data->>'status' = 'pending' AND (data->>'invite_expires' IS NULL OR (data->>'invite_expires')::timestamptz > $3::timestamptz)))`,
+    // expiry is written AND checked at accept with the app clock (new Date()), so it is compared with that same clock
+    [ownerId, exceptTmId == null ? null : Number(exceptTmId), new Date().toISOString()]);
+  return { used: r.n, limit: Plans.limit(plan, 'seats'), plan: Plans.planFor(plan).id };
+}
+async function seatRefusal(req, exceptTmId) {
+  const s = await seatState(scopeId(req), req.userPlan, exceptTmId);
+  if (s.limit == null || s.used < s.limit) return null;
+  return { status: 402, body: { code: 'SEAT_LIMIT', used: s.used, limit: s.limit,
+    error: 'Your ' + Plans.planFor(s.plan).name + ' plan includes ' + s.limit + ' team member' + (s.limit === 1 ? '' : 's') + ' who can edit, plus you, and all of them are in use. '
+      + 'Invite this person as a Viewer or Accountant (both free), free up a seat, or upgrade for more.' } };
+}
+app.get('/api/team/seats', requireAuth, wrap(async (req, res) => {
+  const s = await seatState(scopeId(req), req.userPlan, null);
+  res.json(Object.assign(s, { free: ['viewer', 'accountant'] }));
+}));
+
 app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   // F54: no invite/token/email handshake — a bare team_members insert. No caller (client,
   // server-to-server, or test harness — checked) uses this route; the real invite path is
@@ -5889,6 +5915,7 @@ app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, 
   const validRoles = ['admin', 'accountant', 'viewer'];
   const _dup = await findRecentDuplicate('team_members', scopeId(req), null, { textMatch: { email: email.toLowerCase().slice(0,200) } });
   if (_dup) return res.status(200).json(_dup);
+  if (role === 'admin') { const _sr = await seatRefusal(req, null); if (_sr) return res.status(_sr.status).json(_sr.body); }   // D-C
   const { row } = await db.insert('team_members', {
     user_id: scopeId(req),
     name:    name.trim().slice(0, 100),
@@ -5903,6 +5930,8 @@ app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (re
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { role } = req.body || {};
   const validRoles = ['admin', 'accountant', 'viewer'];
+  // D-C: becoming an admin takes an edit seat (an admin re-saved as admin keeps the seat it already has).
+  if (role === 'admin' && row.role !== 'admin') { const _sr = await seatRefusal(req, row.id); if (_sr) return res.status(_sr.status).json(_sr.body); }
   if (role && validRoles.includes(role)) await db.updateById('team_members', row.id, { role });
   // Per-entity grant update (absent ⇒ unchanged; [] ⇒ no businesses). Validate ⊆ account entities.
   if (Array.isArray(req.body?.entity_ids)) {
@@ -5973,6 +6002,14 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
     [ownerId, emailLc]
   );
   if (activeMember) return res.status(409).json({ error: 'That person is already a member of this account.' });
+  // D-C: an admin invite takes an edit seat. Re-inviting the same person refreshes their pending row, so that row
+  // is not counted against itself.
+  if (role === 'admin') {
+    const { rows: [_pend] } = await pool.query(
+      `SELECT id, data->>'role' AS role FROM team_members WHERE user_id = $1 AND lower(data->>'email') = $2 AND data->>'status' = 'pending' LIMIT 1`, [ownerId, emailLc]);
+    const _sr = await seatRefusal(req, _pend ? _pend.id : null);
+    if (_sr) return res.status(_sr.status).json(_sr.body);
+  }
 
   const token     = crypto.randomBytes(32).toString('hex');
   const tokenHash = hashInviteToken(token);

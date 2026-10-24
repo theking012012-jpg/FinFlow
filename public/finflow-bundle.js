@@ -4624,6 +4624,16 @@ function clearAIChat(){
         </div>`;
       }).join('');
 
+      // D-C: edit seats used / included — viewers and accountants are free and never use one.
+      try {
+        const s = await api('GET', '/api/team/seats');
+        let box = document.getElementById('team-seats');
+        if (!box) { box = document.createElement('div'); box.id = 'team-seats'; box.style.cssText = 'font-size:12px;color:var(--t2);padding:6px 0 10px;border-bottom:1px solid var(--bd);margin-bottom:6px'; tl.parentNode.insertBefore(box, tl); }
+        box.textContent = (s.limit == null ? s.used + ' edit seat' + (s.used === 1 ? '' : 's') + ' used (unlimited on your plan)' : s.used + ' of ' + s.limit + ' edit seats used')
+          + ' · Viewers and accountants are free and unlimited.';
+        window._teamSeats = s;
+      } catch (_) {}
+
       const pendingCount = members.filter(m => m.status === 'pending').length;
       const _tc = document.getElementById('team-count');
       const _tp = document.getElementById('team-pending');
@@ -5759,6 +5769,16 @@ function clearAIChat(){
     ['inv-name', 'inv-email'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     const roleEl = document.getElementById('inv-role');
     if (roleEl) roleEl.value = 'accountant';
+    // D-C: when every edit seat is in use, Admin is unavailable here — and says why — instead of failing on Send.
+    try {
+      const s = await api('GET', '/api/team/seats');
+      const opt = roleEl && roleEl.querySelector('option[value="admin"]');
+      if (opt) {
+        const full = s.limit != null && s.used >= s.limit;
+        opt.disabled = full;
+        opt.textContent = full ? 'Admin — no edit seats left (' + s.used + ' of ' + s.limit + ')' : 'Admin';
+      }
+    } catch (_) {}
     modal.classList.remove('hidden');
     // Populate the per-entity checkboxes from the account's businesses (all checked = full access).
     try {

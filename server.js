@@ -1912,8 +1912,11 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   if (_pt != null && _pt !== '' && !(/^[0-9]{1,3}$/.test(String(_pt)) && Number(_pt) <= 365)) return res.status(400).json({ error: 'Payment terms are a number of days from 0 (due on receipt) to 365.', code: 'BAD_PAYMENT_TERMS' });
   const _ip = (req.body || {}).invoice_prefix;
   if (_ip != null && !/^[A-Za-z0-9\-\/#_. ]{0,12}$/.test(String(_ip))) return res.status(400).json({ error: 'The invoice prefix can use letters, numbers and - / # _ . (up to 12 characters).', code: 'BAD_INVOICE_PREFIX' });
+  const _bp = (req.body || {}).bill_prefix;   // FA-M5c: same rule for the bill-number prefix (empty → "BILL-")
+  if (_bp != null && !/^[A-Za-z0-9\-\/#_. ]{0,12}$/.test(String(_bp))) return res.status(400).json({ error: 'The bill prefix can use letters, numbers and - / # _ . (up to 12 characters).', code: 'BAD_BILL_PREFIX' });
   await db.updateById('entities', row.id, {
     ...(_ip != null && { invoice_prefix: String(_ip).trim() }),
+    ...(_bp != null && { bill_prefix: String(_bp).trim() }),
     ...(_pt != null && _pt !== '' && { payment_terms: Number(_pt) }),
     ...(name && {name}), ...(currency && {currency}), ...(color && {color}),
     ...(timezone !== undefined && { timezone: timezone ? String(timezone) : null }),
@@ -2131,15 +2134,24 @@ function normalizeLineItems(raw) {
 // concurrent creates), so a deleted invoice leaves a gap, never a repeat. Prefix per business (entity invoice_prefix,
 // default "INV-"). An imported invoice keeps its own number when it is free in this business; when it is taken it gets
 // the next in sequence — never a duplicate. The database backs this with a unique index (idx_invoices_number).
-async function assignInvoiceNumber(q, userId, entityId, invoiceId, sourceNumber) {
-  if (entityId == null || invoiceId == null) return null;
-  const set = async n => (await q.query(`UPDATE invoices SET data = data || jsonb_build_object('number', $1::text) WHERE id = $2 AND user_id = $3 AND data->>'number' IS NULL
-      AND NOT EXISTS (SELECT 1 FROM invoices o WHERE o.user_id = $3 AND o.entity_id = $4 AND o.id <> $2 AND o.data->>'number' = $1::text) RETURNING id`, [n, invoiceId, userId, entityId])).rowCount > 0;
+// FA-M5c: bills use the same assigner (field num, counter bill_seq, prefix bill_prefix, default "BILL-"). Fixed specs
+// only — table and field names are never taken from a request.
+const _DOC_NUMBERING = {
+  invoices: { table: 'invoices', field: 'number', seq: 'invoice_seq', prefix: 'invoice_prefix', def: 'INV-' },
+  bills:    { table: 'bills',    field: 'num',    seq: 'bill_seq',    prefix: 'bill_prefix',    def: 'BILL-' },
+};
+async function assignInvoiceNumber(q, userId, entityId, invoiceId, sourceNumber) { return assignDocNumber(q, 'invoices', userId, entityId, invoiceId, sourceNumber); }
+async function assignBillNumber(q, userId, entityId, billId, sourceNumber) { return assignDocNumber(q, 'bills', userId, entityId, billId, sourceNumber); }
+async function assignDocNumber(q, kind, userId, entityId, docId, sourceNumber) {
+  const K = _DOC_NUMBERING[kind];
+  if (!K || entityId == null || docId == null) return null;
+  const set = async n => (await q.query(`UPDATE ${K.table} SET data = data || jsonb_build_object('${K.field}', $1::text) WHERE id = $2 AND user_id = $3 AND data->>'${K.field}' IS NULL
+      AND NOT EXISTS (SELECT 1 FROM ${K.table} o WHERE o.user_id = $3 AND o.entity_id = $4 AND o.id <> $2 AND o.data->>'${K.field}' = $1::text) RETURNING id`, [n, docId, userId, entityId])).rowCount > 0;
   const src = sourceNumber == null ? '' : String(sourceNumber).trim().slice(0, 40);
   if (src) { try { if (await set(src)) return src; } catch (e) { if (e.code !== '23505') throw e; } }
   for (let tries = 0; tries < 50; tries++) {
-    const { rows: [e] } = await q.query(`UPDATE entities SET data = jsonb_set(data, '{invoice_seq}', to_jsonb(COALESCE((data->>'invoice_seq')::int, 0) + 1))
-        WHERE id = $1 AND user_id = $2 RETURNING (data->>'invoice_seq')::int AS seq, COALESCE(NULLIF(data->>'invoice_prefix', ''), 'INV-') AS prefix`, [entityId, userId]);
+    const { rows: [e] } = await q.query(`UPDATE entities SET data = jsonb_set(data, '{${K.seq}}', to_jsonb(COALESCE((data->>'${K.seq}')::int, 0) + 1))
+        WHERE id = $1 AND user_id = $2 RETURNING (data->>'${K.seq}')::int AS seq, COALESCE(NULLIF(data->>'${K.prefix}', ''), '${K.def}') AS prefix`, [entityId, userId]);
     if (!e) return null;
     const n = e.prefix + String(e.seq).padStart(4, '0');
     try { if (await set(n)) return n; } catch (err) { if (err.code !== '23505') throw err; }
@@ -4941,7 +4953,6 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
   const entity = await activeEntity(req);
   const _billEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
-  const num = 'BILL-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers;
   // when a token IS present the partial unique index (idx_bills_idem_key) is the sole arbiter, so
@@ -4965,7 +4976,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
   let row;
   try {
-    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date: _billDue || null, status, notes, issue_date: _issueYmd, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, amount: _amt, due_date: _billDue || null, status, notes, issue_date: _issueYmd, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
@@ -4974,6 +4985,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
     throw e;
   }
   row.vendor_id = await linkDocContact('bills', scopeId(req), _billEnt, row.id, vendor, req);   // batch 9: the vendor is a saved vendor of this business
+  { const _bn = await assignBillNumber(pool, scopeId(req), _billEnt, row.id); if (_bn) row.num = _bn; }   // FA-M5c: before the audit row, so it records the number
   await recordAudit(pool, { userId: scopeId(req), entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): an issued bill accrues expense — Dr Operating Expenses / Cr AP at
   // its issue date (mirror of the invoice revenue leg; RECOGNIZED_BILL allowlist). A bill payment
@@ -7027,6 +7039,7 @@ async function _fireRecurringOnce(table, r, docTable, docData) {
       `INSERT INTO ${docTable} (user_id, entity_id, data) VALUES ($1, $2, $3) RETURNING *`,
       [r.user_id, r.entity_id || null, docData]);
     if (docTable === 'invoices') { const _n = await assignInvoiceNumber(cx, r.user_id, r.entity_id, doc.id); if (_n) doc.data = Object.assign({}, doc.data, { number: _n }); }   // B1b
+    if (docTable === 'bills') { const _n = await assignBillNumber(cx, r.user_id, r.entity_id, doc.id); if (_n) doc.data = Object.assign({}, doc.data, { num: _n }); }   // FA-M5c
     if (docTable === 'invoices' || docTable === 'bills') await linkDocContact(docTable, r.user_id, r.entity_id, doc.id, docTable === 'invoices' ? docData.client : docData.vendor, null, cx);   // batch 9
     await cx.query('COMMIT');
     return rowToObj(doc);
@@ -7102,10 +7115,9 @@ async function runRecurringScheduler() {
         continue;
       }
       try {
-        const num = 'BILL-' + String(Date.now()).slice(-4);
         const _billRow = await _fireRecurringOnce('recurring_bills', r, 'bills', {
           // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
-          vendor: r.vendor, num, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
+          vendor: r.vendor, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
           issue_date: String(r.next_run).slice(0, 10),   // N38: issued on its scheduled date (see invoices above)
           status: 'unpaid', notes: `Auto-generated from recurring schedule`,
           recurring_bill_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
@@ -7346,7 +7358,7 @@ const CSV_IMPORT_SPECS = {
     cols: { vendor: ['vendor', 'supplier', 'payee', 'name', 'company'], amount: ['amount', 'total', 'amount due', 'bill total'], status: ['status'], issue_date: ['issue date', 'date', 'bill date'], due_date: ['due date', 'due'], number: ['bill number', 'bill no', 'number', 'ref', 'bill #'], ..._CSV_PAID_COLS },
     build: g => { const amount = g.__amt(g.amount); const issue = g.__date(g.issue_date) || g.__today; if (!(amount > 0)) return null; const dd = g.__date(g.due_date); const _st = _csvStatus(g.status, 'unpaid', _CSV_BILL_ALIASES); if (_st == null) return null;
       const _pd = _csvPaidPart(g, amount, _st, issue, 'unpaid');
-      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, settle: _pd.settle, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _pd.status, issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
+      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, settle: _pd.settle, sourceNumber: g.number, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _pd.status, issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
   customers: { table: 'customers', money: false,
     cols: { name: ['name', 'customer', 'customer name', 'company', 'client'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
     // N112: a customer record has fname / lname / company / status / revenue (what the customer list, invoices
@@ -7414,6 +7426,7 @@ async function _csvImport(uid, entityId, sessionUserId, type, content, mapping, 
     let _ins = null;
     try { _ins = (await db.insert(spec.table, Object.assign({ user_id: uid, entity_id: entityId, import_key: importKey, idempotency_key: importKey, source: 'csv' }, m.data))).row; tally.added++;
       if (spec.table === 'invoices') await assignInvoiceNumber(pool, uid, entityId, _ins.id, m.sourceNumber);   // B1b
+      if (spec.table === 'bills') await assignBillNumber(pool, uid, entityId, _ins.id, m.sourceNumber);   // FA-M5c
       if (spec.table === 'invoices' || spec.table === 'bills') await linkDocContact(spec.table, uid, entityId, _ins.id, spec.table === 'invoices' ? m.data.client : m.data.vendor, null);   // batch 9
     }
     catch (e) { if (e.code === '23505') tally.duplicate++; else { tally.failed++; console.error('[csv import ' + type + ']', e.message); } }
@@ -9122,7 +9135,6 @@ function _codatMappers(companyId, platform, ctx = {}) {
       const _st = _cdStatus(_CD_BILL_STATUS, b.status, 'unpaid'); if (_st == null) return null;
       return { table: 'bills', key: ck('bill', b.id), date: _cdDate(b.issueDate) || _cdDate(b.dueDate), data: {
         vendor: _cdClip((b.supplierRef && (b.supplierRef.supplierName || b.supplierRef.id)) || 'Unknown', 200),
-        num: _cdClip(b.reference || ('BILL-' + String(b.id).slice(-4)), 60),
         amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
         due_date: _cdDate(b.dueDate), issue_date: _cdDate(b.issueDate),
         status: _st, notes: _cdClip(tag, 500) } }; },
@@ -9263,6 +9275,7 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
             import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data, extra));
           if ((m.table === 'invoices' || m.table === 'bills') && _cdRow) await linkDocContact(m.table, uid, entityId, _cdRow.id, m.table === 'invoices' ? m.data.client : m.data.vendor, null);   // batch 9
           if (m.table === 'invoices' && _cdRow) await assignInvoiceNumber(pool, uid, entityId, _cdRow.id, rec.invoiceNumber);   // B1b: the platform's own number, when free
+          if (m.table === 'bills' && _cdRow) await assignBillNumber(pool, uid, entityId, _cdRow.id, rec.reference);   // FA-M5c: the platform's reference, when free
         }
         tally.added++;
       } catch (e) {
@@ -13421,11 +13434,12 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
     try {
       ({ row: _stockBill } = await db.insert('bills', {
         user_id: scopeId(req), entity_id: item.entity_id != null ? item.entity_id : (req.entityId || null),
-        vendor, amount: cap, amount_paid: 0, status: 'unpaid', num: 'BILL-' + String(Date.now()).slice(-4),
+        vendor, amount: cap, amount_paid: 0, status: 'unpaid',
         issue_date: String(_mvDate).slice(0, 10), due_date: due,
         notes: ('Stock purchase — ' + String(item.name || '') + ' × ' + qty + ' @ ' + (parseFloat(unit_cost) || 0)).slice(0, 500),
         idempotency_key: bIdem,
       }));
+      { const _bn = await assignBillNumber(pool, scopeId(req), _stockBill.entity_id != null ? _stockBill.entity_id : (item.entity_id != null ? item.entity_id : (req.entityId || null)), _stockBill.id); if (_bn) _stockBill.num = _bn; }   // FA-M5c
     } catch (e) {
       if (e.code === '23505' && bIdem) return res.status(409).json({ error: 'This purchase is already being recorded — refresh in a moment.' });
       throw e;

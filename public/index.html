@@ -4004,7 +4004,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             </div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v3l2 2"/></svg>Invoice settings</div>
-              <div class="field-wrap"><label class="field-label" for="s-inv-prefix">Invoice prefix</label><input class="finput" id="s-inv-prefix" value="INV-"></div>
+              <div class="field-group"><div class="field-wrap"><label class="field-label" for="s-inv-prefix">Invoice prefix</label><input class="finput" id="s-inv-prefix" value="INV-"></div><div class="field-wrap"><label class="field-label" for="s-bill-prefix">Bill prefix</label><input class="finput" id="s-bill-prefix" value="BILL-"></div></div>
               <div class="field-group">
                 <!-- Batch 8: this business's payment terms — an invoice left without a due date is due on issue + these days. The
                      "Default tax rate" field that sat here was read by nothing and implied a VAT engine FinFlow does not have (D6). -->
@@ -7807,6 +7807,7 @@ async function _loadEntitiesFromDBImpl(){
       country:      e.country || null,
       opening_cash: (e.opening_cash != null && e.opening_cash !== '' ? Number(e.opening_cash) : null),
       invoice_prefix: e.invoice_prefix || '',   // B1b: this business's invoice-number prefix (Settings)
+      bill_prefix: e.bill_prefix || '',   // FA-M5c: and its bill-number prefix
       payment_terms: (e.payment_terms != null && e.payment_terms !== '' ? Number(e.payment_terms) : null),   // batch 8
       data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
       // F196 Tier 2: the entity's OWN letterhead profile. A document is issued BY this entity, so

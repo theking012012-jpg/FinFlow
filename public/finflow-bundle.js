@@ -291,6 +291,8 @@
       // B1b: this business's invoice-number prefix (repainted on a switch like the profile; "INV-" when unset).
       var _pfx = document.getElementById('s-inv-prefix');
       if (_pfx) _pfx.value = (ent && ent.invoice_prefix) || 'INV-';
+      var _bpx = document.getElementById('s-bill-prefix');   // FA-M5c
+      if (_bpx) _bpx.value = (ent && ent.bill_prefix) || 'BILL-';
       // Batch 8: this business's payment terms (30 until set — what the field has always shown).
       var _pt = document.getElementById('s-pay-terms');
       if (_pt) _pt.value = (ent && ent.payment_terms != null) ? String(ent.payment_terms) : '30';
@@ -484,8 +486,10 @@
             // exists; the server refuses anything but plain text, and the message reaches the owner below.
             const _pfx = document.getElementById('s-inv-prefix');
             const _ptEl = document.getElementById('s-pay-terms');   // batch 8: payment terms travel with the prefix
-            await api('PUT', '/api/entities/' + _ent._dbId, Object.assign({}, _profile, _pfx ? { invoice_prefix: _pfx.value.trim() } : {}, _ptEl && _ptEl.value !== '' ? { payment_terms: _ptEl.value.trim() } : {}));
+            const _bpx = document.getElementById('s-bill-prefix');   // FA-M5c: the bill-number prefix travels with them
+            await api('PUT', '/api/entities/' + _ent._dbId, Object.assign({}, _profile, _pfx ? { invoice_prefix: _pfx.value.trim() } : {}, _bpx ? { bill_prefix: _bpx.value.trim() } : {}, _ptEl && _ptEl.value !== '' ? { payment_terms: _ptEl.value.trim() } : {}));
             if (_pfx) _ent.invoice_prefix = _pfx.value.trim();
+            if (_bpx) _ent.bill_prefix = _bpx.value.trim();
             if (_ptEl && _ptEl.value !== '') _ent.payment_terms = Number(_ptEl.value);
             // Keep the in-memory entity in lockstep so the next document renders the new letterhead
             // without a page reload (the letterhead reads ENTITIES[i].profile, not the DB).

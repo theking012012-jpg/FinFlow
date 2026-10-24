@@ -4050,6 +4050,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <div style="font-size:12px;color:var(--t3);margin-bottom:.75rem">Download a complete copy of everything in your account — invoices, expenses, customers, payroll, ledger and settings — as a JSON file (GDPR data export).</div>
               <button class="btn btn-ghost" onclick="window.location.href='/api/auth/export'">⬇ Download my data</button>
             </div>
+            <!-- D-G: plan & billing — filled by ffRenderBilling (finflow-api-wiring-extra.js) from GET /api/billing -->
+            <div class="settings-section" id="billing-section" style="margin-top:1rem">
+              <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="1.5" y="3.5" width="13" height="9" rx="1.2"/><line x1="1.5" y1="6.5" x2="14.5" y2="6.5"/></svg>Plan &amp; billing</div>
+              <div id="billing-panel" style="font-size:13px;color:var(--t2);line-height:1.6">Loading…</div>
+            </div>
             <div class="settings-section" style="margin-top:1rem;border-color:var(--red-bd)">
               <div class="settings-title" style="color:var(--red)"><svg viewBox="0 0 16 16"><polyline points="2,4 14,4"/><path d="M5 4V2h6v2"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>Danger zone</div>
               <div style="font-size:12px;color:var(--t3);margin-bottom:.75rem">Permanently delete your account and all associated data. This action cannot be undone.</div>

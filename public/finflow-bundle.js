@@ -5811,6 +5811,37 @@ function clearAIChat(){
   };
 
   // ══════════════════════════════════════════════════════
+  // 11b. PLAN & BILLING (D-G / D-B) — Settings → Plan & billing, from GET /api/billing
+  // ══════════════════════════════════════════════════════
+  const _bDate = isoStr => { try { return new Date(isoStr).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }); } catch (_) { return String(isoStr || '').slice(0, 10); } };
+  window.ffRenderBilling = async function () {
+    const el = document.getElementById('billing-panel');
+    if (!el) return;
+    try {
+      const b = await api('GET', '/api/billing');
+      window._billing = b;
+      let h;
+      if (b.paid) {
+        const per = b.interval === 'year' ? 'year' : 'month';
+        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)} · billed ${b.interval === 'year' ? 'yearly' : 'monthly'} · $${Number(b.price).toLocaleString('en-US')} a ${per}</div>`
+          + (b.periodEnd
+              ? (b.cancelAtPeriodEnd
+                  ? `<div style="color:var(--amber)">Cancels on ${e(_bDate(b.periodEnd))} — you keep full access until then.</div>`
+                  : `<div>Renews on ${e(_bDate(b.periodEnd))}.</div>`)
+              : '');
+      } else if (b.readOnly) {
+        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">No active plan — your books are read-only</div><div>You can view and export everything. Choose a plan to make changes again.</div>`;
+      } else {
+        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)}</div>` + (b.trialEnds ? `<div>Ends on ${e(_bDate(b.trialEnds))}. No card needed until you choose a plan.</div>` : '');
+      }
+      h += `<div style="margin-top:.75rem;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="showPage('pricing')">${b.paid ? 'Change plan' : 'Choose a plan'}</button></div>`;
+      el.innerHTML = h;
+    } catch (err) { el.textContent = 'Could not load your plan — ' + err.message; }
+  };
+  { const _spBilling = window.showPage;
+    if (typeof _spBilling === 'function') window.showPage = function (id) { const r = _spBilling.apply(this, arguments); if (id === 'settings') window.ffRenderBilling(); return r; }; }
+
+  // ══════════════════════════════════════════════════════
   // 12. PERSONAL FINANCE — owned by app-main.js
   // ══════════════════════════════════════════════════════
   // REMOVED the stale window.loadPersonalFinance override. It populated the

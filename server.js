@@ -24,6 +24,7 @@ function notSetUp(feature, ...envNames) {
 const Holidays     = require('date-holidays');            // F88 step 6 — per-country public-holiday calendar (offline, no network)
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const Plans = require('./plans');                        // D-A — the ONE plan definition (limits, features, prices)
+const Billing = require('./billing');                    // D-G / D-B — the account's subscription facts and billing state
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
 const { buildReviewItems } = require('./books-review');   // cleanup/anomaly queue engine (pure, read-only)
 const { buildReminderCandidates, buildDraft, resolveCustomer } = require('./payment-reminders'); // AI reminder agent engine (pure)
@@ -358,6 +359,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     const subUserId = await userIdForSubscription(sub);   // FA-S1
     if (subUserId) {
       await setSubscriptionStatus(subUserId, sub.status);
+      await Billing.syncSubscription(pool, subUserId, sub, process.env);   // D-G: plan, interval, period, cancel flag, item
       // N101: remember WHICH subscription bills this user, so deleting the account can cancel it.
       await pool.query(`UPDATE users SET data = data || jsonb_build_object('stripe_subscription_id', $2::text, 'stripe_customer_id', $3::text) WHERE id = $1`,
         [subUserId, String(sub.id || ''), String((sub.customer && sub.customer.id) || sub.customer || '')]);
@@ -5920,6 +5922,11 @@ async function seatRefusal(req, exceptTmId) {
     error: 'Your ' + Plans.planFor(s.plan).name + ' plan includes ' + s.limit + ' team member' + (s.limit === 1 ? '' : 's') + ' who can edit, plus you, and all of them are in use. '
       + 'Invite this person as a Viewer or Accountant (both free), free up a seat, or upgrade for more.' } };
 }
+// D-G: the account's billing state (plan, monthly / yearly, renewal or cancellation date, price) for the Billing panel.
+app.get('/api/billing', requireAuth, wrap(async (req, res) => {
+  const { rows: [u] } = await pool.query(`SELECT data FROM users WHERE id = $1`, [scopeId(req)]);
+  res.json(Billing.billingState(u ? u.data : {}, Date.now()));
+}));
 app.get('/api/team/seats', requireAuth, wrap(async (req, res) => {
   const s = await seatState(scopeId(req), req.userPlan, null);
   res.json(Object.assign(s, { free: ['viewer', 'accountant'] }));

@@ -31,6 +31,15 @@
 
   const REFERRAL_MONTHS_HARD_CAP = 12;
 
+  // FA-L3: the smallest bill an accountant can send a client, in the currency's minor units. One rule for the
+  // server (bill-client refuses below it), the dashboard's bill form and the accountants page. The dashboard bills
+  // in USD only today (FA-L3e), so only USD has a minimum; minBillMinor() is null for a currency with none.
+  const MIN_BILL_MINOR = { usd: 5000 };
+  function minBillMinor(currency) {
+    const v = MIN_BILL_MINOR[String(currency || '').toLowerCase()];
+    return v == null ? null : v;
+  }
+
   // tierForAccountant(activeCount) → the tier row (name, referralMonths, commissionRate).
   // Count 0 maps to the entry tier (Bronze) so approving a first client freezes 3 months.
   function tierForAccountant(activeCount) {
@@ -79,6 +88,8 @@
     TIERS,
     ONBOARDING_FREE_BELOW,
     REFERRAL_MONTHS_HARD_CAP,
+    MIN_BILL_MINOR,
+    minBillMinor,
     tierForAccountant,
     commissionRateFor,
     estimateStripeFeeCents,

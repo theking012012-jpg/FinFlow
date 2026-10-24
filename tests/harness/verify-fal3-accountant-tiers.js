@@ -30,7 +30,9 @@ T.TIERS.forEach((t, i) => {
   A('2  ' + t.name + ': "' + range + '", $10 a month for ' + t.referralMonths + ' months, ' + Math.round(t.commissionRate * 100) + '% commission', c.includes(range) && c.includes(t.referralMonths + ' months') && c.includes(Math.round(t.commissionRate * 100) + '% commission'), c.slice(0, 200));
 });
 A('3  the first ' + T.ONBOARDING_FREE_BELOW + ' clients are commission-free — stated', new RegExp('first ' + T.ONBOARDING_FREE_BELOW + ' clients', 'i').test(text) && /commission-free|no commission/i.test(text), '');
-A('4  no "We take 4%", "4% FinFlow service commission", "96%", "Minimum bill: $50", nor pre-launch "already earning" (none true)', !/We take 4%|96%|Minimum bill|already earning/.test(text) && !/4%\s*FinFlow service commission/.test(text), (text.match(/We take 4%|96%[^.]{0,30}|Minimum bill[^.]{0,20}|already earning|4%\s*FinFlow service commission/) || [''])[0]);
+A('4  no "We take 4%", "4% FinFlow service commission", "96%", nor pre-launch "already earning" (none true)', !/We take 4%|96%|already earning/.test(text) && !/4%\s*FinFlow service commission/.test(text), (text.match(/We take 4%|96%[^.]{0,30}|already earning|4%\s*FinFlow service commission/) || [''])[0]);
+// the minimum bill IS a rule (tier-config.MIN_BILL_MINOR; bill-client refuses below it) — stated from the same constant
+A('4d the page states the minimum bill from tier-config (' + money(T.minBillMinor('usd')) + ')', text.includes('Minimum bill: ' + money(T.minBillMinor('usd'))), (text.match(/Minimum bill[^✓]{0,20}/) || ['none'])[0]);
 // the top stat strip, computed from tier-config ($120 IS true: $10 × the longest referral period, 12 months)
 const maxRef = '$' + (10 * Math.max(...T.TIERS.map(t => t.referralMonths)));
 const stats = ((d.getElementById('acc-stats') || {}).textContent || '').replace(/\s+/g, ' ');

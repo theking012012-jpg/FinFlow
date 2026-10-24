@@ -69,7 +69,7 @@
 
 const crypto = require('crypto');
 const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
-const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
+const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents, minBillMinor } = require('./tier-config'); // F17 — single tier source
 const Conduct = require('./conduct-policy');   // D-E — the Professional Conduct Policy's ONE version source
 // The accountant's conduct state from their row (accountants.conduct_*), as the browser and the access gate see it.
 // The grace is measured on the DATABASE clock (now_ms from the same query as conduct_prompted_at, which NOW() wrote) —
@@ -2671,6 +2671,12 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       // amountCents = minor units (the dashboard); amount = major units (API callers). Currency exponent (N47).
       const amountMinor = b.amountCents != null ? Number(b.amountCents) : units.majorToMinor(parseFloat(b.amount), currency);
       if (!Number.isInteger(amountMinor) || amountMinor <= 0) return res.status(400).json({ error: 'Enter a valid amount.' });
+      // FA-L3: the minimum bill is the server's rule (tier-config), not only the dashboard's
+      const minBill = minBillMinor(currency);
+      if (minBill != null && amountMinor < minBill) {
+        const shown = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(units.minorToMajor(minBill, currency));
+        return res.status(400).json({ error: `The minimum bill is ${shown}.` });
+      }
 
       const { rows: clientRows } = await pool.query(
         `SELECT u.id, u.data->>'email' AS email, u.data->>'name' AS name FROM users u

@@ -754,7 +754,7 @@
       <input type="text" id="bill-description" placeholder="e.g. Tax filing — FY 2025, Monthly bookkeeping">
     </div>
     <div class="modal-form-group">
-      <label for="bill-amount">Amount (USD) — minimum $50</label>
+      <label for="bill-amount" id="bill-amount-label">Amount (USD) — minimum $50</label>
       <input type="number" id="bill-amount" placeholder="500" min="50" step="1">
     </div>
     <div id="bill-breakdown" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-top:4px;font-size:12px;color:var(--text2)">
@@ -1411,14 +1411,21 @@ function openBillModal() {
     activeClients.map(c => `<option value="${c.id}">${esc(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</option>`).join('');
   document.getElementById('bill-breakdown').style.display = 'none';
   document.getElementById('bill-amount').value = '';
+  // FA-L3: the label and the input's minimum come from tier-config — the rule bill-client enforces
+  const minBill = _minBillCents();
+  document.getElementById('bill-amount-label').textContent = 'Amount (USD) — minimum $' + (minBill / 100).toFixed(2);
+  document.getElementById('bill-amount').min = String(minBill / 100);
   document.getElementById('bill-description').value = '';
   document.getElementById('bill-modal').classList.add('open');
 }
 
+// The dashboard bills in USD (FA-L3e); 0 when tier-config sets no USD minimum.
+function _minBillCents() { return window.FinFlowTiers.minBillMinor('usd') || 0; }
+
 document.addEventListener('input', function(e) {
   if (e.target.id === 'bill-amount') {
     const amt = parseFloat(e.target.value) || 0;
-    if (amt >= 50) {
+    if (Math.round(amt * 100) >= _minBillCents()) {
       // F17: LIVE tier commission from the shared /tier-config.js — the same split
       // the backend applies (Stripe fee off the top → commission → you net the rest).
       // First 3 active paying clients are commission-free.
@@ -1447,7 +1454,8 @@ async function submitBill() {
 
   if (!clientUserId) { toast('Please select a client', 'error'); return; }
   if (!description) { toast('Please enter a service description', 'error'); return; }
-  if (!amount || amount < 50) { toast('Minimum bill is $50', 'error'); return; }
+  const minBill = _minBillCents();   // FA-L3: the same minimum the server enforces
+  if (!amount || Math.round(amount * 100) < minBill) { toast('Minimum bill is $' + (minBill / 100).toFixed(2), 'error'); return; }
 
   const amountCents = Math.round(amount * 100);
 

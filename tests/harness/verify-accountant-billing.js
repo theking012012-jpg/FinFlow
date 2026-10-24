@@ -104,8 +104,12 @@ const { HarnessHttp } = require('./httpClient.js');
 
     const r403 = await acc.post('/api/accountants/bill-client', { clientUserId: String(stranger), description: 'x', amountCents: 10000 });
     A('unlinked client → 403', r403.status === 403, 'status ' + r403.status);
+    // FA-L3: the minimum bill ($50, tier-config.MIN_BILL_MINOR.usd) is the server's rule, not only the dashboard's
+    const nMin = Number((await c.query(`SELECT COUNT(*) n FROM accountant_earnings`)).rows[0].n);
+    const rMin = await acc.post('/api/accountants/bill-client', { clientUserId: String(client), description: 'tiny', amountCents: 4999 });
+    A('a $49.99 bill is refused: "minimum bill is $50.00" (bug: 200 — only the dashboard checked)', rMin.status === 400 && /minimum bill is \$50\.00/i.test(rMin.text) && Number((await c.query(`SELECT COUNT(*) n FROM accountant_earnings`)).rows[0].n) === nMin, `status ${rMin.status}: ${rMin.text.slice(0, 140)}`);
     failNext = true;
-    const before = Number((await c.query(`SELECT COUNT(*) n FROM accountant_earnings`)).rows[0].n);
+    const before =Number((await c.query(`SELECT COUNT(*) n FROM accountant_earnings`)).rows[0].n);
     const rf = await acc.post('/api/accountants/bill-client', { clientUserId: String(client), description: 'retry', amountCents: 20000 });
     A('Stripe failure → 502 with a generic message, no raw Stripe text (bug: 500 "Stripe internal: … acct_SECRET_DETAIL")', rf.status === 502 && !/SECRET_DETAIL|Stripe internal/.test(rf.text), `status ${rf.status}: ${rf.text.slice(0, 140)}`);
     A('  no earning left behind by the failed bill', Number((await c.query(`SELECT COUNT(*) n FROM accountant_earnings`)).rows[0].n) === before);

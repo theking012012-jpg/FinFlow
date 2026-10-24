@@ -45,6 +45,7 @@ function render(src) {
     + '        <ul style="list-style:none;display:flex;flex-direction:column;gap:10px">\n'
     + '          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Client pays by card — secure Stripe checkout</li>\n'
     + '          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Payment receipt sent to the client automatically</li>\n'
+    + (T.minBillMinor('usd') != null ? '          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Minimum bill: ' + money(T.minBillMinor('usd')) + '</li>\n' : '')
     + '          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Referral pay: $' + REFERRAL_MONTHLY + ' a month per active, paying client, for the months your tier gives — it stops if the client stops paying</li>\n'
     + '        </ul>\n'
     + '      </div>\n'

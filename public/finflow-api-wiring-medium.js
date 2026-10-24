@@ -1049,7 +1049,7 @@
       document.getElementById('item-cost').value   = item.cost   != null ? item.cost   : '';
       document.getElementById('item-unit').value   = item.unit   || 'each';
       document.getElementById('item-stock').value  = item.stock  != null ? item.stock  : '';
-      document.getElementById('item-status').value = item.status || 'Active';
+      document.getElementById('item-status').value = (item.status === 'Inactive') ? 'Inactive' : 'Active';   // FA-M6: low stock is worked out, never a status
       document.getElementById('item-sku').value    = item.sku    || '';
       openModal('item-modal');
     };

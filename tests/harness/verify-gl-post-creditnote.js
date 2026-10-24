@@ -42,14 +42,16 @@ async function main() {
     A('Cr Accounts Receivable (1100) = 50', byCode['1100'] && near(byCode['1100'].credit, 50) && near(byCode['1100'].debit, 0), JSON.stringify(byCode['1100']));
     A('credit-note entry balances', near(cnLines.reduce((s, l) => s + +l.debit, 0), cnLines.reduce((s, l) => s + +l.credit, 0)));
 
-    const voidR = await http.post('/api/credit-notes', { customer: 'Cust', amount: 999, status: 'Void', date: '2026-06-10', entity_id: eid });
+    // FA-M6: a credit starts Open and is voided afterwards (creating one "Void" is refused). Void after create → its
+    // posting is reversed, so it has NO net effect on the ledger.
+    const voidR0 = await http.post('/api/credit-notes', { customer: 'Cust', amount: 999, status: 'Open', date: '2026-06-10', entity_id: eid });
+    const voidR = (voidR0.status >= 200 && voidR0.status < 300) ? await http.put('/api/credit-notes/' + JSON.parse(voidR0.text).id, { status: 'Void' }) : voidR0;
+    voidR.text = voidR0.text;
     A('POST credit note (Void 999) 2xx', voidR.status >= 200 && voidR.status < 300, 'status=' + voidR.status);
     const voidCn = JSON.parse(voidR.text);
-    const voidEntries = (await c.query(`SELECT id FROM ledger_entries WHERE source_type='credit_note' AND source_id=$1`, [voidCn.id])).rows;
-    A('Void credit note posts NOTHING', voidEntries.length === 0, 'got ' + voidEntries.length);
-    const cnCount = (await c.query(`SELECT COUNT(*)::int AS n FROM ledger_entries WHERE source_type='credit_note'`)).rows[0].n;
-    A('exactly one credit-note entry total (only the Open one)', cnCount === 1, 'got ' + cnCount);
-
+    const voidNet = Number((await c.query(`SELECT COALESCE(SUM(l.debit - l.credit), 0) AS n FROM ledger_lines l JOIN ledger_entries e ON e.id = l.entry_id JOIN ledger_accounts a ON a.id = l.account_id WHERE e.source_type='credit_note' AND e.source_id=$1 AND a.code = '4000'`, [voidCn.id])).rows[0].n);
+    A('a voided credit note has NO net effect on revenue 4000 (posting reversed on void)', Math.abs(voidNet) < 0.005, 'net ' + voidNet);
+    
     const bal = async code => (await c.query(`SELECT COALESCE(SUM(ll.debit-ll.credit),0)::float AS net FROM ledger_lines ll JOIN ledger_accounts la ON la.id=ll.account_id WHERE ll.user_id=$1 AND ll.entity_id=$2 AND la.code=$3`, [uid, eid, code])).rows[0].net;
     const books = await computeBooks(uid, eid, 'year');
     A('ORACLE: ledger Revenue (150) == computeBooks.revenue (200 − 50)', near(-(await bal('4000')), books.revenue) && near(books.revenue, 150), 'ledgerRev=' + (-(await bal('4000'))) + ' revenue=' + books.revenue);

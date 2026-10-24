@@ -1975,6 +1975,15 @@ app.get('/api/invoices', requireAuth, wrap(async (req, res) => respondList(req, 
 // / vendor_credits already validate via their own validStatuses; payroll_runs status is code-set only.
 const INVOICE_STATUSES = new Set(['pending', 'overdue', 'partial', 'paid', 'draft']);
 const BILL_STATUSES    = new Set(['unpaid', 'due_soon', 'overdue', 'partial', 'paid']);
+// FA-M6: what a document may be CREATED as. Overdue / due soon come from the due date and partial from payments, so a
+// create that sends them is stored as the plain unpaid word; "paid" is honoured only with a real payment behind it.
+const _createDocStatus = (status, unpaidWord) => {
+  const s = String(status == null ? '' : status).toLowerCase();
+  return (s === 'overdue' || s === 'due_soon' || s === 'partial') ? unpaidWord : s;
+};
+// FA-M6: a credit (credit note / vendor credit) starts Open; it is voided afterwards. "Applied" is set only by a real
+// application to a document, never typed.
+const _CREDIT_CREATE_ONLY = 'Open';
 const _badStatus = (set, v) => v != null && !set.has(String(v).toLowerCase());
 
 // C5: currency + ticker input validation. An invalid currency code silently breaks every downstream
@@ -2179,6 +2188,7 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   const _effAmount = _li.present ? _li.amount : amount;
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required.' });
   if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' });
+  const _invCreateStatus = _createDocStatus(status, 'pending');   // FA-M6
   const eid = entity_id || req.entityId || null;
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // Layer 3 (fast path): the 5s findRecentDuplicate pre-check is TOKEN-BLIND — it matches on
@@ -2255,7 +2265,7 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   const _dueYmd = due_date || await invoiceDueFromTerms(eid, _issueYmd);
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: _dueYmd||null, status, notes: notes.slice(0,500), issue_date: _issueYmd, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: _dueYmd||null, status: _invCreateStatus, notes: notes.slice(0,500), issue_date: _issueYmd, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(
@@ -2775,6 +2785,7 @@ app.get('/api/items', requireAuth, wrap(async (req, res) => {
 app.post('/api/items', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: 'name required.' });
+  if (b.status != null && !['Active', 'Inactive'].includes(b.status)) return res.status(400).json({ error: 'An item is Active or Inactive; low stock is worked out from its units.', code: 'STATUS_AT_CREATE' });   // FA-M6
   // F150: fall back to the active entity (req.entityId) like every other business insert. This
   // handler previously stamped only b.entity_id, so a create without an explicit body entity_id
   // was born entity_id=NULL and — via the null-inclusive read filter — leaked into EVERY entity.
@@ -4951,6 +4962,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   const _effAmount = _li.present ? _li.amount : amount;
   if (!vendor || _effAmount == null) return res.status(400).json({ error: 'vendor and amount required' });
   if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
+  const _billCreateStatus = _createDocStatus(status, 'unpaid');   // FA-M6
   const entity = await activeEntity(req);
   const _billEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -4976,7 +4988,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
   let row;
   try {
-    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, amount: _amt, due_date: _billDue || null, status, notes, issue_date: _issueYmd, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, amount: _amt, due_date: _billDue || null, status: _billCreateStatus, notes, issue_date: _issueYmd, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
@@ -4986,7 +4998,16 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   }
   row.vendor_id = await linkDocContact('bills', scopeId(req), _billEnt, row.id, vendor, req);   // batch 9: the vendor is a saved vendor of this business
   { const _bn = await assignBillNumber(pool, scopeId(req), _billEnt, row.id); if (_bn) row.num = _bn; }   // FA-M5c: before the audit row, so it records the number
-  await recordAudit(pool, { userId: scopeId(req), entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });
+  // FA-M6 (the invoices' F133 rule for bills): a bill created already PAID records a real payment made for the full amount
+  // on its issue date through the one settling writer — payment row + ledger cash leg + status recalc. Idempotent on
+  // 'bill_create_paid:<id>'; never breaks bill creation.
+  if (_billCreateStatus === 'paid' && _amt > 0) {
+    try {
+      await settleBillRemaining(pool, { userId: scopeId(req), billId: row.id, date: _issueYmd, method: 'Paid on creation',
+        notes: 'Auto-recorded: bill created as paid', idemKey: 'bill_create_paid:' + row.id });
+    } catch (payErr) { console.error('[bills] paid-on-create payment failed (non-fatal):', payErr && payErr.message); }
+  }  // F90 Phase B
   // GL Phase 2 (dual-write shadow): an issued bill accrues expense — Dr Operating Expenses / Cr AP at
   // its issue date (mirror of the invoice revenue leg; RECOGNIZED_BILL allowlist). A bill payment
   // settles AP separately (payments_made). Best-effort.
@@ -5427,6 +5448,8 @@ app.post('/api/credit-notes', requireAuth, lockGuard(LOCK_SPECS.credit_notes), w
   const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
   const validStatuses = ['Open', 'Applied', 'Void'];
+  // FA-M6: a credit starts Open — Applied needs a real application, Void is done afterwards
+  if (status != null && String(status).toLowerCase() !== _CREDIT_CREATE_ONLY.toLowerCase()) return res.status(400).json({ error: 'A credit starts Open. Void it from the list afterwards if needed.', code: 'STATUS_AT_CREATE' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
   // the partial unique index (idx_credit_notes_idem_key) is the sole arbiter.
@@ -5490,7 +5513,7 @@ app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), l
   if (b.customer != null) patch.customer = String(b.customer).trim().slice(0, 200);
   if (b.amount   != null) patch.amount   = parseFloat(b.amount) || 0;
   if (b.date     != null) patch.date     = b.date;
-  if (b.status   != null) patch.status   = validStatuses.includes(b.status) ? b.status : 'Open';
+  if (b.status   != null) { if (!['Open', 'Void'].includes(b.status)) return res.status(400).json({ error: 'A credit can be Open or Void; Applied is set by applying it.', code: 'STATUS_NOT_SETTABLE' }); patch.status = b.status; }   // FA-M6
   if (b.reason   != null) patch.reason   = String(b.reason).slice(0, 300);
   const { rows: [_cnchk] } = await pool.query(
     `SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1`,
@@ -5665,6 +5688,8 @@ app.post('/api/vendor-credits', requireAuth, lockGuard(LOCK_SPECS.vendor_credits
   const { vendor, num, amount, date, status = 'Open', reason = '' } = req.body || {};
   if (!vendor || amount == null) return res.status(400).json({ error: 'vendor and amount required.' });
   const validStatuses = ['Open', 'Applied', 'Void'];
+  // FA-M6: a credit starts Open — Applied needs a real application, Void is done afterwards
+  if (status != null && String(status).toLowerCase() !== _CREDIT_CREATE_ONLY.toLowerCase()) return res.status(400).json({ error: 'A credit starts Open. Void it from the list afterwards if needed.', code: 'STATUS_AT_CREATE' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
   // the partial unique index (idx_vendor_credits_idem_key) is the sole arbiter.
@@ -5725,7 +5750,7 @@ app.put('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'
   if (b.vendor  != null) patch.vendor  = String(b.vendor).trim().slice(0, 200);
   if (b.amount  != null) patch.amount  = parseFloat(b.amount) || 0;
   if (b.date    != null) patch.date    = b.date;
-  if (b.status  != null) patch.status  = validStatuses.includes(b.status) ? b.status : 'Open';
+  if (b.status  != null) { if (!['Open', 'Void'].includes(b.status)) return res.status(400).json({ error: 'A credit can be Open or Void; Applied is set by applying it.', code: 'STATUS_NOT_SETTABLE' }); patch.status = b.status; }   // FA-M6
   if (b.reason  != null) patch.reason  = String(b.reason).slice(0, 300);
   const { rows: [_vcchk] } = await pool.query(
     `SELECT * FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1`,

@@ -41,11 +41,15 @@ async function main() {
     A('Cr Operating Expenses (6000) = 80', byCode['6000'] && near(byCode['6000'].credit, 80) && near(byCode['6000'].debit, 0), JSON.stringify(byCode['6000']));
     A('vendor-credit entry balances', near(vcLines.reduce((s, l) => s + +l.debit, 0), vcLines.reduce((s, l) => s + +l.credit, 0)));
 
-    const voidR = await http.post('/api/vendor-credits', { vendor: 'Acme', amount: 999, status: 'Void', date: '2026-06-10', entity_id: eid });
+    // FA-M6: a credit starts Open and is voided afterwards (creating one "Void" is refused). Void after create → its
+    // posting is reversed, so it has NO net effect on the ledger.
+    const voidR0 = await http.post('/api/vendor-credits', { vendor: 'Acme', amount: 999, status: 'Open', date: '2026-06-10', entity_id: eid });
+    const voidR = (voidR0.status >= 200 && voidR0.status < 300) ? await http.put('/api/vendor-credits/' + JSON.parse(voidR0.text).id, { status: 'Void' }) : voidR0;
+    voidR.text = voidR0.text;
     A('POST vendor credit (Void 999) 2xx', voidR.status >= 200 && voidR.status < 300, 'status=' + voidR.status);
     const voidVc = JSON.parse(voidR.text);
-    const voidEntries = (await c.query(`SELECT id FROM ledger_entries WHERE source_type='vendor_credit' AND source_id=$1`, [voidVc.id])).rows;
-    A('Void vendor credit posts NOTHING', voidEntries.length === 0, 'got ' + voidEntries.length);
+    const voidNet = Number((await c.query(`SELECT COALESCE(SUM(l.debit - l.credit), 0) AS n FROM ledger_lines l JOIN ledger_entries e ON e.id = l.entry_id JOIN ledger_accounts a ON a.id = l.account_id WHERE e.source_type='vendor_credit' AND e.source_id=$1 AND a.code = '6000'`, [voidVc.id])).rows[0].n);
+    A('a voided vendor credit has NO net effect on 6000 (posting reversed on void)', Math.abs(voidNet) < 0.005, 'net ' + voidNet);
 
     const bal = async code => (await c.query(`SELECT COALESCE(SUM(ll.debit-ll.credit),0)::float AS net FROM ledger_lines ll JOIN ledger_accounts la ON la.id=ll.account_id WHERE ll.user_id=$1 AND ll.entity_id=$2 AND la.code=$3`, [uid, eid, code])).rows[0].net;
     const books = await computeBooks(uid, eid, 'year');

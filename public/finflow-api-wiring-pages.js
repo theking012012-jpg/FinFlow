@@ -555,7 +555,13 @@
     // CREDIT NOTES
     // ════════════════════════════════════════════
     let _creditNotesData = [], _creditNotesFetched = false;
-
+      // FA-M6: void / reopen a credit (the only statuses a person sets — Applied comes from applying it)
+      window.setCreditStatus = async function (kind, id, status) {
+        try { await api('PUT', '/api/' + kind + '/' + id, { status }); }
+        catch (e) { notify((e && e.message) || 'Could not update the credit', true); return; }
+        notify(status === 'Void' ? 'Voided — it no longer reduces revenue' : 'Reopened');
+        if (kind === 'credit-notes') loadCreditNotes(); else loadVendorCredits();
+      };
     async function loadCreditNotes() {
       try {
         const rows = await api('GET', '/api/credit-notes');
@@ -581,7 +587,7 @@
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
             <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewCreditNote(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteCreditNote(${r.id})">✕</button></div>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewCreditNote(${r.id})">View</button>${r.status === 'Void' ? `<button class="btn btn-ghost btn-sm" onclick="setCreditStatus('credit-notes', ${r.id}, 'Open')">Reopen</button>` : `<button class="btn btn-ghost btn-sm" onclick="setCreditStatus('credit-notes', ${r.id}, 'Void')">Void</button>`}<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteCreditNote(${r.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No credit notes yet</div>';
       // KPI cards: count · open/unapplied sum · applied sum · this-month sum
@@ -1319,7 +1325,7 @@
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
             <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewVendorCredit(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendorCredit(${r.id})">✕</button></div>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewVendorCredit(${r.id})">View</button>${r.status === 'Void' ? `<button class="btn btn-ghost btn-sm" onclick="setCreditStatus('vendor-credits', ${r.id}, 'Open')">Reopen</button>` : `<button class="btn btn-ghost btn-sm" onclick="setCreditStatus('vendor-credits', ${r.id}, 'Void')">Void</button>`}<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendorCredit(${r.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendor credits yet</div>';
       // KPI cards: count · open sum · applied sum · this-month sum

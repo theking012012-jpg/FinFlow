@@ -187,7 +187,10 @@ window.filterAccountants = function() {
           <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.first_name)} ${esc(a.last_name)}</div>
           <div style="font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.firm || '')}</div>
         </div>
-        <span style="margin-left:auto;font-size:9px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:2px 6px;flex-shrink:0">✓ Verified</span>
+        ${(() => { const v = a.verified_at ? new Date(a.verified_at) : null; const ok = v && !isNaN(v);   // D-E: the date FinFlow checked the credentials
+          const short = ok ? v.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '';
+          const long = ok ? v.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+          return `<span data-verified-on="${esc(ok ? v.toISOString().slice(0, 10) : '')}" title="${esc(ok ? 'FinFlow checked this accountant\'s credentials on ' + long : 'Credentials checked by FinFlow')}" style="margin-left:auto;font-size:9px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:2px 6px;flex-shrink:0">✓ Verified${ok ? ' · checked ' + esc(short) : ''}</span>`; })()}
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <span style="color:${starsColor};font-size:13px;letter-spacing:1px">${stars}</span>

@@ -1950,7 +1950,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       // Step G (F28): clients see ONLY admin-confirmed_credentials — never the self-declared
       // `credentials`/`memberships` (those stay admin-only). `stripe_onboarded` gates the
       // "FinFlow Protected" chip (true only when payments actually run through FinFlow).
-      let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, confirmed_credentials, stripe_onboarded, hourly_rate, packages, has_pricing, rate_currency FROM accountants WHERE status = 'verified'`;
+      let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, confirmed_credentials, stripe_onboarded, hourly_rate, packages, has_pricing, rate_currency, verified_at FROM accountants WHERE status = 'verified'`;   // D-E: verified_at = when FinFlow checked the credentials (shown on the badge)
       const params = [];
       if (country) { params.push(country); query += ` AND country = $${params.length}`; }
       if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }

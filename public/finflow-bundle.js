@@ -2808,7 +2808,9 @@ function clearAIChat(){
       window._quoteEditId = null;   // LR9: a NEW quote — never the last one edited
       ['quote-client','quote-amount','quote-expiry','quote-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const s = document.getElementById('quote-status'); if (s) s.value = 'pending';
+      const _qt = (t, sub) => { const m = document.getElementById('quote-modal'); if (!m) return; const h = m.querySelector('.modal-title'); if (h) h.textContent = t; const st = m.querySelector('.modal-sub'); if (st) st.textContent = sub; };   // FA-B6
       if (window.ffQuoteLineItems && window.ffQuoteLineItems.reset) window.ffQuoteLineItems.reset();
+      _qt('New Quote', 'Create a quote for a client');
       openModal('quote-modal');
     };
 
@@ -2825,6 +2827,8 @@ function clearAIChat(){
       set('quote-status', q.status || 'pending'); set('quote-amount', q.amount != null ? Number(q.amount) : '');
       if (window.ffQuoteLineItems && window.ffQuoteLineItems.load) window.ffQuoteLineItems.load(Array.isArray(q.line_items) ? q.line_items : []);
       window._quoteEditId = id;
+      const _qt = (t, sub) => { const m = document.getElementById('quote-modal'); if (!m) return; const h = m.querySelector('.modal-title'); if (h) h.textContent = t; const st = m.querySelector('.modal-sub'); if (st) st.textContent = sub; };   // FA-B6
+      _qt('Edit quote' + (q.client ? ' — ' + q.client : ''), 'Change this quote; its total follows its lines');
       openModal('quote-modal');
     };
 
@@ -4423,6 +4427,8 @@ function clearAIChat(){
     document.getElementById('ts-hours').value = t.hours != null ? String(t.hours) : '';
     document.getElementById('ts-rate').value = t.rate ? String(t.rate) : '';
     document.getElementById('ts-billable').value = t.billable || 'Yes';
+    { const h = modal.querySelector('.modal-title'); const st = modal.querySelector('.modal-sub');   // FA-B6: the title says new or edit
+      if (h) h.textContent = 'Edit time entry'; if (st) st.textContent = 'Change this time entry'; }
     window._tsEditId = id;
     modal.classList.remove('hidden');
     if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
@@ -4431,6 +4437,8 @@ function clearAIChat(){
   window.openLogTimeModal = function () {
     const modal = buildTimesheetModal();
     window._tsEditId = null;   // LR10: a new entry, never the last one edited
+    { const h = modal.querySelector('.modal-title'); const st = modal.querySelector('.modal-sub');   // FA-B6: the title says new or edit
+      if (h) h.textContent = 'Log Time'; if (st) st.textContent = 'Record a time entry'; }
     document.getElementById('ts-employee').value = '';
     document.getElementById('ts-project').value  = '';
     document.getElementById('ts-project-id').value = '';

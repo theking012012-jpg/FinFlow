@@ -117,7 +117,9 @@
       window._quoteEditId = null;   // LR9: a NEW quote — never the last one edited
       ['quote-client','quote-amount','quote-expiry','quote-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const s = document.getElementById('quote-status'); if (s) s.value = 'pending';
+      const _qt = (t, sub) => { const m = document.getElementById('quote-modal'); if (!m) return; const h = m.querySelector('.modal-title'); if (h) h.textContent = t; const st = m.querySelector('.modal-sub'); if (st) st.textContent = sub; };   // FA-B6
       if (window.ffQuoteLineItems && window.ffQuoteLineItems.reset) window.ffQuoteLineItems.reset();
+      _qt('New Quote', 'Create a quote for a client');
       openModal('quote-modal');
     };
 
@@ -134,6 +136,8 @@
       set('quote-status', q.status || 'pending'); set('quote-amount', q.amount != null ? Number(q.amount) : '');
       if (window.ffQuoteLineItems && window.ffQuoteLineItems.load) window.ffQuoteLineItems.load(Array.isArray(q.line_items) ? q.line_items : []);
       window._quoteEditId = id;
+      const _qt = (t, sub) => { const m = document.getElementById('quote-modal'); if (!m) return; const h = m.querySelector('.modal-title'); if (h) h.textContent = t; const st = m.querySelector('.modal-sub'); if (st) st.textContent = sub; };   // FA-B6
+      _qt('Edit quote' + (q.client ? ' — ' + q.client : ''), 'Change this quote; its total follows its lines');
       openModal('quote-modal');
     };
 

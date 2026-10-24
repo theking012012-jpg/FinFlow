@@ -237,6 +237,8 @@
     document.getElementById('ts-hours').value = t.hours != null ? String(t.hours) : '';
     document.getElementById('ts-rate').value = t.rate ? String(t.rate) : '';
     document.getElementById('ts-billable').value = t.billable || 'Yes';
+    { const h = modal.querySelector('.modal-title'); const st = modal.querySelector('.modal-sub');   // FA-B6: the title says new or edit
+      if (h) h.textContent = 'Edit time entry'; if (st) st.textContent = 'Change this time entry'; }
     window._tsEditId = id;
     modal.classList.remove('hidden');
     if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
@@ -245,6 +247,8 @@
   window.openLogTimeModal = function () {
     const modal = buildTimesheetModal();
     window._tsEditId = null;   // LR10: a new entry, never the last one edited
+    { const h = modal.querySelector('.modal-title'); const st = modal.querySelector('.modal-sub');   // FA-B6: the title says new or edit
+      if (h) h.textContent = 'Log Time'; if (st) st.textContent = 'Record a time entry'; }
     document.getElementById('ts-employee').value = '';
     document.getElementById('ts-project').value  = '';
     document.getElementById('ts-project-id').value = '';

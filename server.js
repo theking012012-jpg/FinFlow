@@ -406,10 +406,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       // Owner decision 2026-10-06: a cancelled subscription is READ-ONLY (same as an expired trial).
       // The upgrade path nulls trial_ends, and checkPlan only restricts `trial && trial_ends < now`, so
       // without stamping trial_ends here a cancelled customer kept unlimited write access forever.
-      await pool.query(
-        `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text, 'trial_ends', $2::text) WHERE id = $1`,
-        [cancelUserId, new Date().toISOString()]
-      );
+      await endPlanAccess(cancelUserId, new Date().toISOString());   // D-G: read-only from now; retention counts from here
       // F11: mark not-paying and stop the referral payout immediately.
       await setSubscriptionStatus(cancelUserId, 'canceled');
       await suspendClientForUser(cancelUserId);
@@ -1107,6 +1104,16 @@ async function userIdForSubscription(sub) {
     `SELECT id FROM users WHERE ($1::text IS NOT NULL AND data->>'stripe_subscription_id' = $1) OR ($2::text IS NOT NULL AND data->>'stripe_customer_id' = $2)
       ORDER BY (data->>'stripe_subscription_id' = $1) DESC NULLS LAST LIMIT 1`, [subId, cus]);
   return r ? r.id : null;
+}
+
+// D-G: a plan's access ends — the account becomes read-only (owner decision 2026-10-06, unchanged) and the moment is
+// recorded once (billing.access_ended_at) for the 90-day retention. Shared by the Stripe deletion event and the in-app
+// yearly cancel, so both end access the same way.
+async function endPlanAccess(userId, atIso) {
+  await pool.query(
+    `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text, 'trial_ends', $2::text,
+        'billing', COALESCE(data->'billing', '{}'::jsonb) || jsonb_build_object('access_ended_at', COALESCE(data->'billing'->>'access_ended_at', $2::text), 'cancel_at_period_end', false))
+      WHERE id = $1`, [userId, atIso]);
 }
 
 // ── STRIPE CHECKOUT ───────────────────────────────────────────────────────────
@@ -5926,6 +5933,64 @@ async function seatRefusal(req, exceptTmId) {
 app.get('/api/billing', requireAuth, wrap(async (req, res) => {
   const { rows: [u] } = await pool.query(`SELECT data FROM users WHERE id = $1`, [scopeId(req)]);
   res.json(Billing.billingState(u ? u.data : {}, Date.now()));
+}));
+// D-G / D-B: cancelling from the app — the account OWNER only. What happens is previewed first and recomputed here on
+// confirm (the page's numbers are never trusted). Monthly: ends at the period end, undoable until then. Yearly: leave any
+// time — refund = paid − months started × the monthly price, then access ends now.
+async function _billingCtx(req, res) {
+  if (req.accountRole && req.accountRole !== 'owner') { res.status(403).json({ error: 'Only the account owner can change or cancel the plan.' }); return null; }
+  if (!stripe) { res.status(503).json({ error: notSetUp('Billing', 'STRIPE_SECRET_KEY') }); return null; }
+  const { rows: [u] } = await pool.query(`SELECT data FROM users WHERE id = $1`, [scopeId(req)]);
+  const data = (u && u.data) || {};
+  const sub = data.stripe_subscription_id || (data.billing || {}).subscription_id;
+  if (!sub) { res.status(409).json({ error: 'There is no subscription on this account to change.', code: 'NO_SUBSCRIPTION' }); return null; }
+  return { data, sub, uid: scopeId(req) };
+}
+async function _cancelPreview(ctx) {
+  const b = ctx.data.billing || {};
+  let inv = null;
+  if (b.interval === 'year') {
+    const list = await stripe.invoices.list({ subscription: ctx.sub, status: 'paid', limit: 1 });
+    inv = (list && list.data && list.data[0]) || null;
+  }
+  return Billing.cancelPreview(ctx.data, inv, Date.now());
+}
+app.get('/api/billing/cancel-preview', requireAuth, wrap(async (req, res) => {
+  const ctx = await _billingCtx(req, res); if (!ctx) return;
+  const p = await _cancelPreview(ctx);
+  if (p.error) return res.status(409).json(p);
+  const { paymentIntent, ...shown } = p;
+  res.json(shown);
+}));
+app.post('/api/billing/cancel', requireAuth, wrap(async (req, res) => {
+  if (!req.body || req.body.confirm !== true) return res.status(400).json({ error: 'Confirm the cancellation first.', code: 'CONFIRM_REQUIRED' });
+  const ctx = await _billingCtx(req, res); if (!ctx) return;
+  const p = await _cancelPreview(ctx);
+  if (p.error) return res.status(409).json(p);
+  const b = ctx.data.billing || {};
+  const key = 'cancel-' + ctx.sub + '-' + String(b.period_start || '');
+  if (p.mode === 'period_end') {
+    await stripe.subscriptions.update(ctx.sub, { cancel_at_period_end: true }, { idempotencyKey: key });
+    await pool.query(`UPDATE users SET data = data || jsonb_build_object('billing', COALESCE(data->'billing', '{}'::jsonb) || '{"cancel_at_period_end": true}'::jsonb) WHERE id = $1`, [ctx.uid]);
+  } else {
+    if (p.refund > 0) {
+      if (!p.paymentIntent) return res.status(409).json({ error: 'The payment to refund could not be found — nothing was cancelled. Please contact support.', code: 'NO_PAYMENT' });
+      await stripe.refunds.create({ payment_intent: p.paymentIntent, amount: Math.round(p.refund * 100), metadata: { userId: String(ctx.uid), reason: 'annual_leave_any_time', monthsUsed: String(p.monthsUsed) } }, { idempotencyKey: 'refund-' + key });
+    }
+    await stripe.subscriptions.cancel(ctx.sub, {}, { idempotencyKey: key });
+    await endPlanAccess(ctx.uid, new Date().toISOString());
+  }
+  await recordAudit(pool, { userId: ctx.uid, table: 'billing', recordId: ctx.uid, action: 'CANCEL', newData: { mode: p.mode, refund: p.refund, monthsUsed: p.monthsUsed || null, accessUntil: p.accessUntil }, req });
+  res.json({ ok: true, mode: p.mode, refund: p.refund, accessUntil: p.accessUntil });
+}));
+app.post('/api/billing/resume', requireAuth, wrap(async (req, res) => {
+  const ctx = await _billingCtx(req, res); if (!ctx) return;
+  const b = ctx.data.billing || {};
+  if (!b.cancel_at_period_end) return res.status(409).json({ error: 'The plan is not set to cancel.', code: 'NOT_CANCELLING' });
+  await stripe.subscriptions.update(ctx.sub, { cancel_at_period_end: false }, { idempotencyKey: 'resume-' + ctx.sub + '-' + String(b.period_start || '') + '-' + Date.now() });
+  await pool.query(`UPDATE users SET data = data || jsonb_build_object('billing', COALESCE(data->'billing', '{}'::jsonb) || '{"cancel_at_period_end": false}'::jsonb) WHERE id = $1`, [ctx.uid]);
+  await recordAudit(pool, { userId: ctx.uid, table: 'billing', recordId: ctx.uid, action: 'RESUME', newData: { periodEnd: b.period_end }, req });
+  res.json({ ok: true });
 }));
 app.get('/api/team/seats', requireAuth, wrap(async (req, res) => {
   const s = await seatState(scopeId(req), req.userPlan, null);

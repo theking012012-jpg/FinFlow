@@ -5834,9 +5834,44 @@ function clearAIChat(){
       } else {
         h = `<div style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)}</div>` + (b.trialEnds ? `<div>Ends on ${e(_bDate(b.trialEnds))}. No card needed until you choose a plan.</div>` : '');
       }
-      h += `<div style="margin-top:.75rem;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="showPage('pricing')">${b.paid ? 'Change plan' : 'Choose a plan'}</button></div>`;
+      h += `<div style="margin-top:.75rem;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="showPage('pricing')">${b.paid ? 'Change plan' : 'Choose a plan'}</button>`
+        + (b.paid && !b.cancelAtPeriodEnd ? `<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ffCancelPlan()">Cancel plan</button>` : '')
+        + (b.paid && b.cancelAtPeriodEnd ? `<button class="btn btn-primary btn-sm" onclick="ffResumePlan()">Keep my plan</button>` : '')
+        + `</div><div id="billing-cancel-box"></div>`;
       el.innerHTML = h;
     } catch (err) { el.textContent = 'Could not load your plan — ' + err.message; }
+  };
+  const _money2 = v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // D-G / D-B: what cancelling does — shown BEFORE confirming (the server recomputes it on confirm).
+  window.ffCancelPlan = async function () {
+    const box = document.getElementById('billing-cancel-box');
+    if (!box) return;
+    try {
+      const p = await api('GET', '/api/billing/cancel-preview');
+      const keep = 'After that your books stay available, read-only, for 90 days — you can view and export everything — and we email you 14 days before anything is deleted.';
+      const what = p.mode === 'period_end'
+        ? `Your plan ends on <strong>${e(_bDate(p.accessUntil))}</strong>. You keep full access until then, and you can change your mind until that day. No refund is due for the month you are in. ${keep}`
+        : `You paid <strong>${_money2(p.paid)}</strong> for this year. ${p.monthsUsed} month${p.monthsUsed === 1 ? '' : 's'} used × ${_money2(p.monthlyPrice)} (the monthly price) = ${_money2(p.used)}. `
+          + (p.refund > 0 ? `We refund <strong>${_money2(p.refund)}</strong> to the card you paid with. ` : 'No refund is due. ')
+          + `Access ends today. ${keep}`;
+      box.innerHTML = `<div style="margin-top:.75rem;padding:12px 14px;border:1px solid var(--red-bd);border-radius:var(--radius);background:var(--red-bg)">
+          <div style="color:var(--t1);margin-bottom:8px">${what}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="billing-cancel-confirm" style="background:var(--red);color:#fff" onclick="ffConfirmCancel()">Cancel my plan</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('billing-cancel-box').innerHTML=''">Keep my plan</button></div></div>`;
+    } catch (err) { box.textContent = 'Could not prepare the cancellation — ' + err.message; }
+  };
+  window.ffConfirmCancel = async function () {
+    const btn = document.getElementById('billing-cancel-confirm');
+    if (btn) btn.disabled = true;
+    try {
+      const r = await api('POST', '/api/billing/cancel', { confirm: true });
+      tip(r.mode === 'period_end' ? 'Your plan will end on ' + _bDate(r.accessUntil) + '.' : (r.refund > 0 ? 'Your plan has ended. ' + _money2(r.refund) + ' is on its way back to your card.' : 'Your plan has ended.'));
+      await window.ffRenderBilling();
+    } catch (err) { tip('Could not cancel — ' + err.message, true); if (btn) btn.disabled = false; }
+  };
+  window.ffResumePlan = async function () {
+    try { await api('POST', '/api/billing/resume', {}); tip('Your plan will continue.'); await window.ffRenderBilling(); }
+    catch (err) { tip('Could not keep the plan — ' + err.message, true); }
   };
   { const _spBilling = window.showPage;
     if (typeof _spBilling === 'function') window.showPage = function (id) { const r = _spBilling.apply(this, arguments); if (id === 'settings') window.ffRenderBilling(); return r; }; }

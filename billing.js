@@ -72,4 +72,41 @@ function billingState(data, now) {
   return st;
 }
 
-module.exports = { priceMap, priceFor, subscriptionFacts, syncSubscription, billingState };
+// Months STARTED from a period start up to `nowMs` — a started month counts as used. Calendar months in UTC, the day
+// clamped to the month's length (a period starting on the 31st steps 31 Jan → 28 Feb → 31 Mar …).
+function monthsStarted(startIso, nowMs) {
+  const s = new Date(startIso);
+  if (isNaN(s)) return 0;
+  const y0 = s.getUTCFullYear(), m0 = s.getUTCMonth(), d0 = s.getUTCDate(), t0 = s.getTime() % 86400000;
+  let n = 0;
+  for (let k = 0; k < 240; k++) {
+    const y = y0 + Math.floor((m0 + k) / 12), m = (m0 + k) % 12;
+    const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    const at = Date.UTC(y, m, Math.min(d0, last)) + t0;
+    if (at > nowMs) break;
+    n++;
+  }
+  return n;
+}
+const round2 = v => Math.round(v * 100) / 100;
+
+// What cancelling does now (D-G / D-B) — shown before confirming and recomputed by the server on confirm.
+//   monthly: ends at the period end, no refund
+//   yearly:  ends now; refund = paid − months started × the MONTHLY price, never below 0 nor above what was paid
+// `paidInvoice` = the subscription's last paid invoice ({ amount_paid (minor units), payment_intent }), from Stripe.
+function cancelPreview(data, paidInvoice, nowMs) {
+  const st = billingState(data, nowMs);
+  if (!st.paid) return { error: 'There is no paid plan to cancel.', code: 'NO_PLAN' };
+  const b = (data && data.billing) || {};
+  if (st.interval !== 'year') return { mode: 'period_end', interval: 'month', accessUntil: st.periodEnd, refund: 0 };
+  const plan = Plans.planFor(st.plan);
+  const paid = round2(((paidInvoice && paidInvoice.amount_paid) || 0) / 100);
+  const monthsUsed = monthsStarted(b.period_start, nowMs);
+  const used = round2(monthsUsed * plan.monthly);
+  const refund = round2(Math.max(0, Math.min(paid, paid - used)));
+  return { mode: 'refund', interval: 'year', paid, monthsUsed, monthlyPrice: plan.monthly, used, refund,
+           paymentIntent: paidInvoice && paidInvoice.payment_intent ? String(paidInvoice.payment_intent.id || paidInvoice.payment_intent) : null,
+           accessUntil: new Date(nowMs).toISOString() };
+}
+
+module.exports = { priceMap, priceFor, subscriptionFacts, syncSubscription, billingState, monthsStarted, cancelPreview };

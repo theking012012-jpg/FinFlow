@@ -253,7 +253,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -1180,17 +1180,18 @@ If you cannot find a field, use null. Be concise.`;
     if (await require('./period-lock').isLocked(pool, parseInt(userId), _clientEntityId, _jDate)) return res.status(403).json({ error: 'Period is locked.' });
     // M3: stored exactly like the owner's posted journal (server.js POST /api/journals): status 'Posted', ref,
     // debit/credit totals — and dual-written to the GL, which is where computeBooks reads journals from.
-    const { row } = await db.insert('journals', {
+    let { row } = await db.insert('journals', {
       user_id: parseInt(userId),
       entity_id: _clientEntityId,
       description: (description || '').slice(0, 500),
       date: _jDate,
-      ref: 'JE-' + String(Date.now()).slice(-4),
+      ref: null,   // FA-M6c: numbered by the client business's own journal sequence below
       debit: Math.round(_dr * 100) / 100, credit: Math.round(_cr * 100) / 100,
       lines: JSON.stringify(_lines),
       status: 'Posted',
       posted_by: `accountant:${req.session.accountantId}`,
     });
+    if (numberNewDoc) row = await numberNewDoc('journals', parseInt(userId), row, null);   // FA-M6c: the business's next JE- number
     await _audit(pool, { userId: parseInt(userId), table: 'journals', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B (accountant on client books)
     let _gl = { posted: false, reason: 'ledger posting unavailable' };
     try { if (postJournalToLedger) _gl = await postJournalToLedger(pool, { userId: parseInt(userId), entityId: _clientEntityId, journal: row }); }

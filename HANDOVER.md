@@ -38,7 +38,9 @@ disagree with its payroll runs) shows the balance sheet from computeBooks ("cash
 server log names the entry (`[GL 5b] … untraced(…)` / `payrollLiabilities(…)`). That is the check working — send the
 line over before changing any row (Rule 8). (13) **applying credits (FA-M6b)** — Credit notes / Vendor credits →
 Apply… settles part of one of that customer's invoices (that vendor's bills). Credits issued before this keep reducing
-the customer's total as before; nothing old is changed.
+the customer's total as before; nothing old is changed. (14) **document numbers (FA-M6c)** — new credit notes, vendor credits, sales
+receipts, quotes, journals and payments run CN-0001, CN-0002 … per business (skipping any number already used). Existing
+documents keep the numbers they have — some old ones share a number (they came from the clock); nothing is renumbered.
 
 ## ⚡ UPDATE 2026-10-21
 

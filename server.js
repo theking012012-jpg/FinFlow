@@ -2155,10 +2155,28 @@ function normalizeLineItems(raw) {
 // the next in sequence — never a duplicate. The database backs this with a unique index (idx_invoices_number).
 // FA-M5c: bills use the same assigner (field num, counter bill_seq, prefix bill_prefix, default "BILL-"). Fixed specs
 // only — table and field names are never taken from a request.
+// FA-M6c: so does every other numbered document — credit notes, vendor credits, sales receipts, quotes, journals and
+// payments made were numbered from the CLOCK ('CN-' + the last 4 digits of Date.now()), so two in the same instant (or
+// any two whose clock digits matched) shared a number and none ran in sequence.
 const _DOC_NUMBERING = {
-  invoices: { table: 'invoices', field: 'number', seq: 'invoice_seq', prefix: 'invoice_prefix', def: 'INV-' },
-  bills:    { table: 'bills',    field: 'num',    seq: 'bill_seq',    prefix: 'bill_prefix',    def: 'BILL-' },
+  invoices:       { table: 'invoices',       field: 'number', seq: 'invoice_seq',       prefix: 'invoice_prefix',       def: 'INV-' },
+  bills:          { table: 'bills',          field: 'num',    seq: 'bill_seq',          prefix: 'bill_prefix',          def: 'BILL-' },
+  credit_notes:   { table: 'credit_notes',   field: 'num',    seq: 'credit_note_seq',   prefix: 'credit_note_prefix',   def: 'CN-' },
+  vendor_credits: { table: 'vendor_credits', field: 'num',    seq: 'vendor_credit_seq', prefix: 'vendor_credit_prefix', def: 'VC-' },
+  sales_receipts: { table: 'sales_receipts', field: 'num',    seq: 'sales_receipt_seq', prefix: 'sales_receipt_prefix', def: 'SR-' },
+  quotes:         { table: 'quotes',         field: 'num',    seq: 'quote_seq',         prefix: 'quote_prefix',         def: 'QT-' },
+  journals:       { table: 'journals',       field: 'ref',    seq: 'journal_seq',       prefix: 'journal_prefix',       def: 'JE-' },
+  payments_made:  { table: 'payments_made',  field: 'ref',    seq: 'payment_made_seq',  prefix: 'payment_made_prefix',  def: 'PM-' },
 };
+// FA-M6c: number a just-created document. A typed number is kept when it is free in the business, else the next in
+// sequence; a document that already carries one (an idempotent replay returns the first row) is left as it is — the
+// counter only moves for a document that gets a number.
+async function numberNewDoc(kind, userId, row, typed) {
+  const K = _DOC_NUMBERING[kind];
+  if (!K || !row || (row[K.field] != null && row[K.field] !== '')) return row;
+  const n = await assignDocNumber(pool, kind, userId, row.entity_id, row.id, typed);
+  return n ? Object.assign({}, row, { [K.field]: n }) : row;
+}
 async function assignInvoiceNumber(q, userId, entityId, invoiceId, sourceNumber) { return assignDocNumber(q, 'invoices', userId, entityId, invoiceId, sourceNumber); }
 async function assignBillNumber(q, userId, entityId, billId, sourceNumber) { return assignDocNumber(q, 'bills', userId, entityId, billId, sourceNumber); }
 async function assignDocNumber(q, kind, userId, entityId, docId, sourceNumber) {
@@ -3855,7 +3873,6 @@ app.post('/api/journals', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(asyn
   const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
   if (Math.abs(totalDebit - totalCredit) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
-  const num = 'JE-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
   // the partial unique index (idx_journals_idem_key) is the sole arbiter, so two legitimately
@@ -3872,7 +3889,7 @@ app.post('/api/journals', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(asyn
     ({ row } = await db.insert('journals', {
       user_id: scopeId(req), entity_id: req.entityId || null,
       date: date || await entityTodayYmd(req.entityId),
-      description: description.trim().slice(0,500), ref: num,
+      description: description.trim().slice(0,500), ref: null,   // FA-M6c: numbered below
       debit: totalDebit, credit: totalCredit, lines: JSON.stringify(lines), status,
       idempotency_key: idem,
     }));
@@ -3883,6 +3900,7 @@ app.post('/api/journals', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(asyn
     }
     throw e;
   }
+  row = await numberNewDoc('journals', scopeId(req), row, null);   // FA-M6c
   logAudit(req, 'CREATE', 'journals', row.id, null, row);
   // N20: a POSTED manual journal dual-writes to the GL (Dr/Cr to J-namespaced accounts, typed by the
   // line's code). computeBooks reads the journal P&L leg back from the GL, so the oracle and glFinancials
@@ -4323,10 +4341,10 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   const _effAmount = _li.present ? _li.amount : amount;
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req);
-  const num = 'QT-' + String(Date.now()).slice(-4);
   const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(_effAmount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('quotes', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client, num, amount: Number(_effAmount), expiry_date, status, notes, ...(_li.present ? { line_items: _li.line_items } : {}) });  // F150-class: request-scoped entity, not is_active
+  let { row } = await db.insert('quotes', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client, num: null, amount: Number(_effAmount), expiry_date, status, notes, ...(_li.present ? { line_items: _li.line_items } : {}) });  // F150-class: request-scoped entity, not is_active
+  row = await numberNewDoc('quotes', scopeId(req), row, null);   // FA-M6c
   await _auditRec(req, 'quotes', 'CREATE', null, row);   // FIX-3
   res.json(row);
 }));
@@ -5469,7 +5487,7 @@ app.post('/api/sales-receipts', requireAuth, lockGuard(LOCK_SPECS.sales_receipts
       user_id: scopeId(req),
       entity_id: req.entityId || null,
       customer: String(customer).trim().slice(0, 200),
-      num: String(num || 'SR-' + String(Date.now()).slice(-4)).slice(0, 30),
+      num: null,   // FA-M6c: numbered below (a typed number is kept when free)
       amount: parseFloat(amount) || 0,
       date: date || await entityTodayYmd(req.entityId),
       method: String(method).slice(0, 50),
@@ -5482,6 +5500,7 @@ app.post('/api/sales-receipts', requireAuth, lockGuard(LOCK_SPECS.sales_receipts
     }
     throw e;
   }
+  row = await numberNewDoc('sales_receipts', scopeId(req), row, num ? String(num).slice(0, 30) : null);   // FA-M6c
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a walk-in cash sale is Dr Cash / Cr Revenue at its date (matches
   // computeBooks' salesReceipts revenue leg). Best-effort.
@@ -5644,7 +5663,7 @@ app.post('/api/credit-notes', requireAuth, lockGuard(LOCK_SPECS.credit_notes), w
       // subtracted it from EVERY entity's revenue — a fresh entity showed NEGATIVE revenue. Store
       // it like invoices/bills/sales_receipts so a credit note only contra's its own entity's P&L.
       customer: String(customer).trim().slice(0, 200),
-      num: String(num || 'CN-' + String(Date.now()).slice(-4)).slice(0, 30),
+      num: null,   // FA-M6c: numbered below (a typed number is kept when free)
       amount: parseFloat(amount) || 0,
       date: date || await entityTodayYmd(req.entityId),
       status: validStatuses.includes(status) ? status : 'Open',
@@ -5658,6 +5677,7 @@ app.post('/api/credit-notes', requireAuth, lockGuard(LOCK_SPECS.credit_notes), w
     }
     throw e;
   }
+  row = await numberNewDoc('credit_notes', scopeId(req), row, num ? String(num).slice(0, 30) : null);   // FA-M6c
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a credit note is the REVENUE CONTRA (F58) — Dr Revenue (4000) /
   // Cr Accounts Receivable (1100) at its date, when status ∈ {Open,Applied} (Void contributes 0,
@@ -5827,7 +5847,7 @@ app.post('/api/payments-made', requireAuth, lockGuard(LOCK_SPECS.payments_made),
     date: _pmDate,
     method: (method || '').slice(0, 50),
     notes: (notes || '').slice(0, 500),
-    ref: (ref || '').slice(0, 100),
+    ref: ref ? String(ref).slice(0, 100) : null,   // FA-M6c: none typed → numbered below
     bill_id: _billId,
     idempotency_key: idem,
   }, q);
@@ -5851,6 +5871,7 @@ app.post('/api/payments-made', requireAuth, lockGuard(LOCK_SPECS.payments_made),
     throw e;
   }
   if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
+  row = await numberNewDoc('payments_made', scopeId(req), row, null);   // FA-M6c
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a bill-LINKED payment SETTLES AP (Dr AP / Cr Cash); an ORPHAN
   // payment (no bill) is a direct disbursement EXPENSE (Dr Opex / Cr Cash) — mirrors computeBooks'
@@ -5959,7 +5980,7 @@ app.post('/api/vendor-credits', requireAuth, lockGuard(LOCK_SPECS.vendor_credits
       entity_id: req.entityId || null,   // F148: mirror of credit_notes — was omitted, so every
       // vendor credit reduced EVERY entity's opex (F58 contra). Store it so it scopes to its entity.
       vendor: String(vendor).trim().slice(0, 200),
-      num: String(num || 'VC-' + String(Date.now()).slice(-4)).slice(0, 30),
+      num: null,   // FA-M6c: numbered below (a typed number is kept when free)
       amount: parseFloat(amount) || 0,
       date: date || await entityTodayYmd(req.entityId),
       status: validStatuses.includes(status) ? status : 'Open',
@@ -5973,6 +5994,7 @@ app.post('/api/vendor-credits', requireAuth, lockGuard(LOCK_SPECS.vendor_credits
     }
     throw e;
   }
+  row = await numberNewDoc('vendor_credits', scopeId(req), row, num ? String(num).slice(0, 30) : null);   // FA-M6c
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'vendor_credits', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a vendor credit is the OPEX CONTRA (F58) — the exact mirror of a
   // credit note on revenue — Dr Accounts Payable (2000) / Cr Operating Expenses (6000) at its date,
@@ -7017,7 +7039,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.

@@ -2737,7 +2737,7 @@ function clearAIChat(){
   }
 
   const todayStr = () => (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
-  const uid4 = () => String(Date.now()).slice(-4);
+  // FA-M6c: document numbers come from the server's per-business sequence — the browser never makes one up
 
   // ── KPI card helpers ──────────────────────────────────────────────
   // Sets the .mc-val cells of a page by index; null/undefined entries are
@@ -2977,7 +2977,6 @@ function clearAIChat(){
       const date   = document.getElementById('receipt-date')?.value   || todayStr();
       const method = document.getElementById('receipt-method')?.value || 'Card';
       const notes  = document.getElementById('receipt-notes')?.value?.trim() || '';
-      const num    = 'SR-' + uid4();
       // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
       // on modal open and on success below. Double-submit reuses it (→ DB dedupes); a genuine new
       // receipt from a reopened modal gets a fresh token and is allowed.
@@ -2988,7 +2987,7 @@ function clearAIChat(){
       const _srSaveBtn = document.querySelector('#modal-receipt .ff-save-btn');
       if (_srSaveBtn) _srSaveBtn.disabled = true;
       try {
-        const saved = await api('POST', '/api/sales-receipts', { customer, num, amount, date, method, notes, idempotency_key: window._srIdemKey });
+        const saved = await api('POST', '/api/sales-receipts', { customer, amount, date, method, notes, idempotency_key: window._srIdemKey });
         _receiptsData.unshift(saved.row || saved);
         window.receipts = _receiptsData;
         window._srIdemKey = null;   // success → the next receipt mints a fresh token
@@ -3425,7 +3424,6 @@ function clearAIChat(){
       const date   = document.getElementById('cn-date')?.value?.trim()   || todayStr();
       const status = document.getElementById('cn-status')?.value          || 'Open';
       const reason = document.getElementById('cn-reason')?.value?.trim()  || '';
-      const num    = 'CN-' + uid4();
       // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
       // on modal open and on success below. Double-submit reuses it (→ DB dedupes); a genuine new
       // credit note from a reopened modal gets a fresh token and is allowed.
@@ -3436,7 +3434,7 @@ function clearAIChat(){
       const _cnSaveBtn = document.querySelector('#modal-credit-note .ff-save-btn');
       if (_cnSaveBtn) _cnSaveBtn.disabled = true;
       try {
-        const saved = await api('POST', '/api/credit-notes', { customer, num, amount, date, status, reason, idempotency_key: window._cnIdemKey });
+        const saved = await api('POST', '/api/credit-notes', { customer, amount, date, status, reason, idempotency_key: window._cnIdemKey });
         _creditNotesData.unshift(saved.row || saved);
         window.creditNotes = _creditNotesData;
         window._cnIdemKey = null;   // success → the next credit note mints a fresh token
@@ -3962,7 +3960,6 @@ function clearAIChat(){
       const date   = document.getElementById('pm-date')?.value   || todayStr();
       const method = document.getElementById('pm-method')?.value || 'Bank Transfer';
       const notes  = document.getElementById('pm-notes')?.value?.trim() || '';
-      const ref    = 'PM-' + uid4();
       // F84: a selected bill links this payment — the server treats it as a settlement (Dr AP / Cr
       // Cash), excludes it from expense (the sole double-count guard, server.js:4378) and reduces AP.
       // Empty ⇒ omit bill_id ⇒ a direct disbursement that stays an expense (unchanged behaviour).
@@ -3973,7 +3970,7 @@ function clearAIChat(){
       window._pmIdemKey = window._pmIdemKey || (window.crypto?.randomUUID
         ? window.crypto.randomUUID()
         : 'pm-' + Date.now() + '-' + Math.random().toString(36).slice(2));
-      const body = { vendor, ref, amount, date, method, notes, idempotency_key: window._pmIdemKey };
+      const body = { vendor, amount, date, method, notes, idempotency_key: window._pmIdemKey };   // FA-M6c: the server numbers it
       if (_billSel) body.bill_id = Number(_billSel);
       window._savingPaymentMade = true;
       const _pmSaveBtn = document.querySelector('#modal-payment-made .ff-save-btn');
@@ -4146,9 +4143,8 @@ function clearAIChat(){
       const date   = document.getElementById('vc-date')?.value?.trim()   || todayStr();
       const status = document.getElementById('vc-status')?.value          || 'Open';
       const reason = document.getElementById('vc-reason')?.value?.trim()  || '';
-      const num    = 'VC-' + uid4();
       try {
-        const saved = await api('POST', '/api/vendor-credits', { vendor, num, amount, date, status, reason });
+        const saved = await api('POST', '/api/vendor-credits', { vendor, amount, date, status, reason });
         _vendorCreditsData.unshift(saved.row || saved);
         window.vendorCredits = _vendorCreditsData;
         closeModal('modal-vendor-credit');

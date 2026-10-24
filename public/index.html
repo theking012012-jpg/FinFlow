@@ -10067,9 +10067,10 @@ document.addEventListener('click', e=>{
       <div class="field-wrap"><label class="field-label" for="bill-amount">Amount ($) *</label><input class="finput" id="bill-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label" for="bill-issue">Issue date</label><input class="finput" id="bill-issue" type="date"></div>
-      <div class="field-wrap"><label class="field-label" for="bill-due">Due Date</label><input class="finput" id="bill-due" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="bill-issue">Issue date</label><input class="finput" id="bill-issue" type="date" oninput="window._invDueHint&&window._invDueHint('bill')"></div>
+      <div class="field-wrap"><label class="field-label" for="bill-due">Due Date</label><input class="finput" id="bill-due" type="date" aria-describedby="bill-due-hint" oninput="window._invDueHint&&window._invDueHint('bill')"></div>
     </div>
+    <div id="bill-due-hint" style="font-size:11.5px;color:var(--t3);margin:-.35rem 0 .7rem"></div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="bill-status">Status</label>
         <select class="finput" id="bill-status">

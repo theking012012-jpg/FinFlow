@@ -2147,6 +2147,8 @@ async function assignInvoiceNumber(q, userId, entityId, invoiceId, sourceNumber)
   }
   return null;
 }
+// Batch 8 (B1c) for invoices, FA-M5b for bills: a document left without a due date is due on its issue date + this
+// business's payment terms (Settings; 30 until set). One rule for both sides.
 async function invoiceDueFromTerms(entityId, issueYmd) {
   const iso = FinFlowDates._toYmd(issueYmd); if (!iso) return null;
   let terms = 30;
@@ -4957,12 +4959,13 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   const _amt = Number(_effAmount);
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
   const _issueYmd = issue_date || await entityTodayYmd(_billEnt);   // N102: the entity's today, stored (as invoices)
+  const _billDue = due_date || await invoiceDueFromTerms(_billEnt, _issueYmd);   // FA-M5b: no due date → issue + this business's terms (as invoices)
   // C1 Wave 1 durable backstop (mirrors invoices/expenses): a same-token double-submit → the 2nd
   // INSERT throws 23505 → recover the ORIGINAL row and return 200 (never a 500, never a duplicate).
   // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
   let row;
   try {
-    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: _issueYmd, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date: _billDue || null, status, notes, issue_date: _issueYmd, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);

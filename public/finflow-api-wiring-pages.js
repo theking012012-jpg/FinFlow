@@ -860,7 +860,7 @@
             <span style="font-weight:500">${esc(b.vendor)}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
-            <span style="color:${window._billDisplayStatus(b) === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'—')}</span>
+            <span style="color:${window._billDisplayStatus(b) === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'No due date')}</span>
             <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[window._billDisplayStatus(b)] || 'b-amber'}">${esc(window._billDisplayStatus(b))}</span></span>
             <div style="display:flex;gap:4px">
               <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
@@ -910,6 +910,7 @@
       { const t = document.querySelector('#bill-modal .modal-title'); if (t) t.textContent = 'New Bill'; }
       try { if (window.ffBillLineItems && window.ffBillLineItems.reset) window.ffBillLineItems.reset(); } catch (_) {}
       if (typeof window._fillContactPicker === 'function') window._fillContactPicker('bill-vendor', 'ff-vend-list', '/api/vendors', v => v.name);   // batch 9: pick a saved vendor
+      if (typeof window._invDueHint === 'function') window._invDueHint('bill');   // FA-M5b: the due date the terms give, before saving
       openModal('bill-modal');
     };
 
@@ -926,6 +927,7 @@
       set('bill-status', String(b.status || 'unpaid').toLowerCase()); set('bill-notes', b.notes);
       if (Array.isArray(b.line_items) && b.line_items.length && window.ffBillLineItems && window.ffBillLineItems.load) window.ffBillLineItems.load(b.line_items);
       window._billEditId = b.id;
+      if (typeof window._invDueHint === 'function') window._invDueHint('bill');   // FA-M5b
       const t = document.querySelector('#bill-modal .modal-title'); if (t) t.textContent = 'Edit bill — ' + (b.vendor || '');
     };
 

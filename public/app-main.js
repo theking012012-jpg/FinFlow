@@ -2780,9 +2780,11 @@ window.openSaveAllContacts=async function(kind){
 // applies the same rule when a due date is left blank — the note says it before anyone saves.
 function _bizPaymentTerms(){ try { const a=(window.ENTITIES||[]).find(e=>e&&e.active); return (a&&a.payment_terms!=null&&isFinite(a.payment_terms))?Number(a.payment_terms):30; } catch(_){ return 30; } }
 window._bizPaymentTerms=_bizPaymentTerms;
-window._invDueHint=function(){
-  const el=document.getElementById('inv-due-hint'); if(!el) return;
-  const iss=(document.getElementById('inv-issue')||{}).value||'', due=(document.getElementById('inv-due')||{}).value||'';
+// FA-M5b: the same hint for bills (bill-issue / bill-due / bill-due-hint) — the server gives bills the same rule.
+window._invDueHint=function(prefix){
+  const p=prefix||'inv';
+  const el=document.getElementById(p+'-due-hint'); if(!el) return;
+  const iss=(document.getElementById(p+'-issue')||{}).value||'', due=(document.getElementById(p+'-due')||{}).value||'';
   const t=_bizPaymentTerms(), fl=v=>(window.FinFlowDates?window.FinFlowDates.fmtLabel(v,{year:true}):v);
   if(due){ el.textContent='Due '+fl(due)+(t?'':' (your terms: due on receipt)'); return; }
   const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(iss); if(!m){ el.textContent=''; return; }

@@ -106,23 +106,7 @@
       </div>`;
     content.appendChild(autocatPage);
 
-    // ── CLIENT PORTAL PAGE ───────────────────────────────────────────────
-    const portalPage = document.createElement('div');
-    portalPage.className = 'page';
-    portalPage.id = 'page-portal';
-    portalPage.innerHTML = `
-      <div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem">
-        <div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128279;</div>
-        <div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Client Portal &#8212; Coming Soon</div>
-        <div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Give each client a branded self-service portal where they can view invoices, make payments via Stripe, and access documents you share with them.</div>
-        <div style="display:flex;flex-direction:column;gap:8px;text-align:left;margin-bottom:1.5rem">
-          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--t3)">&#8226;</span> Branded portal per client with unique link</div>
-          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--t3)">&#8226;</span> Online Stripe payments from the portal</div>
-          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--t3)">&#8226;</span> Shared documents and invoice history</div>
-        </div>
-        <span class="badge b-amber" style="font-size:11px;padding:4px 12px">Requires Stripe + custom auth</span>
-      </div>`;
-    content.appendChild(portalPage);
+    // ── CLIENT PORTAL PAGE — not shipped as a placeholder (G11 / D4); FA-B10b builds the real portal. ──
   }
   injectPages();
 })();

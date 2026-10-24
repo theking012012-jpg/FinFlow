@@ -1334,7 +1334,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="nav-item nav-item--intelligence" onclick="showPage('autocat',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('autocat',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4"/><polyline points="10,3 14,3 14,7"/></svg>Auto-categorise</div>
     <div class="nav-divider"></div>
     <div class="nav-section-header nav-section-header--clients"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.2"/><line x1="5" y1="3" x2="5" y2="13"/><line x1="1" y1="8" x2="5" y2="8"/></svg>Clients</div>
-    <div class="nav-item nav-item--clients" onclick="showPage('portal',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('portal',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1.2"/><line x1="5" y1="3" x2="5" y2="13"/><line x1="1" y1="8" x2="5" y2="8"/></svg>Client portal</div>
+    <!-- G11 / D4: the "Client Portal — Coming Soon" nav item is removed until the portal is built (FA-B10b). -->
     <div class="sidebar-footer">
       <div class="user-avatar" id="sb-user-avatar"></div>
       <div class="user-info"><div class="user-name" id="sb-user-name">My Account</div><div class="user-plan" id="sb-user-plan">Pro plan</div></div>
@@ -1667,7 +1667,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div class="card-header"><h2 class="card-title">Role permissions</h2></div>
             <div style="font-size:10.5px;color:var(--t3);padding:2px 0 8px;line-height:1.7">
               <b style="color:var(--t2)">O</b> Owner&nbsp;·&nbsp;<b style="color:var(--t2)">A</b> Admin&nbsp;·&nbsp;<b style="color:var(--t2)">Ac</b> Accountant&nbsp;·&nbsp;<b style="color:var(--t2)">V</b> Viewer
-              <div style="margin-top:4px;color:var(--t3)">These are the role defaults enforced across the app. Per-account customization is coming soon.</div>
+              <div style="margin-top:4px;color:var(--t3)">These are the roles FinFlow enforces across the app: what each can see and change is fixed per role.</div>
             </div>
             <div style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;padding:0 0 6px;font-size:9px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--bd);align-items:center">
               <span>Permission</span><span style="text-align:center" title="Owner">O</span><span style="text-align:center" title="Admin">A</span><span style="text-align:center" title="Accountant">Ac</span><span style="text-align:center" title="Viewer">V</span>
@@ -2364,7 +2364,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
               <div><h2 class="card-title">Asset allocation</h2><div class="card-sub">By market value</div></div>
-              <button class="btn btn-ghost btn-sm" onclick="notify('Rebalancing suggestions are coming soon')">Rebalance ↗</button>
+              <button class="btn btn-ghost btn-sm" onclick="openRebalanceModal(window.bizHoldings||[],'business')">Rebalance ↗</button>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
               <div class="bar-row"><span class="bar-label">Equities</span><div class="bar-track"><div class="bar-fill" id="biz-alloc-eq-bar" style="width:0%;background:var(--acc)"></div></div><span class="bar-val" id="biz-alloc-eq">$0</span></div>
@@ -9134,23 +9134,7 @@ window.resetScanner=function(){
       </div>`;
     content.appendChild(autocatPage);
 
-    // ── CLIENT PORTAL PAGE ───────────────────────────────────────────────
-    const portalPage = document.createElement('div');
-    portalPage.className = 'page';
-    portalPage.id = 'page-portal';
-    portalPage.innerHTML = `
-      <div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem">
-        <div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128279;</div>
-        <div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Client Portal &#8212; Coming Soon</div>
-        <div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Give each client a branded self-service portal where they can view invoices, make payments via Stripe, and access documents you share with them.</div>
-        <div style="display:flex;flex-direction:column;gap:8px;text-align:left;margin-bottom:1.5rem">
-          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--t3)">&#8226;</span> Branded portal per client with unique link</div>
-          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--t3)">&#8226;</span> Online Stripe payments from the portal</div>
-          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--t3)">&#8226;</span> Shared documents and invoice history</div>
-        </div>
-        <span class="badge b-amber" style="font-size:11px;padding:4px 12px">Requires Stripe + custom auth</span>
-      </div>`;
-    content.appendChild(portalPage);
+    // ── CLIENT PORTAL PAGE — not shipped as a placeholder (G11 / D4); FA-B10b builds the real portal. ──
   }
   injectPages();
 })();

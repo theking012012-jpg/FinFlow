@@ -4797,11 +4797,17 @@ function saveHolding(){
   notify(`${ticker} added to portfolio ✦`);
 }
 
-function openRebalanceModal(){
-  const{totalValue}=calcPortfolio();
+// G11: one rebalance view for both sides — Personal passes nothing (its own holdings), the business investments page
+// passes window.bizHoldings with scope 'business'. Never a mix (the personal/business wall).
+function openRebalanceModal(list, scope){
+  const _biz = scope==='business';
+  const _L = _biz ? (Array.isArray(list)?list:[]) : holdings;
+  const _val = h => (parseFloat(h.shares)||0) * (parseFloat(h.price)||parseFloat(h._lastPrice)||parseFloat(h.costPer)||parseFloat(h.cost)||0);
+  const totalValue = _biz ? _L.reduce((s,h)=>s+_val(h),0) : calcPortfolio().totalValue;
   const targets={Stock:60,ETF:20,Bond:10,Cash:5,Crypto:3,Other:2};
   const actual={};
-  holdings.forEach(h=>{actual[h.type]=(actual[h.type]||0)+h.price*h.shares;});
+  _L.forEach(h=>{const t=h.type||'Other'; actual[t]=(actual[t]||0)+_val(h);});
+  { const m=document.getElementById('rebalance-modal'); const h=m&&m.querySelector('.modal-title'); if(h) h.textContent=_biz?'Rebalance business investments':'Rebalance portfolio'; }
   const html=Object.entries(targets).map(([type,tgt])=>{
     const act=actual[type]||0;
     const actPct=totalValue>0?(act/totalValue*100).toFixed(1):0;
@@ -7240,21 +7246,9 @@ document.body.appendChild(fab);
 _syncMobileFab((document.querySelector('.page.active')?.id || 'page-dashboard').replace('page-',''));
 
 
-// ── 2. ADVISOR NETWORK PAGE ──────────────────────────────────────────────
-const connectionsItem = document.querySelector('.nav-item[onclick*="connections"]');
-if(connectionsItem){
-  const advisorItem = document.createElement('div');
-  advisorItem.className = 'nav-item';
-  advisorItem.setAttribute('onclick', "showPage('advisors',this)");
-  advisorItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6" cy="4.5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><circle cx="12" cy="8" r="2"/><path d="M9.5 14c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5"/><path d="M14 6l1.5 1.5L18 5" style="display:none"/><polyline points="14,5 15,6 17,4"/></svg>Find Advisor`;
-  connectionsItem.parentNode.insertBefore(advisorItem, connectionsItem.nextSibling);
-}
-
-const advisorPage = document.createElement('div');
-advisorPage.className = 'page';
-advisorPage.id = 'page-advisors';
-advisorPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128101;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Advisor Network &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Connect with certified FinFlow accountants and financial advisors who can review your books, file taxes, and help you scale.</div><span class="badge b-amber" style="font-size:11px;padding:4px 12px">In development</span></div>';
-document.querySelector('.content')?.appendChild(advisorPage);
+// ── 2. ADVISOR NETWORK PAGE — REMOVED (G11 / D4) ──
+// The "Find Advisor" nav item opened an "Advisor Network — Coming Soon" page that duplicated Find Accountant. Both
+// are gone; the old 'advisors' page id still redirects to the Find Accountant directory (index.html).
 
 // Honesty pass (F51/F65): the advisor directory was dead — ADVISORS is empty and
 // the "Find Advisor" nav redirects to the real Find Accountant directory

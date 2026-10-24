@@ -1493,6 +1493,7 @@ let _loadEntityDataRunning = false;
 async function loadEntityData(idx){
   if (_loadEntityDataRunning) { console.warn('[Entity] loadEntityData already running, skipping'); return; }
   _loadEntityDataRunning = true;
+  try { activeEntityIdx = idx; _ffApplyCurrencyLabels(); } catch (_) {}   // FA-M13: the labels follow the business at once
   var _leSeq = window._entitySwitchSeq || 0;   // F151 stale-response guard: captured at load start, re-checked before the data is applied
   activeEntityIdx = idx;
   // F50 Step 1 (flash fix): do NOT zero REV/EXP/PROFIT here. The old entry-zeroing opened a $0
@@ -1893,6 +1894,7 @@ function closeModal(id){
 function openModal(id){
   const el = document.getElementById(id);
   el.classList.remove('hidden');
+  _ffApplyCurrencyLabels();   // FA-M13: a form's money labels say the currency it is in
   // Apply focus trap to the inner .modal element (first child that is the panel)
   const panel = el.querySelector('.modal') || el;
   if(window.trapFocus){ if(_modalFocusCleanup) _modalFocusCleanup(); _modalFocusCleanup = window.trapFocus(panel); }
@@ -3457,6 +3459,7 @@ let persCurrency = 'USD';
 
 function setPersCurrency(code){
   persCurrency = code;
+  _ffApplyCurrencyLabels();   // FA-M13
   // Update button states
   document.querySelectorAll('.pers-cur-btn').forEach(b=>{
     b.classList.toggle('active-preset', b.dataset.code===code);
@@ -3643,9 +3646,13 @@ function openGoalModal(){document.getElementById('goal-name').value='';document.
 async function saveGoal(){
   const name=document.getElementById('goal-name').value.trim();
   if(!name){notify('Goal name required',true);return;}
-  const current=Number(document.getElementById('goal-current').value)||0;
-  const target=Number(document.getElementById('goal-target').value)||0;
-  const monthly=Number(document.getElementById('goal-monthly').value)||0;
+  // FA-M13: the form is in the personal display currency (its labels say which); goals are stored in USD, the basis
+  // SP() converts from — so convert what was typed. It used to store the typed number AS USD whatever the currency shown.
+  const _gc = ((typeof CURRENCIES !== 'undefined' ? CURRENCIES : window.CURRENCIES) || {})[persCurrency] || { rate: 1 };
+  const _toUsd = v => (Number(_gc.rate) > 0 ? Math.round((v / Number(_gc.rate)) * 100) / 100 : v);
+  const current=_toUsd(Number(document.getElementById('goal-current').value)||0);
+  const target=_toUsd(Number(document.getElementById('goal-target').value)||0);
+  const monthly=_toUsd(Number(document.getElementById('goal-monthly').value)||0);
   if(!target){notify('Target amount required',true);return;}
   try{
     const res=await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,current_val:current,target_val:target,monthly_contrib:monthly,color:'var(--acc)'})});
@@ -5151,6 +5158,17 @@ window.startUpgrade = async function(){
 // F34 Step 2: the display currency the dashboard renders business figures in. null ⇒ native (the
 // active entity's own currency) ⇒ no ?display= param ⇒ server returns native (identity, Step 1).
 window._displayCurrency = window._displayCurrency || null;
+// FA-M13: every form money label says the currency it is in — business forms the active business's currency code
+// ("Amount (TTD)"), Personal goal forms the personal display currency. One writer, run on every business load / switch
+// and every personal currency change. A code, not "$": USD, TTD, JMD, CAD all write "$".
+function _ffApplyCurrencyLabels(){
+  try {
+    const biz = _activeEntityCurrency() || 'USD';
+    document.querySelectorAll('[data-cur="biz"]').forEach(el => { el.textContent = biz; });
+    document.querySelectorAll('[data-cur="pers"]').forEach(el => { el.textContent = (typeof persCurrency === 'string' && persCurrency) || 'USD'; });
+  } catch (_) {}
+}
+window._ffApplyCurrencyLabels = _ffApplyCurrencyLabels;
 function _activeEntityCurrency(){
   try { const a=(typeof ENTITIES!=='undefined'?ENTITIES:(window.ENTITIES||[])).find(e=>e.active); return (a&&a.currency)||'USD'; } catch(e){ return 'USD'; }
 }

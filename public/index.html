@@ -2601,7 +2601,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div class="field-wrap"><label class="field-label" for="payroll-cta-fname">First name</label><input class="finput" id="payroll-cta-fname" placeholder="First name"></div>
             <div class="field-wrap"><label class="field-label" for="payroll-cta-lname">Last name</label><input class="finput" id="payroll-cta-lname" placeholder="Last name"></div>
           </div>
-          <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label" for="payroll-cta-gross">Monthly gross (USD)</label><input class="finput" id="payroll-cta-gross" type="number" placeholder="e.g. 5000" oninput="payrollCardPreviewNet()"></div>
+          <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label" for="payroll-cta-gross">Monthly gross (<span data-cur="biz">USD</span>)</label><input class="finput" id="payroll-cta-gross" type="number" placeholder="e.g. 5000" oninput="payrollCardPreviewNet()"></div>
           <div class="field-wrap" style="margin-bottom:.35rem">
             <label class="field-label">Deductions</label>
             <div id="cta-deductions-rows"></div>
@@ -4016,7 +4016,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <div class="settings-title"><svg viewBox="0 0 16 16"><path d="M2 2h12v12H2z"/><path d="M2 6h12M6 6v8"/></svg>Personal finance targets</div>
               <div class="field-group">
                 <div class="field-wrap"><label class="field-label" for="s-inc-target">Income target ($/mo)</label><input class="finput" id="s-inc-target" value="0" type="number"></div>
-                <div class="field-wrap"><label class="field-label" for="s-budget">Monthly budget ($)</label><input class="finput" id="s-budget" value="0" type="number"></div>
+                <div class="field-wrap"><label class="field-label" for="s-budget">Monthly budget (<span data-cur="biz">USD</span>)</label><input class="finput" id="s-budget" value="0" type="number"></div>
               </div>
               <div class="field-wrap"><label class="field-label" for="s-savings-target">Savings rate target (%)</label><input class="finput" id="s-savings-target" value="40" type="number" min="0" max="100" oninput="refreshPersonal()"></div>
             </div>
@@ -4239,7 +4239,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
     <div style="font-size:11px;font-weight:500;color:var(--t2);margin-bottom:.4rem">Entry lines</div>
     <div style="display:grid;grid-template-columns:1fr 90px 90px 28px;gap:6px;padding:0 0 4px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em">
-      <span>Account</span><span>Debit ($)</span><span>Credit ($)</span><span></span>
+      <span>Account</span><span>Debit (<span data-cur="biz">USD</span>)</span><span>Credit (<span data-cur="biz">USD</span>)</span><span></span>
     </div>
     <div id="je-lines"></div>
     <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addJELine()">+ Add line</button>
@@ -4316,7 +4316,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <option value="Contractor">Contractor</option>
       </select>
     </div>
-    <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label" for="emp-gross">Monthly gross (USD)</label><input class="finput" id="emp-gross" type="number" placeholder="e.g. 4000" min="0" step="100" oninput="previewEmpNet()"></div>
+    <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label" for="emp-gross">Monthly gross (<span data-cur="biz">USD</span>)</label><input class="finput" id="emp-gross" type="number" placeholder="e.g. 4000" min="0" step="100" oninput="previewEmpNet()"></div>
     <div class="field-wrap" style="margin-bottom:.35rem">
       <label class="field-label">Deductions</label>
       <div id="emp-deductions-rows"></div>
@@ -4336,7 +4336,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="modal-overlay hidden" id="invoice-modal">
   <div class="modal modal-wide">
     <div class="modal-header"><div><div class="modal-title">New invoice</div><div class="modal-sub">Create and track a new client invoice</div></div><button class="modal-close" onclick="closeModal('invoice-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-client">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label" for="inv-amount">Amount ($) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-client">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label" for="inv-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-issue">Issue date</label><input class="finput" id="inv-issue" type="date" oninput="window._invDueHint&&window._invDueHint()"></div><div class="field-wrap"><label class="field-label" for="inv-due">Due date</label><input class="finput" id="inv-due" type="date" aria-describedby="inv-due-hint" oninput="window._invDueHint&&window._invDueHint()"></div></div>
     <div id="inv-due-hint" style="font-size:11.5px;color:var(--t3);margin:-.35rem 0 .7rem"></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-status">Status</label><select class="finput" id="inv-status" title="Overdue is worked out from the due date. Paid records the payment for you."><option value="pending">Unpaid</option><option value="paid">Paid — record the payment</option></select></div></div>
@@ -4366,7 +4366,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="modal-overlay hidden" id="expense-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add expense</div><div class="modal-sub">Log a business expense</div></div><button class="modal-close" onclick="closeModal('expense-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-desc">Description *</label><input class="finput" id="bexp-desc" placeholder="e.g. Office rent"></div><div class="field-wrap"><label class="field-label" for="bexp-amount">Amount ($) *</label><input class="finput" id="bexp-amount" type="number" placeholder="0.00"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-desc">Description *</label><input class="finput" id="bexp-desc" placeholder="e.g. Office rent"></div><div class="field-wrap"><label class="field-label" for="bexp-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="bexp-amount" type="number" placeholder="0.00"></div></div>
     <!-- M49: the expense's own calendar date (defaults to today, back-/forward-datable) — it files the expense to its period. -->
     <div class="field-wrap"><label class="field-label" for="bexp-date">Date *</label><input class="finput" id="bexp-date" type="date"></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-cat">Category</label><!-- Basis C: "Salaries" removed. Payroll expense comes ONLY from a payroll run; a hand-entered
@@ -4383,7 +4383,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add product</div><div class="modal-sub">Add a new inventory item</div></div><button class="modal-close" onclick="closeModal('product-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="prod-name">Product name *</label><input class="finput" id="prod-name" placeholder="e.g. USB-C Hub"></div><div class="field-wrap"><label class="field-label" for="prod-sku">SKU</label><input class="finput" id="prod-sku" placeholder="#1050"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="prod-units">Units in stock</label><input class="finput" id="prod-units" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="prod-cost">Unit cost ($)</label><input class="finput" id="prod-cost" type="number" placeholder="0.00"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="prod-units">Units in stock</label><input class="finput" id="prod-units" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="prod-cost">Unit cost (<span data-cur="biz">USD</span>)</label><input class="finput" id="prod-cost" type="number" placeholder="0.00"></div></div>
     <div class="field-wrap"><label class="field-label" for="prod-thresh">Reorder threshold (units)</label><input class="finput" id="prod-thresh" type="number" placeholder="20"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('product-modal')">Cancel</button><button class="btn btn-primary" onclick="saveProduct()">Add product</button></div>
   </div>
@@ -4401,7 +4401,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Edit inventory item</div><div class="modal-sub">Update product details and stock levels</div></div><button class="modal-close" onclick="closeModal('edit-inv-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-wrap"><label class="field-label" for="edit-inv-name">Product name *</label><input class="finput" id="edit-inv-name" placeholder="e.g. USB-C Hub"></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="edit-inv-units">Units in stock</label><input class="finput" id="edit-inv-units" type="number" min="0" placeholder="0" readonly title="Use Stock In, Stock Out or Restock to change stock"></div><div class="field-wrap"><label class="field-label" for="edit-inv-cost">Unit cost ($)</label><input class="finput" id="edit-inv-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="edit-inv-units">Units in stock</label><input class="finput" id="edit-inv-units" type="number" min="0" placeholder="0" readonly title="Use Stock In, Stock Out or Restock to change stock"></div><div class="field-wrap"><label class="field-label" for="edit-inv-cost">Unit cost (<span data-cur="biz">USD</span>)</label><input class="finput" id="edit-inv-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
     <div class="field-wrap"><label class="field-label" for="edit-inv-max">Reorder level (max units)</label><input class="finput" id="edit-inv-max" type="number" min="1" placeholder="200"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('edit-inv-modal')">Cancel</button><button class="btn btn-primary" onclick="saveEditInv()">Save changes</button></div>
   </div>
@@ -4412,7 +4412,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="modal-header"><div><div class="modal-title" id="item-modal-title">New Item</div><div class="modal-sub">Add or edit a product or service in your catalog</div></div><button class="modal-close" onclick="closeModal('item-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-name">Name *</label><input class="finput" id="item-name" placeholder="e.g. Web Development"></div><div class="field-wrap"><label class="field-label" for="item-sku">SKU</label><input class="finput" id="item-sku" placeholder="SVC-001"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-type">Type</label><select class="finput" id="item-type"><option value="Product">Product</option><option value="Service">Service</option></select></div><div class="field-wrap"><label class="field-label" for="item-status">Status</label><select class="finput" id="item-status"><option value="Active">Active</option><option value="Inactive">Inactive</option></select></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-price">Price ($)</label><input class="finput" id="item-price" type="number" min="0" step="0.01" placeholder="0.00"></div><div class="field-wrap"><label class="field-label" for="item-cost">Cost ($) <span style="color:var(--t3);font-size:10.5px">for margin</span></label><input class="finput" id="item-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-price">Price (<span data-cur="biz">USD</span>)</label><input class="finput" id="item-price" type="number" min="0" step="0.01" placeholder="0.00"></div><div class="field-wrap"><label class="field-label" for="item-cost">Cost ($) <span style="color:var(--t3);font-size:10.5px">for margin</span></label><input class="finput" id="item-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
     <div class="field-wrap"><label class="field-label" for="item-unit">Unit</label><input class="finput" id="item-unit" placeholder="each / hr / mo"></div>
     <div class="field-wrap"><label class="field-label" for="item-stock">Stock (leave blank for services)</label><input class="finput" id="item-stock" type="number" min="0" placeholder="—"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('item-modal')">Cancel</button><button class="btn btn-primary" onclick="saveItem()">Save</button></div>
@@ -4424,8 +4424,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add savings goal</div><div class="modal-sub">Set a new financial milestone</div></div><button class="modal-close" onclick="closeModal('goal-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-wrap"><label class="field-label" for="goal-name">Goal name *</label><input class="finput" id="goal-name" placeholder="e.g. House deposit"></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="goal-current">Current ($)</label><input class="finput" id="goal-current" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="goal-target">Target ($)</label><input class="finput" id="goal-target" type="number" placeholder="10000"></div></div>
-    <div class="field-wrap"><label class="field-label" for="goal-monthly">Monthly contribution ($)</label><input class="finput" id="goal-monthly" type="number" placeholder="500"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="goal-current">Current (<span data-cur="pers">USD</span>)</label><input class="finput" id="goal-current" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="goal-target">Target (<span data-cur="pers">USD</span>)</label><input class="finput" id="goal-target" type="number" placeholder="10000"></div></div>
+    <div class="field-wrap"><label class="field-label" for="goal-monthly">Monthly contribution (<span data-cur="pers">USD</span>)</label><input class="finput" id="goal-monthly" type="number" placeholder="500"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('goal-modal')">Cancel</button><button class="btn btn-primary" onclick="saveGoal()">Add goal</button></div>
   </div>
 </div>
@@ -9994,7 +9994,7 @@ document.addEventListener('click', e=>{
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="quote-client">Client *</label><input class="finput" id="quote-client" placeholder="Enter client name"></div>
-      <div class="field-wrap"><label class="field-label" for="quote-amount">Amount ($) *</label><input class="finput" id="quote-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="quote-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="quote-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="quote-expiry">Expiry Date</label><input class="finput" id="quote-expiry" type="date"></div>
@@ -10066,7 +10066,7 @@ document.addEventListener('click', e=>{
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="bill-vendor">Vendor *</label><input class="finput" id="bill-vendor" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label" for="bill-amount">Amount ($) *</label><input class="finput" id="bill-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="bill-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="bill-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="bill-issue">Issue date</label><input class="finput" id="bill-issue" type="date" oninput="window._invDueHint&&window._invDueHint('bill')"></div>
@@ -10134,7 +10134,7 @@ document.addEventListener('click', e=>{
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="rb-vendor">Vendor *</label><input class="finput" id="rb-vendor" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label" for="rb-amount">Amount ($) *</label><input class="finput" id="rb-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="rb-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="rb-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="rb-freq">Frequency</label>
@@ -10163,7 +10163,7 @@ document.addEventListener('click', e=>{
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="ri-client">Client *</label><input class="finput" id="ri-client" placeholder="Enter client name"></div>
-      <div class="field-wrap"><label class="field-label" for="ri-amount">Amount ($) *</label><input class="finput" id="ri-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="ri-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="ri-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="ri-freq">Frequency</label>
@@ -10196,7 +10196,7 @@ document.addEventListener('click', e=>{
     <input type="hidden" id="receipt-id">
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="receipt-customer">Customer *</label><input class="finput" id="receipt-customer" placeholder="e.g. Walk-in Customer"></div>
-      <div class="field-wrap"><label class="field-label" for="receipt-amount">Amount ($) *</label><input class="finput" id="receipt-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="receipt-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="receipt-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="receipt-date">Date</label><input class="finput" id="receipt-date" type="date"></div>
@@ -10227,7 +10227,7 @@ document.addEventListener('click', e=>{
       <div class="field-wrap"><label class="field-label" for="pr-invoice-ref">Invoice Ref</label><input class="finput" id="pr-invoice-ref" placeholder="e.g. INV-2026-010"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label" for="pr-amount">Amount ($) *</label><input class="finput" id="pr-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="pr-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="pr-amount" type="number" placeholder="0.00"></div>
       <div class="field-wrap"><label class="field-label" for="pr-date">Date</label><input class="finput" id="pr-date" type="date"></div>
     </div>
     <div class="field-wrap"><label class="field-label" for="pr-method">Payment Method</label>
@@ -10253,7 +10253,7 @@ document.addEventListener('click', e=>{
     <input type="hidden" id="cn-id">
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="cn-customer">Customer *</label><input class="finput" id="cn-customer" placeholder="e.g. Mango & Co"></div>
-      <div class="field-wrap"><label class="field-label" for="cn-amount">Amount ($) *</label><input class="finput" id="cn-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="cn-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="cn-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="cn-date">Date</label><input class="finput" id="cn-date" type="date"></div>
@@ -10287,7 +10287,7 @@ document.addEventListener('click', e=>{
     <input type="hidden" id="pm-id">
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="pm-vendor">Vendor *</label><input class="finput" id="pm-vendor" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label" for="pm-amount">Amount ($) *</label><input class="finput" id="pm-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="pm-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="pm-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="pm-date">Date</label><input class="finput" id="pm-date" type="date"></div>
@@ -10322,7 +10322,7 @@ document.addEventListener('click', e=>{
     <input type="hidden" id="vc-id">
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="vc-vendor">Vendor *</label><input class="finput" id="vc-vendor" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label" for="vc-amount">Amount ($) *</label><input class="finput" id="vc-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="vc-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="vc-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="vc-date">Date</label><input class="finput" id="vc-date" type="date"></div>

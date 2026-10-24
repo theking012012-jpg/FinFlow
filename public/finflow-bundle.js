@@ -4272,6 +4272,7 @@ function clearAIChat(){
       ${inv.notes ? `<div style="margin-top:16px;padding:10px;background:var(--bg2);border-radius:var(--radius);font-size:12px;color:var(--t2);line-height:1.5">${e(inv.notes)}</div>` : ''}
     `;
     modal.classList.remove('hidden');
+    if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
   };
 
   // ══════════════════════════════════════════════════════
@@ -4381,7 +4382,7 @@ function clearAIChat(){
       </div>
       <div class="field-group">
         <div class="field-wrap"><label class="field-label">Billable?</label><select class="finput" id="ts-billable"><option value="Yes">Yes — billable</option><option value="No">No — internal</option></select></div>
-        <div class="field-wrap"><label class="field-label">Rate ($/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
+        <div class="field-wrap"><label class="field-label">Rate (<span data-cur="biz">USD</span>/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('ts-log-modal').classList.add('hidden')">Cancel</button>
@@ -4424,6 +4425,7 @@ function clearAIChat(){
     document.getElementById('ts-billable').value = t.billable || 'Yes';
     window._tsEditId = id;
     modal.classList.remove('hidden');
+    if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
   };
 
   window.openLogTimeModal = function () {
@@ -4439,6 +4441,7 @@ function clearAIChat(){
     document.getElementById('ts-rate').value     = '';
     document.getElementById('ts-billable').value = 'Yes';
     modal.classList.remove('hidden');
+    if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
   };
 
   window.saveTimesheetEntry = async function () {
@@ -4693,6 +4696,7 @@ function clearAIChat(){
     }
     modal.dataset.tmId = tmId;
     modal.classList.remove('hidden');
+    if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
     try {
       const ents = await api('GET', '/api/entities');
       const granted = Array.isArray(access) ? access.map(Number) : null;   // null = all currently
@@ -4794,7 +4798,7 @@ function clearAIChat(){
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
           <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
           <div><label class="flabel">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
-          <div><label class="flabel">Budget ($)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
+          <div><label class="flabel">Budget (<span data-cur="biz">USD</span>)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
           <div><label class="flabel">Status</label>
             <select id="proj-status" class="finput">
               <option value="In Progress">In Progress</option>
@@ -4813,6 +4817,7 @@ function clearAIChat(){
     ['proj-name', 'proj-client', 'proj-budget'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('proj-status').value = 'In Progress';
     modal.classList.remove('hidden');
+    if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
   };
 
   window.saveProject = async function () {
@@ -4935,6 +4940,7 @@ function clearAIChat(){
     document.getElementById('rpt-sub').textContent = 'Generated ' + new Date().toLocaleDateString();
     document.getElementById('rpt-body').innerHTML = '<div style="color:var(--t3)">Loading data…</div>';
     modal.classList.remove('hidden');
+    if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
 
     try {
       // ── F137 (per-report renderers). Shared cell helpers. `m` is the app's native money formatter,
@@ -5834,6 +5840,7 @@ function clearAIChat(){
       }
     } catch (_) {}
     modal.classList.remove('hidden');
+    if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
     // Populate the per-entity checkboxes from the account's businesses (all checked = full access).
     try {
       const ents = await api('GET', '/api/entities');

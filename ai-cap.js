@@ -9,16 +9,20 @@
 // User budgets  → ai_usage(user_id, billing_month, query_count=shared, scan_count).
 // Accountant    → accountant_ai_usage(accountant_id, billing_month, shared_count, scan_count).
 //
-// All ceilings are env-overridable (pure config) so they can be tuned without a deploy
-// of code — only a restart. Fail-CLOSED: if usage can't be read, the call is blocked.
+// Plan ceilings: plans.js. The accountant ceiling: env-overridable. Fail-CLOSED: if usage can't be read, the call is blocked.
 
 const int = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : d; };
 
+// D-A (2026-10-23): the plan caps come from plans.js — the ONE plan definition the pricing pages are generated from —
+// so the numbers a customer is told are the numbers enforced. (They were env-overridable; an override would have made
+// every pricing page wrong.) The accountant budget is not a plan and stays env-tunable.
+const Plans = require('./plans');
+const _pc = id => ({ shared: Plans.PLANS[id].ai, scan: Plans.PLANS[id].scans });
 const CAPS = {
-  trial:      { shared: int(process.env.AI_CAP_TRIAL_SHARED, 30),       scan: int(process.env.AI_CAP_TRIAL_SCAN, 3) },
-  pro:        { shared: int(process.env.AI_CAP_PRO_SHARED, 500),        scan: int(process.env.AI_CAP_PRO_SCAN, 15) },
-  business:   { shared: int(process.env.AI_CAP_BUSINESS_SHARED, 2000),  scan: int(process.env.AI_CAP_BUSINESS_SCAN, 50) },
-  scale:      { shared: int(process.env.AI_CAP_SCALE_SHARED, 5000),     scan: int(process.env.AI_CAP_SCALE_SCAN, 100) },
+  trial:      _pc('trial'),
+  pro:        _pc('pro'),
+  business:   _pc('business'),
+  scale:      _pc('scale'),
   accountant: { shared: int(process.env.AI_CAP_ACCOUNTANT_SHARED, 300), scan: int(process.env.AI_CAP_ACCOUNTANT_SCAN, 10) },
 };
 

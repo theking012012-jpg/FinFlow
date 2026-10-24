@@ -23,6 +23,7 @@ function notSetUp(feature, ...envNames) {
 } // F87 — canonical calendar-date/period resolver (Rule 10)
 const Holidays     = require('date-holidays');            // F88 step 6 — per-country public-holiday calendar (offline, no network)
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
+const Plans = require('./plans');                        // D-A — the ONE plan definition (limits, features, prices)
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
 const { buildReviewItems } = require('./books-review');   // cleanup/anomaly queue engine (pure, read-only)
 const { buildReminderCandidates, buildDraft, resolveCustomer } = require('./payment-reminders'); // AI reminder agent engine (pure)
@@ -674,7 +675,7 @@ function _clientIp(req) {
   }
   return (req.ip || (req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/i, '') || null;
 }
-const _TRACK_SKIP_RE = /^\/(api|favicon|robots|sitemap|health|tier-config|conduct-policy)/i;
+const _TRACK_SKIP_RE = /^\/(api|favicon|robots|sitemap|health|tier-config|conduct-policy|plans\.js)/i;
 app.use((req, res, next) => {
   if (req.method === 'GET' && !_TRACK_SKIP_RE.test(req.path) && !/\.[a-z0-9]{1,8}$/i.test(req.path)) {
     res.on('finish', () => {
@@ -717,6 +718,11 @@ app.get('/tier-config.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'tier-config.js'));
 });
 // D-E: the Professional Conduct Policy's current version — same file accountant-routes.js require()s.
+// D-A: the plan definition — the same file the server require()s; the in-app cards, comparison and gates read it.
+app.get('/plans.js', (req, res) => {
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'plans.js'));
+});
 app.get('/conduct-policy.js', (req, res) => {
   res.type('application/javascript');
   res.sendFile(path.join(__dirname, 'conduct-policy.js'));
@@ -1830,10 +1836,10 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   // entities, not HOW MANY. Without this a direct API call bypasses the UI gate and creates unlimited
   // entities past the plan. req.userPlan is attached by the trial-expiry middleware. Dedupe runs
   // first so a retried duplicate is never counted against the cap. (Dedupe short-circuits above.)
-  const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5, scale: 10 };
+  const _entLimit = Plans.limit(req.userPlan, 'entities');   // D-A: plans.js (null = no limit)
   const _entCount = (await db.allByUser('entities', scopeId(req))).length;
-  if (_entCount >= (ENTITY_LIMITS[req.userPlan] ?? 1)) {
-    return res.status(402).json({ error: 'Entity limit reached for your plan.' });
+  if (_entLimit != null && _entCount >= _entLimit) {
+    return res.status(402).json({ error: 'Your ' + Plans.planFor(req.userPlan).name + ' plan includes ' + _entLimit + ' business' + (_entLimit === 1 ? '' : 'es') + '. Upgrade to add more.', code: 'ENTITY_LIMIT', limit: _entLimit });
   }
   const _entExtra = {};
   if (timezone) _entExtra.timezone = String(timezone);
@@ -2182,15 +2188,16 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   // an already-created invoice is returned, never blocked. The `invoice_limit` add-on is advertised
   // but not yet wired to an entitlement store — when it is, exempt it here.
   const _planRow = await pool.query(`SELECT data->>'plan' AS plan FROM users WHERE id = $1`, [scopeId(req)]);
-  if ((_planRow.rows[0]?.plan || 'trial') === 'pro') {
+  const _invCeiling = Plans.limit(_planRow.rows[0]?.plan || 'trial', 'invoiceCeiling');   // D-A: plans.js (Pro 500; null = none)
+  if (_invCeiling != null) {
     const { rows: [_ic] } = await pool.query(
       `SELECT COUNT(*)::int AS n FROM invoices WHERE user_id = $1 AND created_at >= date_trunc('month', now())`,
       [scopeId(req)]
     );
     // Pro invoicing is marketed as unlimited; this is a FAIR-USE / anti-abuse ceiling only (a runaway
     // script can't hammer the DB/email into a cost spike). 500/month is far above any real SMB volume.
-    // Business/Scale are truly uncapped. Env-tunable so it can be raised without a deploy.
-    const _cap = parseInt(process.env.PRO_INVOICE_CEILING, 10) || 500;
+    // Business/Scale are truly uncapped. The number lives in plans.js, so the pricing pages state the same one.
+    const _cap = _invCeiling;
     if (_ic.n >= _cap) {
       return res.status(402).json({
         error: 'You have reached the ' + _cap + '/month fair-use ceiling on Pro. Contact us to lift it or upgrade to Business for uncapped invoicing.',

@@ -121,7 +121,7 @@ function renderScanResult(d){
 
 window.handleScannerFile=function(file){
   if(!file)return;
-  if(currentUserPlan==='pro'){ if(typeof showUpgradeModal==='function') showUpgradeModal('scanner'); return; }
+  if(window.FinFlowPlans&&!window.FinFlowPlans.has(currentUserPlan,'scanner')){ if(typeof showUpgradeModal==='function') showUpgradeModal('scanner'); return; }   // D-F: by plan feature
   document.getElementById('scanner-drop').classList.remove('drag-over');
   scanFile(file);
 };
@@ -129,7 +129,7 @@ window.handleScannerFile=function(file){
 window.handleScannerDrop=function(e){
   e.preventDefault();
   document.getElementById('scanner-drop').classList.remove('drag-over');
-  if(currentUserPlan==='pro'){ if(typeof showUpgradeModal==='function') showUpgradeModal('scanner'); return; }
+  if(window.FinFlowPlans&&!window.FinFlowPlans.has(currentUserPlan,'scanner')){ if(typeof showUpgradeModal==='function') showUpgradeModal('scanner'); return; }   // D-F: by plan feature
   const file=e.dataTransfer.files[0];
   if(file)scanFile(file);
 };

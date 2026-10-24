@@ -27,7 +27,9 @@ run('AI quotas — every surface says what the server enforces; one cap, the ser
   const ld = new JSDOM(fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'landing.html'), 'utf8')).window.document;
   const cards = [...ld.querySelectorAll('.p-card')].map(c => c.textContent.replace(/\s+/g, ' '));
   const card = t => cards.find(c => c.includes(t)) || '';
-  A('1  landing Pro: "' + N(caps.pro) + ' AI questions a month" (bug: 50)', card('Pro').includes(N(caps.pro) + ' AI questions a month') && !/\b50 AI/.test(card('Pro')), card('Pro').slice(0, 260));
+  // D-F (2026-10-23): Pro also has receipt scans, so its line reads like the others.
+  const proLine = N(caps.pro) + ' AI questions + ' + aiCap.capFor('pro', 'scan') + ' receipt scans a month';
+  A('1  landing Pro: "' + proLine + '" (bug: 50)', card('Pro').includes(proLine) && !/50 AI/.test(card('Pro')), card('Pro').slice(0, 260));
   A('1b landing Business: "' + N(caps.business) + ' AI questions + ' + caps.businessScan + ' receipt scans a month" (bug: Unlimited)', card('Business').includes(N(caps.business) + ' AI questions + ' + caps.businessScan + ' receipt scans a month'), card('Business').slice(0, 300));
   A('1c landing Scale: "' + N(caps.scale) + ' AI questions + ' + caps.scaleScan + ' receipt scans a month"', card('Scale').includes(N(caps.scale) + ' AI questions + ' + caps.scaleScan + ' receipt scans a month'), card('Scale').slice(0, 260));
   A('1d landing: nothing says AI is unlimited', !/Unlimited[^.]{0,20}AI/i.test(cards.join(' ')), (cards.join(' ').match(/Unlimited[^.]{0,30}AI[^.]{0,10}/i) || [''])[0]);
@@ -36,7 +38,7 @@ run('AI quotas — every surface says what the server enforces; one cap, the ser
   try { w.initPricing(); } catch (_) {}
   await settle(4, 30);
   const txt = id => ((d.getElementById(id) || {}).textContent || '').replace(/\s+/g, ' ');
-  A('2  in-app Pro card: ' + N(caps.pro) + ' AI questions a month (bug: 50)', txt('pro-features').includes(N(caps.pro) + ' AI questions a month') && !/Unlimited AI/i.test(txt('pro-features')), txt('pro-features').slice(0, 300));
+  A('2  in-app Pro card: ' + proLine + ' (bug: 50)', txt('pro-features').includes(proLine) && !/Unlimited AI/i.test(txt('pro-features')), txt('pro-features').slice(0, 300));
   A('2b in-app Business card: ' + N(caps.business) + ' + ' + caps.businessScan + ' scans (bug: Unlimited)', txt('biz-features').includes(N(caps.business) + ' AI questions + ' + caps.businessScan + ' receipt scans a month') && !/Unlimited AI/i.test(txt('biz-features')), txt('biz-features').slice(0, 300));
   A('2c in-app Scale card: ' + N(caps.scale) + ' + ' + caps.scaleScan + ' scans', txt('scale-features').includes(N(caps.scale) + ' AI questions + ' + caps.scaleScan + ' receipt scans a month'), txt('scale-features').slice(0, 300));
 

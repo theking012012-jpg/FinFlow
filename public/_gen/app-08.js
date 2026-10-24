@@ -556,7 +556,9 @@ document.addEventListener('keydown',function(e){
 // Patch showPage for new pages
 const _sp8=window.showPage;
 window.showPage=function(id,el){
-  if(currentUserPlan==='pro'&&(id==='mrr'||id==='banking')){
+  // D-A / D-F: gated by what the plan includes (plans.js) — Pro has bank sync; MRR is Business and up.
+  const _gateFeat={mrr:'mrr',banking:'bankSync'}[id];
+  if(_gateFeat&&window.FinFlowPlans&&!window.FinFlowPlans.has(currentUserPlan,_gateFeat)){
     if(typeof showUpgradeModal==='function') showUpgradeModal(id==='mrr'?'mrr':'banking');
     return;
   }

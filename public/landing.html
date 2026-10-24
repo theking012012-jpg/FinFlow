@@ -163,6 +163,13 @@ section{padding:100px 5vw}
 .test-role{font-size:11px;color:#9a8a78}
 .stars{color:var(--acc);font-size:12px;margin-bottom:.85rem;letter-spacing:2px}
 .comp-table{width:100%;border-collapse:collapse;margin-top:3rem}
+.plan-compare-wrap{margin-top:3rem;overflow-x:auto}
+.plan-compare-h{font-family:var(--font-d);font-weight:400;font-size:26px;color:var(--t1);margin-bottom:1rem}
+.plan-compare{width:100%;min-width:560px;border-collapse:collapse;font-size:13px}
+.plan-compare th{padding:12px 14px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9a8a78;border-bottom:1px solid var(--bd);text-align:center}
+.plan-compare td{padding:11px 14px;border-bottom:1px solid var(--bd);text-align:center;color:var(--t2)}
+.plan-compare td:first-child{text-align:left;color:var(--t1)}
+.plan-compare .hot{background:rgba(200,164,74,.07);color:var(--acc)}
 .incl-list{list-style:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 32px;margin-top:2.5rem;padding:0}
 .incl-list li{position:relative;padding-left:22px;font-size:14px;color:var(--t2);line-height:1.5}
 .incl-list li::before{content:"✓";position:absolute;left:0;color:var(--acc)}
@@ -401,55 +408,57 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
       </div>
     </div>
     <div class="p-grid">
-      <div class="p-card reveal">
+      <div data-plan="pro" class="p-card reveal">
         <div class="p-tier">Pro</div>
         <div class="p-amt"><sup>$</sup><span id="land-price-pro">79</span></div>
         <div class="p-period" id="land-period-pro">per month</div>
         <a href="/app?signup=1&plan=pro" class="p-cta p-cta-g" style="text-decoration:none;display:block;text-align:center">Start free trial</a>
         <div class="p-feats">
-          <div class="p-feat"><span class="p-check">✓</span>1 business entity</div>
-          <div class="p-feat"><span class="p-check">✓</span>Up to 3 team members</div>
-          <div class="p-feat"><span class="p-check">✓</span>Unlimited invoicing & quotes</div>
+<!-- gen:plan:pro -->
+          <div class="p-feat"><span class="p-check">✓</span>1 business</div>
+          <div class="p-feat"><span class="p-check">✓</span>3 team members plus you</div>
+          <div class="p-feat"><span class="p-check">✓</span>Viewers and your accountant free</div>
+          <div class="p-feat"><span class="p-check">✓</span>500 AI questions + 15 receipt scans a month</div>
           <div class="p-feat"><span class="p-check">✓</span>Bank sync via Plaid</div>
-          <div class="p-feat"><span class="p-check">✓</span>Stripe live feed</div>
-          <div class="p-feat"><span class="p-check">✓</span>500 AI questions a month</div>
-          <div class="p-feat"><span class="p-check">✓</span>Receipt scanner</div>
-          <div class="p-feat"><span class="p-check">✓</span>Budget vs actuals</div>
-          <div class="p-feat p-no"><span>—</span>&nbsp;Multi-entity accounting</div>
-          <div class="p-feat p-no"><span>—</span>&nbsp;RBAC & audit trail</div>
+          <div class="p-feat"><span class="p-check">✓</span>Invoices, quotes and bills (fair use: 500 invoices a month)</div>
+<!-- /gen:plan:pro -->
         </div>
       </div>
-      <div class="p-card hot reveal d1">
+      <div data-plan="business" class="p-card hot reveal d1">
         <div class="p-badge">MOST POPULAR</div>
         <div class="p-tier" style="color:var(--acc);margin-top:.75rem">Business</div>
         <div class="p-amt" style="color:var(--acc-light)"><sup style="color:var(--t2)">$</sup><span id="land-price-biz">249</span></div>
         <div class="p-period" id="land-period-biz">per month</div>
         <a href="/app?signup=1&plan=business" class="p-cta p-cta-p" style="text-decoration:none;display:block;text-align:center">Start free trial</a>
         <div class="p-feats">
-          <div class="p-feat"><span class="p-check">✓</span>Up to 5 entities (separate ledgers)</div>
-          <div class="p-feat"><span class="p-check">✓</span>Up to 15 team members</div>
-          <div class="p-feat"><span class="p-check">✓</span>Everything in Pro</div>
-          <div class="p-feat"><span class="p-check">✓</span>Full RBAC — 4 role tiers</div>
-          <div class="p-feat"><span class="p-check">✓</span>7-year audit trail</div>
-          <div class="p-feat"><span class="p-check">✓</span>MRR / SaaS dashboard</div>
+<!-- gen:plan:business -->
+          <div class="p-feat"><span class="p-check">✓</span>Up to 5 businesses, each with its own books</div>
+          <div class="p-feat"><span class="p-check">✓</span>15 team members plus you</div>
+          <div class="p-feat"><span class="p-check">✓</span>Viewers and your accountant free</div>
           <div class="p-feat"><span class="p-check">✓</span>2,000 AI questions + 50 receipt scans a month</div>
-          <div class="p-feat"><span class="p-check">✓</span>Consolidated multi-entity P&L</div>
-          <div class="p-feat"><span class="p-check">✓</span>AI-generated board reports</div>
-          <div class="p-feat"><span class="p-check">✓</span>Priority email support</div>
+          <div class="p-feat"><span class="p-check">✓</span>Bank sync via Plaid</div>
+          <div class="p-feat"><span class="p-check">✓</span>Invoices, quotes and bills</div>
+          <div class="p-feat"><span class="p-check">✓</span>MRR and SaaS metrics</div>
+          <div class="p-feat"><span class="p-check">✓</span>Consolidated view across your businesses</div>
+<!-- /gen:plan:business -->
         </div>
       </div>
-      <div class="p-card reveal d2">
+      <div data-plan="scale" class="p-card reveal d2">
         <div class="p-tier">Scale</div>
         <div class="p-amt"><sup>$</sup><span id="land-price-scale">400</span></div>
         <div class="p-period" id="land-period-scale">per month</div>
         <a href="/app?signup=1&plan=scale" class="p-cta p-cta-g" style="text-decoration:none;display:block;text-align:center">Start free trial</a>
         <div class="p-feats">
-          <div class="p-feat"><span class="p-check">✓</span>Up to 10 entities (separate ledgers)</div>
-          <div class="p-feat"><span class="p-check">✓</span>Everything in Business</div>
-          <div class="p-feat"><span class="p-check">✓</span>Consolidated group reporting</div>
+<!-- gen:plan:scale -->
+          <div class="p-feat"><span class="p-check">✓</span>Up to 10 businesses, each with its own books</div>
+          <div class="p-feat"><span class="p-check">✓</span>Unlimited team members</div>
+          <div class="p-feat"><span class="p-check">✓</span>Viewers and your accountant free</div>
           <div class="p-feat"><span class="p-check">✓</span>5,000 AI questions + 100 receipt scans a month</div>
-          <div class="p-feat"><span class="p-check">✓</span>Priority support</div>
-          <div class="p-feat"><span class="p-check">✓</span>Onboarding assistance</div>
+          <div class="p-feat"><span class="p-check">✓</span>Bank sync via Plaid</div>
+          <div class="p-feat"><span class="p-check">✓</span>Invoices, quotes and bills</div>
+          <div class="p-feat"><span class="p-check">✓</span>MRR and SaaS metrics</div>
+          <div class="p-feat"><span class="p-check">✓</span>Consolidated view across your businesses</div>
+<!-- /gen:plan:scale -->
         </div>
       </div>
       <div class="p-card reveal d3">
@@ -469,6 +478,32 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
         </div>
       </div>
     </div>
+<!-- gen:plan-compare -->
+    <div class="plan-compare-wrap reveal">
+      <h3 class="plan-compare-h">Compare plans</h3>
+      <table class="plan-compare" id="plan-compare">
+        <thead><tr><th></th><th scope="col">Pro</th><th scope="col" class="hot">Business</th><th scope="col">Scale</th></tr></thead>
+        <tbody>
+        <tr><td>Price, billed monthly</td><td>$79 / month</td><td class="hot">$249 / month</td><td>$400 / month</td></tr>
+        <tr><td>Price, billed yearly (20% off)</td><td>$756 / year</td><td class="hot">$2,388 / year</td><td>$3,840 / year</td></tr>
+        <tr><td>Businesses (separate books)</td><td>1</td><td class="hot">5</td><td>10</td></tr>
+        <tr><td>Team members who can edit (plus you)</td><td>3</td><td class="hot">15</td><td>Unlimited</td></tr>
+        <tr><td>Viewers and your accountant</td><td>Free, unlimited</td><td class="hot">Free, unlimited</td><td>Free, unlimited</td></tr>
+        <tr><td>AI questions a month</td><td>500</td><td class="hot">2,000</td><td>5,000</td></tr>
+        <tr><td>Receipt scans a month</td><td>15</td><td class="hot">50</td><td>100</td></tr>
+        <tr><td>Invoices a month</td><td>Fair use: 500</td><td class="hot">No limit</td><td>No limit</td></tr>
+        <tr><td>Bank sync via Plaid</td><td>✓</td><td class="hot">✓</td><td>✓</td></tr>
+        <tr><td>Receipt scanner</td><td>✓</td><td class="hot">✓</td><td>✓</td></tr>
+        <tr><td>Stripe payments feed</td><td>✓</td><td class="hot">✓</td><td>✓</td></tr>
+        <tr><td>Budgets against actuals</td><td>✓</td><td class="hot">✓</td><td>✓</td></tr>
+        <tr><td>Multi-currency</td><td>✓</td><td class="hot">✓</td><td>✓</td></tr>
+        <tr><td>Roles and an audit trail that cannot be edited</td><td>✓</td><td class="hot">✓</td><td>✓</td></tr>
+        <tr><td>MRR and SaaS metrics</td><td>—</td><td class="hot">✓</td><td>✓</td></tr>
+        <tr><td>Consolidated view across businesses</td><td>—</td><td class="hot">✓</td><td>✓</td></tr>
+        </tbody>
+      </table>
+    </div>
+<!-- /gen:plan-compare -->
   </div>
 </section>
 
@@ -509,6 +544,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
   </div>
 </footer>
 
+<script src="/plans.js"></script>
 <script>
 window.addEventListener('scroll',()=>{
   document.getElementById('nav').classList.toggle('scrolled',window.scrollY>40);
@@ -534,9 +570,11 @@ setTimeout(()=>{
 var landingAnnual = false;
 function toggleLandingBilling() {
   landingAnnual = !landingAnnual;
-  var pro = landingAnnual ? 63 : 79;
-  var biz = landingAnnual ? 199 : 249;
-  var scale = landingAnnual ? 320 : 400;
+  // D-A: prices from plans.js (the one plan definition); the fallback is the generated page's own numbers.
+  var P = (window.FinFlowPlans && window.FinFlowPlans.PLANS) || { pro: { monthly: 79, annualMonthly: 63 }, business: { monthly: 249, annualMonthly: 199 }, scale: { monthly: 400, annualMonthly: 320 } };
+  var pro = landingAnnual ? P.pro.annualMonthly : P.pro.monthly;
+  var biz = landingAnnual ? P.business.annualMonthly : P.business.monthly;
+  var scale = landingAnnual ? P.scale.annualMonthly : P.scale.monthly;
   var track = document.getElementById('toggle-track');
   var thumb = document.getElementById('toggle-thumb');
   if (track) track.style.background = landingAnnual ? 'var(--acc)' : 'var(--bd2)';
@@ -550,9 +588,9 @@ function toggleLandingBilling() {
   if (proEl) proEl.textContent = pro;
   if (bizEl) bizEl.textContent = biz;
   if (scaleEl) scaleEl.textContent = scale;
-  if (proPer) proPer.textContent = landingAnnual ? '$' + (pro*12) + '/yr · save $' + ((79-pro)*12) : 'per month';
-  if (bizPer) bizPer.textContent = landingAnnual ? '$' + (biz*12) + '/yr · save $' + ((249-biz)*12) : 'per month';
-  if (scalePer) scalePer.textContent = landingAnnual ? '$' + (scale*12) + '/yr · save $' + ((400-scale)*12) : 'per month';
+  if (proPer) proPer.textContent = landingAnnual ? '$' + (pro*12).toLocaleString('en-US') + '/yr · save $' + ((P.pro.monthly-pro)*12).toLocaleString('en-US') : 'per month';
+  if (bizPer) bizPer.textContent = landingAnnual ? '$' + (biz*12).toLocaleString('en-US') + '/yr · save $' + ((P.business.monthly-biz)*12).toLocaleString('en-US') : 'per month';
+  if (scalePer) scalePer.textContent = landingAnnual ? '$' + (scale*12).toLocaleString('en-US') + '/yr · save $' + ((P.scale.monthly-scale)*12).toLocaleString('en-US') : 'per month';
 }
 </script>
 </body>

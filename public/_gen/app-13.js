@@ -905,45 +905,11 @@ requestAnimationFrame(()=>{if(window.CMD_ITEMS)CMD_ITEMS.push(..._extraCmds);});
 // ── PRICING PAGE ─────────────────────────────────────────────────────────────
 (function(){
 
-const PRO_FEATURES=[
-  {text:'1 business entity',ok:true},
-  {text:'Up to 3 team members',ok:true},
-  {text:'Unlimited invoicing & quotes',ok:true},
-  {text:'Expense tracking',ok:true},
-  {text:'Stripe live feed',ok:true},
-  {text:'Budget vs actuals',ok:true},
-  {text:'500 AI questions a month',ok:true},
-  {text:'Multi-currency',ok:true},
-  {text:'Bank sync via Plaid',ok:false},
-  {text:'AI receipt & invoice scanner',ok:false},
-  {text:'MRR / SaaS dashboard',ok:false},
-  {text:'Multi-entity accounting',ok:false},
-  {text:'Full RBAC — 4 role tiers',ok:false},
-];
-
-const BIZ_FEATURES=[
-  {text:'Up to 5 entities (separate ledgers)',ok:true},
-  {text:'Up to 15 team members',ok:true},
-  {text:'Everything in Pro (unlimited invoices)',ok:true},
-  {text:'MRR / SaaS dashboard',ok:true},
-  {text:'Bank sync via Plaid',ok:true},
-  {text:'AI receipt & invoice scanner',ok:true},
-  {text:'2,000 AI questions + 50 receipt scans a month',ok:true},
-  {text:'Full RBAC — 4 role tiers',ok:true},
-  {text:'7-year audit trail',ok:true},
-  {text:'Consolidated multi-entity P&L',ok:true},
-  {text:'Budget variance tracking',ok:true},
-  {text:'Priority email support',ok:true},
-];
-
-const SCALE_FEATURES=[
-  {text:'Up to 10 entities (separate ledgers)',ok:true},
-  {text:'Everything in Business',ok:true},
-  {text:'Consolidated group reporting',ok:true},
-  {text:'5,000 AI questions + 100 receipt scans a month',ok:true},
-  {text:'Priority support',ok:true},
-  {text:'Onboarding assistance',ok:true},
-];
+// D-A: the plan cards are DERIVED from plans.js (the one plan definition the server enforces) — never typed here.
+const _planCard=id=>((window.FinFlowPlans&&window.FinFlowPlans.cardLines(id))||[]).map(t=>({text:t,ok:true}));
+const PRO_FEATURES=_planCard('pro');
+const BIZ_FEATURES=_planCard('business');
+const SCALE_FEATURES=_planCard('scale');
 
 const ENT_FEATURES=[
   {text:'Unlimited entities',ok:true},
@@ -972,9 +938,11 @@ let isAnnual=false;
 window.toggleBilling=function(){
   const cb=document.getElementById('billing-toggle');
   isAnnual=cb?cb.checked:!isAnnual;
-  const pro=isAnnual?63:79;
-  const biz=isAnnual?199:249;
-  const scale=isAnnual?320:400;
+  // D-A: prices from plans.js
+  const _P=(window.FinFlowPlans&&window.FinFlowPlans.PLANS)||{pro:{monthly:79,annualMonthly:63},business:{monthly:249,annualMonthly:199},scale:{monthly:400,annualMonthly:320}};
+  const _pr=id=>isAnnual?_P[id].annualMonthly:_P[id].monthly;
+  const pro=_pr('pro'), biz=_pr('business'), scale=_pr('scale');
+  const _yr=(id,v)=>`$${(v*12).toLocaleString('en-US')}/yr · save $${((_P[id].monthly-v)*12).toLocaleString('en-US')}`;
   const proEl=document.getElementById('price-pro');
   const bizEl=document.getElementById('price-biz');
   const scaleEl=document.getElementById('price-scale');
@@ -984,9 +952,9 @@ window.toggleBilling=function(){
   if(proEl)proEl.textContent='$'+pro;
   if(bizEl)bizEl.textContent='$'+biz;
   if(scaleEl)scaleEl.textContent='$'+scale;
-  if(proSub)proSub.textContent=isAnnual?`$${pro*12}/yr · save $${(79-pro)*12}`:'Billed monthly';
-  if(bizSub)bizSub.textContent=isAnnual?`$${biz*12}/yr · save $${(249-biz)*12}`:'Billed monthly';
-  if(scaleSub)scaleSub.textContent=isAnnual?`$${scale*12}/yr · save $${(400-scale)*12}`:'Billed monthly';
+  if(proSub)proSub.textContent=isAnnual?_yr('pro',pro):'Billed monthly';
+  if(bizSub)bizSub.textContent=isAnnual?_yr('business',biz):'Billed monthly';
+  if(scaleSub)scaleSub.textContent=isAnnual?_yr('scale',scale):'Billed monthly';
 };
 
 function check(ok){
@@ -1047,10 +1015,18 @@ function _updatePricingCTAs(){
 }
 window._updatePricingCTAs=_updatePricingCTAs;
 
+// D-A: Pro / Business / Scale side by side, row for row from plans.js (replaces the unsourced competitor table).
+function renderPlanCompare(){
+  const body=document.querySelector('#plan-compare-app tbody');
+  if(!body||!window.FinFlowPlans)return;
+  body.innerHTML=window.FinFlowPlans.comparisonRows().map(([label,vals],i)=>`<tr style="border-bottom:1px solid var(--bd);${i%2?'background:rgba(255,255,255,.01)':''}"><td style="padding:7px 8px;color:var(--t2)">${esc(label)}</td>${vals.map((v,k)=>`<td style="padding:7px 8px;text-align:center;${k===1?'background:var(--acc-bg);':''}color:${v==='—'?'var(--t3)':'var(--t1)'}">${esc(v)}</td>`).join('')}</tr>`).join('');
+}
+
 function initPricing(){
   renderFeatureList('pro-features',PRO_FEATURES);
   renderFeatureList('biz-features',BIZ_FEATURES);
   renderFeatureList('scale-features',SCALE_FEATURES);
+  renderPlanCompare();
   renderFeatureList('ent-features',ENT_FEATURES);
   renderFAQ();
   _updatePricingCTAs();

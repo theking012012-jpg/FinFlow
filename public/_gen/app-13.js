@@ -105,6 +105,7 @@ async function _loadEntitiesFromDBImpl(){
         website:       e.website       || null,
         logo:          e.logo          || null,
       },
+      doc_style: e.doc_style || null,   // FA-B1 part 2: how this business's documents look
     }));
 
     // If none active, activate first one

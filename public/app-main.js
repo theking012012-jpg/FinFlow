@@ -6412,15 +6412,12 @@ async function uploadDocument(){
 // ════════════════════════════════════════════
 // TEMPLATES PAGE
 // ════════════════════════════════════════════
+// FA-B1 part 2: the designs the document renderer (finflow-docview.js) REALLY draws — every invoice, quote, bill, receipt
+// and credit note uses the one this business picks. They used to be preview-only styles with sample data.
 const invTemplatesData=[
-  {id:'classic',name:'Classic Professional',type:'Invoice',preview:'Clean two-column layout',default:true,
-   accentColor:'#c8a44a',font:'serif'},
-  {id:'minimal', name:'Modern Minimal',type:'Invoice',preview:'Bold header, clean lines',default:false,
-   accentColor:'#5aaa9e',font:'sans'},
-  {id:'receipt', name:'Compact Receipt',type:'Invoice',preview:'Single page receipt format',default:false,
-   accentColor:'#9e8fbf',font:'mono'},
-  {id:'retainer',name:'Retainer Agreement',type:'Quote',preview:'Multi-page quote with terms',default:true,
-   accentColor:'#c8a44a',font:'serif'},
+  {id:'classic',name:'Classic',type:'All documents',preview:'Serif title, dark table header'},
+  {id:'minimal',name:'Modern minimal',type:'All documents',preview:'Colour header band, clean lines'},
+  {id:'compact',name:'Compact',type:'All documents',preview:'Narrow receipt-style page'},
 ];
 // ── FA-B1: AUTOMATIC EMAILS (Templates page + the Settings overdue alert) ─────────────────────────────────────────────
 // What FinFlow REALLY sends, per business (server: auto-emails.js + the hourly job). Off until turned on. The editor saves
@@ -6513,16 +6510,17 @@ function setTemplateSetting(id, key, value){
 
 function renderTemplates(){
   const il=document.getElementById('inv-templates-list');
+  const _ds = window.FinFlowDocStyle ? window.FinFlowDocStyle(((window.ENTITIES||[]).find(e=>e&&e.active)||{}).doc_style) : { template:'classic' };
   if(il)il.innerHTML=invTemplatesData.map(t=>`
     <div style="padding:10px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
         <div style="min-width:0">
-          <div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(t.name)} ${t.default?'<span class="badge b-green" style="font-size:9px">Default</span>':''}</div>
-          <div style="font-size:11px;color:var(--t3)">${t.type} · ${t.preview}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(t.name)} ${t.id===_ds.template?'<span class="badge b-green" style="font-size:9px">In use</span>':''}</div>
+          <div style="font-size:11px;color:var(--t3)">${esc(t.preview)}</div>
         </div>
         <div style="display:flex;gap:5px;flex-shrink:0">
           <button class="btn btn-ghost btn-sm" onclick="openTemplatePreview('${t.id}')">Preview</button>
-          <button class="btn btn-primary btn-sm" onclick="openTemplateEditor('${t.id}')">Edit</button>
+          ${t.id===_ds.template ? '<button class="btn btn-primary btn-sm" onclick="openTemplateEditor(\''+t.id+'\')">Customise</button>' : '<button class="btn btn-ghost btn-sm" onclick="useDocDesign(\''+t.id+'\')">Use this design</button>'}
         </div>
       </div>
     </div>`).join('');
@@ -6531,332 +6529,106 @@ function renderTemplates(){
 }
 
 // ── INVOICE HTML RENDERER ─────────────────────────────────────────
-function buildInvoiceHTML(templateId, logoDataURL, settings){
-  const _sym = _nativeSymbol();   // LA15a: the business's own currency symbol, not a literal "$"
-  const t = invTemplatesData.find(x=>x.id===templateId) || invTemplatesData[0];
-  const acc = settings.accentColor || t.accentColor;
-  // F196: the issuing ENTITY's name wins over the account-wide settings business_name.
-  const _activeEnt = (window.ENTITIES || []).find(e => e && e.active);
-  const bizName = (_activeEnt && _activeEnt.name) || document.getElementById('s-biz-name')?.value || 'FinFlow Inc.';
-  const bizEmail = (_activeEnt && _activeEnt.profile && _activeEnt.profile.email) || document.getElementById('s-email')?.value || '';
-  // LR18: the business's OWN address (entity profile, else Settings) — was a hard-coded 'New York, NY 10001'. Blank if none.
-  const _bizAddr = String((_activeEnt && _activeEnt.profile && _activeEnt.profile.address) || document.getElementById('s-address')?.value || '').trim();
-  const _addrHTML = _bizAddr ? esc(_bizAddr).replace(/\n/g, '<br>') : '';
-  // LR18: the document word follows the template's TYPE — a Quote template previews as a QUOTE, never an INVOICE.
-  const _isQuote = t.type === 'Quote';
-  const _docWord = _isQuote ? 'QUOTE' : 'INVOICE', _docNo = _isQuote ? '#QT-1042' : '#INV-1042';
-  // Fixed wording only (no user data) — a quote states its validity, an invoice its payment terms.
-  const _termsHTML = _isQuote
-    ? '<strong style="color:#333">Validity:</strong> This quote is valid for 30 days'
-    : '<strong style="color:#333">Payment terms:</strong> '+(_bizPaymentTerms()?'Due within '+_bizPaymentTerms()+' days':'Due on receipt')+' · Bank transfer or card accepted via client portal';   // batch 8: this business's terms (a number — no user text)
-  const poweredBy = settings.poweredBy !== false;
-  const logoHTML = logoDataURL
-    ? `<img src="${logoDataURL}" style="max-height:52px;max-width:160px;object-fit:contain">`
-    : `<div style="font-size:22px;font-weight:700;color:${acc};font-family:Georgia,serif;font-style:italic">${esc(bizName)}</div>`;
-
-  const items = [
-    {desc:'Product design & strategy',qty:1,rate:4800,total:4800},
-    {desc:'Frontend development (40h)',qty:40,rate:120,total:4800},
-    {desc:'QA testing & delivery',qty:1,rate:900,total:900},
-  ];
-  const subtotal = items.reduce((s,i)=>s+i.total,0);
-  const tax = Math.round(subtotal*0.125);
-  const total = subtotal+tax;
-
-  const itemRows = items.map(i=>`
-    <tr>
-      <td style="padding:10px 0;border-bottom:1px solid #eee;color:#333">${esc(i.desc)}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;color:#666">${i.qty}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;color:#666">${_sym}${i.rate.toLocaleString()}</td>
-      <td style="padding:10px 0;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:500">${_sym}${i.total.toLocaleString()}</td>
-    </tr>`).join('');
-
-  const poweredByHTML = poweredBy
-    ? `<div style="text-align:center;margin-top:32px;padding-top:16px;border-top:1px solid #eee">
-        <span style="font-size:10px;color:#bbb;letter-spacing:.08em">POWERED BY </span>
-        <span style="font-size:10px;font-weight:700;color:${acc};letter-spacing:.06em;font-family:Georgia,serif;font-style:italic">FinFlow</span>
-       </div>` : '';
-
-  if(t.id==='receipt'){
-    return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:monospace;background:#fff;padding:24px;max-width:420px;margin:0 auto;color:#222;font-size:12px}
-    .hdr{text-align:center;border-bottom:2px dashed #ccc;padding-bottom:12px;margin-bottom:12px}
-    .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #eee}
-    .total{font-size:15px;font-weight:700;border-top:2px dashed #ccc;padding-top:8px;margin-top:4px}
-    </style></head><body>
-    <div class="hdr">${logoHTML}<div style="margin-top:8px;font-size:10px;color:#888">${esc(bizEmail)}${_addrHTML ? '<br>' + _addrHTML : ''}</div>
-    <div style="margin-top:8px;font-size:11px;font-weight:700">RECEIPT #INV-1042</div>
-    <div style="font-size:10px;color:#888">April 28, 2026 · TechCorp Inc.</div></div>
-    ${items.map(i=>`<div class="row"><span>${esc(i.desc)}</span><span>${_sym}${i.total.toLocaleString()}</span></div>`).join('')}
-    <div class="row" style="color:#888;margin-top:4px"><span>Subtotal</span><span>${_sym}${subtotal.toLocaleString()}</span></div>
-    <div class="row" style="color:#888"><span>Tax (12.5%)</span><span>${_sym}${tax.toLocaleString()}</span></div>
-    <div class="row total"><span>TOTAL</span><span style="color:${acc}">${_sym}${total.toLocaleString()}</span></div>
-    <div style="text-align:center;margin-top:16px;font-size:10px;color:#aaa">Thank you for your business</div>
-    ${poweredByHTML}
-    </body></html>`;
-  }
-
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:${t.font==='mono'?'monospace':t.font==='sans'?'Arial,sans-serif':"Georgia,'Times New Roman',serif"};background:#fff;padding:48px;color:#222}
-  table{width:100%;border-collapse:collapse}th{padding:8px 0;border-bottom:2px solid ${acc};text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:600}
-  </style></head><body>
-  ${t.id==='minimal'
-    ? `<div style="background:${acc};padding:28px 32px;margin:-48px -48px 36px;display:flex;align-items:center;justify-content:space-between">
-        <div>${logoHTML}</div>
-        <div style="text-align:right;color:#fff"><div style="font-size:24px;font-weight:800;letter-spacing:-.02em">${_docWord}</div><div style="opacity:.8;font-size:13px">${_docNo}</div></div>
-       </div>`
-    : `<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px">
-        <div>${logoHTML}</div>
-        <div style="text-align:right">
-          <div style="font-size:28px;font-weight:300;color:${acc};letter-spacing:.04em;font-style:italic">${_docWord}</div>
-          <div style="font-size:12px;color:#888;margin-top:4px">${_docNo} · April 28, 2026</div>
-        </div>
-       </div>`}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px">
-    <div>
-      <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">From</div>
-      <div style="font-weight:600;font-size:14px">${esc(bizName)}</div>
-      <div style="color:#888;font-size:12px;margin-top:4px">${esc(bizEmail)}${_addrHTML ? '<br>' + _addrHTML : ''}</div>
-    </div>
-    <div>
-      <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${_isQuote ? 'Prepared for' : 'Bill to'}</div>
-      <div style="font-weight:600;font-size:14px">TechCorp Inc.</div>
-      <div style="color:#888;font-size:12px;margin-top:4px">accounts@techcorp.io<br>San Francisco, CA 94102</div>
-    </div>
-  </div>
-  <table>
-    <thead><tr><th>Description</th><th style="text-align:center;width:60px">Qty</th><th style="text-align:right;width:80px">Rate</th><th style="text-align:right;width:90px">Amount</th></tr></thead>
-    <tbody>${itemRows}</tbody>
-  </table>
-  <div style="display:flex;justify-content:flex-end;margin-top:24px">
-    <div style="width:220px">
-      <div style="display:flex;justify-content:space-between;padding:6px 0;color:#888;font-size:13px"><span>Subtotal</span><span>${_sym}${subtotal.toLocaleString()}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0;color:#888;font-size:13px"><span>Tax (12.5%)</span><span>${_sym}${tax.toLocaleString()}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid ${acc};font-weight:700;font-size:16px"><span>Total</span><span style="color:${acc}">${_sym}${total.toLocaleString()}</span></div>
-    </div>
-  </div>
-  <div style="margin-top:36px;padding:16px;background:#f9f9f9;border-radius:6px;font-size:12px;color:#888">
-    ${_termsHTML}
-  </div>
-  ${poweredByHTML}
-  </body></html>`;
+// FA-B1 part 2: a sample document drawn by the REAL renderer — what a customer receives, in this business's style.
+function _ffSampleDoc(kind){
+  const today = (typeof _entityToday==='function') ? _entityToday() : new Date().toISOString().slice(0,10);
+  const t = (typeof _bizPaymentTerms==='function') ? _bizPaymentTerms() : 30;
+  const p = today.split('-').map(Number), due = new Date(Date.UTC(p[0], p[1]-1, p[2]+t)).toISOString().slice(0,10);
+  return { number: kind==='quote' ? 'QT-0042' : 'INV-0042', party: 'Sample Customer Ltd', issue_date: today, due_date: kind==='quote' ? null : due,
+    status: 'pending', line_items: [{desc:'Consulting',qty:10,rate:150},{desc:'Website design',qty:1,rate:2400}], notes: 'Thank you for your business.' };
 }
+// Kept for callers that preview by template id: now the real renderer with a sample document (no made-up tax line).
+function buildInvoiceHTML(templateId, logoDataURL, settings){
+  const map = { classic:'classic', minimal:'minimal', compact:'compact', receipt:'compact', retainer:'classic' };
+  const kind = templateId==='retainer' ? 'quote' : 'invoice';
+  settings = settings || {};
+  const style = { template: map[templateId] || 'classic' };
+  if (settings.accentColor) style.accent = settings.accentColor;
+  if (settings.poweredBy != null) style.powered_by = settings.poweredBy !== false;
+  return window.buildDocumentHTML ? window.buildDocumentHTML(_ffSampleDoc(kind), kind, style) : '';
+}
+window.buildInvoiceHTML = buildInvoiceHTML;
 
-// ── TEMPLATE PREVIEW MODAL ────────────────────────────────────────
+function _ffDocOverlay(title, inner){
+  const old = document.getElementById('tmpl-preview-overlay'); if (old) old.remove();
+  const o = document.createElement('div'); o.id = 'tmpl-preview-overlay';
+  o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px';
+  o.innerHTML = '<div role="dialog" aria-modal="true" aria-label="'+esc(title)+'" style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:820px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">'
+    + '<div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:500;color:var(--t1)">'+esc(title)+'</div>'
+    + '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'tmpl-preview-overlay\').remove()">✕ Close</button></div>' + inner + '</div>';
+  document.body.appendChild(o);
+  o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+  return o;
+}
 window.openTemplatePreview = function(id){
-  const t = invTemplatesData.find(x=>x.id===id);
-  if(!t) return;
-  const logo = getTemplateSetting(id,'logo',null);
-  const settings = {
-    accentColor: getTemplateSetting(id,'accentColor', t.accentColor),
-    poweredBy: getTemplateSetting(id,'poweredBy', true),
-  };
-  const html = buildInvoiceHTML(id, logo, settings);
-
-  const existing = document.getElementById('tmpl-preview-overlay');
-  if(existing) existing.remove();
-
-  const overlay = document.createElement('div');
-  overlay.id = 'tmpl-preview-overlay';
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px)';
-  overlay.innerHTML=`
-    <div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:780px;max-height:90vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);overflow:hidden">
-      <div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-        <div style="font-size:14px;font-weight:500;color:var(--t1)">Preview — ${esc(t.name)}</div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="openTemplateEditor('${id}');document.getElementById('tmpl-preview-overlay').remove()">Edit template</button>
-          <button class="btn btn-ghost btn-sm" onclick="printTemplate('${id}')">⬇ Download PDF</button>
-          <button onclick="document.getElementById('tmpl-preview-overlay').remove()" style="padding:5px 10px;background:none;border:1px solid var(--bd2);border-radius:var(--radius);cursor:pointer;color:var(--t2);font-family:var(--font);font-size:12px">✕ Close</button>
-        </div>
-      </div>
-      <div style="flex:1;overflow:auto;background:#e8e8e8;padding:16px">
-        <iframe id="tmpl-preview-frame" title="Invoice template preview" style="width:100%;min-height:700px;border:none;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.2);background:#fff" srcdoc="${html.replace(/"/g,'&quot;')}"></iframe>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  const t = invTemplatesData.find(x=>x.id===id) || invTemplatesData[0];
+  const o = _ffDocOverlay('Preview — ' + t.name, '<iframe id="tmpl-preview-frame" title="Document preview" style="flex:1;min-height:70vh;border:0;background:#e8e8e8"></iframe>');
+  const f = o.querySelector('iframe'); if (f) f.srcdoc = window.buildDocumentHTML(_ffSampleDoc('invoice'), 'invoice', { template: id });
 };
-
-window.printTemplate = function(id){
-  const t = invTemplatesData.find(x=>x.id===id);
-  const logo = getTemplateSetting(id,'logo',null);
-  const settings = {
-    accentColor: getTemplateSetting(id,'accentColor', t?.accentColor||'#c8a44a'),
-    poweredBy: getTemplateSetting(id,'poweredBy', true),
-  };
-  const html = buildInvoiceHTML(id, logo, settings);
-  const win = window.open('','_blank');
-  if(win){ win.document.write(html); win.document.close(); setTimeout(()=>win.print(),500); }
+async function _ffSaveDocStyle(patch){
+  const ent = (window.ENTITIES||[]).find(e=>e&&e.active); if (!ent || ent._dbId == null) { notify('Choose a business first', true); return false; }
+  try {
+    const r = await fetch('/api/entities/' + ent._dbId, { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch) });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) { notify(j.error || 'Could not save', true); return false; }
+    if (patch.doc_style) ent.doc_style = Object.assign({}, ent.doc_style || {}, patch.doc_style);
+    if ('logo' in patch) { ent.profile = Object.assign({}, ent.profile || {}, { logo: patch.logo }); }
+    return true;
+  } catch(_) { notify('Could not save — check your connection', true); return false; }
+}
+window.useDocDesign = async function(id){
+  if (await _ffSaveDocStyle({ doc_style: { template: id } })) { notify((invTemplatesData.find(x=>x.id===id)||{}).name + ' is now used for your documents ✦'); renderTemplates(); }
 };
-
-// ── TEMPLATE EDITOR MODAL ─────────────────────────────────────────
+// The editor: accent colour, the FinFlow footer line, and the business logo — a live preview, then Save (to the business).
 window.openTemplateEditor = function(id){
-  const t = invTemplatesData.find(x=>x.id===id);
-  if(!t) return;
-
-  const existing = document.getElementById('tmpl-editor-overlay');
-  if(existing) existing.remove();
-
-  const currentLogo = getTemplateSetting(id,'logo',null);
-  const currentColor = getTemplateSetting(id,'accentColor', t.accentColor);
-  const currentPoweredBy = getTemplateSetting(id,'poweredBy', true);
-
-  const overlay = document.createElement('div');
-  overlay.id = 'tmpl-editor-overlay';
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px)';
-  overlay.innerHTML=`
-    <div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:820px;max-height:92vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);overflow:hidden">
-      <div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-        <div style="font-size:14px;font-weight:500;color:var(--t1)">Edit — ${esc(t.name)}</div>
-        <button onclick="document.getElementById('tmpl-editor-overlay').remove()" style="padding:5px 10px;background:none;border:1px solid var(--bd2);border-radius:var(--radius);cursor:pointer;color:var(--t2);font-family:var(--font);font-size:12px">✕ Close</button>
-      </div>
-      <div style="display:grid;grid-template-columns:280px 1fr;flex:1;overflow:hidden">
-
-        <!-- LEFT: SETTINGS PANEL -->
-        <div style="border-right:1px solid var(--bd);padding:1.25rem;overflow-y:auto;display:flex;flex-direction:column;gap:1.25rem">
-
-          <!-- LOGO UPLOAD -->
-          <div>
-            <div style="font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Your logo</div>
-            <div id="logo-preview-${id}" style="min-height:64px;background:var(--bg2);border:2px dashed var(--bd2);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;margin-bottom:8px;overflow:hidden;cursor:pointer;transition:border-color .15s" onclick="document.getElementById('logo-file-${id}').click()" onmouseover="this.style.borderColor='var(--acc)'" onmouseout="this.style.borderColor='var(--bd2)'">
-              ${currentLogo
-                ? `<img src="${currentLogo}" alt="Business logo" width="220" height="56" style="max-height:56px;max-width:220px;object-fit:contain;padding:8px">`
-                : `<div style="text-align:center;color:var(--t3);font-size:12px;padding:12px"><div style="font-size:20px;margin-bottom:4px">🖼</div>Click to upload logo</div>`}
-            </div>
-            <input type="file" id="logo-file-${id}" accept="image/*" style="display:none" onchange="handleLogoUpload('${id}',this)">
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="document.getElementById('logo-file-${id}').click()">Upload logo</button>
-              <button class="btn btn-ghost btn-sm" onclick="removeLogo('${id}')" style="color:var(--red)">Remove</button>
-            </div>
-            <div style="font-size:10.5px;color:var(--t3);margin-top:6px">PNG or SVG recommended · Max 2MB · Transparent background works best</div>
-          </div>
-
-          <!-- ACCENT COLOUR -->
-          <div>
-            <div style="font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Accent colour</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-              ${['#c8a44a','#5aaa9e','#9e8fbf','#7db87d','#b86050','#3266ad','#222222'].map(c=>`
-                <div onclick="setTemplateColor('${id}','${c}')" title="${c}" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c===currentColor?'var(--t1)':'transparent'};transition:border .15s;flex-shrink:0" id="color-swatch-${id}-${c.replace('#','')}"></div>`).join('')}
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <input type="color" id="color-picker-${id}" aria-label="Accent colour" value="${currentColor}" oninput="setTemplateColor('${id}',this.value)" style="width:32px;height:32px;border:1px solid var(--bd2);border-radius:var(--radius);cursor:pointer;background:none;padding:1px">
-              <input class="finput" id="color-hex-${id}" value="${currentColor}" placeholder="#c8a44a" style="font-family:var(--font-mono);font-size:12px" oninput="setTemplateColor('${id}',this.value)">
-            </div>
-          </div>
-
-          <!-- POWERED BY -->
-          <div>
-            <div style="font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Branding</div>
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:.65rem .85rem;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius)">
-              <div>
-                <div style="font-size:12.5px;font-weight:500;color:var(--t1)">Powered by FinFlow</div>
-                <div style="font-size:11px;color:var(--t3)">Shown at the bottom of the invoice</div>
-              </div>
-              <label class="toggle">
-                <input type="checkbox" id="powered-by-${id}" aria-label="Show Powered by FinFlow on invoice" ${currentPoweredBy?'checked':''} onchange="setTemplatePoweredBy('${id}',this.checked)">
-                <div class="toggle-track"></div>
-                <div class="toggle-thumb"></div>
-              </label>
-            </div>
-            <div style="margin-top:8px;padding:.65rem .85rem;background:var(--acc-bg);border:1px solid var(--acc2);border-radius:var(--radius)">
-              <div style="font-size:11px;color:var(--acc);font-style:italic">Preview of footer badge:</div>
-              <div style="margin-top:4px;font-size:11px;color:#888;letter-spacing:.06em">POWERED BY <span style="font-weight:700;color:${currentColor};font-family:Georgia,serif;font-style:italic">FinFlow</span></div>
-            </div>
-          </div>
-
-          <!-- SAVE -->
-          <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveTemplateSettings('${id}')">Save &amp; update preview</button>
-        </div>
-
-        <!-- RIGHT: LIVE PREVIEW -->
-        <div style="background:#e8e8e8;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
-          <div style="font-size:11px;color:#888;text-align:center">Live preview — updates as you edit</div>
-          <iframe id="tmpl-edit-preview-${id}" title="Invoice template edit preview" style="width:100%;min-height:640px;border:none;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.2);background:#fff"
-            srcdoc="${buildInvoiceHTML(id, currentLogo, {accentColor:currentColor,poweredBy:currentPoweredBy}).replace(/"/g,'&quot;')}"></iframe>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  const ent = (window.ENTITIES||[]).find(e=>e&&e.active) || {};
+  const cur = window.FinFlowDocStyle ? window.FinFlowDocStyle(ent.doc_style) : { template:'classic', accent:'#c9a84c', poweredBy:true };
+  window._ffDocDraft = { template: invTemplatesData.some(x=>x.id===id) ? id : cur.template, accent: cur.accent, powered_by: cur.poweredBy };
+  const sw = ['#c9a84c','#1f6feb','#1a7f4b','#c0392b','#6f42c1','#222222'].map(c=>'<button type="button" aria-label="Colour '+c+'" onclick="setTemplateColor(\''+c+'\')" style="width:26px;height:26px;border-radius:6px;border:2px solid transparent;background:'+c+';cursor:pointer"></button>').join('');
+  const inner = '<div style="display:grid;grid-template-columns:260px 1fr;flex:1;min-height:0">'
+    + '<div style="padding:1rem 1.25rem;border-right:1px solid var(--bd);display:flex;flex-direction:column;gap:14px;overflow:auto">'
+    + '<div><div class="field-label">Accent colour</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">'+sw+'</div><input class="finput" id="tmpl-accent" value="'+esc(cur.accent)+'" aria-label="Accent colour, hex" oninput="setTemplateColor(this.value)"></div>'
+    + '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--t2)"><input type="checkbox" id="tmpl-poweredby"'+(cur.poweredBy?' checked':'')+' onchange="setTemplatePoweredBy(this.checked)"> Show "Powered by FinFlow"</label>'
+    + '<div><div class="field-label">Logo (your business logo, on every document)</div><input type="file" id="tmpl-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="finput" onchange="handleLogoUpload(this)"><button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="removeLogo()">Remove logo</button></div>'
+    + '<button class="btn btn-primary" style="justify-content:center" onclick="saveTemplateSettings()">Save</button>'
+    + '</div><iframe id="tmpl-edit-preview" title="Live preview" style="width:100%;min-height:70vh;border:0;background:#e8e8e8"></iframe></div>';
+  _ffDocOverlay('Customise — ' + ((invTemplatesData.find(x=>x.id===window._ffDocDraft.template)||{}).name || 'Design'), inner);
+  refreshEditorPreview();
 };
-
-// ── TEMPLATE EDITOR ACTIONS ───────────────────────────────────────
-window.handleLogoUpload = function(id, input){
-  const file = input.files[0];
-  if(!file) return;
-  if(file.size > 2*1024*1024){ notify('Logo must be under 2MB', true); return; }
+function refreshEditorPreview(){
+  const f = document.getElementById('tmpl-edit-preview'); if (!f || !window._ffDocDraft) return;
+  f.srcdoc = window.buildDocumentHTML(_ffSampleDoc('invoice'), 'invoice', window._ffDocDraft);
+}
+window.setTemplateColor = function(color){
+  if(!/^#[0-9a-fA-F]{6}$/.test(String(color))) return;
+  window._ffDocDraft = Object.assign({}, window._ffDocDraft || {}, { accent: color });
+  const hex = document.getElementById('tmpl-accent'); if (hex && hex.value !== color) hex.value = color;
+  refreshEditorPreview();
+};
+window.setTemplatePoweredBy = function(checked){ window._ffDocDraft = Object.assign({}, window._ffDocDraft || {}, { powered_by: !!checked }); refreshEditorPreview(); };
+window.handleLogoUpload = function(input){
+  const file = input && input.files && input.files[0]; if(!file) return;
+  if(file.size > 2*1024*1024){ notify('Logo must be under 2 MB', true); return; }
   const reader = new FileReader();
-  reader.onload = e=>{
+  reader.onload = async e => {
     const dataURL = e.target.result;
-    setTemplateSetting(id,'logo',dataURL);
-    // Update preview box
-    const prev = document.getElementById('logo-preview-'+id);
-    if(!dataURL || !dataURL.startsWith('data:image/')) { notify('Invalid image file', true); return; }
-    if(prev) prev.innerHTML=`<img src="${dataURL}" alt="Uploaded logo" width="220" height="56" style="max-height:56px;max-width:220px;object-fit:contain;padding:8px">`;
-    refreshEditorPreview(id);
-    notify('Logo uploaded ✦');
+    if(!dataURL || !String(dataURL).startsWith('data:image/')) { notify('That is not an image file', true); return; }
+    if (await _ffSaveDocStyle({ logo: dataURL })) { notify('Logo saved — it is on every document ✦'); refreshEditorPreview(); }
   };
   reader.readAsDataURL(file);
 };
-
-window.removeLogo = function(id){
-  setTemplateSetting(id,'logo',null);
-  const prev = document.getElementById('logo-preview-'+id);
-  if(prev) prev.innerHTML=`<div style="text-align:center;color:var(--t3);font-size:12px;padding:12px"><div style="font-size:20px;margin-bottom:4px">🖼</div>Click to upload logo</div>`;
-  refreshEditorPreview(id);
-  notify('Logo removed');
-};
-
-window.setTemplateColor = function(id, color){
-  if(!/^#[0-9a-fA-F]{3,6}$/.test(color)) return;
-  setTemplateSetting(id,'accentColor',color);
-  const hex = document.getElementById('color-hex-'+id);
-  const picker = document.getElementById('color-picker-'+id);
-  if(hex) hex.value=color;
-  if(picker) picker.value=color;
-  // Update swatch borders
-  document.querySelectorAll(`[id^="color-swatch-${id}-"]`).forEach(sw=>{
-    sw.style.border = sw.style.background===color ? '2px solid var(--t1)' : '2px solid transparent';
-  });
-  // Update powered-by preview text color
-  const badge = document.getElementById('tmpl-editor-overlay')?.querySelector('[style*="FinFlow"]');
-  if(badge) badge.style.color=color;
-  refreshEditorPreview(id);
-};
-
-window.setTemplatePoweredBy = function(id, checked){
-  setTemplateSetting(id,'poweredBy',checked);
-  refreshEditorPreview(id);
-};
-
-function refreshEditorPreview(id){
-  const t = invTemplatesData.find(x=>x.id===id);
-  if(!t) return;
-  const logo = getTemplateSetting(id,'logo',null);
-  const settings = {
-    accentColor: getTemplateSetting(id,'accentColor', t.accentColor),
-    poweredBy: getTemplateSetting(id,'poweredBy', true),
-  };
-  const html = buildInvoiceHTML(id, logo, settings);
-  const frame = document.getElementById('tmpl-edit-preview-'+id);
-  if(frame) frame.srcdoc = html;
-}
-
-window.saveTemplateSettings = function(id){
-  refreshEditorPreview(id);
-  // Honesty pass (F51/F65): template settings are held in memory for the session
-  // only (setTemplateSetting has no DB/localStorage backing), so they are lost on
-  // refresh. Don't claim a persistent "saved".
-  notify('Preview updated — saving templates is coming soon');
+window.removeLogo = async function(){ if (await _ffSaveDocStyle({ logo: null })) { notify('Logo removed'); refreshEditorPreview(); } };
+window.saveTemplateSettings = async function(){
+  const d = window._ffDocDraft || {};
+  if (await _ffSaveDocStyle({ doc_style: { template: d.template, accent: d.accent, powered_by: d.powered_by !== false } })) {
+    notify('Saved — your invoices, quotes and other documents use it ✦');
+    const o = document.getElementById('tmpl-preview-overlay'); if (o) o.remove();
+    renderTemplates();
+  }
 };
 
 // FA-B1: the old email editor (Save / Send test said "coming soon") is replaced by the one above.
 
-function openNewTemplateModal(){
-  notify('Template builder — choose a base style to start ✦');
-  // Just open the classic editor as a starting point
-  setTimeout(()=>openTemplateEditor('classic'),300);
-}
 
 // ════════════════════════════════════════════
 // CLOSE MODALS ON OVERLAY CLICK

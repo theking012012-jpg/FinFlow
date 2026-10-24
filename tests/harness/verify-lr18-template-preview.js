@@ -14,9 +14,10 @@ const { run } = require('./clientMoneyKit.js');
 
 run('LR18 — template previews say what the document is, and whose address', async ({ w, A, ev }) => {
   const tpls = JSON.parse(ev(`JSON.stringify((typeof invTemplatesData!=='undefined'?invTemplatesData:[]).map(t=>({id:t.id,type:t.type})))`));
-  const quote = tpls.find(t => t.id === 'retainer');
-  const inv = tpls.find(t => t.type === 'Invoice' && t.id !== 'receipt');
-  A('setup: templates found (retainer = Quote, an Invoice template)', !!quote && quote.type === 'Quote' && !!inv, JSON.stringify(tpls));
+  // FA-B1 part 2 (2026-10-24): the designs are the three the document renderer draws, each used for EVERY document type;
+  // a quote preview is the 'retainer' id kept by buildInvoiceHTML (it renders a QUOTE), an invoice the classic design.
+  const inv = tpls.find(t => t.id === 'classic');
+  A('setup: the three real designs are listed (classic, minimal, compact)', tpls.map(t => t.id).join() === 'classic,minimal,compact', JSON.stringify(tpls));
   const html = id => String(w.buildInvoiceHTML(id, null, {}) || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   const q = html('retainer');
   A('1  Quote template: heading QUOTE, number QT-, no "INVOICE"', /\bQUOTE\b/.test(q) && /QT-\d+/.test(q) && !/\bINVOICE\b/.test(q) && !/INV-\d+/.test(q), q.slice(0, 200));

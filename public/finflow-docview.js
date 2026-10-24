@@ -23,6 +23,15 @@
   function $(id){ return document.getElementById(id); }
   function val(id){ var el = $(id); return el && el.value != null ? String(el.value).trim() : ''; }
 
+  // FA-B1 part 2: the business's document style (Templates page) — its design, accent colour and the FinFlow footer line.
+  // It used to be a fixed design and colour: the Templates page changed a preview only.
+  function docStyle(ds){
+    ds = ds || {};
+    return { template: ['classic', 'minimal', 'compact'].indexOf(ds.template) >= 0 ? ds.template : 'classic',
+             accent: /^#[0-9a-fA-F]{6}$/.test(String(ds.accent || '')) ? ds.accent : '#c9a84c', poweredBy: ds.powered_by !== false };
+  }
+  window.FinFlowDocStyle = docStyle;
+
   // ── letterhead + currency, from what the app already has loaded ──
   function letterhead(){
     var e = null;
@@ -44,6 +53,8 @@
       // validated server-side; wiring an upload is a separate piece of work — see AUDIT_MASTER F196.
       logo:   p.logo || window._invoiceLogoDataURL || window._companyLogo || null,
       currency: (e && e.currency) || 'USD',
+      style:  docStyle(e && e.doc_style),
+      terms:  (e && e.payment_terms != null && e.payment_terms !== '' && isFinite(e.payment_terms)) ? Number(e.payment_terms) : 30,   // batch 8: this business's payment terms
     };
   }
 
@@ -71,12 +82,13 @@
 
   // ── the reusable renderer: a full white document, ready for print/iframe ──
   // doc: { number, party, party_address, issue_date, due_date, status, notes, amount, tax, line_items:[{desc,qty,rate}], currency }
-  function buildDocumentHTML(doc, kind){
+  function buildDocumentHTML(doc, kind, styleOverride){
     doc = doc || {};
     var K = KIND[kind] || KIND.invoice;
     var L = letterhead();
     var cur = doc.currency || L.currency || 'USD';
-    var acc = '#c9a84c';
+    var S = styleOverride ? docStyle(Object.assign({}, { template: L.style.template, accent: L.style.accent, powered_by: L.style.poweredBy }, styleOverride)) : L.style;   // a preview may pass unsaved choices
+    var acc = S.accent;
 
     var items = Array.isArray(doc.line_items) && doc.line_items.length ? doc.line_items : null;
     var rowsHTML, subtotal;
@@ -138,31 +150,49 @@
           : '')
       + '<div style="display:flex;justify-content:space-between;padding:12px 0 0;margin-top:6px;border-top:2px solid #222;font-size:15px;font-weight:700;color:#111"><span>'+K.balanceLabel+'</span><span>'+money(_balanceVal, cur)+'</span></div>';
 
+    var footer = S.poweredBy ? '<div style="text-align:center;margin-top:34px;padding-top:16px;border-top:1px solid #eee"><span style="font-size:10px;color:#bbb;letter-spacing:.08em">POWERED BY </span><span style="font-size:10px;font-weight:700;color:'+acc+';letter-spacing:.06em;font-family:Georgia,serif;font-style:italic">FinFlow</span></div>' : '';
+    var dates = (doc.issue_date ? '<div><span style="color:#999">Date:</span> '+dlabel(doc.issue_date)+'</div>' : '') + (doc.due_date ? '<div><span style="color:#999">Due:</span> '+dlabel(doc.due_date)+'</div>' : '')
+      + (kind === 'invoice' || !kind ? '<div><span style="color:#999">Terms:</span> '+(L.terms ? 'Net '+L.terms+' — due within '+L.terms+' days' : 'Due on receipt')+'</div>' : '');   // FA-B1 part 2: the terms are on the invoice
+    if (S.template === 'compact') {   // a narrow receipt-style page
+      var crow = function(a, b, st){ return '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed #ddd;'+(st||'')+'"><span>'+a+'</span><span>'+b+'</span></div>'; };
+      var lines = items ? items.map(function(i){ return crow(esc(i.desc || '—') + ' × ' + (parseFloat(i.qty)||0), money((parseFloat(i.qty)||0) * (parseFloat(i.rate)||0), cur)); }).join('') : crow(esc(doc.notes || doc.description || K.title), money(subtotal, cur));
+      return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;color:#222;padding:28px 22px;max-width:460px;margin:0 auto;font-size:12.5px}@media print{body{padding:0}}</style></head><body>'
+        + '<div style="text-align:center;border-bottom:2px dashed #ccc;padding-bottom:12px;margin-bottom:12px">'+logoHTML+'<div style="margin-top:6px;font-size:11px;color:#777">'+[L.address, L.email, L.phone].filter(Boolean).map(esc).join(' · ')+'</div>'
+        + '<div style="margin-top:10px;font-weight:700;letter-spacing:.06em;color:'+acc+'">'+K.title+(doc.number ? ' #'+esc(doc.number) : '')+'</div><div style="font-size:11px;color:#777">'+esc(doc.party || '')+(doc.issue_date ? ' · '+dlabel(doc.issue_date) : '')+(doc.due_date ? ' · due '+dlabel(doc.due_date) : '')+'</div>'+statusBadge+'</div>'
+        + lines + crow('Subtotal', money(subtotal, cur), 'color:#777') + (tax ? crow('Tax', money(tax, cur), 'color:#777') : '')
+        + (_paidShown > 0.005 ? crow('Total', money(total, cur)) + crow(kind === 'bill' ? 'Paid' : 'Payments received', '&minus;'+money(_paidShown, cur), 'color:#1a7f4b') : '')
+        + '<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:2px dashed #ccc;font-size:15px;font-weight:700"><span>'+K.balanceLabel+'</span><span style="color:'+acc+'">'+money(_balanceVal, cur)+'</span></div>'
+        + (doc.notes && items ? '<div style="margin-top:14px;font-size:11.5px;color:#666">'+esc(doc.notes)+'</div>' : '')
+        + footer + '</body></html>';
+    }
+    var minimal = S.template === 'minimal';
+    var header = minimal
+      ? '<div style="background:'+acc+';margin:-44px -40px 26px;padding:26px 40px;display:flex;justify-content:space-between;align-items:center;gap:20px"><div>'+(L.logo ? logoHTML : '<div style="font-size:22px;font-weight:800;color:#fff">'+esc(L.name)+'</div>')+'</div>'
+        + '<div style="text-align:right;color:#fff"><div style="font-size:26px;font-weight:800;letter-spacing:-.01em">'+K.title+'</div>'+(doc.number ? '<div style="font-size:12px;opacity:.85">#'+esc(doc.number)+'</div>' : '')+statusBadge+'</div></div>'
+      : '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">'
+        +   '<div>'+logoHTML+'</div>'
+        +   '<div style="text-align:right">'
+        +     '<div style="font-size:30px;font-weight:800;letter-spacing:.04em;color:'+acc+';font-family:Georgia,serif">'+K.title+'</div>'
+        +     (doc.number ? '<div style="font-size:12px;color:#888;margin-top:2px">#'+esc(doc.number)+'</div>' : '')
+        +     statusBadge
+        +   '</div>'
+        + '</div>'
+        + '<div style="height:1px;background:#eee;margin:22px 0"></div>';
+    var thead = minimal ? '<tr style="border-bottom:2px solid '+acc+';color:#666">' : '<tr style="background:#2a2a2a;color:#fff">';
     return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
       + '<style>*{box-sizing:border-box;margin:0;padding:0}'
-      + 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#222;padding:44px 40px;max-width:760px;margin:0 auto}'
+      + 'body{font-family:'+(minimal ? 'Arial,Helvetica,sans-serif' : '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif')+';background:#fff;color:#222;padding:44px 40px;max-width:760px;margin:0 auto}'
       + 'table{width:100%;border-collapse:collapse}'
       + '@media print{body{padding:0}}</style></head><body>'
-      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">'
-      +   '<div>'+logoHTML+'</div>'
-      +   '<div style="text-align:right">'
-      +     '<div style="font-size:30px;font-weight:800;letter-spacing:.04em;color:#1a1a1a;font-family:Georgia,serif">'+K.title+'</div>'
-      +     (doc.number ? '<div style="font-size:12px;color:#888;margin-top:2px">#'+esc(doc.number)+'</div>' : '')
-      +     statusBadge
-      +   '</div>'
-      + '</div>'
-      + '<div style="height:1px;background:#eee;margin:22px 0"></div>'
+      + header
       + '<div style="display:flex;justify-content:space-between;gap:24px">'
       +   '<div style="max-width:52%">'
       +     '<div style="font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:4px">'+esc(L.name)+'</div>'+lhLines
       +   '</div>'
-      +   '<div style="text-align:right;font-size:12px;color:#555;line-height:1.9">'
-      +     (doc.issue_date ? '<div><span style="color:#999">Date:</span> '+dlabel(doc.issue_date)+'</div>' : '')
-      +     (doc.due_date ? '<div><span style="color:#999">Due:</span> '+dlabel(doc.due_date)+'</div>' : '')
-      +   '</div>'
+      +   '<div style="text-align:right;font-size:12px;color:#555;line-height:1.9">'+dates+'</div>'
       + '</div>'
       + '<div style="margin:26px 0 18px">'+partyBlock+'</div>'
-      + '<table><thead><tr style="background:#2a2a2a;color:#fff">'
+      + '<table><thead>'+thead
       +   '<th style="padding:10px 8px;text-align:left;font-size:11px;letter-spacing:.05em;width:28px">#</th>'
       +   '<th style="padding:10px 8px;text-align:left;font-size:11px;letter-spacing:.05em">Item &amp; Description</th>'
       +   '<th style="padding:10px 8px;text-align:center;font-size:11px;letter-spacing:.05em">Qty</th>'
@@ -171,7 +201,7 @@
       + '</tr></thead><tbody>'+rowsHTML+'</tbody></table>'
       + '<div style="display:flex;justify-content:flex-end;margin-top:20px"><div style="width:260px">'+totalsHTML+'</div></div>'
       + (doc.notes && items ? '<div style="margin-top:28px;padding-top:14px;border-top:1px solid #eee"><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#999;margin-bottom:5px">Notes</div><div style="font-size:12.5px;color:#555;line-height:1.6">'+esc(doc.notes)+'</div></div>' : '')
-      + '<div style="text-align:center;margin-top:34px;padding-top:16px;border-top:1px solid #eee"><span style="font-size:10px;color:#bbb;letter-spacing:.08em">POWERED BY </span><span style="font-size:10px;font-weight:700;color:'+acc+';letter-spacing:.06em;font-family:Georgia,serif;font-style:italic">FinFlow</span></div>'
+      + footer
       + '</body></html>';
   }
   window.buildDocumentHTML = buildDocumentHTML;

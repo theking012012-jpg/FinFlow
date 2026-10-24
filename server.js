@@ -1912,11 +1912,18 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   if (_pt != null && _pt !== '' && !(/^[0-9]{1,3}$/.test(String(_pt)) && Number(_pt) <= 365)) return res.status(400).json({ error: 'Payment terms are a number of days from 0 (due on receipt) to 365.', code: 'BAD_PAYMENT_TERMS' });
   const _ip = (req.body || {}).invoice_prefix;
   if (_ip != null && !/^[A-Za-z0-9\-\/#_. ]{0,12}$/.test(String(_ip))) return res.status(400).json({ error: 'The invoice prefix can use letters, numbers and - / # _ . (up to 12 characters).', code: 'BAD_INVOICE_PREFIX' });
+  // FA-B1 part 2: how this business's documents look — the design, the accent colour, and the "Powered by FinFlow" line
+  const _ds = (req.body || {}).doc_style;
+  if (_ds != null && (typeof _ds !== 'object' || (_ds.template != null && !['classic', 'minimal', 'compact'].includes(_ds.template))
+      || (_ds.accent != null && !/^#[0-9a-fA-F]{6}$/.test(String(_ds.accent))) || (_ds.powered_by != null && typeof _ds.powered_by !== 'boolean'))) {
+    return res.status(400).json({ error: 'Document style: a design (classic, minimal or compact), a colour like #c9a84c, and on/off for the FinFlow line.', code: 'BAD_DOC_STYLE' });
+  }
   const _bp = (req.body || {}).bill_prefix;   // FA-M5c: same rule for the bill-number prefix (empty → "BILL-")
   if (_bp != null && !/^[A-Za-z0-9\-\/#_. ]{0,12}$/.test(String(_bp))) return res.status(400).json({ error: 'The bill prefix can use letters, numbers and - / # _ . (up to 12 characters).', code: 'BAD_BILL_PREFIX' });
   await db.updateById('entities', row.id, {
     ...(_ip != null && { invoice_prefix: String(_ip).trim() }),
     ...(_bp != null && { bill_prefix: String(_bp).trim() }),
+    ...(_ds != null && { doc_style: Object.assign({}, row.doc_style || {}, _ds) }),
     ...(_pt != null && _pt !== '' && { payment_terms: Number(_pt) }),
     ...(name && {name}), ...(currency && {currency}), ...(color && {color}),
     ...(timezone !== undefined && { timezone: timezone ? String(timezone) : null }),

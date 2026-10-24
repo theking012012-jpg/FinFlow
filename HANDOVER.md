@@ -29,7 +29,10 @@ retention warnings / deletion only for plans that END from now on — no existin
 server books it hourly and sends Stripe Connect transfers FROM FinFlow's own Stripe balance: keep USD available there,
 or payouts fail (they retry hourly and show in Admin → Earnings → Referral payouts with Stripe's reason). Check one
 real transfer in Stripe test mode first, and cross-border accounts (FA-L3h). An outside cron calling
-`/run-monthly-payouts` is no longer needed.
+`/run-monthly-payouts` is no longer needed. (9) **ledger backfill (G10)** — per business, `POST /api/gl/backfill?dry=1`
+then without `dry`, so the ledger becomes the source of the reports (until then they use computeBooks). (10) migrations
+`2026-10-24-*.sql` if `SKIP_INIT_DDL` is set (referral payouts, auto-email log). (11) automatic customer emails (FA-B1)
+are OFF per business until you turn them on (Templates → Automatic emails); they need Resend set up.
 
 ## ⚡ UPDATE 2026-10-21
 

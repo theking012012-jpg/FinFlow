@@ -147,8 +147,12 @@ redeploy":
 - **Client adoption of keyset pagination** — server side done (`verify-list-pagination`).
 - **Postgres row-level security** — designed (`RLS_DESIGN.md`); app-level isolation is tested
   (`verify-tenant-isolation`, `verify-entity-leakage-sweep`).
-- **GL Phase 4 + 5** (ledger as source of truth) and **investments on the ledger** — owner-gated accounting decisions
-  (`GL_DESIGN.md`).
+- **GL Phase 4 + 5** (ledger as source of truth) — **built** (`GL_DESIGN.md`: backfill `POST /api/gl/backfill`,
+  `verify-gl-backfill` 24/0; the reconcile-gated read swap, `verify-gl-verify` 11/0). What is owner-gated is RUNNING the
+  backfill on production (a data step, Rule 8): `?dry=1` first, then for real, per business. Until an entity's ledger
+  reconciles, its reports keep serving `computeBooks` (the gated fallback) — nothing is wrong meanwhile, the ledger is
+  just not the source yet. (G10, corrected 2026-10-24: this line used to call the code itself owner-gated.)
+- **Investments on the ledger** — an owner-gated accounting decision (`GL_DESIGN.md`).
 - **Express 4 → 5** (last `qs` moderate advisory), **mobile performance** tuning, **native app store** submission
   (`mobile/` scaffold exists), **Google Sheets OAuth push-sync**.
 - **Housekeeping:** move the working copy out of OneDrive (cause of the recurring `.git/index.lock` fights).

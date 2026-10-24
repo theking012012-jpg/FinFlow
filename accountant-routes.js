@@ -1950,11 +1950,12 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       // Step G (F28): clients see ONLY admin-confirmed_credentials — never the self-declared
       // `credentials`/`memberships` (those stay admin-only). `stripe_onboarded` gates the
       // "FinFlow Protected" chip (true only when payments actually run through FinFlow).
-      let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, confirmed_credentials, stripe_onboarded, hourly_rate, packages, has_pricing, rate_currency, verified_at FROM accountants WHERE status = 'verified'`;   // D-E: verified_at = when FinFlow checked the credentials (shown on the badge)
+      let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, confirmed_credentials, stripe_onboarded, hourly_rate, packages, has_pricing, rate_currency, verified_at, COALESCE(preferred_partner, false) AS preferred_partner FROM accountants WHERE status = 'verified'`;   // D-E: verified_at = when FinFlow checked the credentials (shown on the badge); FA-L3: preferred_partner (badge + listed first)
       const params = [];
       if (country) { params.push(country); query += ` AND country = $${params.length}`; }
       if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }
-      query += ' ORDER BY avg_rating DESC NULLS LAST, review_count DESC, verified_at ASC';
+      // FA-L3: Preferred Partners (awarded by the team) are listed first, as the accountants page promises
+      query += ' ORDER BY COALESCE(preferred_partner, false) DESC, avg_rating DESC NULLS LAST, review_count DESC, verified_at ASC';
       const result = await pool.query(query, params);
       return res.json(result.rows);
     } catch (e) {

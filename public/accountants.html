@@ -94,7 +94,7 @@ section{padding:100px 5vw}
 .feat-desc{font-size:13px;color:var(--t2);line-height:1.7}
 
 /* TIERS */
-.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:60px}
+.tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-top:60px}
 .tier-card{background:var(--bg1);border:1px solid var(--bd);border-radius:16px;padding:32px;position:relative;overflow:hidden}
 .tier-card.featured{border-color:rgba(200,164,74,.4);background:linear-gradient(135deg,rgba(200,164,74,.06),var(--bg1))}
 .tier-badge-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--t2);margin-bottom:12px}
@@ -206,23 +206,25 @@ footer{background:var(--bg1);border-top:1px solid var(--bd);padding:60px 5vw 32p
 </section>
 
 <!-- STATS BAR -->
-<div class="stats-bar">
+<div class="stats-bar" id="acc-stats">
+<!-- gen:stats -->
   <div class="stat-item">
     <div class="stat-num">$0</div>
     <div class="stat-lbl">Monthly fee to list</div>
   </div>
   <div class="stat-item">
-    <div class="stat-num">4%</div>
-    <div class="stat-lbl">FinFlow service commission</div>
+    <div class="stat-num">0%</div>
+    <div class="stat-lbl">Commission on your first 3 clients</div>
   </div>
   <div class="stat-item">
-    <div class="stat-num">96%</div>
-    <div class="stat-lbl">You keep from every payment</div>
+    <div class="stat-num">10% → 2%</div>
+    <div class="stat-lbl">Commission after that, falling by tier</div>
   </div>
   <div class="stat-item">
     <div class="stat-num">$120</div>
-    <div class="stat-lbl">Max referral per client (Elite)</div>
+    <div class="stat-lbl">Max referral pay per client</div>
   </div>
+<!-- /gen:stats -->
 </div>
 
 <!-- HOW IT WORKS -->
@@ -252,7 +254,7 @@ footer{background:var(--bg1);border-top:1px solid var(--bd);padding:60px 5vw 32p
       <div class="step-card reveal d4">
         <div class="step-num">04</div>
         <div class="step-title">Bill & get paid</div>
-        <div class="step-desc">Charge clients for tax filing, bookkeeping, or advisory work through FinFlow. We process payments — 96% lands in your account.</div>
+        <div class="step-desc">Charge clients for tax filing, bookkeeping, or advisory work through FinFlow. We process the payment and pay you your fee, less the card processing cost and our commission — 0% on your first three clients.</div>
       </div>
     </div>
   </div>
@@ -290,7 +292,7 @@ footer{background:var(--bg1);border-top:1px solid var(--bd);padding:60px 5vw 32p
       <div class="feat-card reveal d2">
         <div class="feat-icon"><svg viewBox="0 0 16 16"><path d="M8 1l2 5h5l-4 3 1.5 5L8 11l-4.5 3L5 9 1 6h5z"/></svg></div>
         <div class="feat-title">Preferred Partner badge</div>
-        <div class="feat-desc">Accountants with a 4.5+ star rating earn a Preferred Partner badge — shown on your directory listing, giving you priority placement and more visibility.</div>
+        <div class="feat-desc">Our team names consistently excellent accountants (4.5+ stars across real client reviews) Preferred Partners — the badge shows on your directory listing and Preferred Partners are listed first.</div>
       </div>
       <div class="feat-card reveal d3">
         <div class="feat-icon"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/></svg></div>
@@ -307,66 +309,77 @@ footer{background:var(--bg1);border-top:1px solid var(--bd);padding:60px 5vw 32p
     <div class="reveal">
       <div class="section-label">Referral tiers</div>
       <h2 class="section-h2">The more clients you bring, <em>the more you earn</em></h2>
-      <p class="section-sub">Commission pays monthly for every active, paying client. The moment a client cancels their subscription, their commission stops. No games.</p>
+      <p class="section-sub">Referral pay comes monthly for every active, paying client you bring — for the number of months your tier gives. The moment a client stops paying, it stops. No games.</p>
     </div>
     <div class="tiers">
-      <div class="tier-card reveal d1">
-        <div class="tier-badge-label">Tier I</div>
-        <div class="tier-name">Starter</div>
-        <div class="tier-clients">1 – 50 active clients</div>
+<!-- gen:tiers -->
+      <div class="tier-card reveal" data-tier="Bronze">
+        <div class="tier-badge-label">Tier 1</div>
+        <div class="tier-name">Bronze</div>
+        <div class="tier-clients">1–24 active clients</div>
         <div class="tier-earn">$10</div>
-        <div class="tier-earn-sub">per client, per month</div>
-        <div class="tier-duration">Paid for 1 month per client</div>
+        <div class="tier-earn-sub">a month per client, for 3 months</div>
+        <div class="tier-duration">10% commission on what you bill</div>
       </div>
-      <div class="tier-card reveal d2">
-        <div class="tier-badge-label">Tier II</div>
-        <div class="tier-name">Growth</div>
-        <div class="tier-clients">50 – 500 active clients</div>
-        <div class="tier-earn">$30</div>
-        <div class="tier-earn-sub">per client, over 3 months</div>
-        <div class="tier-duration">Paid for 3 months per client</div>
+      <div class="tier-card reveal" data-tier="Silver">
+        <div class="tier-badge-label">Tier 2</div>
+        <div class="tier-name">Silver</div>
+        <div class="tier-clients">25–49 active clients</div>
+        <div class="tier-earn">$10</div>
+        <div class="tier-earn-sub">a month per client, for 6 months</div>
+        <div class="tier-duration">8% commission on what you bill</div>
       </div>
-      <div class="tier-card featured reveal d3">
-        <div class="tier-badge-label" style="color:var(--acc)">Tier III — Elite</div>
+      <div class="tier-card reveal" data-tier="Gold">
+        <div class="tier-badge-label">Tier 3</div>
+        <div class="tier-name">Gold</div>
+        <div class="tier-clients">50–99 active clients</div>
+        <div class="tier-earn">$10</div>
+        <div class="tier-earn-sub">a month per client, for 9 months</div>
+        <div class="tier-duration">6% commission on what you bill</div>
+      </div>
+      <div class="tier-card reveal" data-tier="Platinum">
+        <div class="tier-badge-label">Tier 4</div>
+        <div class="tier-name">Platinum</div>
+        <div class="tier-clients">100–249 active clients</div>
+        <div class="tier-earn">$10</div>
+        <div class="tier-earn-sub">a month per client, for 12 months</div>
+        <div class="tier-duration">4% commission on what you bill</div>
+      </div>
+      <div class="tier-card featured reveal" data-tier="Elite">
+        <div class="tier-badge-label" style="color:var(--acc)">Tier 5</div>
         <div class="tier-name" style="color:var(--acc-light)">Elite</div>
-        <div class="tier-clients">500+ active clients</div>
-        <div class="tier-earn">$120</div>
-        <div class="tier-earn-sub">per client, over 12 months</div>
-        <div class="tier-duration">Paid for 12 months per client</div>
+        <div class="tier-clients">250+ active clients</div>
+        <div class="tier-earn">$10</div>
+        <div class="tier-earn-sub">a month per client, for 12 months</div>
+        <div class="tier-duration">2% commission on what you bill</div>
       </div>
+<!-- /gen:tiers -->
     </div>
 
     <!-- COMMISSION CALCULATOR -->
     <div class="commission-box reveal">
+<!-- gen:commission -->
       <div>
         <div class="section-label">Service commission</div>
-        <h3 style="font-family:var(--font-d);font-size:32px;font-style:italic;color:var(--t1);margin-bottom:12px">You set the rate.<br><em style="color:var(--acc-light)">We take 4%.</em></h3>
-        <p style="font-size:14px;color:var(--t2);line-height:1.8;margin-bottom:20px">Bill clients for tax filing, bookkeeping, advisory, or anything else — directly through FinFlow. We process the payment via Stripe and send 96% to your connected bank account within 2 business days.</p>
+        <h3 style="font-family:var(--font-d);font-size:32px;font-style:italic;color:var(--t1);margin-bottom:12px">You set the rate.<br><em style="color:var(--acc-light)">Our share falls as you grow.</em></h3>
+        <p style="font-size:14px;color:var(--t2);line-height:1.8;margin-bottom:20px">Bill clients for tax filing, bookkeeping, advisory or anything else, directly through FinFlow. Your first 3 clients are commission-free; after that FinFlow's commission is 10% → 8% → 6% → 4% → 2% by tier. The card processor's fee is taken first, at its real cost.</p>
         <ul style="list-style:none;display:flex;flex-direction:column;gap:10px">
-          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Minimum bill: $50</li>
-          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Client pays via card — secure Stripe checkout</li>
-          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Verified payment receipt sent to client automatically</li>
-          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> 🛡 FinFlow Protected — builds client trust</li>
+          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Client pays by card — secure Stripe checkout</li>
+          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Payment receipt sent to the client automatically</li>
+          <li style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)"><span style="color:var(--green)">✓</span> Referral pay: $10 a month per active, paying client, for the months your tier gives — it stops if the client stops paying</li>
         </ul>
       </div>
-      <div>
-        <div style="font-size:12px;color:var(--t2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">Example breakdown</div>
+      <div id="commission-example">
+        <div style="font-size:12px;color:var(--t2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">Example: a $500.00 bill at the Bronze tier</div>
         <div class="commission-calc">
-          <div class="calc-row">
-            <span style="color:var(--t2)">Tax filing fee</span>
-            <span class="calc-val dim">$500.00</span>
-          </div>
-          <div class="calc-row">
-            <span style="color:var(--t2)">FinFlow fee (4%)</span>
-            <span class="calc-val amber">− $20.00</span>
-          </div>
-          <div class="calc-row">
-            <span style="color:var(--t1);font-weight:600">You receive</span>
-            <span class="calc-val green">$480.00</span>
-          </div>
+          <div class="calc-row"><span style="color:var(--t2)">Your fee</span><span class="calc-val dim">$500.00</span></div>
+          <div class="calc-row"><span style="color:var(--t2)">Card processing (est. 2.9% + 30¢)</span><span class="calc-val amber">− $14.80</span></div>
+          <div class="calc-row"><span style="color:var(--t2)">FinFlow commission (10%)</span><span class="calc-val amber">− $50.00</span></div>
+          <div class="calc-row"><span style="color:var(--t1);font-weight:600">You receive</span><span class="calc-val green">$435.20</span></div>
         </div>
-        <div style="margin-top:12px;font-size:12px;color:var(--t2);text-align:center">500 clients × $500/year average = <span style="color:var(--acc)">$240,000 revenue</span> · FinFlow takes $9,600</div>
+        <div style="margin-top:12px;font-size:12px;color:var(--t2);text-align:center">While you have fewer than 3 clients, you keep <span style="color:var(--acc)">$485.20</span> of the same bill.</div>
       </div>
+<!-- /gen:commission -->
     </div>
   </div>
 </section>
@@ -438,7 +451,7 @@ footer{background:var(--bg1);border-top:1px solid var(--bd);padding:60px 5vw 32p
 <!-- CTA BAND -->
 <section class="cta-band">
   <h2 class="cta-h2 reveal">Ready to grow your practice<br><em>with FinFlow?</em></h2>
-  <p class="cta-sub reveal d1">Join verified accountants already earning referral commissions and billing clients through the platform.</p>
+  <p class="cta-sub reveal d1">List your practice in FinFlow's directory of verified accountants, earn referral pay, and bill clients through the platform.</p>
   <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap" class="reveal d2">
     <a href="/join" class="btn-hero-p" style="font-size:15px;padding:16px 36px">Register your practice →</a>
     <a href="/accountant-login" class="btn-hero-g" style="font-size:15px;padding:16px 28px">Sign in to dashboard</a>

@@ -54,7 +54,7 @@ const EVIL_S = '<script>alert(1)</script>';
     console.log('='.repeat(78));
 
     // 1. accountant application → admin alert (name / firm / specialisation carry payloads)
-    const reg = await H().post('/api/accountants/register', { firstName: EVIL_A, lastName: 'Lee', email: 'esc-acc@finflow.test', password: PW, firm: EVIL_IMG, country: 'US', specialisation: EVIL_S, verification: { method: 'membership', membershipNumber: 'M-1' } });
+    const reg = await H().post('/api/accountants/register', { conductAccepted: true, conductVersion: require('../../conduct-policy').VERSION, firstName: EVIL_A, lastName: 'Lee', email: 'esc-acc@finflow.test', password: PW, firm: EVIL_IMG, country: 'US', specialisation: EVIL_S, verification: { method: 'membership', membershipNumber: 'M-1' } });
     A('accountant application → 201', reg.status === 201, `status ${reg.status}: ${reg.text.slice(0, 120)}`);
     const accId = (await c.query(`SELECT id FROM accountants WHERE email='esc-acc@finflow.test'`)).rows[0].id;
     // 5. admin approves with notes (email to the accountant)

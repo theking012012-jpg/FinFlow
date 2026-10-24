@@ -14225,8 +14225,10 @@ app.get('/api/symbol-search', requireAuth, async (req, res) => {
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'API route not found.' });
 });
+// FA-B13: an address with no page is a 404 with a "Page not found" page — it used to answer 200 with the landing page,
+// so a mistyped or stale link looked like the home page and crawlers indexed every made-up URL as the site.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+  res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
 });
 
 // ── GLOBAL ERROR HANDLER ──────────────────────────────────────────────────────

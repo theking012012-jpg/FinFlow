@@ -83,6 +83,7 @@ const _conductOf = acc => Conduct.state({ version: acc && acc.conduct_version, a
 // the caller's transaction with the link row locked — so activation and the monthly job cannot both book a month.
 const referralPayouts = require('./referral-payouts');
 const _bookReferralMonth = referralPayouts.bookReferralMonth;
+const earningsFigures = require('./earnings-figures');   // FA-L3g: the one writer of the earnings / commission figures
 const aiCap = require('./ai-cap'); // F18 — central AI cost caps
 const { appUrl } = require('./app-url'); // F29 — single source of truth for app links
 const { emailHtml } = require('./email-html'); // N85 — every email body escapes its interpolations
@@ -1436,14 +1437,15 @@ If you cannot find a field, use null. Be concise.`;
 
     const result = await pool.query(query, params);
 
-    const total = result.rows.reduce((sum, r) => sum + r.amount_cents, 0);
-    // FA-L3f: the booking month as a DATE string — the dashboard's "This Month" compares to it, not the viewer's clock
-    const { rows: [cp] } = await pool.query(`SELECT date_trunc('month', NOW())::date AS p`);
+    // FA-L3g: the figures come from the one writer (earnings-figures.js) over ALL rows — not a sum of the 100 rows
+    // listed here, which also counted bills the client had not paid. FA-L3f: currentPeriod is the booking month.
+    const summary = await earningsFigures.accountantFigures(pool, req.session.accountantId);
     return res.json({
       earnings: result.rows,
-      totalCents: total,
-      totalFormatted: '$' + (total / 100).toFixed(2),
-      currentPeriod: cp.p,
+      summary,
+      totalCents: summary.earnedCents,
+      totalFormatted: '$' + (summary.earnedCents / 100).toFixed(2),
+      currentPeriod: summary.currentPeriod,
     });
   }));
 

@@ -375,7 +375,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
              stripe_fee_cents  = COALESCE($2::int, stripe_fee_cents),
              amount_cents      = GREATEST(0, COALESCE(billed_cents, amount_cents)
                                              - COALESCE($2::int, stripe_fee_cents, 0)
-                                             - COALESCE(commission_cents, 0))
+                                             - COALESCE(commission_cents, 0)),
+             period_month      = COALESCE(period_month, date_trunc('month', NOW())::date)   -- FA-L3g: earned the month the client pays
        WHERE payment_intent_id = $1
           OR (payment_intent_id IS NULL AND type = 'service_commission' AND id = $3::int AND accountant_id = $4::int)
     `, [pi.id, realFee, _eid, _aid]);

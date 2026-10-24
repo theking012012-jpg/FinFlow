@@ -600,7 +600,7 @@
         <div class="stat-card gold">
           <div class="stat-label">Total Earned</div>
           <div class="stat-value" id="earn-total">—</div>
-          <div class="stat-sub">All time</div>
+          <div class="stat-sub" id="earn-total-sub">All time</div>
         </div>
         <div class="stat-card green">
           <div class="stat-label">This Month</div>
@@ -1183,20 +1183,18 @@ async function loadEarnings() {
     const data = await res.json();
     earnings = data.earnings || [];
 
-    const total = data.totalFormatted || '$0.00';
-    // FA-L3f (Rule 10): "this month" is the server's booking month, compared as 'YYYY-MM' strings — never a Date
-    // (new Date('2026-10-01') is 30 Sep for a viewer west of UTC, so October's pay dropped out of the card).
+    // FA-L3g: the cards show the server's figures (earnings-figures.js — all rows, unpaid bills apart), not a sum of
+    // the 100 rows listed below. FA-L3f: "this month" is the server's booking month (Rule 10 — no viewer clock).
     const FD = window.FinFlowDates;
-    const thisMonth = String(data.currentPeriod || FD._toYmd(new Date())).slice(0, 7);
-    const mtd = '$' + (earnings.filter(e => e.period_month && String(FD._toYmd(e.period_month)).slice(0, 7) === thisMonth)
-      .reduce((s, e) => s + e.amount_cents, 0) / 100).toFixed(2);
-
-    const pending = '$' + (earnings.filter(e => e.status === 'pending').reduce((s, e) => s + e.amount_cents, 0) / 100).toFixed(2);
+    const sm = data.summary || {};
+    const usd = c => '$' + ((Number(c) || 0) / 100).toFixed(2);
+    const mtd = usd(sm.thisMonthCents);
 
     document.getElementById('stat-mtd').textContent = mtd;
-    document.getElementById('earn-total').textContent = total;
+    document.getElementById('earn-total').textContent = usd(sm.earnedCents);
+    document.getElementById('earn-total-sub').textContent = Number(sm.awaitingClientCents) > 0 ? 'All time · + ' + usd(sm.awaitingClientCents) + ' billed, waiting for the client' : 'All time';
     document.getElementById('earn-mtd').textContent = mtd;
-    document.getElementById('earn-pending').textContent = pending;
+    document.getElementById('earn-pending').textContent = usd(sm.referralOwedCents);
 
     const rows = earnings.length === 0
       ? '<tr class="loading-row"><td colspan="5">No earnings yet. Invite clients to start earning.</td></tr>'

@@ -35,7 +35,9 @@ function parent() {
     } catch (e) { r = { fatal: e.message }; }
     if (r.fatal) { A(tz + ': child ran', false, r.fatal.slice(0, 300)); continue; }
     A(tz + ' (offset ' + r.offset + ' min): 1 accountant earnings row reads "Oct 2026"', r.accDate === 'Oct 2026', r.accDate);
-    A(tz + ': 2 "This Month" counts October\'s $10.00', r.mtd === '$10.00', r.mtd);
+    // FA-L3g moved the month test to the server (earnings-figures.js compares period_month to the booking month in
+    // SQL, as DATEs); the card shows that figure — no viewer-clock month filter is left in the browser
+    A(tz + ': 2 "This Month" shows the server\'s figure, $10.00', r.mtd === '$10.00', r.mtd);
     A(tz + ': 3 admin Period reads "Oct 2026"', r.adminPeriod === 'Oct 2026', r.adminPeriod);
     A(tz + ': 4 signups chart labels "Sep 26, Oct 26"', r.signupLabels === 'Sep 26,Oct 26', r.signupLabels);
     A(tz + ': 5 traffic chart labels "Oct 4, Oct 5"', r.trafficLabels === 'Oct 4,Oct 5', r.trafficLabels);
@@ -69,7 +71,7 @@ async function child() {
   const acc = page('accountant-dashboard.html', {
     '/api/accountants/me': { first_name: 'Ada', last_name: 'L', status: 'verified', referral_code: 'X', email: 'a@x.test', conduct: { accepted: true, version: '1.0', current: '1.0', blocked: false } },
     '/api/accountants/clients': [], '/api/accountants/pending-requests': [], '/api/accountants/deadlines': [], '/api/accountants/stripe-status': { connected: true, transfersEnabled: true },
-    '/api/accountants/earnings': { earnings: [{ id: 1, type: 'referral', amount_cents: 1000, description: 'Referral', status: 'pending', period_month: '2026-10-01' }], totalFormatted: '$10.00', currentPeriod: '2026-10-01' },
+    '/api/accountants/earnings': { earnings: [{ id: 1, type: 'referral', amount_cents: 1000, description: 'Referral', status: 'pending', period_month: '2026-10-01' }], totalFormatted: '$10.00', currentPeriod: '2026-10-01', summary: { earnedCents: 1000, thisMonthCents: 1000, awaitingClientCents: 0, referralOwedCents: 1000, currentPeriod: '2026-10-01' } },
   });
   await settle();
   try { await acc.loadEarnings(); } catch (_) {}

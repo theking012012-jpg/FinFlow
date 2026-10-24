@@ -306,7 +306,7 @@ td.amber{color:var(--amber)}
           <div class="stat-card purple">
             <div class="stat-label">Commission Earned</div>
             <div class="stat-val" id="ov-commission">—</div>
-            <div class="stat-sub" id="ov-commission-pending">— pending payout</div>
+            <div class="stat-sub" id="ov-commission-pending">— referral pay owed</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">AI Queries (Month)</div>
@@ -452,9 +452,9 @@ td.amber{color:var(--amber)}
         </div>
         <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
           <div class="stat-card gold">
-            <div class="stat-label">Total Earned (Platform)</div>
+            <div class="stat-label">Commission Collected</div>
             <div class="stat-val" id="earn-commission">—</div>
-            <div class="stat-sub">Service commissions collected</div>
+            <div class="stat-sub">FinFlow's commission on bills clients paid</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Referral Pay Owed</div>
@@ -984,7 +984,7 @@ async function loadOverview() {
     document.getElementById('ov-accountants').textContent = d.accountants.verified;
     document.getElementById('ov-acc-pending').textContent = `${d.accountants.pending} pending`;
     document.getElementById('ov-commission').textContent = d.earnings.totalFormatted;
-    document.getElementById('ov-commission-pending').textContent = `${d.earnings.pendingFormatted} pending`;
+    document.getElementById('ov-commission-pending').textContent = `${d.earnings.pendingFormatted} referral pay owed`;
     document.getElementById('ov-ai').textContent = d.ai.monthQueries.toLocaleString();
     document.getElementById('ov-ai-cost').textContent = `est. ${d.ai.estimatedMonthlyCost} this month`;
 
@@ -1318,7 +1318,7 @@ async function loadEarnings() {
     const { records, summary, payouts } = await res.json();
     const s = summary || {};
 
-    document.getElementById('earn-commission').textContent = '$' + ((parseInt(s.commission_cents)||0)/100).toFixed(2);
+    document.getElementById('earn-commission').textContent = '$' + ((parseInt(s.commission_collected_cents)||0)/100).toFixed(2);   // FA-L3g: FinFlow's commission on paid bills
     document.getElementById('earn-referral').textContent = '$' + ((parseInt(s.referral_owed_cents)||0)/100).toFixed(2);   // FA-L3d: owed = pending only
     document.getElementById('earn-paid').textContent = '$' + ((parseInt(s.paid_cents)||0)/100).toFixed(2);
 

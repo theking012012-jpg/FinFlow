@@ -64,7 +64,7 @@ This is the weakest area. Time is recorded, but it never turns into money.
 | Customer statement and per-customer balance | All | ❌ Revenue column shows "—" **(P2)** |
 | Convert a quote to an invoice, edit a quote | All | ❌ (LR9) **(P1)** |
 | Quote expiry date | All | 🟡 Field exists but shows "—" **(P3)** |
-| Apply a credit note to an invoice | All | 🟡 "Applied $0"; no apply action seen **(P2)** |
+| Apply a credit note to an invoice | All | ✅ **Closed 2026-10-24 (FA-M6b)** — Apply… / Unapply on credit notes and vendor credits; was 🟡 "Applied $0"; no apply action seen **(P2)** |
 | Partial payments | All | ✅ |
 | Online payment link | All | ✅ Stripe / WiPay / dLocal / MP ⭐ (regional coverage) |
 | Recurring invoices | All | ✅ (none set up to test) |

@@ -751,6 +751,7 @@
             _dbId:  r.id,
             client: r.client,
             amount: r.amount,
+            credit_applied: r.credit_applied || 0,   // FA-M6b: the credit-note part of amount_paid (not cash)
             amount_paid: r.amount_paid,   // F119: THE dropping mapper — this is the winning boot loader
                                           // for window.userInvoices; without amount_paid a partially-paid
                                           // invoice showed its FULL amount as "remaining" in Record Payment,
@@ -973,10 +974,12 @@
       // and on a part-paid invoice what is left. "—" when nothing was paid. Same amount_paid the AR figure reads.
       const _invPaidCell = inv => {
         const amt = parseFloat(inv.amount) || 0;
-        const paid = String(inv.status || '').toLowerCase() === 'paid' && !(parseFloat(inv.amount_paid) > 0) ? amt : Math.min(amt, parseFloat(inv.amount_paid) || 0);
-        if (!(paid > 0.005)) return '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="color:var(--t3)">—</span>';
-        const left = Math.max(0, amt - paid);
+        const settled = String(inv.status || '').toLowerCase() === 'paid' && !(parseFloat(inv.amount_paid) > 0) ? amt : Math.min(amt, parseFloat(inv.amount_paid) || 0);
+        const credit = Math.min(settled, parseFloat(inv.credit_applied) || 0), paid = settled - credit;   // FA-M6b: a credit is not money received
+        const left = Math.max(0, amt - settled);
+        if (!(paid > 0.005)) return (credit > 0.005 ? '<span class="inv-paid-lbl" style="color:var(--t3)">Credited </span><span style="font-family:var(--font-mono)">' + esc(S(credit)) + '</span>' + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '') : '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="color:var(--t3)">—</span>');
         return '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="font-family:var(--font-mono);color:var(--green)">' + esc(S(paid)) + '</span>'
+          + (credit > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">+ ' + esc(S(credit)) + ' credited</span>' : '')
           + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '');
       };
       window._invShowMore = function () { window._invRenderLimit += 200; if (typeof window.renderInvoices === 'function') window.renderInvoices(); };
@@ -3271,6 +3274,114 @@ function clearAIChat(){
         notify(status === 'Void' ? 'Voided — it no longer reduces revenue' : 'Reopened');
         if (kind === 'credit-notes') loadCreditNotes(); else loadVendorCredits();
       };
+    // FA-M6b: a credit shows what is left of it; Apply settles part of one of ITS customer's invoices / vendor's bills.
+    // One row builder and one set of cards for both kinds, so credit notes and vendor credits cannot drift apart again
+    // (their status colours had: Open was amber on one page and green on the other).
+    const _CREDIT_UI = {
+      credit_note:   { party: 'customer', path: 'credit-notes',   view: 'viewCreditNote',   del: 'deleteCreditNote',   docs: () => window._realInvoices || window.userInvoices || [], docParty: d => d.client, docNum: d => d.number || ('#' + (d._dbId || d.id)), docWord: 'invoice', word: 'credit note' },
+      vendor_credit: { party: 'vendor',   path: 'vendor-credits', view: 'viewVendorCredit', del: 'deleteVendorCredit', docs: () => window.bills || [], docParty: d => d.vendor || d.vendor_name, docNum: d => d.num || ('#' + d.id), docWord: 'bill', word: 'vendor credit' },
+    };
+    const _creditLeft = r => Math.max(0, Math.round(((parseFloat(r.amount) || 0) - (parseFloat(r.applied) || 0)) * 100) / 100);
+    const _creditRowsHTML = (rows, kind) => {
+      const u = _CREDIT_UI[kind], cls = { Open: 'b-amber', Applied: 'b-green', Void: 'b-red' };
+      return rows.map(r => {
+        const left = _creditLeft(r), applied = parseFloat(r.applied) || 0, isVoid = r.status === 'Void';
+        const actions = '<button class="btn btn-ghost btn-sm" onclick="' + u.view + '(' + r.id + ')">View</button>'
+          + (isVoid ? '' : '<button class="btn btn-ghost btn-sm" onclick="openApplyCredit(\'' + kind + '\', ' + r.id + ')">' + (left > 0.005 ? 'Apply' : 'Applied to') + '</button>')
+          + (isVoid ? '<button class="btn btn-ghost btn-sm" onclick="setCreditStatus(\'' + u.path + '\', ' + r.id + ', \'Open\')">Reopen</button>'
+            : (applied > 0.005 ? '' : '<button class="btn btn-ghost btn-sm" onclick="setCreditStatus(\'' + u.path + '\', ' + r.id + ', \'Void\')">Void</button>'))
+          + '<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" aria-label="Delete" onclick="' + u.del + '(' + r.id + ')">✕</button>';
+        return `
+          <div class="table-row" style="grid-template-columns:1fr 90px 90px 80px 70px 170px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span style="font-weight:500">${esc(r[u.party] || '')}</span>
+            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
+            <span style="font-family:var(--font-mono)">${S(r.amount)}${applied > 0.005 && !isVoid ? '<br><span class="credit-left" style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : ''}</span>
+            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
+            <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
+            <div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">${actions}</div>
+          </div>`;
+      }).join('');
+    };
+    const _creditCards = rows => {
+      const live = rows.filter(r => r.status !== 'Void');
+      const sum = (list, f) => list.reduce((s, r) => s + f(r), 0);
+      return [S(sum(live, r => parseFloat(r.amount) || 0)), S(sum(live, _creditLeft)), S(sum(live, r => parseFloat(r.applied) || 0)),
+        S(sum(live.filter(r => inThisMonth(r.date)), r => parseFloat(r.amount) || 0))];
+    };
+    // The Apply dialog: what this credit is already applied to (each can be unapplied) and, while some is left, the
+    // party's open documents with what each still owes. The server re-checks every limit under a lock.
+    window.openApplyCredit = async function (kind, id) {
+      const u = _CREDIT_UI[kind];
+      const list = kind === 'credit_note' ? _creditNotesData : _vendorCreditsData;
+      const cr = (list || []).find(x => x.id === id); if (!cr) return;
+      let apps = [];
+      try { apps = (await api('GET', '/api/credit-applications?kind=' + kind + '&credit_id=' + id)) || []; } catch (e) { notify('Could not load this credit — ' + e.message, true); return; }
+      const key = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
+      const docs = u.docs();
+      const docId = d => d._dbId || d.id;
+      const owed = d => Math.max(0, Math.round(((parseFloat(d.amount) || 0) - (parseFloat(d.amount_paid) || 0)) * 100) / 100);
+      const issued = d => { const s = String(d.status || '').toLowerCase(); return s && s !== 'draft' && s !== 'void'; };
+      const open = docs.filter(d => key(u.docParty(d)) === key(cr[u.party]) && issued(d) && owed(d) > 0.005);
+      const left = _creditLeft(cr);
+      const old = document.getElementById('apply-credit-overlay'); if (old) old.remove();
+      const o = document.createElement('div'); o.id = 'apply-credit-overlay';
+      o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px';
+      const appRows = apps.map(a => { const d = docs.find(x => docId(x) === a.doc_id);
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)"><span>' + esc(d ? u.docNum(d) : (u.docWord + ' #' + a.doc_id)) + ' · ' + esc(window.FinFlowDates ? window.FinFlowDates.fmtLabel(a.applied_date, { year: true }) : a.applied_date) + '</span><span style="font-family:var(--font-mono)">' + esc(S(a.amount)) + '</span><button class="btn btn-ghost btn-sm" onclick="unapplyCredit(\'' + kind + '\', ' + id + ', ' + a.id + ')">Unapply</button></div>'; }).join('');
+      const docOpts = open.map(d => '<option value="' + docId(d) + '" data-owed="' + owed(d) + '">' + esc(u.docNum(d)) + ' — ' + esc(S(owed(d))) + ' owed</option>').join('');
+      const today = window._entityToday ? window._entityToday() : new Date().toISOString().slice(0, 10);
+      const form = left > 0.005
+        ? (open.length
+          ? '<label class="form-label" for="apc-doc">Apply to</label><select id="apc-doc" class="form-input" onchange="_apcSuggest()">' + docOpts + '</select>'
+            + '<div style="display:flex;gap:8px;margin-top:8px"><div style="flex:1"><label class="form-label" for="apc-amount">Amount</label><input id="apc-amount" class="form-input" type="number" min="0.01" step="0.01"></div>'
+            + '<div style="flex:1"><label class="form-label" for="apc-date">Date</label><input id="apc-date" class="form-input" type="date" value="' + esc(today) + '"></div></div>'
+            + '<button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="submitApplyCredit(\'' + kind + '\', ' + id + ')">Apply credit</button>'
+          : '<div style="color:var(--t2);font-size:13px">' + esc(cr[u.party] || 'This ' + u.party) + ' has no open ' + u.docWord + 's to apply it to. The credit still lowers what they owe in total.</div>')
+        : '<div style="color:var(--t2);font-size:13px">All of this credit is applied.</div>';
+      o.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Apply ' + esc(u.word) + '" style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:460px;max-height:90vh;overflow:auto;padding:1rem 1.25rem">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:14px;font-weight:500">' + esc(u.word.charAt(0).toUpperCase() + u.word.slice(1)) + ' ' + esc(cr.num || '') + ' · ' + esc(cr[u.party] || '') + '</div><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'apply-credit-overlay\').remove()">✕ Close</button></div>'
+        + '<div style="font-size:13px;color:var(--t2);margin-bottom:10px">' + esc(S(cr.amount)) + ' credit · <strong class="apc-left">' + esc(S(left)) + ' left to apply</strong></div>'
+        + (appRows ? '<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-top:6px">Applied to</div>' + appRows + '<div style="height:10px"></div>' : '')
+        + form + '</div>';
+      document.body.appendChild(o);
+      o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+      o.dataset.left = String(left);
+      window._apcSuggest();
+    };
+    window._apcSuggest = function () {
+      const o = document.getElementById('apply-credit-overlay'), sel = document.getElementById('apc-doc'), amt = document.getElementById('apc-amount');
+      if (!o || !sel || !amt) return;
+      const opt = sel.options[sel.selectedIndex];
+      amt.value = Math.min(parseFloat(o.dataset.left) || 0, parseFloat(opt && opt.dataset.owed) || 0).toFixed(2);
+    };
+    window.submitApplyCredit = async function (kind, id) {
+      const sel = document.getElementById('apc-doc'), amt = document.getElementById('apc-amount'), dt = document.getElementById('apc-date');
+      if (!sel || !amt) return;
+      const o = document.getElementById('apply-credit-overlay');
+      if (o && o.dataset.busy) return;
+      if (o) o.dataset.busy = '1';
+      // one key per dialog submission: a double-click or a retried request lands once (the server holds it, Rule 9)
+      const idem = (o && o.dataset.key) || ('apc-' + id + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+      if (o) o.dataset.key = idem;
+      try {
+        await api('POST', '/api/credit-applications', { kind, credit_id: id, doc_id: Number(sel.value), amount: parseFloat(amt.value), date: dt && dt.value, idempotency_key: idem });
+      } catch (e) { if (o) delete o.dataset.busy; notify((e && e.message) || 'Could not apply the credit', true); return; }
+      notify('Credit applied');
+      await _afterCreditChange(kind);
+      window.openApplyCredit(kind, id);
+    };
+    window.unapplyCredit = async function (kind, id, appId) {
+      try { await api('DELETE', '/api/credit-applications/' + appId); }
+      catch (e) { notify((e && e.message) || 'Could not unapply the credit', true); return; }
+      notify('Unapplied — the amount is back on the credit');
+      await _afterCreditChange(kind);
+      window.openApplyCredit(kind, id);
+    };
+    async function _afterCreditChange(kind) {
+      if (kind === 'credit_note') await loadCreditNotes(); else await loadVendorCredits();
+      if (typeof window.refreshFinancials === 'function') await window.refreshFinancials(kind === 'credit_note' ? 'invoices' : 'bills');
+      if (kind === 'vendor_credit' && typeof window._loadBillsFromDB === 'function') await window._loadBillsFromDB();
+    }
     async function loadCreditNotes() {
       try {
         const rows = await api('GET', '/api/credit-notes');
@@ -3287,23 +3398,11 @@ function clearAIChat(){
       if (!_creditNotesFetched) { loadCreditNotes(); return; }
       const el = document.getElementById('credit-notes-list');
       if (!el) return;
-      const cls = { Open: 'b-amber', Applied: 'b-green', Void: 'b-red' };
       el.innerHTML = _creditNotesData.length
-        ? _creditNotesData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r.customer || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
-            <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewCreditNote(${r.id})">View</button>${r.status === 'Void' ? `<button class="btn btn-ghost btn-sm" onclick="setCreditStatus('credit-notes', ${r.id}, 'Open')">Reopen</button>` : `<button class="btn btn-ghost btn-sm" onclick="setCreditStatus('credit-notes', ${r.id}, 'Void')">Void</button>`}<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteCreditNote(${r.id})">✕</button></div>
-          </div>`).join('')
+        ? _creditRowsHTML(_creditNotesData, 'credit_note')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No credit notes yet</div>';
-      // KPI cards: count · open/unapplied sum · applied sum · this-month sum
-      const _cnOpen = _creditNotesData.filter(r => r.status === 'Open').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      const _cnApplied = _creditNotesData.filter(r => r.status === 'Applied').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      const _cnMonthSum = _creditNotesData.filter(r => inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      setKpiCards('page-credit-notes', [_creditNotesData.length, S(_cnOpen), S(_cnApplied), S(_cnMonthSum)]);
+      // KPI cards (FA-M6b): issued (not void) · still to apply · applied to invoices · issued this month — money, each
+      setKpiCards('page-credit-notes', _creditCards(_creditNotesData));
       window._refreshDashboardUI?.();
     };
 
@@ -4025,23 +4124,10 @@ function clearAIChat(){
       if (!_vendorCreditsFetched) { loadVendorCredits(); return; }
       const el = document.getElementById('vendor-credits-list');
       if (!el) return;
-      const cls = { Open: 'b-green', Applied: 'b-amber' };
       el.innerHTML = _vendorCreditsData.length
-        ? _vendorCreditsData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r.vendor || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
-            <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewVendorCredit(${r.id})">View</button>${r.status === 'Void' ? `<button class="btn btn-ghost btn-sm" onclick="setCreditStatus('vendor-credits', ${r.id}, 'Open')">Reopen</button>` : `<button class="btn btn-ghost btn-sm" onclick="setCreditStatus('vendor-credits', ${r.id}, 'Void')">Void</button>`}<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendorCredit(${r.id})">✕</button></div>
-          </div>`).join('')
+        ? _creditRowsHTML(_vendorCreditsData, 'vendor_credit')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendor credits yet</div>';
-      // KPI cards: count · open sum · applied sum · this-month sum
-      const _vcOpen = _vendorCreditsData.filter(r => r.status === 'Open').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      const _vcApplied = _vendorCreditsData.filter(r => r.status === 'Applied').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      const _vcMonthSum = _vendorCreditsData.filter(r => inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      setKpiCards('page-vendor-credits', [_vendorCreditsData.length, S(_vcOpen), S(_vcApplied), S(_vcMonthSum)]);
+      setKpiCards('page-vendor-credits', _creditCards(_vendorCreditsData));   // FA-M6b: same four figures as credit notes
       window._refreshDashboardUI?.();
     };
 
@@ -4132,7 +4218,7 @@ function clearAIChat(){
       window.ffOpenDocView({
         number: b.num, party: b.vendor, issue_date: b.issue_date || b.created_at || null,
         due_date: b.due_date || null, status: b.status || '', notes: b.notes || '',
-        amount: b.amount, amount_paid: b.amount_paid, tax: b.tax || 0, line_items: b.line_items || null, currency: b.currency || null,   // FA-M3: Amount Due nets payments made
+        amount: b.amount, amount_paid: b.amount_paid, credit_applied: b.credit_applied || 0, tax: b.tax || 0, line_items: b.line_items || null, currency: b.currency || null,   // FA-M3: Amount Due nets payments made
       }, 'bill');
       if (window.ffDocHistory) window.ffDocHistory('bills', b.id);   // batch 7: what changed
     };
@@ -5168,7 +5254,7 @@ function clearAIChat(){
             const cst = (cn.status || '').toLowerCase(); if (cst !== 'open' && cst !== 'applied') return;
             const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(cn.date || cn.created_at) : null;
             if (today != null && (dy == null || dy > today)) return;
-            const amt = parseFloat(cn.amount) || 0; if (amt <= 0) return;
+            const amt = (parseFloat(cn.amount) || 0) - (parseFloat(cn.applied) || 0); if (amt <= 0.005) return;   // FA-M6b: what is left of it
             const c = cn.customer || '—';
             if (byCust[c] != null) byCust[c] -= amt; else byCust['Unattributed credits'] = (byCust['Unattributed credits'] || 0) - amt;
           });
@@ -5218,7 +5304,7 @@ function clearAIChat(){
           const st = (vc.status || '').toLowerCase(); if (st !== 'open' && st !== 'applied') return;
           const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(vc.date || vc.created_at) : null;
           if (today != null && (dy == null || dy > today)) return;
-          const amt = parseFloat(vc.amount) || 0; if (amt <= 0) return;
+          const amt = (parseFloat(vc.amount) || 0) - (parseFloat(vc.applied) || 0); if (amt <= 0.005) return;   // FA-M6b: what is left of it
           const v = vc.vendor || '—';
           if (byVendor[v] != null) byVendor[v] -= amt; else byVendor['Unattributed credits'] = (byVendor['Unattributed credits'] || 0) - amt;
         });
@@ -6863,6 +6949,7 @@ function clearAIChat(){
           // so on a partially-paid invoice it would then try to pay the FULL amount again and be
           // rejected 400 by the server's overpayment guard. Also feeds the canonical AR figure.
           amount_paid: r.amount_paid,
+          credit_applied: r.credit_applied || 0,   // FA-M6b
           due:      r.due_date
             ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
             : 'No due date',
@@ -7011,12 +7098,14 @@ function clearAIChat(){
       return _d != null && _d <= _recToday;   // exclude scheduled (future-dated) invoices
     });
     const totalBilled  = _recognized.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const collected    = _recognized.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0), 0);
+    const collected    = _recognized.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0) - (parseFloat(i.credit_applied) || 0), 0);   // FA-M6b: an applied credit is not money collected
     const outstanding  = _arP.total;
     const overdue      = _arP.overdueTotal;
     const overdueCount = _arP.overdueCount;
     const outCount     = _arP.count;
-    const pctCollected = totalBilled > 0 ? Math.round(collected / totalBilled * 100) : 0;
+    // FA-M6b: the share collected of what was really owed — a credited part was never going to be paid
+    const _owedBilled  = totalBilled - _recognized.reduce((a, i) => a + (parseFloat(i.credit_applied) || 0), 0);
+    const pctCollected = _owedBilled > 0 ? Math.round(collected / _owedBilled * 100) : 0;
 
     set('inv-billed',     money(totalBilled));
     set('inv-paid',       money(collected));

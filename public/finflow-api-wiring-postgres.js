@@ -167,6 +167,7 @@
           // so on a partially-paid invoice it would then try to pay the FULL amount again and be
           // rejected 400 by the server's overpayment guard. Also feeds the canonical AR figure.
           amount_paid: r.amount_paid,
+          credit_applied: r.credit_applied || 0,   // FA-M6b
           due:      r.due_date
             ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
             : 'No due date',
@@ -315,12 +316,14 @@
       return _d != null && _d <= _recToday;   // exclude scheduled (future-dated) invoices
     });
     const totalBilled  = _recognized.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const collected    = _recognized.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0), 0);
+    const collected    = _recognized.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0) - (parseFloat(i.credit_applied) || 0), 0);   // FA-M6b: an applied credit is not money collected
     const outstanding  = _arP.total;
     const overdue      = _arP.overdueTotal;
     const overdueCount = _arP.overdueCount;
     const outCount     = _arP.count;
-    const pctCollected = totalBilled > 0 ? Math.round(collected / totalBilled * 100) : 0;
+    // FA-M6b: the share collected of what was really owed — a credited part was never going to be paid
+    const _owedBilled  = totalBilled - _recognized.reduce((a, i) => a + (parseFloat(i.credit_applied) || 0), 0);
+    const pctCollected = _owedBilled > 0 ? Math.round(collected / _owedBilled * 100) : 0;
 
     set('inv-billed',     money(totalBilled));
     set('inv-paid',       money(collected));

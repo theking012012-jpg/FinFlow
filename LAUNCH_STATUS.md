@@ -152,6 +152,9 @@ redeploy":
   backfill on production (a data step, Rule 8): `?dry=1` first, then for real, per business. Until an entity's ledger
   reconciles, its reports keep serving `computeBooks` (the gated fallback) — nothing is wrong meanwhile, the ledger is
   just not the source yet. (G10, corrected 2026-10-24: this line used to call the code itself owner-gated.)
+  The balance-sheet gate also requires Payroll Liabilities to equal what the payroll runs give and every posted entry
+  to trace to a live source document (G9, 2026-10-24, `verify-g9-gate-cash-payroll` 20/0) — a balanced entry nothing
+  backs can no longer be served as the books.
 - **Investments on the ledger** — an owner-gated accounting decision (`GL_DESIGN.md`).
 - **Express 4 → 5** (last `qs` moderate advisory), **mobile performance** tuning, **native app store** submission
   (`mobile/` scaffold exists), **Google Sheets OAuth push-sync**.

@@ -3484,14 +3484,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <!-- CREDIT NOTES -->
       <div class="page" id="page-credit-notes">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$0</div><div class="mc-change neutral">Issued YTD</div></div>
+          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$0</div><div class="mc-change neutral">Issued, not void</div></div>
           <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Not yet applied</div></div>
           <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$0</div><div class="mc-change neutral">Against invoices</div></div>
-          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">0</div><div class="mc-change neutral">Credits issued</div></div>
+          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">$0</div><div class="mc-change neutral">Credits issued</div></div>
         </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Credit Notes</h2><button class="btn btn-primary btn-sm" onclick="openNewCreditNoteModal()">+ New Credit Note</button></div>
-          <div style="display:grid;grid-template-columns:1fr 90px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Customer</span><span>Credit #</span><span>Amount</span><span>Date</span><span>Status</span></div>
+          <div style="display:grid;grid-template-columns:1fr 90px 90px 80px 70px 170px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Customer</span><span>Credit #</span><span>Amount</span><span>Date</span><span>Status</span><span></span></div>
           <div id="credit-notes-list"></div>
         </div>
       </div>
@@ -3559,13 +3559,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="page" id="page-vendor-credits">
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$0</div><div class="mc-change neutral">From vendors</div></div>
-          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--green)">$0</div><div class="mc-change neutral">Available to apply</div></div>
+          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Not yet applied</div></div>
           <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$0</div><div class="mc-change neutral">Against bills</div></div>
-          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">0</div><div class="mc-change neutral">Credits received</div></div>
+          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">$0</div><div class="mc-change neutral">Credits received</div></div>
         </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Vendor Credits</h2><button class="btn btn-primary btn-sm" onclick="openNewVendorCreditModal()">+ New Credit</button></div>
-          <div style="display:grid;grid-template-columns:1fr 90px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Vendor</span><span>Credit #</span><span>Amount</span><span>Date</span><span>Status</span></div>
+          <div style="display:grid;grid-template-columns:1fr 90px 90px 80px 70px 170px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Vendor</span><span>Credit #</span><span>Amount</span><span>Date</span><span>Status</span><span></span></div>
           <div id="vendor-credits-list"></div>
         </div>
       </div>

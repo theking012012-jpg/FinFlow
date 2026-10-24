@@ -875,8 +875,8 @@ window.exportAllCSV = function(format){
   const _ymd = v => (window.FinFlowDates && window.FinFlowDates._toYmd(v)) || (v || '');
   if (activePage.includes('invoice')) {
     const inv = window._realInvoices || window.userInvoices || [];
-    rows = [['Client','Amount','Paid','Status','Issue Date','Due Date','Notes'],
-      ...inv.map(i => [i.client||'', Number(i.amount||0).toFixed(2), Number(i.amount_paid||0).toFixed(2), i.status||'', _ymd(i.issue_date||i.created_at), _ymd(i.due_date||i.due), i.notes||''])];
+    rows = [['Client','Amount','Paid','Credits applied','Status','Issue Date','Due Date','Notes'],   // FA-M6b: cash paid and credit applied apart
+      ...inv.map(i => [i.client||'', Number(i.amount||0).toFixed(2), (Number(i.amount_paid||0) - Number(i.credit_applied||0)).toFixed(2), Number(i.credit_applied||0).toFixed(2), i.status||'', _ymd(i.issue_date||i.created_at), _ymd(i.due_date||i.due), i.notes||''])];
     filename = 'invoices.csv';
   } else if (activePage.includes('expense')) {
     const exp = window._realExpenses || window.bizExpenses || bizExpenses || [];
@@ -919,9 +919,9 @@ window.exportAllCSV = function(format){
     filename = 'quotes.csv';
   } else if (activePage.includes('bill')) {
     const bills = window.bills || [];
-    rows = [['Vendor','Bill #','Amount','Paid','Balance','Status','Issue Date','Due Date'],
-      ...bills.map(b => { const a = Number(b.amount||0), pd = Number(b.amount_paid||0);
-        return [b.vendor||b.vendor_name||'', b.num||'', a.toFixed(2), pd.toFixed(2), Math.max(0, a - pd).toFixed(2), b.status||'', _ymd(b.issue_date||b.created_at), _ymd(b.due_date)]; })];
+    rows = [['Vendor','Bill #','Amount','Paid','Credits applied','Balance','Status','Issue Date','Due Date'],
+      ...bills.map(b => { const a = Number(b.amount||0), pd = Number(b.amount_paid||0), cr = Number(b.credit_applied||0);
+        return [b.vendor||b.vendor_name||'', b.num||'', a.toFixed(2), (pd - cr).toFixed(2), cr.toFixed(2), Math.max(0, a - pd).toFixed(2), b.status||'', _ymd(b.issue_date||b.created_at), _ymd(b.due_date)]; })];
     filename = 'bills.csv';
   } else {
     // Generic — scrape the visible table
@@ -1576,6 +1576,7 @@ async function loadEntityData(idx){
     userInvoices = invoices.map(r=>({
       _dbId:r.id, client:r.client, amount:r.amount,
       amount_paid: r.amount_paid,   // F48 follow-up: carry so markInvoicePaid settles only the REMAINING balance (partials don't overpay→400)
+      credit_applied: r.credit_applied || 0,   // FA-M6b: the part of amount_paid that is an applied credit, not cash
       due: r.due_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date) : 'No due date',   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
       due_date:r.due_date, status:r.status, notes:r.notes||'', number:r.number||null,   // B1b
       color: r.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)',
@@ -2252,7 +2253,7 @@ function arOutstanding(invoices){
     if(cst!=='open'&&cst!=='applied') return;
     const _cy=window.FinFlowDates._toYmd(cn.date||cn.created_at);
     if(_cy==null||_cy>_arToday) return;
-    const c=parseFloat(cn.amount)||0;
+    const c=Math.max(0,(parseFloat(cn.amount)||0)-(parseFloat(cn.applied)||0));   // FA-M6b: the applied part is already off its invoice
     _cnTotal+=c;
     const k=_ck(cn.customer||cn.client); _cnBy[k]=(_cnBy[k]||0)+c;
   });
@@ -4927,8 +4928,9 @@ function updateHealthScore(savingsRate=0,income=0,surplus=0){
   // (a 9,999 draft included), ignoring part-payments (the F56 class).
   const _today=_entityToday(), _ISSUED=['pending','overdue','partial','paid'];
   const _recog=_inv.filter(i=>_ISSUED.includes(String(i.status||'').toLowerCase()) && (window.FinFlowDates._toYmd(i.issue_date||i.created_at||i.date)||'') <= _today);
-  const _invoiced=_recog.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const _paid=_recog.reduce((s,i)=>s+Math.min(parseFloat(i.amount)||0, parseFloat(i.amount_paid)||0),0);
+  // FA-M6b: an applied credit note is not money collected — it lowers what was owed instead
+  const _invoiced=_recog.reduce((s,i)=>s+(parseFloat(i.amount)||0)-(parseFloat(i.credit_applied)||0),0);
+  const _paid=_recog.reduce((s,i)=>s+Math.min((parseFloat(i.amount)||0)-(parseFloat(i.credit_applied)||0), (parseFloat(i.amount_paid)||0)-(parseFloat(i.credit_applied)||0)),0);
   const recScore = _invoiced>0 ? _clamp(_paid/_invoiced*100) : null;
   // Growth — real period-over-period revenue (needs a prior period to compare). M11: the same elapsed-month
   // comparison as the AI insight (_fyGrowth), never the last fiscal month, which is in the future all year.

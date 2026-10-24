@@ -972,7 +972,7 @@
             const cst = (cn.status || '').toLowerCase(); if (cst !== 'open' && cst !== 'applied') return;
             const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(cn.date || cn.created_at) : null;
             if (today != null && (dy == null || dy > today)) return;
-            const amt = parseFloat(cn.amount) || 0; if (amt <= 0) return;
+            const amt = (parseFloat(cn.amount) || 0) - (parseFloat(cn.applied) || 0); if (amt <= 0.005) return;   // FA-M6b: what is left of it
             const c = cn.customer || '—';
             if (byCust[c] != null) byCust[c] -= amt; else byCust['Unattributed credits'] = (byCust['Unattributed credits'] || 0) - amt;
           });
@@ -1022,7 +1022,7 @@
           const st = (vc.status || '').toLowerCase(); if (st !== 'open' && st !== 'applied') return;
           const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(vc.date || vc.created_at) : null;
           if (today != null && (dy == null || dy > today)) return;
-          const amt = parseFloat(vc.amount) || 0; if (amt <= 0) return;
+          const amt = (parseFloat(vc.amount) || 0) - (parseFloat(vc.applied) || 0); if (amt <= 0.005) return;   // FA-M6b: what is left of it
           const v = vc.vendor || '—';
           if (byVendor[v] != null) byVendor[v] -= amt; else byVendor['Unattributed credits'] = (byVendor['Unattributed credits'] || 0) - amt;
         });

@@ -201,6 +201,7 @@ mappers in `loadEntityData` / `ffLoadData`):
 | `journals` | journal-entry lines — JSONB `data` |
 | `chart_of_accounts` | `code` (sorted), account fields |
 | `sales_receipts` / `payments_received` / `payments_made` | `amount`, `date` |
+| `credit_applications` (typed) | FA-M6b: `kind` (`credit_note` → invoice · `vendor_credit` → bill), `credit_id`, `doc_id`, `amount`, `applied_date`, `idempotency_key` (unique per user). Read by `invoicePaidSoFar` / `billPaidSoFar` / `recalcInvoiceStatus` / `recalcBillStatus` (settled = payments + credit) and `recalcCreditApplied` (the credit's `applied` + Open/Applied). Routes `GET/POST /api/credit-applications`, `DELETE /api/credit-applications/:id`. No ledger entry. |
 | `goals` | `name`, `current_val`, `target_val`, `monthly_contrib`, `color` |
 | `personal_transactions` | `source` (e.g. `'banking'`), `date`, amount, category |
 

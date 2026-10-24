@@ -318,6 +318,13 @@ produces a different number rather than the same 6,000.
 **AR Outstanding — GROSS invoice table (all-time): 8,500** · **NET receivable (balance-sheet / dashboard, after open|applied credit notes — F58 CLOSE): 7,300** *(8,500 − CN-1 1,200)*
 **AP Outstanding — GROSS bills table (all-time): 1,100** *(B0 300 + B1 800; B2 paid)* · **NET payable (balance-sheet, after open|applied vendor credits — F58 CLOSE): 800** *(1,100 − VC-1 300)*
 
+> **FA-M6b (2026-10-24) — a credit applied to a document.** The contra is each credit's UNAPPLIED part, and an applied
+> part settles its invoice / bill instead (`amount_paid` = payments + credit, `credit_applied` = the credit part). So the
+> NET figures above do not move when a credit is applied — only which line carries it. The seed applies no credit, so
+> every value here is unchanged. Proven on its own seed by `verify-fam6b-apply-credit` (27/0: AR 1,400 before and after
+> applying 250 of a 300 credit; Acme 900; overdue 1,000; AP 400) and `verify-fam6b-apply-credit-ui` (8/0: Collected $0,
+> not the $250 credit).
+
 ## P&L (accrual) — decisions 1 and 2
 `opex = manual expenses + bills issued + payroll` — payments made excluded (settlement).
 

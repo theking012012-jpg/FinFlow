@@ -31,8 +31,14 @@ or payouts fail (they retry hourly and show in Admin → Earnings → Referral p
 real transfer in Stripe test mode first, and cross-border accounts (FA-L3h). An outside cron calling
 `/run-monthly-payouts` is no longer needed. (9) **ledger backfill (G10)** — per business, `POST /api/gl/backfill?dry=1`
 then without `dry`, so the ledger becomes the source of the reports (until then they use computeBooks). (10) migrations
-`2026-10-24-*.sql` if `SKIP_INIT_DDL` is set (referral payouts, auto-email log). (11) automatic customer emails (FA-B1)
-are OFF per business until you turn them on (Templates → Automatic emails); they need Resend set up.
+`2026-10-24-*.sql` if `SKIP_INIT_DDL` is set (referral payouts, auto-email log, credit applications). (11) automatic customer emails (FA-B1)
+are OFF per business until you turn them on (Templates → Automatic emails); they need Resend set up. (12) **balance-sheet
+check (G9)** — after the backfill, a business whose ledger holds an entry no document backs (or whose payroll liabilities
+disagree with its payroll runs) shows the balance sheet from computeBooks ("cash not tracked") instead of the ledger; the
+server log names the entry (`[GL 5b] … untraced(…)` / `payrollLiabilities(…)`). That is the check working — send the
+line over before changing any row (Rule 8). (13) **applying credits (FA-M6b)** — Credit notes / Vendor credits →
+Apply… settles part of one of that customer's invoices (that vendor's bills). Credits issued before this keep reducing
+the customer's total as before; nothing old is changed.
 
 ## ⚡ UPDATE 2026-10-21
 

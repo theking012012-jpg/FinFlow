@@ -49,7 +49,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
     A('a CSV blob was produced', typeof captured === 'string' && captured.length > 0, `captured=${JSON.stringify((captured || '').slice(0, 60))}`);
     const csv = captured || '';
-    A('CSV has the invoice header row', /"Client","Amount","Paid","Status","Issue Date","Due Date","Notes"/.test(csv), `head=${csv.split('\r\n')[0]}`);
+    A('CSV has the invoice header row (FA-M6b: cash Paid and Credits applied apart)', /"Client","Amount","Paid","Credits applied","Status","Issue Date","Due Date","Notes"/.test(csv), `head=${csv.split('\r\n')[0]}`);
     A('due dates export as ISO calendar dates (with the year)', /"2026-07-01"/.test(csv) && /"2026-06-10"/.test(csv), `csv=${csv.slice(0, 200)}`);
     A('CSV includes the seeded rows (amounts formatted 2dp)', /"1234\.50"/.test(csv) && /"900\.00"/.test(csv), `csv=${csv.slice(0,160)}`);
     A('a field containing a COMMA is quoted (not split into columns)', /"Acme, Inc\."/.test(csv), 'comma field must stay one column');

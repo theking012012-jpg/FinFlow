@@ -1812,6 +1812,9 @@ const LOCK_SPECS = {
                          entityOf: async (req) => { const inv = req.body && req.body.invoice_id ? await ownedBy('invoices', req.body.invoice_id, scopeId(req)) : null; return inv ? inv.entity_id : null; } },
   payroll_runs:        { table: 'payroll_runs',        typed: true, dates: d => [FinFlowDates.payrollPeriodYmd(d.period, d.run_date), _lkYmd(d.run_date)] },
   inventory_movements: { table: 'inventory_movements', typed: true, dates: d => [_lkYmd(d.movement_date) || _lkYmd(d.moved_at), _lkYmd(d.date)] },   // M32: a movement's business day
+  // FA-M6b: applying / unapplying a credit is dated (applied_date) and belongs to the credit's business
+  credit_applications: { table: 'credit_applications', typed: true, dates: d => [_lkYmd(d.applied_date || d.date)],
+                         entityOf: async (req) => { const b = req.body || {}; const cr = b.credit_id ? await ownedBy(b.kind === 'vendor_credit' ? 'vendor_credits' : 'credit_notes', b.credit_id, scopeId(req)) : null; return cr ? cr.entity_id : null; } },
 };
 function lockGuard(spec) {
   return wrap(async (req, res, next) => {
@@ -2393,8 +2396,9 @@ async function docPaidSoFar(kind, userId, row) {
     ? `SELECT count(*)::int AS n, COALESCE(sum(amount),0)::float AS s FROM invoice_payments WHERE user_id = $1 AND invoice_id = $2`
     : `SELECT count(*)::int AS n, COALESCE(sum((data->>'amount')::numeric),0)::float AS s FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2::text`;
   const { rows: [r] } = await pool.query(q, [userId, Number(row.id)]);
-  const has = !!(r && r.n > 0);
-  return { hasPayments: has, paid: Math.round((has ? r.s : (parseFloat(row.amount_paid) || 0)) * 100) / 100 };
+  const credit = await docCreditApplied(pool, kind, row.id, userId);   // FA-M6b: an applied credit settles it too
+  const has = !!(r && r.n > 0) || credit > 0;
+  return { hasPayments: has, paid: Math.round((has ? (r.s || 0) + credit : (parseFloat(row.amount_paid) || 0)) * 100) / 100 };
 }
 async function docEditRefusal(kind, row, patch, paid) {
   if (!(paid > 0)) return null;
@@ -2425,8 +2429,10 @@ async function settlementsBlockingDelete(kind, userId, docId) {
     ? `SELECT count(*)::int AS n, COALESCE(sum(amount),0)::numeric AS total FROM invoice_payments WHERE user_id = $1 AND invoice_id = $2`
     : `SELECT count(*)::int AS n, COALESCE(sum((data->>'amount')::numeric),0)::numeric AS total FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2::text`;
   const { rows: [r] } = await pool.query(q, [userId, Number(docId)]);
-  if (!r || !r.n) return null;
   const what = kind === 'invoice' ? 'invoice' : 'bill';
+  // FA-M6b: a credit applied to it is money against it too — unapply it first (the credit is not lost)
+  if (await docCreditApplied(pool, kind, docId, userId) > 0) return { error: `This ${what} has a ${kind === 'invoice' ? 'credit note' : 'vendor credit'} applied to it. Unapply the credit first (it goes back to the credit, nothing is lost), then delete the ${what}.`, code: 'CREDIT_APPLIED' };
+  if (!r || !r.n) return null;
   return { error: `This ${what} has ${r.n} payment${r.n === 1 ? '' : 's'} recorded against it. Delete the payment${r.n === 1 ? '' : 's'} first, then the ${what}.`, payments: r.n, paid: Number(r.total) };
 }
 
@@ -3531,7 +3537,7 @@ app.put('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
 // and exporting them would be a credential-leak surface.
 const EXPORT_TABLES = [
   'entities','invoices','invoice_payments','expenses','customers','vendors','bills',
-  'payments_received','payments_made','credit_notes','vendor_credits','sales_receipts',
+  'payments_received','payments_made','credit_notes','vendor_credits','credit_applications','sales_receipts',
   'quotes','items','inventory','inventory_movements','projects','timesheet','payroll',
   'payroll_runs','payroll_run_lines','journals','chart_of_accounts','budget_targets',
   'recurring_invoices','recurring_bills','autocat_rules','bank_reconciliation','bank_reconciliations',
@@ -4818,7 +4824,7 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
   };
   const _cr = (rows) => rows.filter(r => ['open', 'applied'].includes(String(r.status || '').toLowerCase())
       && String(r.date || r.created_at || '').slice(0, 10) <= today)
-    .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+    .reduce((s, r) => s + Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.applied) || 0)), 0);   // FA-M6b: the applied part is already off its document
   _netAgainst(inflows, 'ar', _cr(creditNotes));
   _netAgainst(outflows, 'ap', _cr(vendorCredits));
 
@@ -5685,8 +5691,11 @@ app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), l
     `SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1`,
     [Number(req.params.id), scopeId(req)]
   );
+  const _cnRefuse = _cnchk ? await creditEditRefusal('credit_note', rowToObj(_cnchk), patch, scopeId(req)) : null;   // FA-M6b
+  if (_cnRefuse) return res.status(409).json(_cnRefuse);
   if (_cnchk) {
     await db.updateById('credit_notes', _cnchk.id, patch);
+    await recalcCreditApplied(pool, 'credit_note', _cnchk.id, scopeId(req));   // FA-M6b: Open / Applied follows what is applied
     const _o = rowToObj(_cnchk);
     await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'credit_notes', recordId: _cnchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
@@ -5695,9 +5704,84 @@ app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), l
 }));
 app.delete('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), lockGuard(LOCK_SPECS.credit_notes), wrap(async (req, res) => {
   const { rows: [_cnold] } = await pool.query('SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
+  if (_cnold && await creditAppliedSoFar(pool, 'credit_note', _cnold.id, scopeId(req)) > 0) return res.status(409).json({ error: 'This credit note is applied to an invoice. Unapply it first, then delete it.', code: 'CREDIT_APPLIED' });   // FA-M6b
   await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'credit_note', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] credit_note reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_cnold) await recordAudit(pool, { userId: scopeId(req), entityId: _cnold.entity_id || null, table: 'credit_notes', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_cnold), req });  // F90 Phase B
+  res.json({ ok: true });
+}));
+
+// ── FA-M6b: APPLY A CREDIT TO A DOCUMENT ─────────────────────────────────────
+// A credit note settles part of an invoice of the SAME customer; a vendor credit part of a bill of the SAME vendor — for
+// up to what both have left. Checked and written under the document's payment lock plus the credit's own lock, so a
+// payment and an application (or two applications) can never both pass against the same balance; a replayed request
+// (same idempotency key) returns the first application (Rule 9). Nothing posts to the ledger (see docCreditApplied).
+const _CREDIT_LOCK = { credit_note: 57003, vendor_credit: 57004 };   // beside _PAY_LOCK invoice 57001 / bill 57002
+const _CREDIT_SIDES = {
+  credit_note:   { credit: 'credit_notes',   doc: 'invoices', docKind: 'invoice', party: 'customer', docParty: 'client', docWord: 'invoice', creditWord: 'credit note' },
+  vendor_credit: { credit: 'vendor_credits', doc: 'bills',    docKind: 'bill',    party: 'vendor',   docParty: 'vendor', docWord: 'bill',    creditWord: 'vendor credit' },
+};
+app.get('/api/credit-applications', requireAuth, wrap(async (req, res) => {
+  const q = req.query || {};
+  const kind = _CREDIT_SIDES[q.kind] ? q.kind : null;
+  const { rows } = await pool.query(
+    `SELECT id, kind, credit_id, doc_id, amount::float AS amount, applied_date::text AS applied_date, created_at FROM credit_applications
+      WHERE user_id = $1 AND ($2::text IS NULL OR kind = $2) AND ($3::int IS NULL OR credit_id = $3) AND ($4::int IS NULL OR doc_id = $4)
+      ORDER BY id`, [scopeId(req), kind, q.credit_id ? Number(q.credit_id) : null, q.doc_id ? Number(q.doc_id) : null]);
+  res.json(rows);
+}));
+app.post('/api/credit-applications', requireAuth, lockGuard(LOCK_SPECS.credit_applications), wrap(async (req, res) => {
+  const b = req.body || {}, uid = scopeId(req);
+  const side = _CREDIT_SIDES[b.kind];
+  if (!side) return res.status(400).json({ error: 'kind must be credit_note or vendor_credit.' });
+  const amt = Math.round((parseFloat(b.amount) || 0) * 100) / 100;
+  if (!(amt > 0)) return res.status(400).json({ error: 'Enter an amount above zero.' });
+  const idem = typeof b.idempotency_key === 'string' && b.idempotency_key ? b.idempotency_key.slice(0, 64) : null;
+  const existing = async () => idem ? (await pool.query(`SELECT * FROM credit_applications WHERE user_id = $1 AND idempotency_key = $2`, [uid, idem])).rows[0] : null;
+  const prior = await existing(); if (prior) return res.json(prior);   // replay: the first application
+  const cr = await ownedBy(side.credit, b.credit_id, uid), doc = await ownedBy(side.doc, b.doc_id, uid);
+  if (!cr) return res.status(404).json({ error: 'Credit not found.' });
+  if (!doc) return res.status(404).json({ error: side.docWord[0].toUpperCase() + side.docWord.slice(1) + ' not found.' });
+  if (String(cr.status) === 'Void') return res.status(409).json({ error: 'This ' + side.creditWord + ' is void. Reopen it first.', code: 'CREDIT_VOID' });
+  const dst = String(doc.status || '').toLowerCase();
+  if (!(side.docKind === 'invoice' ? ['pending', 'overdue', 'partial', 'paid'].includes(dst) : RECOGNIZED_BILL.has(dst))) return res.status(409).json({ error: 'A credit can only be applied to an issued ' + side.docWord + ' (not a draft or void one).', code: 'DOC_NOT_ISSUED' });
+  if (cr.entity_id != null && doc.entity_id != null && Number(cr.entity_id) !== Number(doc.entity_id)) return res.status(400).json({ error: 'That ' + side.docWord + ' belongs to a different business.', code: 'ENTITY_MISMATCH' });
+  if (_contactKey(cr[side.party] || cr.client) !== _contactKey(doc[side.docParty])) return res.status(400).json({ error: 'A ' + side.creditWord + ' for ' + (cr[side.party] || '—') + ' can only be applied to that ' + side.party + "'s " + side.docWord + 's.', code: 'PARTY_MISMATCH' });
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? String(b.date) : await entityTodayYmd(doc.entity_id != null ? doc.entity_id : null);
+  let row;
+  try {
+    row = await withPaymentLock(side.docKind, doc.id, async (conn) => {
+      await conn.query('SELECT pg_advisory_xact_lock($1, $2)', [_CREDIT_LOCK[b.kind], Number(cr.id)]);
+      const credLeft = Math.round(((parseFloat(cr.amount) || 0) - await creditAppliedSoFar(conn, b.kind, cr.id, uid)) * 100) / 100;
+      const settled = side.docKind === 'invoice' ? await invoicePaidSoFar(conn, doc.id, uid) : await billPaidSoFar(conn, doc.id, uid);
+      const docLeft = Math.round(((parseFloat(doc.amount) || 0) - settled) * 100) / 100;
+      const refuse = (error, code) => Object.assign(new Error(error), { http: 409, code });
+      if (amt > credLeft + 0.005) throw refuse('This ' + side.creditWord + ' has ' + Math.max(0, credLeft).toFixed(2) + ' left to apply.', 'EXCEEDS_CREDIT');
+      if (amt > docLeft + 0.005) throw refuse('This ' + side.docWord + ' has ' + Math.max(0, docLeft).toFixed(2) + ' left to pay.', 'EXCEEDS_BALANCE');
+      return (await conn.query(
+        `INSERT INTO credit_applications (user_id, entity_id, kind, credit_id, doc_id, amount, applied_date, idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (user_id, idempotency_key) DO NOTHING RETURNING *`,
+        [uid, doc.entity_id != null ? doc.entity_id : (cr.entity_id != null ? cr.entity_id : null), b.kind, cr.id, doc.id, amt, date, idem])).rows[0];
+    });
+  } catch (e) { if (e.http) return res.status(e.http).json({ error: e.message, code: e.code }); throw e; }
+  if (!row) { const again = await existing(); return again ? res.json(again) : res.status(409).json({ error: 'This credit changed — reload and try again.' }); }
+  if (side.docKind === 'invoice') await recalcInvoiceStatus(pool, doc.id, uid); else await recalcBillStatus(pool, doc.id, uid);
+  await recalcCreditApplied(pool, b.kind, cr.id, uid);
+  await recordAudit(pool, { userId: uid, entityId: row.entity_id || null, table: 'credit_applications', recordId: row.id, action: 'CREATE', newData: row, req });
+  res.status(201).json(row);
+}));
+app.delete('/api/credit-applications/:id', requireAuth, lockGuard(LOCK_SPECS.credit_applications), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const { rows: [a] } = await pool.query(`SELECT * FROM credit_applications WHERE id = $1 AND user_id = $2`, [Number(req.params.id), uid]);
+  if (!a) return res.status(404).json({ error: 'Not found.' });
+  const side = _CREDIT_SIDES[a.kind];
+  await withPaymentLock(side.docKind, a.doc_id, async (conn) => {
+    await conn.query('SELECT pg_advisory_xact_lock($1, $2)', [_CREDIT_LOCK[a.kind], Number(a.credit_id)]);
+    await conn.query(`DELETE FROM credit_applications WHERE id = $1 AND user_id = $2`, [a.id, uid]);
+  });
+  if (side.docKind === 'invoice') await recalcInvoiceStatus(pool, a.doc_id, uid); else await recalcBillStatus(pool, a.doc_id, uid);
+  await recalcCreditApplied(pool, a.kind, a.credit_id, uid);
+  await recordAudit(pool, { userId: uid, entityId: a.entity_id || null, table: 'credit_applications', recordId: a.id, action: 'DELETE', oldData: a, req });
   res.json({ ok: true });
 }));
 
@@ -5922,8 +6006,11 @@ app.put('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'
     `SELECT * FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1`,
     [Number(req.params.id), scopeId(req)]
   );
+  const _vcRefuse = _vcchk ? await creditEditRefusal('vendor_credit', rowToObj(_vcchk), patch, scopeId(req)) : null;   // FA-M6b
+  if (_vcRefuse) return res.status(409).json(_vcRefuse);
   if (_vcchk) {
     await db.updateById('vendor_credits', _vcchk.id, patch);
+    await recalcCreditApplied(pool, 'vendor_credit', _vcchk.id, scopeId(req));   // FA-M6b
     const _o = rowToObj(_vcchk);
     await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'vendor_credits', recordId: _vcchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
@@ -5932,6 +6019,7 @@ app.put('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'
 }));
 app.delete('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'), lockGuard(LOCK_SPECS.vendor_credits), wrap(async (req, res) => {
   const { rows: [_vcold] } = await pool.query('SELECT * FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
+  if (_vcold && await creditAppliedSoFar(pool, 'vendor_credit', _vcold.id, scopeId(req)) > 0) return res.status(409).json({ error: 'This vendor credit is applied to a bill. Unapply it first, then delete it.', code: 'CREDIT_APPLIED' });   // FA-M6b
   await pool.query('DELETE FROM vendor_credits WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'vendor_credit', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] vendor_credit reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_vcold) await recordAudit(pool, { userId: scopeId(req), entityId: _vcold.entity_id || null, table: 'vendor_credits', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vcold), req });  // F90 Phase B
@@ -10794,7 +10882,8 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
     `SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`,
     [invoiceId, userId]
   );
-  const paid = parseFloat(rows[0].paid) || 0;
+  const credit = await docCreditApplied(pool, 'invoice', invoiceId, userId);   // FA-M6b: settled = payments + credit
+  const paid = Math.round(((parseFloat(rows[0].paid) || 0) + credit) * 100) / 100;
   const total = parseFloat(invRow.amount) || 0;
   // F48 #1 (delete-revert): when paid drops to 0 (last payment removed), REVERT a payment-derived
   // status ('partial'/'paid') to the natural unpaid state — NOT the stale current status, which
@@ -10802,7 +10891,7 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
   // preserved. (Live-reproduced: paid → delete all → stuck 'partial', AR incoherent.)
   const status = paidDerivedStatus(paid, total, invRow.status, 'pending');
   const _oldStatus = invRow.status, _oldPaid = parseFloat(invRow.amount_paid) || 0;
-  await db.updateById('invoices', invoiceId, { status, amount_paid: paid });
+  await db.updateById('invoices', invoiceId, { status, amount_paid: paid, credit_applied: credit });
   // F92: recalcInvoiceStatus is a SIDE-EFFECT money writer — it changes invoices.status/amount_paid
   // (both load-bearing: status drives revenue recognition, amount_paid drives AR) as a consequence of
   // a payment action on a DIFFERENT record, so a route-based audit never sees it. Log the movement
@@ -10834,7 +10923,7 @@ async function settleBillRemaining(pool, { userId, billId, date, method, notes, 
   try {
     row = await withPaymentLock('bill', billId, async (conn) => {
       const { rows: [p] } = await conn.query(`SELECT COALESCE(SUM((data->>'amount')::numeric),0) AS paid FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`, [userId, String(billId)]);
-      remaining = Math.round(((parseFloat(bill.amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+      remaining = Math.round(((parseFloat(bill.amount) || 0) - (parseFloat(p.paid) || 0) - await docCreditApplied(conn, 'bill', billId, userId)) * 100) / 100;   // FA-M6b
       if (upTo != null) remaining = Math.min(remaining, Math.round(Number(upTo) * 100) / 100);   // M5: settle a known part
       if (!(remaining > 0.004)) return null;
       return (await db.insert('payments_made', {
@@ -10883,7 +10972,49 @@ async function withPaymentLock(kind, docId, fn) {
 }
 async function invoicePaidSoFar(q, invoiceId, userId) {
   const { rows: [p] } = await q.query(`SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`, [invoiceId, userId]);
-  return parseFloat(p.paid) || 0;
+  return (parseFloat(p.paid) || 0) + await docCreditApplied(q, 'invoice', invoiceId, userId);   // FA-M6b: settled = payments + applied credit
+}
+
+// FA-M6b: a credit applied to a document (credit note → invoice, vendor credit → bill) is part of what SETTLES it, never
+// cash. Every "settled so far" read (balance, overpay guard, settle-remaining, status) adds it; amount_paid stores the
+// settled total and credit_applied the credit part, so the cash-only readers (Collected, the paid-gap backfill) take it
+// off. Applying moves nothing in the ledger (AR to AR / AP to AP): the credit already reduced AR / AP when issued, and
+// the AR / AP contra now counts only the part of each credit still unapplied — so total AR / AP never move.
+const _CREDIT_KIND = { invoice: 'credit_note', bill: 'vendor_credit' };
+async function docCreditApplied(q, docKind, docId, userId) {
+  const { rows: [r] } = await q.query(`SELECT COALESCE(SUM(amount),0)::float AS s FROM credit_applications WHERE user_id = $1 AND kind = $2 AND doc_id = $3`, [userId, _CREDIT_KIND[docKind], Number(docId)]);
+  return Math.round((r.s || 0) * 100) / 100;
+}
+async function creditAppliedSoFar(q, kind, creditId, userId) {
+  const { rows: [r] } = await q.query(`SELECT COALESCE(SUM(amount),0)::float AS s FROM credit_applications WHERE user_id = $1 AND kind = $2 AND credit_id = $3`, [userId, kind, Number(creditId)]);
+  return Math.round((r.s || 0) * 100) / 100;
+}
+// The credit's own record carries what is applied; its status follows: fully used → Applied, else Open (Void stays Void).
+async function recalcCreditApplied(q, kind, creditId, userId) {
+  const table = kind === 'vendor_credit' ? 'vendor_credits' : 'credit_notes';
+  const { rows: [r] } = await q.query(`SELECT * FROM ${table} WHERE id = $1 AND user_id = $2 LIMIT 1`, [Number(creditId), userId]);
+  const cr = r ? rowToObj(r) : null; if (!cr) return;
+  const applied = await creditAppliedSoFar(q, kind, creditId, userId);
+  const amt = Math.round((parseFloat(cr.amount) || 0) * 100) / 100;
+  const status = String(cr.status || '') === 'Void' ? 'Void' : (applied > 0 && applied >= amt - 0.005 ? 'Applied' : 'Open');
+  if (Math.abs((parseFloat(cr.applied) || 0) - applied) > 0.004 || status !== cr.status) await db.updateById(table, Number(creditId), { applied, status });
+}
+// An edit may not take a credit below what is applied, move it to another customer / vendor, or void it while applied.
+async function creditEditRefusal(kind, row, patch, userId) {
+  const applied = await creditAppliedSoFar(pool, kind, row.id, userId);
+  if (!(applied > 0)) return null;
+  const doc = kind === 'vendor_credit' ? 'bill' : 'invoice', party = kind === 'vendor_credit' ? 'vendor' : 'customer';
+  const left = applied.toFixed(2);
+  if (patch.status === 'Void') return { code: 'CREDIT_APPLIED', error: `${left} of this credit is applied to ${doc}s. Unapply it first, then void the credit.` };
+  if (patch.amount != null && patch.amount < applied - 0.005) return { code: 'CREDIT_BELOW_APPLIED', error: `${left} of this credit is applied, so its amount can't go below that. Unapply part of it first.` };
+  if (patch[party] != null && _contactKey(patch[party]) !== _contactKey(row[party])) return { code: 'CREDIT_APPLIED', error: `This credit is applied to the ${party}'s ${doc}s, so it can't move to another ${party}. Unapply it first.` };
+  return null;
+}
+async function billPaidSoFar(q, billId, userId, excludePaymentId = null) {
+  const { rows: [p] } = await q.query(
+    `SELECT COALESCE(SUM((data->>'amount')::numeric), 0)::float AS paid FROM payments_made
+      WHERE user_id = $1 AND data->>'bill_id' = $2 AND ($3::int IS NULL OR id <> $3)`, [userId, String(billId), excludePaymentId]);
+  return (p.paid || 0) + await docCreditApplied(q, 'bill', billId, userId);   // FA-M6b
 }
 
 // N57 class: the ONE check every writer of a bill-LINKED payment passes (POST/PUT /api/payments-made, bank
@@ -10896,11 +11027,7 @@ async function checkBillPayment(userId, billId, amount, paymentEntityId, exclude
   if (br.entity_id != null && paymentEntityId != null && Number(br.entity_id) !== Number(paymentEntityId)) {
     return { status: 400, error: 'That bill belongs to a different business.', code: 'BILL_ENTITY_MISMATCH' };
   }
-  const { rows: [p] } = await q.query(
-    `SELECT COALESCE(SUM((data->>'amount')::numeric), 0) AS paid FROM payments_made
-      WHERE user_id = $1 AND data->>'bill_id' = $2 AND ($3::int IS NULL OR id <> $3)`,
-    [userId, String(billId), excludePaymentId]);
-  const remaining = Math.round(((parseFloat(rowToObj(br).amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+  const remaining = Math.round(((parseFloat(rowToObj(br).amount) || 0) - await billPaidSoFar(q, billId, userId, excludePaymentId)) * 100) / 100;   // FA-M6b: credit applied counts
   if ((parseFloat(amount) || 0) > remaining + 0.005) {
     return { status: 400, error: `Payment exceeds the bill's remaining balance of ${Math.max(0, remaining).toFixed(2)}.`, code: 'EXCEEDS_BILL_BALANCE', remaining };
   }
@@ -10918,11 +11045,12 @@ async function recalcBillStatus(pool, billId, userId) {
        FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`,
     [userId, String(billId)]
   );
-  const paid = parseFloat(rows[0].paid) || 0;
+  const credit = await docCreditApplied(pool, 'bill', billId, userId);   // FA-M6b
+  const paid = Math.round(((parseFloat(rows[0].paid) || 0) + credit) * 100) / 100;
   const total = parseFloat(billRow.amount) || 0;
   const status = paidDerivedStatus(paid, total, billRow.status, 'unpaid');
   const _oldStatus = billRow.status, _oldPaid = parseFloat(billRow.amount_paid) || 0;
-  await db.updateById('bills', billId, { status, amount_paid: paid });
+  await db.updateById('bills', billId, { status, amount_paid: paid, credit_applied: credit });
   // F92: recalcBillStatus is the payables-side SIDE-EFFECT money writer (bills.status drives expense
   // recognition, amount_paid drives AP), triggered by a payments-made action on a different record —
   // invisible to route-based audit. Log the movement when it changed.
@@ -12267,7 +12395,7 @@ async function backfillLedgerForUser(userId, opts = {}) {
     const byInv = {}; for (const r of ipSums) byInv[String(r.invoice_id)] = r.paid;
     for (const inv of await db.allByUser('invoices', userId, keep)) {
       if (String(inv.status || '').toLowerCase() === 'draft') continue;
-      const gap = Math.round(((parseFloat(inv.amount_paid) || 0) - (byInv[String(inv.id)] || 0)) * 100) / 100;
+      const gap = Math.round(((parseFloat(inv.amount_paid) || 0) - (parseFloat(inv.credit_applied) || 0) - (byInv[String(inv.id)] || 0)) * 100) / 100;   // FA-M6b: an applied credit is not cash
       if (gap > 0.005) await post({ entityId: inv.entity_id, date: inv.issue_date || slice10(inv.created_at), description: 'Invoice collected (backfill) — ' + String(inv.client || '').slice(0, 80), sourceType: 'invoice_paidgap', sourceId: inv.id, idempotencyKey: 'invoice_paidgap:' + inv.id, lines: [{ code: '1000', debit: gap, credit: 0 }, { code: '1100', debit: 0, credit: gap }] });
     } }
   // 3) expenses → Dr Opex / Cr Cash at expense_date
@@ -12300,7 +12428,7 @@ async function backfillLedgerForUser(userId, opts = {}) {
     for (const pm of await db.allByUser('payments_made', userId, () => true)) { const bid = (pm.bill_id != null && pm.bill_id !== '') ? Number(pm.bill_id) : null; if (bid != null) pmByBill[bid] = (pmByBill[bid] || 0) + (parseFloat(pm.amount) || 0); }
     for (const b of await db.allByUser('bills', userId, keep)) {
       if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
-      const gap = Math.round(((parseFloat(b.amount_paid) || 0) - (pmByBill[b.id] || 0)) * 100) / 100;
+      const gap = Math.round(((parseFloat(b.amount_paid) || 0) - (parseFloat(b.credit_applied) || 0) - (pmByBill[b.id] || 0)) * 100) / 100;   // FA-M6b
       if (gap > 0.005) await post({ entityId: b.entity_id, date: b.issue_date || slice10(b.created_at), description: 'Bill paid (backfill) — ' + String(b.vendor || '').slice(0, 80), sourceType: 'bill_paidgap', sourceId: b.id, idempotencyKey: 'bill_paidgap:' + b.id, lines: [{ code: '2000', debit: gap, credit: 0 }, { code: '1000', debit: 0, credit: gap }] });
     } }
   // 6) sales receipts → Dr Cash / Cr Revenue at date
@@ -13315,7 +13443,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     b => Math.max(0, num(b.amount) - num(b.amount_paid)), _billDate, 'ap');
   const _apCredits = sumFX((vendorCredits || []).filter(v => RECOGNIZED_CREDIT.has((v.status || '').toLowerCase()) &&
       (function(){ const _y = FinFlowDates._toYmd(_vcDate(v)); return _y != null && _y <= _today; })()),
-    v => num(v.amount), _vcDate, 'ap');
+    v => Math.max(0, num(v.amount) - num(v.applied)), _vcDate, 'ap');   // FA-M6b: the applied part is already off its bill
   const accountsPayableNet = r2(_apGross - _apCredits);
   const accountsPayable = r2(Math.max(0, accountsPayableNet));
 
@@ -13385,7 +13513,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const _arCreditContra = sumFX(
     creditNotes.filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase()) &&
       (function(){ const _y = FinFlowDates._toYmd(_cnDate(cn)); return _y != null && _y <= _today; })()),
-    cn => num(cn.amount), _cnDate, 'ar'
+    cn => Math.max(0, num(cn.amount) - num(cn.applied)), _cnDate, 'ar'   // FA-M6b: the applied part is already off its invoice
   );
   const outstanding = r2(Math.max(0, _arGross - _arCreditContra));
 
@@ -13422,7 +13550,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   creditNotes
     .filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase()) &&
       (function () { const _y = FinFlowDates._toYmd(_cnDate(cn)); return _y != null && _y <= _today; })())
-    .forEach(cn => { const c = num(cn.amount); if (!c) return;
+    .forEach(cn => { const c = Math.max(0, num(cn.amount) - num(cn.applied)); if (!c) return;   // FA-M6b
       const cv = _fxConvRow(c, cn.entity_id, _cnDate(cn));
       _arAdd(cn.customer || cn.client || 'Unattributed credits', -cv);
       const _k = _contactKey(cn.customer || cn.client); _cnByCust[_k] = (_cnByCust[_k] || 0) + cv;

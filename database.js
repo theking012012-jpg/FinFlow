@@ -458,6 +458,16 @@ async function initDB() {
       id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, entity_id INTEGER, kind VARCHAR(24) NOT NULL, ref_id TEXT NOT NULL,
       stage VARCHAR(24) NOT NULL, to_addr TEXT, status VARCHAR(12) NOT NULL DEFAULT 'claimed', created_at TIMESTAMPTZ DEFAULT NOW(), sent_at TIMESTAMPTZ,
       UNIQUE (user_id, entity_id, kind, ref_id, stage))`);
+    // FA-M6b: a credit note applied to an invoice / a vendor credit applied to a bill. Same statements as
+    // scripts/migrations/2026-10-24-credit-applications.sql.
+    await client.query(`CREATE TABLE IF NOT EXISTS credit_applications (
+      id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, entity_id INTEGER,
+      kind VARCHAR(16) NOT NULL CHECK (kind IN ('credit_note', 'vendor_credit')),
+      credit_id INTEGER NOT NULL, doc_id INTEGER NOT NULL, amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+      applied_date DATE NOT NULL, idempotency_key VARCHAR(64), created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, idempotency_key))`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_credit_applications_doc ON credit_applications (user_id, kind, doc_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_credit_applications_credit ON credit_applications (user_id, kind, credit_id)`);
     await client.query(`CREATE TABLE IF NOT EXISTS referral_payouts (
       id                 SERIAL PRIMARY KEY,
       accountant_id      INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,

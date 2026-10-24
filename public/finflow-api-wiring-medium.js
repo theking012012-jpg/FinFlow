@@ -80,6 +80,7 @@
             _dbId:  r.id,
             client: r.client,
             amount: r.amount,
+            credit_applied: r.credit_applied || 0,   // FA-M6b: the credit-note part of amount_paid (not cash)
             amount_paid: r.amount_paid,   // F119: THE dropping mapper — this is the winning boot loader
                                           // for window.userInvoices; without amount_paid a partially-paid
                                           // invoice showed its FULL amount as "remaining" in Record Payment,
@@ -302,10 +303,12 @@
       // and on a part-paid invoice what is left. "—" when nothing was paid. Same amount_paid the AR figure reads.
       const _invPaidCell = inv => {
         const amt = parseFloat(inv.amount) || 0;
-        const paid = String(inv.status || '').toLowerCase() === 'paid' && !(parseFloat(inv.amount_paid) > 0) ? amt : Math.min(amt, parseFloat(inv.amount_paid) || 0);
-        if (!(paid > 0.005)) return '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="color:var(--t3)">—</span>';
-        const left = Math.max(0, amt - paid);
+        const settled = String(inv.status || '').toLowerCase() === 'paid' && !(parseFloat(inv.amount_paid) > 0) ? amt : Math.min(amt, parseFloat(inv.amount_paid) || 0);
+        const credit = Math.min(settled, parseFloat(inv.credit_applied) || 0), paid = settled - credit;   // FA-M6b: a credit is not money received
+        const left = Math.max(0, amt - settled);
+        if (!(paid > 0.005)) return (credit > 0.005 ? '<span class="inv-paid-lbl" style="color:var(--t3)">Credited </span><span style="font-family:var(--font-mono)">' + esc(S(credit)) + '</span>' + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '') : '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="color:var(--t3)">—</span>');
         return '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="font-family:var(--font-mono);color:var(--green)">' + esc(S(paid)) + '</span>'
+          + (credit > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">+ ' + esc(S(credit)) + ' credited</span>' : '')
           + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '');
       };
       window._invShowMore = function () { window._invRenderLimit += 200; if (typeof window.renderInvoices === 'function') window.renderInvoices(); };

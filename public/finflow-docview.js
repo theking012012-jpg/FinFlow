@@ -125,6 +125,10 @@
     var _balanceVal = _isOwed ? balanceOwed : total;
     // FA-M3: what was already paid is ON the document (the customer sees why the balance is lower than the total).
     var _paidShown = _isOwed ? Math.min(total, ((doc.status || '').toLowerCase() === 'paid') ? total : _paid) : 0;
+    // FA-M6b: a credit note / vendor credit applied to it is shown as what it is — not as a payment received.
+    var _creditShown = Math.min(_paidShown, parseFloat(doc.credit_applied) || 0);
+    _paidShown = _paidShown - _creditShown;
+    var _settledShown = _paidShown + _creditShown;
 
     var logoHTML = L.logo
       ? '<img src="'+esc(L.logo)+'" style="max-height:52px;max-width:180px;object-fit:contain" alt="">'
@@ -144,9 +148,10 @@
     var totalsHTML =
         '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Subtotal</span><span>'+money(subtotal, cur)+'</span></div>'
       + (tax ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Tax</span><span>'+money(tax, cur)+'</span></div>' : '')
-      + (_paidShown > 0.005
+      + (_settledShown > 0.005
           ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#222;font-weight:600"><span>Total</span><span>'+money(total, cur)+'</span></div>'
-          + '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#1a7f4b"><span>'+(kind === 'bill' ? 'Paid' : 'Payments received')+'</span><span>&minus;'+money(_paidShown, cur)+'</span></div>'
+          + (_paidShown > 0.005 ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#1a7f4b"><span>'+(kind === 'bill' ? 'Paid' : 'Payments received')+'</span><span>&minus;'+money(_paidShown, cur)+'</span></div>' : '')
+          + (_creditShown > 0.005 ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#1a7f4b"><span>'+(kind === 'bill' ? 'Vendor credit applied' : 'Credit note applied')+'</span><span>&minus;'+money(_creditShown, cur)+'</span></div>' : '')
           : '')
       + '<div style="display:flex;justify-content:space-between;padding:12px 0 0;margin-top:6px;border-top:2px solid #222;font-size:15px;font-weight:700;color:#111"><span>'+K.balanceLabel+'</span><span>'+money(_balanceVal, cur)+'</span></div>';
 
@@ -160,7 +165,7 @@
         + '<div style="text-align:center;border-bottom:2px dashed #ccc;padding-bottom:12px;margin-bottom:12px">'+logoHTML+'<div style="margin-top:6px;font-size:11px;color:#777">'+[L.address, L.email, L.phone].filter(Boolean).map(esc).join(' · ')+'</div>'
         + '<div style="margin-top:10px;font-weight:700;letter-spacing:.06em;color:'+acc+'">'+K.title+(doc.number ? ' #'+esc(doc.number) : '')+'</div><div style="font-size:11px;color:#777">'+esc(doc.party || '')+(doc.issue_date ? ' · '+dlabel(doc.issue_date) : '')+(doc.due_date ? ' · due '+dlabel(doc.due_date) : '')+'</div>'+statusBadge+'</div>'
         + lines + crow('Subtotal', money(subtotal, cur), 'color:#777') + (tax ? crow('Tax', money(tax, cur), 'color:#777') : '')
-        + (_paidShown > 0.005 ? crow('Total', money(total, cur)) + crow(kind === 'bill' ? 'Paid' : 'Payments received', '&minus;'+money(_paidShown, cur), 'color:#1a7f4b') : '')
+        + (_settledShown > 0.005 ? crow('Total', money(total, cur)) + (_paidShown > 0.005 ? crow(kind === 'bill' ? 'Paid' : 'Payments received', '&minus;'+money(_paidShown, cur), 'color:#1a7f4b') : '') + (_creditShown > 0.005 ? crow(kind === 'bill' ? 'Vendor credit applied' : 'Credit note applied', '&minus;'+money(_creditShown, cur), 'color:#1a7f4b') : '') : '')
         + '<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:2px dashed #ccc;font-size:15px;font-weight:700"><span>'+K.balanceLabel+'</span><span style="color:'+acc+'">'+money(_balanceVal, cur)+'</span></div>'
         + (doc.notes && items ? '<div style="margin-top:14px;font-size:11.5px;color:#666">'+esc(doc.notes)+'</div>' : '')
         + footer + '</body></html>';
@@ -289,6 +294,7 @@
       notes: inv.notes || '',
       amount: inv.amount,
       amount_paid: inv.amount_paid,   // FA-M3: Balance Due nets what was received (it printed the full total)
+      credit_applied: inv.credit_applied || 0,   // FA-M6b: shown as a credit, not a payment
       tax: inv.tax || 0,
       line_items: inv.line_items || null,
       currency: inv.currency || null,

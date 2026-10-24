@@ -22,6 +22,29 @@ function priceFor(env, plan, interval) {
 }
 const iso = s => (s ? new Date(Number(s) * 1000).toISOString() : null);
 
+// ── D-G step 4: data after a paid plan ends (owner decision 2026-10-23) ──
+// Read-only for RETENTION_DAYS from billing.access_ended_at, a warning e-mail WARNING_DAYS before the deletion, then the
+// account is erased. Never deleted unless the warning was SENT at least WARNING_DAYS earlier: a missed warning goes out
+// late and pushes the deletion to WARNING_DAYS after it.
+const RETENTION_DAYS = 90, WARNING_DAYS = 14, DAY = 86400000;
+function deleteOnFor(b) {
+  const ended = Date.parse(b && b.access_ended_at);
+  if (isNaN(ended)) return null;
+  let at = ended + RETENTION_DAYS * DAY;
+  const warned = Date.parse(b && b.deletion_warned_at);
+  if (!isNaN(warned)) at = Math.max(at, warned + WARNING_DAYS * DAY);
+  return new Date(at).toISOString();
+}
+// 'warn' | 'delete' | null — only for an account whose PAID plan ended and which is not paying again.
+function retentionDue(data, nowMs) {
+  const d = data || {}, b = d.billing || {};
+  if (Plans.PAID.includes(Plans.planFor(d.plan).id)) return null;
+  if (!b.access_ended_at || isNaN(Date.parse(b.access_ended_at))) return null;
+  const at = Date.parse(deleteOnFor(b));
+  if (!b.deletion_warned_at) return nowMs >= at - WARNING_DAYS * DAY ? 'warn' : null;
+  return nowMs >= at ? 'delete' : null;
+}
+
 // The facts of a Stripe subscription. Newer Stripe API versions carry the period on the subscription ITEM, older ones
 // on the subscription — both are read.
 function subscriptionFacts(sub, env) {
@@ -54,7 +77,8 @@ async function syncSubscription(pool, userId, sub, env, nowMs) {
     delete f.interval; delete f.plan;               // the current term's plan / interval stay as they are
   }
   await pool.query(
-    `UPDATE users SET data = data || jsonb_build_object('billing', COALESCE(data->'billing', '{}'::jsonb) || $2::jsonb)
+    `UPDATE users SET data = data || jsonb_build_object('billing', (COALESCE(data->'billing', '{}'::jsonb) || $2::jsonb)
+                                     - CASE WHEN $3::text IS NOT NULL THEN ARRAY['access_ended_at','deletion_warned_at'] ELSE ARRAY[]::text[] END)
                                   || CASE WHEN $3::text IS NOT NULL THEN jsonb_build_object('plan', $3::text, 'trial_ends', null::text) ELSE '{}'::jsonb END
       WHERE id = $1`,
     [userId, JSON.stringify(f), live && f.plan ? f.plan : null]);
@@ -75,6 +99,8 @@ function billingState(data, now) {
     cancelAtPeriodEnd: paid ? !!b.cancel_at_period_end : false,
     trialEnds: plan.id === 'trial' ? (d.trial_ends || null) : null,
     readOnly: plan.id === 'trial' && !!d.trial_ends && new Date(d.trial_ends).getTime() <= (now || Date.now()),
+    accessEndedAt: !paid && b.access_ended_at ? b.access_ended_at : null,
+    deleteOn: !paid && b.access_ended_at ? deleteOnFor(b) : null,
     price: paid ? (b.interval === 'year' ? plan.annualMonthly * 12 : plan.monthly) : 0,
     subscribed: paid && !!(d.stripe_subscription_id || b.subscription_id),   // a Stripe subscription to change (else: checkout)
     pendingChange: b.pending_change ? { plan: b.pending_change.plan, planName: Plans.planFor(b.pending_change.plan).name, interval: b.pending_change.interval, effective: b.pending_change.effective } : null,
@@ -138,4 +164,5 @@ function previewAmounts(inv) {
   return { chargeNow: round2(Math.max(0, Number(inv && inv.amount_due) || 0) / 100), credit: round2(credit / 100), currency: (inv && inv.currency) || 'usd' };
 }
 
-module.exports = { priceMap, priceFor, subscriptionFacts, syncSubscription, billingState, monthsStarted, cancelPreview, changeWhen, previewAmounts, RANK };
+module.exports = { priceMap, priceFor, subscriptionFacts, syncSubscription, billingState, monthsStarted, cancelPreview, changeWhen, previewAmounts, RANK,
+                   RETENTION_DAYS, WARNING_DAYS, deleteOnFor, retentionDue };

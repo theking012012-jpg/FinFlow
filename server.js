@@ -3743,30 +3743,11 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
       }
     }
   }
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query(`DELETE FROM team_members WHERE data->>'member_user_id' = $1::text`, [String(uid)]);   // memberships in OTHER accounts
-    await client.query(`UPDATE accountants SET user_id = NULL WHERE user_id = $1`, [uid]);
-    // LC3c: personal_history is append-only except inside THIS transaction — the flag lets its trigger allow the erase
-    // of this one person's rows (personal data, erased with the account; audit_trail is kept, below).
-    await client.query(`SELECT set_config('finflow.erase_user', $1::text, true)`, [String(uid)]);
-    const { rows: tables } = await client.query(
-      `SELECT c.table_name FROM information_schema.columns c
-         JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
-        WHERE c.table_schema = current_schema() AND c.column_name = 'user_id'
-          AND c.table_name NOT IN ('users', 'audit_trail', 'accountants')`);
-    for (const { table_name } of tables) {
-      await client.query(`DELETE FROM ${client.escapeIdentifier(table_name)} WHERE user_id = $1`, [uid]);
-    }
-    await client.query(`DELETE FROM users WHERE id = $1`, [uid]);
-    await client.query(`DELETE FROM session WHERE (sess::jsonb->>'userId') = $1::text`, [String(uid)]);   // every device
-    await client.query('COMMIT');
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch (_) {}
+  try { await eraseAccountData(uid); }   // D-G step 4: the ONE erase (shared with the retention job)
+  catch (e) {
     console.error('[account delete] failed, nothing deleted:', e.message);
     return res.status(500).json({ error: 'Account deletion failed — nothing was deleted. Please try again or contact support.' });
-  } finally { client.release(); }
+  }
   await recordAudit(pool, { userId: uid, table: 'users', recordId: uid, action: 'ACCOUNT_DELETED', req });   // LC3d: audit_trail outlives the account (N18)
   req.session.destroy(() => {});
   res.json({ ok: true });
@@ -5992,6 +5973,35 @@ app.post('/api/billing/resume', requireAuth, wrap(async (req, res) => {
   await recordAudit(pool, { userId: ctx.uid, table: 'billing', recordId: ctx.uid, action: 'RESUME', newData: { periodEnd: b.period_end }, req });
   res.json({ ok: true });
 }));
+// N18 / D-G step 4: erase an account's data in ONE transaction — every table with a user_id (discovered), the user,
+// every session — keeping the audit trail (append-only financial record) and the accountant identity. Shared by
+// "Delete my account" and the retention job, so both erase exactly the same way. Throws; nothing is half-deleted.
+async function eraseAccountData(uid) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM team_members WHERE data->>'member_user_id' = $1::text`, [String(uid)]);   // memberships in OTHER accounts
+    await client.query(`UPDATE accountants SET user_id = NULL WHERE user_id = $1`, [uid]);
+    // LC3c: personal_history is append-only except inside THIS transaction — the flag lets its trigger allow the erase
+    // of this one person's rows (personal data, erased with the account; audit_trail is kept, below).
+    await client.query(`SELECT set_config('finflow.erase_user', $1::text, true)`, [String(uid)]);
+    const { rows: tables } = await client.query(
+      `SELECT c.table_name FROM information_schema.columns c
+         JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
+        WHERE c.table_schema = current_schema() AND c.column_name = 'user_id'
+          AND c.table_name NOT IN ('users', 'audit_trail', 'accountants')`);
+    for (const { table_name } of tables) {
+      await client.query(`DELETE FROM ${client.escapeIdentifier(table_name)} WHERE user_id = $1`, [uid]);
+    }
+    await client.query(`DELETE FROM users WHERE id = $1`, [uid]);
+    await client.query(`DELETE FROM session WHERE (sess::jsonb->>'userId') = $1::text`, [String(uid)]);   // every device
+    await client.query('COMMIT');
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally { client.release(); }
+}
+
 // D-G step 3 / D-B: change plan from the app — the SAME subscription is moved (the old button sent a subscriber to a
 // second checkout). Upgrades and monthly → yearly happen now, prorated by Stripe; downgrades and yearly → monthly at the
 // period end (the plan is kept until then). Previewed first; recomputed on confirm.
@@ -6092,7 +6102,42 @@ async function runBillingJob(nowMs) {
       [u.id, pc.plan, pc.interval, pc.price_id || null]);
     await recordAudit(pool, { userId: u.id, table: 'billing', recordId: u.id, action: 'PLAN_CHANGE', newData: { to: pc.plan, interval: pc.interval, landed: nowIso, keepEditors: keep } });
   }
-  return { landed: rows.length };
+
+  // D-G step 4: data after a paid plan ends — the 14-day warning e-mail, then the erase (never without the warning).
+  const { rows: ended } = await pool.query(
+    `SELECT id, data FROM users WHERE data->'billing'->>'access_ended_at' IS NOT NULL
+        AND COALESCE(data->>'plan', 'trial') NOT IN ('pro', 'business', 'scale')`);
+  let warned = 0, erased = 0;
+  const { emailHtml } = require('./email-html');
+  const _long = isoS => new Date(isoS).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  for (const u of ended) {
+    const due = Billing.retentionDue(u.data, Date.parse(nowIso));
+    if (due === 'warn') {
+      if (!resendClient || !u.data.email) { console.warn('[billing] retention warning for user ' + u.id + ' NOT sent (no e-mail service / address) — deletion stays on hold'); continue; }
+      const appUrl = process.env.APP_URL || '';
+      const deleteOn = Billing.deleteOnFor(Object.assign({}, u.data.billing, { deletion_warned_at: nowIso }));
+      try {
+        await resendClient.emails.send({
+          from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to: u.data.email,
+          subject: 'Your FinFlow books will be deleted on ' + _long(deleteOn),
+          html: String(emailHtml`<p>Hi ${u.data.name || 'there'},</p>
+<p>Your FinFlow plan ended, so your books have been read-only. They will be <strong>deleted on ${_long(deleteOn)}</strong>.</p>
+<p><strong>To keep them:</strong> choose a plan before then — everything is still there: <a href="${appUrl}/app#pricing">${appUrl}/app#pricing</a></p>
+<p><strong>To take a copy:</strong> sign in and go to Settings → Export to download all of your records. You can do this until ${_long(deleteOn)}.</p>
+<p>The record of changes made to your books (the audit trail) is kept as a financial record after deletion.</p>`),
+        });
+      } catch (e) { console.error('[billing] retention warning to user ' + u.id + ' failed — deletion stays on hold:', e.message); continue; }
+      await pool.query(`UPDATE users SET data = data || jsonb_build_object('billing', COALESCE(data->'billing', '{}'::jsonb) || jsonb_build_object('deletion_warned_at', $2::text)) WHERE id = $1`, [u.id, nowIso]);
+      await recordAudit(pool, { userId: u.id, table: 'billing', recordId: u.id, action: 'DELETION_WARNING', newData: { deleteOn } });
+      warned++;
+    } else if (due === 'delete') {
+      try { await eraseAccountData(u.id); }
+      catch (e) { console.error('[billing] retention erase of user ' + u.id + ' failed, nothing deleted:', e.message); captureErr(e); continue; }
+      await recordAudit(pool, { userId: u.id, table: 'users', recordId: u.id, action: 'ACCOUNT_DELETED', newData: { reason: 'retention', accessEndedAt: u.data.billing.access_ended_at, warnedAt: u.data.billing.deletion_warned_at } });
+      erased++;
+    }
+  }
+  return { landed: rows.length, warned, erased };
 }
 app.get('/api/team/seats', requireAuth, wrap(async (req, res) => {
   const s = await seatState(scopeId(req), req.userPlan, null);

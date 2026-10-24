@@ -5,7 +5,29 @@
 
 ---
 
-## ⚡ UPDATE 2026-10-21 (latest — read this first)
+## ⚡ UPDATE 2026-10-23 night — PRODUCTION IS LIVE ON `main` (read this first)
+
+**Railway has been up since the morning of 2026-10-23** (owner) and auto-deploys `main`. Everything pushed on 2026-10-23
+is therefore expected to be live (the "Railway down / production on `9682467`" notes below are out of date) — the owner
+confirms in the Railway dashboard which commit is deployed and whether "wait for CI" is on.
+
+**CI was red on every push** — not the app: the dependency-audit gate (`npm audit --omit=dev --audit-level=high`) failed on a
+new HIGH advisory, body-parser 1.20.8 (GHSA-27r3-jxmh-p828). Fixed in `a96eea4` (1.20.9, lockfile only). The owner has
+seen these CI e-mails "from time to time" before → **owner request: a full re-check of the entire app once the current fixes
+are finished** (the 3× full sweep + a live walk-through), not just the targeted harnesses.
+
+**Live behaviour that started with today's deploys (by design, verified):** the hourly billing job (lands due downgrades;
+retention warnings / deletion only for plans that END from now on — no existing account has `billing.access_ended_at`;
+30-day yearly renewal e-mails; freezes closed SaaS months); accountants are asked to accept the Conduct Policy at sign-in
+(14-day grace); plan gates by plans.js (Pro now has Banking + scanner); team seats enforced; AI caps no longer env-tunable.
+
+**Owner steps now (all listed in AUDIT_MASTER rows):** (1) schema — `initDB()` creates the new tables at boot unless
+`SKIP_INIT_DDL` is set; if it is, run the migrations in `scripts/migrations/2026-10-23-*.sql`; (2) `link-stripe-subscriptions.js`
+(FA-S1, dry run first); (3) the invoice-numbering tools (B1b); (4) yearly Stripe prices → `STRIPE_PRICE_PRO_ANNUAL` /
+`_BUSINESS_ANNUAL` / `_SCALE_ANNUAL`; (5) `DATABASE_CA_CERT` (FA-DB1); (6) `SUPPORT_TZ` (support hours' timezone; default UTC);
+(7) the domain + Resend (D-J, pending the domain purchase).
+
+## ⚡ UPDATE 2026-10-21
 
 **Launch pass (`PROMPT_LAUNCH_ALL.md`) on top of `11b775f`. Committed by the owner and pushed to `main`: `060846f` (LR27) ·
 `d795df8` (A5 drill) · `35e1c5a` (A5 Sentry) · `dc9895d` (A7) · `6e10c34` (A6 tools) · `80b0671` (app fixes LR11 / LC3c / LR24 /

@@ -1503,8 +1503,16 @@
       // the total above them. NOTE they cover the manual-expense rows only — byCategory is built
       // from those (app-main.js) — so they do not sum to expTotal, which also carries bills,
       // payments made and payroll. Labelled in the heading rather than left to be discovered.
-      const catRows = Object.entries(breakdown.byCategory || {}).sort((a, b) => b[1] - a[1])
-        .map(([cat, amt]) => `<tr><td style="padding:3px 0;color:var(--t2)">${e(cat)}</td><td style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
+      // FA-M9: the total broken down three ways — by source, by category, by vendor — each map comes from
+      // computeExpenseBreakdown itself and adds up to the Expenses figure above (it used to list expense categories only).
+      const _tbl = (title, m) => {
+        const rows = Object.entries(m || {}).sort((a, b) => b[1] - a[1])
+          .map(([k, amt]) => `<tr><td style="padding:3px 0;color:var(--t2)">${e(k)}</td><td style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
+        return rows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">${e(title)}</div>
+        <table style="width:100%;border-collapse:collapse">${rows}<tr style="border-top:1px solid var(--bd)"><td style="padding:3px 0;font-weight:600">Total</td><td style="text-align:right;font-family:var(--font-mono);font-weight:600">${money(expTotal)}</td></tr></table>` : '';
+      };
+      const _byCat = (typeof window._expenseCategoryRows === 'function') ? Object.fromEntries(window._expenseCategoryRows(breakdown, { all: true })) : {};   // D3: the one category decomposition
+      const catRows = _tbl('By source', breakdown.bySource) + _tbl('By category', _byCat) + _tbl('By vendor', breakdown.byVendor);
 
       document.getElementById('rpt-body').innerHTML = `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
@@ -1528,8 +1536,7 @@
             <div style="font-size:10px;color:var(--t3)">all time</div>
           </div>
         </div>
-        ${catRows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Expense Breakdown — recorded expenses only</div>
-        <table style="width:100%;border-collapse:collapse">${catRows}</table>` : ''}`;
+        ${catRows}`;
     } catch (err) {
       document.getElementById('rpt-body').textContent = 'Could not load data: ' + err.message;
     }

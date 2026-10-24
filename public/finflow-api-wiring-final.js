@@ -135,7 +135,7 @@
       if (!Number.isFinite(amount) || amount <= 0) { notify('A valid positive amount is required', true); return; }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) { notify('Enter a valid date', true); return; }
       const body = { description, amount, expense_date, category: v('bexp-cat') || 'Other', deductible: v('bexp-ded') || 'no',
-                     class: v('bexp-class').trim(), location: v('bexp-location').trim() };
+                     class: v('bexp-class').trim(), location: v('bexp-location').trim(), vendor: v('bexp-vendor').trim() };   // FA-M9
       window._savingExpense = true;
       const _btn = document.querySelector('#expense-modal .btn-primary');
       if (_btn) _btn.disabled = true;
@@ -179,6 +179,7 @@
       f('bexp-ded',      exp.ded || 'no');
       f('bexp-class',    exp.class || '');
       f('bexp-location', exp.location || '');
+      f('bexp-vendor',   exp.vendor || '');   // FA-M9
       f('expense-edit-id', exp._dbId);
       _expModalMode(true);
       if (typeof openModal === 'function') openModal('expense-modal');

@@ -1816,7 +1816,7 @@ let bizExpenses = [];
 // date, class and location, so after a reload or business switch "Edit" opened with the date blank and refused to save.
 function mapBizExpenseRow(r){
   return {
-    _dbId: r.id, desc: r.description, cat: r.category, amount: r.amount, ded: r.deductible,
+    _dbId: r.id, desc: r.description, cat: r.category, amount: r.amount, ded: r.deductible, vendor: r.vendor || '',
     expense_date: r.expense_date ? String(r.expense_date).slice(0, 10) : '',
     class: r.class || '', location: r.location || '',
     date: r.expense_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date) : 'Today',   // F195: TZ-safe calendar date
@@ -2032,9 +2032,32 @@ function computeExpenseBreakdown(period, monthIdx){
   // N20: posted manual journals' EXPENSE leg (5xxx-9xxx accounts) adds to opex — the client mirror
   // of the server's jeOpex (computeBooks reads it from the GL). Same window as every other leg.
   const journalExpense = (typeof _journalPnL==='function') ? _journalPnL(w).expense : 0;
+  // FA-M9: the same total by SOURCE and by VENDOR — each map adds up to `total` because each is built from THESE legs
+  // (the rows filtered above), never re-derived. By category is _expenseCategoryRows (D3), the one every surface uses.
+  const _vcRows = (window.vendorCredits || []).filter(v=>RECOGNIZED_CREDIT.includes((v.status||'').toLowerCase()) && inPeriod(v.date||v.created_at));
+  const _billRows = (window.bills || []).filter(b=>window.FinFlowDates.isOpexBill(b) && inPeriod(b.issue_date||b.created_at||b.due_date));
+  const _put = (m, k, v) => { if (Math.abs(v) >= 0.005) m[k] = (m[k] || 0) + v; };
+  const bySource = {};
+  _put(bySource, 'Recorded expenses', realExpenses); _put(bySource, 'Bills', issuedBills); _put(bySource, 'Payments made (no bill)', paymentsMade);
+  _put(bySource, 'Payroll', payroll); _put(bySource, 'Vendor credits', -vendorCredits); _put(bySource, 'Journal entries', journalExpense);
+  const byVendor = {}, _vName = {};   // vendors match case- and space-insensitively; the most-used spelling is shown
+  const _addV = (name, amt) => {
+    const disp = String(name == null ? '' : name).trim().replace(/\s+/g, ' ');
+    const k = disp.toLowerCase(); if (!k) { _put(byVendor, 'No vendor', amt); return; }
+    _vName[k] = _vName[k] || {}; _vName[k][disp] = (_vName[k][disp] || 0) + Math.abs(amt);
+    byVendor['\u0000' + k] = (byVendor['\u0000' + k] || 0) + amt;
+  };
+  rows.forEach(e=>_addV(e.vendor, parseFloat(e.amount)||0));
+  _billRows.forEach(b=>_addV(b.vendor, parseFloat(b.amount)||0));
+  pmade.forEach(p=>_addV(p.vendor, parseFloat(p.amount)||0));
+  _vcRows.forEach(v=>_addV(v.vendor, -(parseFloat(v.amount)||0)));
+  _put(byVendor, 'Payroll (employees)', payroll); _put(byVendor, 'Journal entries', journalExpense);
+  Object.keys(byVendor).filter(k=>k[0]==='\u0000').forEach(k=>{ const v = byVendor[k]; delete byVendor[k];
+    const name = Object.entries(_vName[k.slice(1)]).sort((x,y)=>y[1]-x[1])[0][0]; if (Math.abs(v) >= 0.005) byVendor[name] = (byVendor[name] || 0) + v; });
   return {
     total: realExpenses + issuedBills + paymentsMade + payroll - vendorCredits + journalExpense,
     realExpenses, issuedBills, paymentsMade, payroll, vendorCredits, journalExpense,
+    bySource, byVendor,
     payrollRunCount, rosterMonthlyCost,
     business: realExpenses,   // data model has no personal/business split — all recorded rows are business
     deductible, byCategory, months, period,
@@ -2886,6 +2909,8 @@ function renderExpenses(){
 function openExpenseModal(){
   const _sv=(id,v)=>{const el=document.getElementById(id); if(el) el.value=v;};
   _sv('bexp-desc','');
+  _sv('bexp-vendor','');   // FA-M9
+  if(typeof window._fillContactPicker==='function') window._fillContactPicker('bexp-vendor','ff-exp-vend-list','/api/vendors',v=>v.name);   // a saved vendor, or type a new one
   _sv('bexp-amount','');
   _sv('bexp-date', todayLocal());   // M49: default today (editable), like the invoice issue date (F36)
   if(typeof window._expModalMode==='function') window._expModalMode(false);   // M52: Add always opens in add mode

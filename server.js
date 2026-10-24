@@ -2471,7 +2471,7 @@ app.post('/api/expenses', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(asyn
   // misses (Rule 9). Inert until idx_expenses_idem_key exists (no index ⇒ no 23505 ⇒ prior behaviour).
   let row;
   try {
-    ({ row } = await db.insert('expenses', { user_id: scopeId(req), entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem }));
+    ({ row } = await db.insert('expenses', { user_id: scopeId(req), entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, ...(req.body && req.body.vendor != null && String(req.body.vendor).trim() ? { vendor: String(req.body.vendor).trim().replace(/\s+/g, ' ').slice(0, 200) } : {}), ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
@@ -2509,6 +2509,7 @@ app.put('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(a
   }
   if (b.description != null) patch.description = String(b.description).trim().slice(0, 300);
   if (b.category != null) patch.category = b.category;
+  if (b.vendor != null) patch.vendor = String(b.vendor).trim().replace(/\s+/g, ' ').slice(0, 200) || null;   // FA-M9: who was paid
   if (b.amount != null) patch.amount = parseFloat(b.amount);
   if (b.deductible != null) patch.deductible = FinFlowDates.normalizeDeductible(b.deductible);   // M15
   if (b.expense_date != null) patch.expense_date = b.expense_date;

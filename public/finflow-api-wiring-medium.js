@@ -407,6 +407,7 @@
           entity_id: _entityId2,
           class:    (document.getElementById('bexp-class') && document.getElementById('bexp-class').value.trim()) || undefined,
           location: (document.getElementById('bexp-location') && document.getElementById('bexp-location').value.trim()) || undefined,
+          vendor: (document.getElementById('bexp-vendor') && document.getElementById('bexp-vendor').value.trim()) || undefined,   // FA-M9
           idempotency_key: window._expIdemKey,   // C1 Wave 1 — the token idx_expenses_idem_key enforces
         });
 

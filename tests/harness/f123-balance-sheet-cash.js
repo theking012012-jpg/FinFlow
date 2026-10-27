@@ -117,19 +117,30 @@ async function main() {
     console.log('        ^ and note what the old code told this user: cash 0, on a year they lost ' +
                 Math.abs(fyNet) + '.');
 
-    // ── 4 · STRUCTURAL (Rule 5, labelled) — no LIVE surface renders this figure ──
-    // Rated on this: the endpoint is live and authenticated, but the only client fetch of it sits
-    // inside app-main.js's generateReport, which finflow-api-wiring-extra.js REPLACES at runtime
-    // (bundle source #7, loads after app-main) — see F128. No value can express "this code is
-    // unreachable", so this is a structural assertion and is labelled as one.
-    console.log('\n-- 4 - STRUCTURAL: the only client fetch of this route is in shadowed code (F128) --');
+    // ── 4 · STRUCTURAL (Rule 5, labelled) — every LIVE client read of this route honours cashTracked ──
+    // History: the old fetch sat inside app-main.js's generateReport, which finflow-api-wiring-extra.js REPLACES at
+    // runtime (F128), so F161 recorded "0 app-main fetches". V2 (0d32320) added ONE live fetch: renderBanking's
+    // bank-vs-books comparison. SW1 (2026-10-27): renderBanking has no wiring override (Rule 1, checked over every
+    // bundle source public/finflow-api*.js), so that fetch RUNS. The invariant F123 protects is not "nobody reads the
+    // route" but "nobody shows its cash as a number unless the server says cash is tracked". The executed half of that
+    // is verify-v2-bank-balance check 5 (not-tracked → "not tracked", no difference); these lines pin the structure:
+    // exactly one app-main fetch, inside the live renderBanking, gated on cashTracked === true. No value can express
+    // "this fetch is in live code", so these are structural assertions and are labelled as such.
+    console.log('\n-- 4 - STRUCTURAL: the one app-main fetch of this route is live and gated on cashTracked (SW1) --');
     const appMain = fs.readFileSync(path.join(ROOT, 'public/app-main.js'), 'utf8');
     const extra   = fs.readFileSync(path.join(ROOT, 'public/finflow-api-wiring-extra.js'), 'utf8');
     const fetches = (appMain.match(/\/api\/reports\/balance-sheet/g) || []).length;
-    // F161: the route is now client-UNREACHED — 0 fetches in app-main (the old fetch was in the
-    // shadowed/removed generateReport copy). The figure is asserted live by verify-f137*; this step
-    // records that no client surface reaches the balance-sheet route.
-    A('STRUCTURAL: balance-sheet route is client-unreached (0 app-main fetches; F128/F161)', fetches, 0);
+    A('STRUCTURAL: exactly one app-main fetch of the balance-sheet route', fetches, 1);
+    const rbStart = appMain.indexOf('\nfunction renderBanking(');
+    const rbEnd = rbStart < 0 ? -1 : appMain.indexOf('\nfunction ', rbStart + 1);
+    const rbBody = rbStart < 0 ? '' : appMain.slice(rbStart, rbEnd < 0 ? undefined : rbEnd);
+    A('STRUCTURAL: that fetch sits inside renderBanking', /\/api\/reports\/balance-sheet/.test(rbBody), true);
+    const wiringSrcs = fs.readdirSync(path.join(ROOT, 'public')).filter(f => /^finflow-api.*\.js$/.test(f))
+      .map(f => fs.readFileSync(path.join(ROOT, 'public', f), 'utf8'));
+    A('STRUCTURAL: renderBanking is the runtime winner (no window.renderBanking override in any bundle source)',
+      wiringSrcs.some(src => /window\.renderBanking\s*=/.test(src)), false);
+    A('STRUCTURAL: renderBanking uses the cash only when the response says cashTracked === true',
+      /cashTracked\s*===\s*true\s*&&\s*bj\.cash\s*!=\s*null/.test(rbBody), true);
     A('STRUCTURAL: a wiring file overrides generateReport (replacement, no _orig)',
       /window\.generateReport\s*=\s*async function/.test(extra) && !/_origGenerateReport/.test(extra), true);
 

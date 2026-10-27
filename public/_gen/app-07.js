@@ -312,7 +312,7 @@ window.skipOnboarding = function(){
 // otherwise. Runs on every auth (login/register via ff:authed) and on page-load/auth-restore
 // (loadSettingsFromDB passes its settings in). No reliance on the browser-global flag, so it can
 // neither leak to a new user nor re-trigger for a returning one.
-window._ffShowOnboarding = function(){ const o=document.getElementById('ob-overlay'); if(o) o.style.display=''; };
+window._ffShowOnboarding = function(){ const o=document.getElementById('ob-overlay'); if(o) o.style.display=''; if(typeof window._ffFillCurrencySelects==='function') window._ffFillCurrencySelects(); };   // FA-B8: every supported currency
 window._ffHideOnboarding = function(){ const o=document.getElementById('ob-overlay'); if(o) o.remove(); };
 window._ffDecideOnboarding = async function(settings){
   try{

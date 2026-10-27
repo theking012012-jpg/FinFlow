@@ -1614,7 +1614,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
             <div class="field-wrap"><label class="field-label" for="nb-name">Business name</label><input class="finput" id="nb-name" placeholder="Your business name"></div>
             <div class="field-group">
-              <div class="field-wrap"><label class="field-label" for="nb-industry">Industry</label><select class="finput" id="nb-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
+              <div class="field-wrap"><label class="field-label" for="nb-industry">Industry</label><select class="finput" id="nb-industry"><option value="Technology">Technology</option><option value="Retail">Retail</option><option value="Finance">Finance</option><option value="Healthcare">Healthcare</option><option value="Consulting">Consulting</option><option value="Manufacturing">Manufacturing</option><option value="Construction">Construction</option><option value="Food & Beverage">Food &amp; Beverage</option><option value="Real Estate">Real Estate</option><option value="Media & Creative">Media &amp; Creative</option><option value="Other">Other</option></select><!-- FA-B8: the same 11 as #s-industry and #ob-industry (FinFlowCategories.INDUSTRIES; verify-fab8-one-vocabulary) --></div>
               <div class="field-wrap"><label class="field-label" for="nb-currency">Currency</label><select class="finput" id="nb-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option><option value="TTD">TTD (TT$)</option></select></div>
               <div class="field-wrap"><label class="field-label" for="nb-timezone">Timezone <span style="color:var(--t3);font-weight:400">· for scheduling</span></label><select class="finput" id="nb-timezone"><option value="">— none (UTC) —</option></select></div>
               <div class="field-wrap"><label class="field-label" for="nb-country">Country <span style="color:var(--t3);font-weight:400">· public holidays</span></label><select class="finput" id="nb-country"><option value="">— none —</option></select></div>
@@ -4395,7 +4395,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-cat">Category</label><!-- Basis C: "Salaries" removed. Payroll expense comes ONLY from a payroll run; a hand-entered
              salary row would rebuild the exact double-count C exists to remove. Non-payroll
              compensation keeps a home under Contractors / Professional Fees, which are general
-             expenses and are NOT part of the payroll leg. --><select class="finput" id="bexp-cat"><option>Rent</option><option>Software</option><option>Marketing</option><option>Travel</option><option>Equipment</option><option>Meals</option><option>Contractors</option><option>Professional Fees</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label" for="bexp-ded">Deductible?</label><select class="finput" id="bexp-ded"><option value="yes">Yes — 100%</option><option value="half">Yes — 50%</option><option value="no">No</option></select></div></div>
+             expenses and are NOT part of the payroll leg. --><select class="finput" id="bexp-cat"><option>Rent</option><option>Software</option><option>Marketing</option><option>Travel</option><option>Meals</option><option>Equipment</option><option>Office Supplies</option><option>Utilities</option><option>Insurance</option><option>Contractors</option><option>Professional Fees</option><option>Bank Fees</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label" for="bexp-ded">Deductible?</label><select class="finput" id="bexp-ded"><option value="yes">Yes — 100%</option><option value="half">Yes — 50%</option><option value="no">No</option></select></div></div>
     <div class="field-wrap"><label class="field-label" for="bexp-vendor">Vendor / payee</label><input class="finput" id="bexp-vendor" list="ff-exp-vend-list" placeholder="Who was paid (optional)" maxlength="200"><datalist id="ff-exp-vend-list"></datalist></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-class">Class</label><input class="finput" id="bexp-class" list="seg-classes-dl" placeholder="e.g. Retail" maxlength="80"></div><div class="field-wrap"><label class="field-label" for="bexp-location">Location</label><input class="finput" id="bexp-location" list="seg-locations-dl" placeholder="e.g. Downtown" maxlength="80"></div></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('expense-modal')">Cancel</button><button class="btn btn-primary" onclick="saveExpense()">Add expense</button></div>
@@ -4540,6 +4540,8 @@ function loadChartJS(callback){
 <script src="/finflow-dates.js"></script>
 <!-- LA15b: the shared currency table. Before app-main.js, which reads it at load. -->
 <script src="/finflow-currency.js"></script>
+<!-- FA-B8: one list per vocabulary (expense categories, industries, budget suggestions) — shared with the server. -->
+<script src="/finflow-categories.js"></script>
 <!-- LA1: stat-card count-up animation (animateCounter/animateCounters). Before app-main.js, which calls it. -->
 <script src="/finflow-counter.js"></script>
 <script src="/plans.js"></script>
@@ -6017,7 +6019,7 @@ window.skipOnboarding = function(){
 // otherwise. Runs on every auth (login/register via ff:authed) and on page-load/auth-restore
 // (loadSettingsFromDB passes its settings in). No reliance on the browser-global flag, so it can
 // neither leak to a new user nor re-trigger for a returning one.
-window._ffShowOnboarding = function(){ const o=document.getElementById('ob-overlay'); if(o) o.style.display=''; };
+window._ffShowOnboarding = function(){ const o=document.getElementById('ob-overlay'); if(o) o.style.display=''; if(typeof window._ffFillCurrencySelects==='function') window._ffFillCurrencySelects(); };   // FA-B8: every supported currency
 window._ffHideOnboarding = function(){ const o=document.getElementById('ob-overlay'); if(o) o.remove(); };
 window._ffDecideOnboarding = async function(settings){
   try{
@@ -9360,13 +9362,15 @@ window.getScenarioAI = function(){
 // AUTO-CATEGORISATION
 // ══════════════════════════════════════════════════════════════════
 // Auto-categorise — REAL data only. Uncategorised = expenses with no category or 'Other'.
-const AUTOCAT_CATS = ['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Rent','Utilities','Insurance','Bank Transfer','Cost of Goods','Other'];
+// FA-B8: the one expense list (finflow-categories.js) — no Salaries / Cost of Goods / Bank Transfer (not expenses: basis C).
+const AUTOCAT_CATS = (window.FinFlowCategories && window.FinFlowCategories.EXPENSE_CATEGORIES) || ['Other'];
 let _autocatSuggest = {};   // expense_id -> { category, confidence, source }  (from rules/AI)
 let _autocatApplied = 0;    // categorised this session (real writes)
 
 function _autocatUncat(){ return (window._realExpenses || []).filter(e => !e.category || e.category === 'Other'); }
 function _autocatCats(){
-  const used = [...new Set((window._realExpenses||[]).map(e=>e.category).filter(c=>c && c!=='Other'))];
+  const _ne = c => !!(window.FinFlowCategories && window.FinFlowCategories.notAnExpense(c));   // FA-B8: never offer payroll / COGS / a transfer
+  const used = [...new Set((window._realExpenses||[]).map(e=>e.category).filter(c=>c && c!=='Other' && !_ne(c)))];
   return [...new Set([...used, ...AUTOCAT_CATS])];
 }
 // Confidence colour — input is a real 0..1 fraction from the AI, not a fabricated %.
@@ -9437,7 +9441,8 @@ window.runAutocatRules=async function(){
     _autocatApplied += n;
     // Re-fetch expenses so the queue drops the rows the server just categorised.
     try{ const eid=(window.ENTITIES||[]).find(e=>e.active)?._dbId; const er=await fetch('/api/expenses'+(eid?'?entity_id='+eid:''),{credentials:'include'}); if(er.ok) window._realExpenses=await er.json()||window._realExpenses; }catch(_){ }
-    notify('Auto-categorised '+n+' expense'+(n!==1?'s':'')+' ✦');
+    const _sk=Array.isArray(data.skipped_rules)?data.skipped_rules:[];   // FA-B8: rules naming payroll / cost of goods / a transfer are not applied
+    notify('Auto-categorised '+n+' expense'+(n!==1?'s':'')+' ✦'+(_sk.length?' — '+_sk.length+' rule'+(_sk.length!==1?'s':'')+' skipped ('+_sk.map(r=>'"'+r.keyword+'" → '+r.category).join(', ')+'): '+_sk[0].why+'. Edit '+(_sk.length!==1?'them':'it')+' to an expense category.':''), _sk.length>0);
     renderAutocat();
     window.finflow?.refresh(['expenses','dashboard']);
   }catch(e){notify('Run failed');}
@@ -9451,7 +9456,7 @@ window.openAddRuleModal=function(){
       <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
         <div><label class="field-label" for="rule-keyword">Keyword / Pattern</label><input id="rule-keyword" class="finput" placeholder="e.g. GOOGLE *"></div>
         <div><label class="field-label" for="rule-category">Category</label>
-          <select id="rule-category" class="finput">${['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Other'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+          <select id="rule-category" class="finput">${AUTOCAT_CATS.map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
         <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="rule-auto" checked><label for="rule-auto" style="font-size:13px;color:var(--t2)">Auto-approve matching transactions</label></div>
       </div>
       <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('add-rule-modal')">Cancel</button><button class="btn btn-primary" onclick="saveAutocatRule()">Save Rule</button></div>

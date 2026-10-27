@@ -16,6 +16,7 @@ const personalHistory = require('./personal-history');   // LC3c: Personal's own
 const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js');
 const JournalChart = require('./journal-chart.js');   // FA-M7: one chart of accounts per business
+const FinFlowCategories = require('./public/finflow-categories.js');   // FA-B8: one list per vocabulary
 // C24: customer-facing "not set up" message. It used to name the server's environment variables ("Add PLAID_CLIENT_ID
 // and PLAID_SECRET…") to customers. Customers get plain words; the operator gets the setting names in the server log.
 function notSetUp(feature, ...envNames) {
@@ -2492,7 +2493,7 @@ app.get('/api/expenses', requireAuth, wrap(async (req, res) => respondList(req, 
 // M52 (fix pass round 2): the expense business rules, ONE copy for create and edit. body-shape.js already refuses a
 // non-numeric / negative amount and an impossible date on every write; these are the rules it leaves to handlers:
 // an expense is a positive amount with a description. `partial` (edit) checks only the fields sent.
-function _expenseRuleError(b, partial) {
+function _expenseRuleError(b, partial, storedCategory) {
   if (!partial || b.description !== undefined) {
     if (b.description == null || !String(b.description).trim()) return 'A description is required.';
   }
@@ -2500,6 +2501,9 @@ function _expenseRuleError(b, partial) {
     const a = parseFloat(b.amount);
     if (!Number.isFinite(a) || a <= 0) return 'The amount must be more than 0.';
   }
+  // FA-B8: an expense is never payroll, cost of goods or a transfer (basis C / Rule 12 — those come from their own records).
+  // An expense saved before keeps its category on an edit that does not change it (Rule 8 — the row is not reclassified).
+  if (b.category !== undefined && b.category !== storedCategory) { const _ne = FinFlowCategories.notAnExpense(b.category); if (_ne) return _ne + '.'; }
   return null;
 }
 app.post('/api/expenses', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(async (req, res) => {
@@ -2551,7 +2555,7 @@ app.put('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(a
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
-  const _rule = _expenseRuleError(b, true);   // M52: an edit obeys the same rules as a create
+  const _rule = _expenseRuleError(b, true, row.category);   // M52: an edit obeys the same rules as a create
   if (_rule) return res.status(400).json({ error: _rule });
   // M52: an expense booked from a bank line carries that line's amount. Changing it would leave the expense and the
   // bank line disagreeing while both still read "matched". The bank is the evidence: to correct it, delete the expense
@@ -4205,7 +4209,8 @@ app.get('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
 app.post('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
   const { keyword, match_type = 'description', category, enabled = 1 } = req.body || {};
   if (!keyword || !category) return res.status(400).json({ error: 'keyword and category required.' });
-  const { row } = await db.insert('autocat_rules', { user_id: scopeId(req), keyword: keyword.toLowerCase().slice(0,100), match_type, category, enabled: enabled ? 1 : 0 });
+  { const _ne = FinFlowCategories.notAnExpense(category); if (_ne) return res.status(400).json({ error: _ne + '.', code: 'NOT_AN_EXPENSE' }); }   // FA-B8
+  const { row } = await db.insert('autocat_rules', { user_id: scopeId(req), keyword: keyword.toLowerCase().slice(0,100), match_type, category: String(category).trim().slice(0, 100), enabled: enabled ? 1 : 0 });
   await _auditRec(req, 'autocat_rules', 'CREATE', null, row);   // FIX-3b
   res.status(201).json(row);
 }));
@@ -4215,7 +4220,7 @@ app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
   if (b.keyword    != null) patch.keyword    = b.keyword.toLowerCase().slice(0,100);
-  if (b.category   != null) patch.category   = b.category;
+  if (b.category   != null) { const _ne = FinFlowCategories.notAnExpense(b.category); if (_ne) return res.status(400).json({ error: _ne + '.', code: 'NOT_AN_EXPENSE' }); patch.category = String(b.category).trim().slice(0, 100); }   // FA-B8
   if (b.match_type != null) patch.match_type = b.match_type;
   if (b.enabled    != null) patch.enabled    = b.enabled ? 1 : 0;
   await db.updateById('autocat_rules', row.id, patch);
@@ -4232,7 +4237,11 @@ app.delete('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
   const uid = scopeId(req);
-  const rules = await db.allByUser('autocat_rules', uid, r => r.enabled);
+  // FA-B8: a rule saved before naming a non-expense category (Salaries, Cost of Goods, Bank Transfer) is skipped and
+  // reported — never applied. The rule itself is left as saved (Rule 8); the owner edits it.
+  const _allRules = await db.allByUser('autocat_rules', uid, r => r.enabled);
+  const rules = _allRules.filter(r => !FinFlowCategories.notAnExpense(r.category));
+  const skippedRules = _allRules.filter(r => FinFlowCategories.notAnExpense(r.category)).map(r => ({ id: r.id, keyword: r.keyword, category: r.category, why: FinFlowCategories.notAnExpense(r.category) }));
   const expenses = await db.allByUser('expenses', uid, r => (!r.category || r.category === 'Other') && _entityScopeFilter(req)(r));
   let updated = 0;
   for (const exp of expenses) {
@@ -4248,7 +4257,7 @@ app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
       }
     }
   }
-  res.json({ ok: true, updated });
+  res.json({ ok: true, updated, skipped_rules: skippedRules });
 }));
 
 // ── AI EXPENSE CATEGORISATION (Path B) ────────────────────────────────────────
@@ -4257,7 +4266,7 @@ app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
 // UNCATEGORISED expenses (!category || 'Other') — never re-analyses categorised
 // ones, so repeat runs can't leak cost. Does NOT write categories; the client
 // approves via PUT /api/expenses/:id. Requires ANTHROPIC_API_KEY (502 if unset).
-const STD_EXPENSE_CATS = ['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Rent','Utilities','Insurance','Bank Transfer','Cost of Goods','Other'];
+const STD_EXPENSE_CATS = FinFlowCategories.EXPENSE_CATEGORIES;   // FA-B8: the one expense list (was its own 13, with Salaries / Cost of Goods / Bank Transfer)
 const AI_CAT_BATCH     = 40;      // expenses per Claude call
 // F18 — cap now comes from the shared AI budget in ai-cap.js (single source), so
 // auto-categorize draws from the same per-plan monthly pool as chat + insights.
@@ -4280,7 +4289,7 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
   // Allowed categories = the user's OWN scheme + standard fallback.
   const allExp    = await db.allByUser('expenses', uid);
   const userCats  = [...new Set(allExp.map(e => e.category).filter(c => c && c !== 'Other'))];
-  const allowed   = [...new Set([...userCats, ...STD_EXPENSE_CATS])];
+  const allowed   = [...new Set([...userCats, ...STD_EXPENSE_CATS])].filter(c => !FinFlowCategories.notAnExpense(c));   // FA-B8: never suggest payroll / COGS / a transfer
   const allowedLc = new Set(allowed.map(c => c.toLowerCase()));
 
   // 2) RULES-FIRST (free, in-memory, no write).
@@ -4290,7 +4299,7 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
     let cat = null;
     for (const rule of rules) {
       const hay = (rule.match_type === 'vendor' ? (exp.vendor || exp.description || '') : (exp.description || '')).toLowerCase();
-      if (rule.keyword && hay.includes(rule.keyword)) { cat = rule.category; break; }
+      if (rule.keyword && hay.includes(rule.keyword) && !FinFlowCategories.notAnExpense(rule.category)) { cat = rule.category; break; }   // FA-B8
     }
     if (cat) suggestions.push({ expense_id: exp.id, category: cat, confidence: null, source: 'rule' });
     else remaining.push(exp);

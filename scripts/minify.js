@@ -33,6 +33,7 @@ const TARGETS = [
   'finflow-dates.js',
   'finflow-counter.js',
   'finflow-currency.js',
+  'finflow-categories.js',
   'finflow-api.js',
 ];
 

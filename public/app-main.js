@@ -2701,6 +2701,20 @@ async function _fillContactPicker(inputId, listId, url, nameOf){
 window._fillContactPicker=_fillContactPicker;
 const _custDisplayName=c=>String(c.company||'').trim()||`${c.fname||''} ${c.lname||''}`.trim();
 window._custDisplayName=_custDisplayName;
+// FA-B8: every currency select offers every currency FinFlow supports (finflow-currency.js — Create Business, Settings
+// and onboarding offered 6, 6 and 5). The value already chosen is kept.
+function _ffFillCurrencySelects(){
+  const T=(window.FinFlowCurrency&&window.FinFlowCurrency.CURRENCIES)||null; if(!T) return;
+  const codes=Object.keys(T).sort((a,b)=>a.localeCompare(b));
+  ['nb-currency','s-currency','ob-currency'].forEach(id=>{
+    const sel=document.getElementById(id); if(!sel||sel._ffAllCur) return;
+    const cur=sel.value||'USD';
+    sel.innerHTML=codes.map(c=>'<option value="'+c+'">'+c+' — '+esc(T[c].name||c)+' ('+esc(T[c].symbol||c)+')</option>').join('');
+    sel.value=codes.includes(cur)?cur:'USD'; sel._ffAllCur=true;
+  });
+}
+window._ffFillCurrencySelects=_ffFillCurrencySelects;
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_ffFillCurrencySelects); else _ffFillCurrencySelects();
 // FA-B4: every document that names a customer / vendor offers the saved ones (the server saves and links a new name).
 window._pickCustomer=id=>_fillContactPicker(id,'ff-cust-list','/api/customers',_custDisplayName);
 window._pickVendor=id=>_fillContactPicker(id,'ff-vend-list','/api/vendors',v=>v.name);

@@ -170,13 +170,15 @@ window.getScenarioAI = function(){
 // AUTO-CATEGORISATION
 // ══════════════════════════════════════════════════════════════════
 // Auto-categorise — REAL data only. Uncategorised = expenses with no category or 'Other'.
-const AUTOCAT_CATS = ['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Rent','Utilities','Insurance','Bank Transfer','Cost of Goods','Other'];
+// FA-B8: the one expense list (finflow-categories.js) — no Salaries / Cost of Goods / Bank Transfer (not expenses: basis C).
+const AUTOCAT_CATS = (window.FinFlowCategories && window.FinFlowCategories.EXPENSE_CATEGORIES) || ['Other'];
 let _autocatSuggest = {};   // expense_id -> { category, confidence, source }  (from rules/AI)
 let _autocatApplied = 0;    // categorised this session (real writes)
 
 function _autocatUncat(){ return (window._realExpenses || []).filter(e => !e.category || e.category === 'Other'); }
 function _autocatCats(){
-  const used = [...new Set((window._realExpenses||[]).map(e=>e.category).filter(c=>c && c!=='Other'))];
+  const _ne = c => !!(window.FinFlowCategories && window.FinFlowCategories.notAnExpense(c));   // FA-B8: never offer payroll / COGS / a transfer
+  const used = [...new Set((window._realExpenses||[]).map(e=>e.category).filter(c=>c && c!=='Other' && !_ne(c)))];
   return [...new Set([...used, ...AUTOCAT_CATS])];
 }
 // Confidence colour — input is a real 0..1 fraction from the AI, not a fabricated %.
@@ -247,7 +249,8 @@ window.runAutocatRules=async function(){
     _autocatApplied += n;
     // Re-fetch expenses so the queue drops the rows the server just categorised.
     try{ const eid=(window.ENTITIES||[]).find(e=>e.active)?._dbId; const er=await fetch('/api/expenses'+(eid?'?entity_id='+eid:''),{credentials:'include'}); if(er.ok) window._realExpenses=await er.json()||window._realExpenses; }catch(_){ }
-    notify('Auto-categorised '+n+' expense'+(n!==1?'s':'')+' ✦');
+    const _sk=Array.isArray(data.skipped_rules)?data.skipped_rules:[];   // FA-B8: rules naming payroll / cost of goods / a transfer are not applied
+    notify('Auto-categorised '+n+' expense'+(n!==1?'s':'')+' ✦'+(_sk.length?' — '+_sk.length+' rule'+(_sk.length!==1?'s':'')+' skipped ('+_sk.map(r=>'"'+r.keyword+'" → '+r.category).join(', ')+'): '+_sk[0].why+'. Edit '+(_sk.length!==1?'them':'it')+' to an expense category.':''), _sk.length>0);
     renderAutocat();
     window.finflow?.refresh(['expenses','dashboard']);
   }catch(e){notify('Run failed');}
@@ -261,7 +264,7 @@ window.openAddRuleModal=function(){
       <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
         <div><label class="field-label" for="rule-keyword">Keyword / Pattern</label><input id="rule-keyword" class="finput" placeholder="e.g. GOOGLE *"></div>
         <div><label class="field-label" for="rule-category">Category</label>
-          <select id="rule-category" class="finput">${['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Other'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+          <select id="rule-category" class="finput">${AUTOCAT_CATS.map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
         <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="rule-auto" checked><label for="rule-auto" style="font-size:13px;color:var(--t2)">Auto-approve matching transactions</label></div>
       </div>
       <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('add-rule-modal')">Cancel</button><button class="btn btn-primary" onclick="saveAutocatRule()">Save Rule</button></div>

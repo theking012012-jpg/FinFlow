@@ -1349,7 +1349,8 @@
 
     // Budget targets modal — fully editable: user can add, remove, and set
     // monthly/annual targets per category. Saves to /api/budget-targets.
-    const SUGGESTED_CATS = ['Salaries','Rent','Software','Marketing','Travel','Meals','Office','Utilities','Other'];
+    // FA-B8: the breakdown's own row names (Payroll — not "Salaries", which never matched — the expense categories, Bills & vendors).
+    const SUGGESTED_CATS = (window.FinFlowCategories && window.FinFlowCategories.BUDGET_SUGGESTIONS) || ['Payroll', 'Other'];
     const esc = s => String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
 
     // LR7: targets are STORED annual. Each row keeps its annual figure in data-bt-annual — the one source of truth; the

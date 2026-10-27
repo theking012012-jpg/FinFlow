@@ -15,6 +15,7 @@ const securityLog = require('./security-log');   // LC3d: security-log event nam
 const personalHistory = require('./personal-history');   // LC3c: Personal's own history — never the business audit trail
 const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js');
+const JournalChart = require('./journal-chart.js');   // FA-M7: one chart of accounts per business
 // C24: customer-facing "not set up" message. It used to name the server's environment variables ("Add PLAID_CLIENT_ID
 // and PLAID_SECRET…") to customers. Customers get plain words; the operator gets the setting names in the server log.
 function notSetUp(feature, ...envNames) {
@@ -3882,6 +3883,14 @@ app.post('/api/journals', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(asyn
   const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
   if (Math.abs(totalDebit - totalCredit) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
+  // FA-M7: lines picked from the business's chart carry `acct` and post to exactly that account (journal-chart.js).
+  let _jLines = lines;
+  if (Array.isArray(lines) && lines.some(l => l && l.acct != null && l.acct !== '')) {
+    if (req.entityId == null) return res.status(400).json({ error: 'No active business entity. Create or select a business entity first.', code: 'NO_ACTIVE_ENTITY' });   // F157 shape
+    const _rl = JournalChart.resolveLines(lines, await chartForBusiness(scopeId(req), req.entityId));
+    if (_rl.error) return res.status(400).json({ error: _rl.error, code: 'JOURNAL_ACCOUNT' });
+    _jLines = _rl.lines;
+  } else if (Array.isArray(lines)) _jLines = JournalChart.resolveLines(lines, []).lines;   // strips any client ledger / type
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
   // the partial unique index (idx_journals_idem_key) is the sole arbiter, so two legitimately
@@ -3899,7 +3908,7 @@ app.post('/api/journals', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(asyn
       user_id: scopeId(req), entity_id: req.entityId || null,
       date: date || await entityTodayYmd(req.entityId),
       description: description.trim().slice(0,500), ref: null,   // FA-M6c: numbered below
-      debit: totalDebit, credit: totalCredit, lines: JSON.stringify(lines), status,
+      debit: totalDebit, credit: totalCredit, lines: JSON.stringify(_jLines), status,
       idempotency_key: idem,
     }));
   } catch (e) {
@@ -3964,10 +3973,25 @@ app.get('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('chart_of_accounts', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.code.localeCompare(b.code)));
 }));
 app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
-  const { code, name, category, nature = 'Debit', balance = 0 } = req.body || {};
+  const { code, name, category } = req.body || {};
   if (!code || !name || !category) return res.status(400).json({ error: 'code, name and category required.' });
   const validCats = ['Assets','Liabilities','Equity','Revenue','Expenses'];
   if (!validCats.includes(category)) return res.status(400).json({ error: 'Invalid category.' });
+  // FA-M7: one chart per business. The code is unique within it and never a built-in account's; the side is the
+  // category's; there is no typed "opening balance" (it showed as a balance the books never held) — an opening
+  // balance is a journal, so it is in the ledger like every other figure.
+  if (req.entityId == null) return res.status(400).json({ error: 'No active business entity. Create or select a business entity first.', code: 'NO_ACTIVE_ENTITY' });   // F157 shape
+  const _code = String(code).trim();
+  if (!JournalChart.OWN_CODE_RE.test(_code)) return res.status(400).json({ error: 'Use up to 20 letters, digits, "." or "-" for the code (not starting with J).', code: 'ACCOUNT_CODE' });
+  const _builtIn = DEFAULT_COA.find(d => d.code === _code);
+  if (_builtIn) return res.status(409).json({ error: `${_code} is already ${_builtIn.name} in your chart. Choose another code.`, code: 'ACCOUNT_CODE_TAKEN' });
+  { const { rows: [_tk] } = await pool.query(`SELECT * FROM chart_of_accounts WHERE user_id = $1 AND (entity_id = $2 OR entity_id IS NULL) AND data->>'code' = $3 ORDER BY id LIMIT 1`, [scopeId(req), req.entityId, _code]);
+    if (_tk) {
+      const _t = rowToObj(_tk);
+      if (typeof req.body?.idempotency_key === 'string' && _t.idempotency_key === req.body.idempotency_key.slice(0, 64)) return res.status(200).json(_t);   // a retry of the same save
+      return res.status(409).json({ error: `${_code} is already ${_t.name} in your chart. Choose another code.`, code: 'ACCOUNT_CODE_TAKEN' });
+    } }
+  const nature = JournalChart.NORMAL(JournalChart.CAT_TYPE[category]) === 'debit' ? 'Debit' : 'Credit', balance = 0;
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1b: token-blind pre-check runs ONLY for token-less callers; with a token the partial
   // unique index (idx_chart_of_accounts_idem_key) is the sole arbiter. Entity-consistent pre-check
@@ -3980,8 +4004,8 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   try {
     ({ row } = await db.insert('chart_of_accounts', {
       user_id: scopeId(req), entity_id: req.entityId || null,
-      code: code.trim().slice(0,20), name: name.trim().slice(0,200),
-      category, nature, balance: parseFloat(balance) || 0,
+      code: _code, name: name.trim().slice(0,200),
+      category, nature, balance,
       idempotency_key: idem,
     }));
   } catch (e) {
@@ -3989,6 +4013,8 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
       const { rows } = await pool.query(`SELECT * FROM chart_of_accounts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
+    // FA-M7: two different saves of the same code raced past the check above — the database's unique code index decides.
+    if (e.code === '23505' && e.constraint === 'idx_chart_of_accounts_code') return res.status(409).json({ error: `${_code} is already in your chart. Choose another code.`, code: 'ACCOUNT_CODE_TAKEN' });
     throw e;
   }
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'chart_of_accounts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
@@ -3999,11 +4025,20 @@ app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
-  if (b.name     != null) patch.name     = b.name.trim().slice(0,200);
-  if (b.balance  != null) patch.balance  = parseFloat(b.balance);
-  if (b.category != null) patch.category = b.category;
-  if (b.nature   != null) patch.nature   = b.nature;
+  if (b.name     != null) patch.name     = String(b.name).trim().slice(0,200);
+  // FA-M7: no typed balance (the ledger holds it); the side follows the category; the category can change only
+  // while nothing is posted to the account (its ledger type would otherwise disagree with the chart).
+  if (b.category != null && b.category !== row.category) {
+    if (!JournalChart.CAT_TYPE[b.category]) return res.status(400).json({ error: 'Invalid category.' });
+    const { rows: [_used] } = row.entity_id != null ? await pool.query(
+      `SELECT 1 FROM ledger_lines ll JOIN ledger_accounts la ON la.id = ll.account_id WHERE la.user_id = $1 AND la.entity_id = $2 AND la.code = $3 LIMIT 1`,
+      [scopeId(req), row.entity_id, String(row.code)]) : { rows: [] };
+    if (_used) return res.status(409).json({ error: 'This account already has entries, so its category cannot change. Add a new account instead.', code: 'ACCOUNT_IN_USE' });
+    patch.category = b.category;
+    patch.nature = JournalChart.NORMAL(JournalChart.CAT_TYPE[b.category]) === 'debit' ? 'Debit' : 'Credit';
+  }
   await db.updateById('chart_of_accounts', row.id, patch);
+  if (patch.name && row.entity_id != null) await pool.query(`UPDATE ledger_accounts SET name = $4 WHERE user_id = $1 AND entity_id = $2 AND code = $3 AND is_system = false`, [scopeId(req), row.entity_id, String(row.code), patch.name]);
   const { rows: [_coar] } = await pool.query(`SELECT * FROM chart_of_accounts WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'chart_of_accounts', recordId: row.id, action: 'UPDATE', oldData: row, newData: _coar ? rowToObj(_coar) : null, req });  // F90 Phase B
   res.json(_coar ? rowToObj(_coar) : {});
@@ -7048,7 +7083,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc, chartForBusiness);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -13058,13 +13093,13 @@ const _jeNormalFor = type => (type === 'asset' || type === 'expense') ? 'debit' 
 // J-namespaced ledger accounts. They are cash: every cash reader (balance-sheet Cash, the 13-week forecast's
 // starting cash via glBalanceSheet, the cash-flow report) counts them beside the system Cash account 1000 —
 // otherwise a journal that moves cash moved no cash figure.
-const JOURNAL_CASH_LEDGER_CODES = ['J1000', 'J1010', 'J1020'];
+const JOURNAL_CASH_LEDGER_CODES = ['J1000', 'J1010', 'J1020', '1000'];   // FA-M7: + a journal picked onto the built-in Cash account (journal-sourced lines only)
 // L6b: the journal picker's BALANCE-SHEET control accounts whose meaning is unambiguous (same code AND same meaning
 // in the JE template and the system chart) — owner-ratified map. A posted journal's leg on these lands on the
 // balance-sheet line, read from the GL on BOTH sides of the reconcile gate (computeBooks.journalBalances and the
 // glBalanceSheet reader). Template 2100 "Credit Card" / 2200 "Tax Payable" collide BY CODE with system 2100 Tax
 // Payable / 2200 Payroll Liabilities; the J-namespace keeps them apart and BS_NAMED_LINE (L6c) places them by meaning.
-const JOURNAL_BS_LEDGER_CODES = { J1100: 'ar', J2000: 'ap', J1200: 'inventory' };
+const JOURNAL_BS_LEDGER_CODES = { J1100: 'ar', J2000: 'ap', J1200: 'inventory', '1100': 'ar', '2000': 'ap', '1200': 'inventory' };   // FA-M7: + the built-in accounts (read with source_type='journal' only)
 // L6c: the balance sheet's NAMED lines — system posting anchors plus the journal accounts that mean the same thing.
 // Owner direction (2026-10-08): the JE template's 2200 "Tax Payable" posts to J2200 → the Tax Payable line (system
 // 2100 is the ledger's Tax Payable). Every account NOT named here — the template's 2100 "Credit Card", 1500
@@ -13111,22 +13146,30 @@ async function postJournalToLedger(client, { userId, entityId, journal }) {
   try { lines = Array.isArray(journal.lines) ? journal.lines : JSON.parse(journal.lines || '[]'); } catch (_) { lines = []; }
   const norm = [];
   for (const l of lines) {
+    // FA-M7: a line picked from the chart (server-resolved at write, journal-chart.js) posts to exactly that account.
+    if (l.ledger != null && l.type) {
+      const dr0 = parseFloat(l.debit) || 0, cr0 = parseFloat(l.credit) || 0;
+      if (dr0 === 0 && cr0 === 0) continue;
+      norm.push({ code: String(l.ledger), name: String(l.name || l.ledger).slice(0, 120), type: l.type, debit: dr0, credit: cr0, builtIn: DEFAULT_COA.some(d => d.code === String(l.ledger)) });
+      continue;
+    }
     const code = (l.code != null ? l.code : l.account);
     const type = _journalLineType(code);
     const dr = parseFloat(l.debit  != null ? l.debit  : (parseFloat(l.amount) > 0 ?  parseFloat(l.amount) : 0)) || 0;
     const cr = parseFloat(l.credit != null ? l.credit : (parseFloat(l.amount) < 0 ? -parseFloat(l.amount) : 0)) || 0;
     if (!type) return { posted: false, reason: 'untypeable account code ' + code };
     if (dr === 0 && cr === 0) continue;
-    norm.push({ code: 'J' + String(code).trim(), name: String(l.name || ('Journal ' + code)).slice(0, 120), type, debit: dr, credit: cr });
+    norm.push({ code: 'J' + String(code).trim(), name: String(l.name || JournalChart.LEGACY_NAMES['J' + String(code).trim()] || ('Journal ' + code)).slice(0, 120), type, debit: dr, credit: cr });
   }
   if (norm.length < 2) return { posted: false, reason: 'fewer than 2 nonzero lines' };
   let cur = 'USD';
   try { const { rows: [e] } = entityId != null ? await client.query(`SELECT data->>'currency' AS c FROM entities WHERE id=$1`, [entityId]) : { rows: [] }; cur = String((e && e.c) || 'USD').toUpperCase(); } catch (_) {}
   for (const l of norm) {
+    if (l.builtIn) continue;   // FA-M7: built-in accounts are seeded by the ledger itself (ensureLedgerAccountsForEntity)
     await client.query(
       `INSERT INTO ledger_accounts (user_id, entity_id, code, name, type, normal, currency, is_system)
        VALUES ($1,$2,$3,$4,$5,$6,$7,false) ON CONFLICT (user_id, entity_id, code) DO NOTHING`,
-      [userId, entityId, l.code, l.name, l.type, _jeNormalFor(l.type), cur]);
+      [userId, entityId, l.code, (/^J/.test(l.code) && !String(l.name || '').trim()) ? (JournalChart.LEGACY_NAMES[l.code] || l.name) : l.name, l.type, _jeNormalFor(l.type), cur]);
   }
   // M21 (money audit 2026-10-09): RESYNC, not post-once. A posted journal whose date is edited (or that is
   // flipped Posted → Draft → Posted) must land in the ledger at its CURRENT date and lines. postLedgerEntry is
@@ -14381,6 +14424,16 @@ app.get('/api/gl/accounts', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
   const f = await glFinancials(scopeId(req), req.entityId, 'year');
   res.json({ entityId: f.entityId, accounts: f.accounts });
+}));
+// FA-M7: the business's ONE chart of accounts — the Chart of Accounts page and both journal pickers read this.
+async function chartForBusiness(uid, eid) {
+  const f = await glFinancials(uid, eid, 'year');
+  const { rows: own } = await pool.query(`SELECT id, data FROM chart_of_accounts WHERE user_id = $1 AND (entity_id = $2 OR entity_id IS NULL) ORDER BY id`, [uid, eid]);
+  return JournalChart.buildChart({ builtIn: DEFAULT_COA, ledger: f.accounts, own: own.map(r => Object.assign({ id: r.id }, r.data || {})) });
+}
+app.get('/api/chart', requireAuth, wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'Choose a business first.', code: 'NO_BUSINESS_IN_VIEW' });
+  res.json({ entityId: req.entityId, accounts: await chartForBusiness(scopeId(req), req.entityId) });
 }));
 app.get('/api/gl/journal', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });

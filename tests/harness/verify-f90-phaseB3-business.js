@@ -51,8 +51,9 @@ const LOGIN = { email: 'f90b3@finflow.test', password: 'harness-password-not-a-s
     await http.put(`/api/items/${it}`, { price: 120 });
     await http.del(`/api/items/${it}`);
     // COA C/U/D
-    const co = idOf((await http.post('/api/chart-of-accounts', { code: '1000', name: 'Cash', category: 'Assets' })).json);
-    await http.put(`/api/chart-of-accounts/${co}`, { balance: 500 });
+    // FA-M7: an own account takes a free code (1000 is the built-in Cash) and has no typed balance — the update is a rename.
+    const co = idOf((await http.post('/api/chart-of-accounts', { code: '1510', name: 'Petty cash', category: 'Assets' })).json);
+    await http.put(`/api/chart-of-accounts/${co}`, { name: 'Petty cash (office)' });
     await http.del(`/api/chart-of-accounts/${co}`);
     // money DELETE: bill
     const bl = idOf((await http.post('/api/bills', { vendor: 'V', amount: 300 })).json);

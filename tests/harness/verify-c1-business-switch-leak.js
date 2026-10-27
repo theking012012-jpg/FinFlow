@@ -20,7 +20,7 @@ const PAGES = ['dashboard', 'banking', 'bank-rec', 'invoices', 'customers', 'quo
   'recurring-invoices', 'credit-notes', 'expenses', 'bills', 'vendors', 'payments-made', 'recurring-bills', 'vendor-credits',
   'payroll', 'inventory', 'items', 'projects', 'timesheet', 'reports', 'budget', 'biz-investments', 'manual-journals',
   'chart-of-accounts', 'documents', 'audit', 'entities'];
-const TOKENS_ALL = ['Acme Ltd', 'Beta Co', 'Supply Co', 'Widget', 'Sam Field', 'Olive Owner', 'NWHOLD', 'NW BANK LINE', '3,600', 'Net Host'];
+const TOKENS_ALL = ['Acme Ltd', 'Beta Co', 'Supply Co', 'Widget', 'Sam Field', 'Olive Owner', 'NWHOLD', 'NW BANK LINE', '3,600', 'Net Host', 'NW Petty Cash'];
 
 run('C1 — switching business leaves nothing of the previous one on any page; Personal unchanged', async ({ w, d, ev, settle, eq, A, http }) => {
   const html = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
@@ -56,9 +56,12 @@ run('C1 — switching business leaves nothing of the previous one on any page; P
   const nonZero = [];
   for (const p of PAGES.filter(x => x !== 'entities' && x !== 'audit')) {
     await open(p);
-    d.querySelectorAll('#page-' + p + ' .mc-val').forEach(e => { const t = e.textContent.trim(); if (/[1-9]/.test(t.replace(/\b20\d\d\b/g, ''))) nonZero.push(p + ': ' + t); });
+    // FA-M7: "Total Accounts" counts B's own chart — the 14 built-in accounts every business has — checked below.
+    d.querySelectorAll('#page-' + p + ' .mc-val').forEach(e => { if (e.id === 'coa-count') return; const t = e.textContent.trim(); if (/[1-9]/.test(t.replace(/\b20\d\d\b/g, ''))) nonZero.push(p + ': ' + t); });
   }
   eq("every stat card in the empty business reads zero", nonZero, []);
+  await open('chart-of-accounts');
+  eq("B's chart is the 14 built-in accounts — not A's NW Petty Cash (bug: 15)", (d.getElementById('coa-count') || {}).textContent, '14');
 
   const pers1 = await persSnap();
   eq('Personal is identical after the business switch (currency, income, net worth)', pers1, pers0);
@@ -68,5 +71,6 @@ run('C1 — switching business leaves nothing of the previous one on any page; P
   await J('POST', '/api/payroll', { fname: 'Olive', lname: 'Owner', gross: 4000, is_owner: true, deductions: [{ label: 'Tax', value: 10, type: 'percent' }] });
   await J('POST', '/api/holdings', { scope: 'business', ticker: 'NWHOLD', name: 'NWHOLD Fund', shares: 3, cost_per: 100, price: 100 });
   await J('POST', '/api/banking', { desc: 'NW BANK LINE', amount: 77, type: 'debit', date: '2026-07-11' });
+  await J('POST', '/api/chart-of-accounts', { code: '1510', name: 'NW Petty Cash', category: 'Assets', idempotency_key: 'c1-leak-coa' });   // FA-M7: A's own account — never in B's chart
   await J('POST', '/api/entities', { name: 'Island Co', currency: 'TTD', timezone: 'America/Port_of_Spain', country: 'TT' });
 } });

@@ -6,7 +6,7 @@
  * accountant earnings, USD-priced holdings, the explicit "≈$… USD" figures).
  *
  * Real SPA, real scratch Postgres. The SPA boots on a TTD business ("Island Traders", activated before load), seeded
- * through the real routes: a chart-of-accounts asset with balance 2,500; a project with budget 5,000; a catalogue item
+ * through the real routes: a chart-of-accounts asset with a 2,500 opening-balance journal (FA-M7); a project with budget 5,000; a catalogue item
  * priced 150; an uncategorised expense of 75. Every surface must say TT$ — the bug says "$".
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-la15a-native-symbol.js
@@ -50,7 +50,10 @@ run('LA15a — business money shows the business\'s own currency, never a litera
   await client.query(`UPDATE users SET data = data || '{"plan":"business"}'::jsonb WHERE id = $1`, [userId]);
   const tt = await J('POST', '/api/entities', { name: 'Island Traders', currency: 'TTD', timezone: 'America/Port_of_Spain', country: 'TT' });
   await J('POST', '/api/entities/' + tt.id + '/activate', {});
-  await J('POST', '/api/chart-of-accounts', { code: '1010', name: 'Operating account', category: 'Assets', nature: 'Debit', balance: 2500, idempotency_key: 'la15a-coa' });
+  // FA-M7: an own account has no typed balance — its 2,500 opening balance is a journal (Dr 1010 / Cr 3100 Owner's Equity).
+  const opAcct = await J('POST', '/api/chart-of-accounts', { code: '1010', name: 'Operating account', category: 'Assets', idempotency_key: 'la15a-coa' });
+  await J('POST', '/api/journals', { date: '2026-07-01', description: 'Opening balance', status: 'Posted', idempotency_key: 'la15a-ob',
+    lines: [{ acct: 'own:' + opAcct.id, debit: 2500, credit: 0 }, { acct: 'sys:3100', debit: 0, credit: 2500 }] });
   await J('POST', '/api/projects', { name: 'Harbour fit-out', client: 'Port Co', budget: 5000 });
   await J('POST', '/api/items', { name: 'Consulting', type: 'Service', price: 150, unit: 'hr', status: 'Active' });
   await J('POST', '/api/expenses', { description: 'Mystery charge', category: 'Other', amount: 75, deductible: 'no', expense_date: '2026-07-20', idempotency_key: 'la15a-e' });

@@ -1085,53 +1085,22 @@ async function finishReconciliation(){
 // ④ DOUBLE-ENTRY JOURNAL WITH LIVE COA
 // ════════════════════════════════════════════
 let journalEntries = []; // loaded from API by renderJournalsLive()
-const COA_ACCOUNTS = [
-  {code:'1010',name:'Checking Account',    type:'Asset'},
-  {code:'1020',name:'Savings Account',     type:'Asset'},
-  {code:'1100',name:'Accounts Receivable', type:'Asset'},
-  {code:'1200',name:'Inventory',           type:'Asset'},
-  {code:'1500',name:'Equipment',           type:'Asset'},
-  {code:'2000',name:'Accounts Payable',    type:'Liability'},
-  {code:'2100',name:'Credit Card',         type:'Liability'},
-  {code:'2200',name:'Tax Payable',         type:'Liability'},
-  {code:"3000",name:"Owner's Equity",      type:'Equity'},
-  {code:'3100',name:'Retained Earnings',   type:'Equity'},
-  {code:'4000',name:'Service Revenue',     type:'Revenue'},
-  {code:'4100',name:'Product Sales',       type:'Revenue'},
-  {code:'5000',name:'Salaries & Wages',    type:'Expense'},
-  {code:'5100',name:'Rent',                type:'Expense'},
-  {code:'5200',name:'Software Subscriptions',type:'Expense'},
-  {code:'5300',name:'Marketing',           type:'Expense'},
-];
-
-// Base balances (before posted journal entries) — all zero; set opening balances via journal entries
-const COA_BASE = {
-  '1010':0,'1020':0,'1100':0,'1200':0,'1500':0,
-  '2000':0,'2100':0,'2200':0,
-  '3000':0,'3100':0,
-  '4000':0,'4100':0,
-  '5000':0,'5100':0,'5200':0,'5300':0,
-};
-
-function computeCoaBalances(){
-  const bal = {...COA_BASE};
-  journalEntries.filter(je=>je.status==='Posted').forEach(je=>{
-    je.lines.forEach(line=>{
-      if(!bal[line.code]) bal[line.code] = 0;
-      const acct = COA_ACCOUNTS.find(a=>a.code===line.code);
-      if(!acct) return;
-      // Normal balance: Assets/Expenses increase with Debit; Liabilities/Equity/Revenue with Credit
-      const isDebitNormal = ['Asset','Expense'].includes(acct.type);
-      bal[line.code] += isDebitNormal ? (line.dr - line.cr) : (line.cr - line.dr);
-    });
-  });
-  return bal;
+// FA-M7: ONE chart of accounts per business — GET /api/chart (journal-chart.js). The picker offers exactly what the
+// Chart of Accounts page shows; each line carries the account's `acct` and posts to THAT account. (The fixed 16-account
+// template that lived here posted every line to a separate "Journal 5000" account.)
+window._jeChart = window._jeChart || null;
+async function _loadJournalChart(){
+  try{ const r=await fetch('/api/chart',{credentials:'include'}); const j=r.ok?await r.json():null; window._jeChart=(j&&Array.isArray(j.accounts))?j.accounts:[]; }
+  catch(e){ window._jeChart=[]; }
+  if(document.getElementById('je-lines')) renderJELines();
 }
 
 function openJournalEntryModal(){
   // Restore lines to 2 blank rows
-  window._jeLines = [{code:'',dr:0,cr:0},{code:'',dr:0,cr:0}];
+  window._jeLines = [{acct:'',dr:0,cr:0},{acct:'',dr:0,cr:0}];
+  window._jeChart = null;
   renderJELines();
+  _loadJournalChart();
   document.getElementById('je-date').value = todayLocal();
   document.getElementById('je-notes').value = '';
   updateJETotals();
@@ -1143,9 +1112,8 @@ function renderJELines(){
   const container = document.getElementById('je-lines');
   container.innerHTML = window._jeLines.map((line,i)=>`
     <div style="display:grid;grid-template-columns:1fr 90px 90px 28px;gap:6px;margin-bottom:5px" id="je-line-${i}">
-      <select class="finput" style="font-size:12px" onchange="jeLineChange(${i},'code',this.value)">
-        <option value="">— Select account —</option>
-        ${COA_ACCOUNTS.map(a=>`<option value="${a.code}" ${line.code===a.code?'selected':''}>${a.code} ${esc(a.name)}</option>`).join('')}
+      <select class="finput" style="font-size:12px" onchange="jeLineChange(${i},'acct',this.value)" aria-label="Account">
+        ${_jeAccountOptions(line.acct)}
       </select>
       <input class="finput" type="number" placeholder="0.00" style="font-size:12px" value="${line.dr||''}"
         oninput="jeLineChange(${i},'dr',parseFloat(this.value)||0)" min="0">
@@ -1155,12 +1123,21 @@ function renderJELines(){
     </div>`).join('');
 }
 
+function _jeAccountOptions(sel){
+  const ch=window._jeChart;
+  if(ch==null) return '<option value="">Loading your chart of accounts…</option>';
+  const usable=ch.filter(a=>a.journal);
+  if(!usable.length) return '<option value="">No accounts — add one on the Chart of Accounts page</option>';
+  const groups={}; usable.forEach(a=>{(groups[a.category]=groups[a.category]||[]).push(a);});
+  return '<option value="">— Select account —</option>'+Object.entries(groups).map(([g,accs])=>'<optgroup label="'+esc(g)+'">'
+    +accs.map(a=>'<option value="'+esc(a.acct)+'"'+(sel===a.acct?' selected':'')+'>'+esc(a.code)+' '+esc(a.name)+(a.kind==='older'?' (older journal account)':'')+'</option>').join('')+'</optgroup>').join('');
+}
 function jeLineChange(idx, field, val){
   window._jeLines[idx][field] = val;
   updateJETotals();
 }
 function addJELine(){
-  window._jeLines.push({code:'',dr:0,cr:0});
+  window._jeLines.push({acct:'',dr:0,cr:0});
   renderJELines();
   updateJETotals();
 }
@@ -1221,83 +1198,39 @@ const _origRenderJournals = renderJournals;
 async function renderCOALive(){
   const l=document.getElementById('coa-list');if(!l)return;
   try{
-    // The REAL chart of accounts is the general ledger — live double-entry balances (/api/gl/accounts).
-    // User-defined manual accounts (/api/chart-of-accounts) are merged ON TOP so any custom accounts a
-    // user added still appear. GL wins for a shared code (its balance is the real, computed one). This
-    // is why the page now shows the business's actual account balances, not an empty manual list.
-    const [glRes, manualRes] = await Promise.all([
-      fetch('/api/gl/accounts',{credentials:'include'}).catch(()=>null),
-      fetch('/api/chart-of-accounts',{credentials:'include'}).catch(()=>null),
-    ]);
-    const glJson  = (glRes && glRes.ok) ? await glRes.json().catch(()=>null) : null;
-    const manual  = (manualRes && manualRes.ok) ? await manualRes.json().catch(()=>[]) : [];
-    if(!glJson && (!manualRes || !manualRes.ok)) throw new Error();   // both failed → error state below
-    const _CAT = { asset:'Assets', liability:'Liabilities', equity:'Equity', income:'Revenue', expense:'Expenses' };
-    const byCode = {};
-    (glJson && Array.isArray(glJson.accounts) ? glJson.accounts : []).forEach(a=>{
-      // GL balance is natural-direction; show its magnitude. Nature from the account type.
-      byCode[a.code] = { code:a.code, name:a.name, category:_CAT[a.type]||a.type||'Other',
-        balance:parseFloat(a.balance)||0, nature:(a.type==='asset'||a.type==='expense')?'Debit':'Credit' };
-    });
-    (Array.isArray(manual)?manual:[]).forEach(a=>{
-      if(a && a.code!=null && byCode[a.code]==null)
-        byCode[a.code] = { code:a.code, name:a.name, category:a.category||a.type||'Other',
-          balance:parseFloat(a.balance)||0, nature:a.nature||'Debit' };
-    });
-    const accounts = Object.values(byCode).sort((x,y)=>String(x.code||'').localeCompare(String(y.code||'')));
-
-    // Update KPI cards with real data
-    // Accounts are stored with `category` (e.g. 'Assets','Liabilities'), NOT `type` — matching a.type here
-    // meant the totals were always $0 and the group header below rendered 'undefined'. Match on category,
-    // case/plural-tolerant, falling back to type for any legacy row.
-    const _coaCat = a => (a.category || a.type || '');
-    const assets = accounts.filter(a=>/^asset/i.test(_coaCat(a))).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
-    const liabs  = accounts.filter(a=>/^liab/i.test(_coaCat(a))).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
-    const equity = assets - liabs;
-    const S = n=>_nativeSymbol()+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});   // F129: entity symbol, not literal $ (COA balances are entity-currency)
+    // FA-M7: the ONE chart (/api/chart) — built-in accounts, the business's own, and older journal accounts, each with
+    // its ledger balance (all-time, natural side). The journal pickers read the same list.
+    const res=await fetch('/api/chart',{credentials:'include'});
+    if(!res.ok) throw new Error();
+    const accounts=((await res.json())||{}).accounts||[];
+    window._jeChart=accounts;
+    const sum=t=>accounts.filter(a=>a.type===t).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+    const assets=sum('asset'), liabs=sum('liability');
+    const S = n=>(n<0?'-':'')+_nativeSymbol()+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});   // F129: entity symbol
     const setEl = (id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
     setEl('coa-count', accounts.length);
     setEl('coa-assets', S(assets));
     setEl('coa-liabs',  S(liabs));
-    setEl('coa-equity', S(equity));
-
-    if(!accounts || !accounts.length){
-      l.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet. Click "+ New account" to add your chart of accounts.</div>';
-      return;
-    }
+    setEl('coa-equity', S(assets - liabs));
+    if(!accounts.length){ l.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet.</div>'; return; }
     const grouped={};
-    accounts.forEach(a=>{const k=a.category||a.type||'Other';if(!grouped[k])grouped[k]=[];grouped[k].push(a);});
+    accounts.forEach(a=>{(grouped[a.category]=grouped[a.category]||[]).push(a);});
+    const tag=a=>a.kind==='own'?'<span style="font-size:10px;color:var(--t3);margin-left:6px">yours</span>'
+      :a.kind==='older'?'<span style="font-size:10px;color:var(--t3);margin-left:6px">older journal account</span>'
+      :(!a.journal?'<span style="font-size:10px;color:var(--t3);margin-left:6px" title="'+esc(a.why||'')+'">from its documents</span>':'');
     l.innerHTML=Object.entries(grouped).map(([type,accs])=>`
       <div style="margin-bottom:1rem">
-        <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${type}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${esc(type)}</div>
         ${accs.map(a=>`
-        <div style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+        <div class="coa-row" style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
           <span style="color:var(--t3);font-family:var(--font-mono)">${esc(a.code||'')}</span>
-          <span style="color:var(--t1)">${esc(a.name||'')}</span>
+          <span style="color:var(--t1)">${esc(a.name||'')}${tag(a)}</span>
           <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">${_fmtMoneyNative(a.balance||0)}</span>
-          <span style="color:var(--t3);text-align:right">${a.nature||''}</span>
+          <span style="color:var(--t3);text-align:right">${a.normal==='debit'?'Debit':'Credit'}</span>
         </div>`).join('')}
       </div>`).join('');
   }catch(e){
-    if(!coaData.length){
-      l.innerHTML='<div style="padding:2rem;text-align:center;color:var(--t3)">Could not load chart of accounts. Please refresh.</div>';
-      return;
-    }
-    const balances=computeCoaBalances();
-    l.innerHTML=coaData.map(section=>`
-      <div style="margin-bottom:1rem">
-        <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${section.type}</div>
-        ${section.accounts.map(a=>{
-          const liveBalance=balances[a.code]??a.balance;
-          const changed=liveBalance!==a.balance;
-          return `<div style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-            <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
-            <span style="color:var(--t1)">${esc(a.name)}</span>
-            <span style="font-family:var(--font-mono);text-align:right;color:${changed?'var(--acc)':'var(--t1)'};font-weight:${changed?600:400}">${_fmtMoneyNative(liveBalance)}${changed?'<span style="font-size:10px;color:var(--acc);margin-left:3px">●</span>':''}</span>
-            <span style="color:var(--t3);text-align:right">${a.nature}</span>
-          </div>`;
-        }).join('')}
-      </div>`).join('');
+    l.innerHTML='<div style="padding:2rem;text-align:center;color:var(--t3)">Could not load the chart of accounts. Please refresh.</div>';
   }
 }
 
@@ -6142,8 +6075,8 @@ function openNewAccountModal(){
         <button class="modal-close" onclick="document.getElementById('coa-new-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
       </div>
       <div class="field-group">
-        <div class="field-wrap"><label class="field-label">Code *</label><input class="finput" id="coa-code" placeholder="e.g. 1010"></div>
-        <div class="field-wrap"><label class="field-label">Name *</label><input class="finput" id="coa-name" placeholder="e.g. Checking Account"></div>
+        <div class="field-wrap"><label class="field-label">Code *</label><input class="finput" id="coa-code" placeholder="e.g. 6950" maxlength="20"></div>
+        <div class="field-wrap"><label class="field-label">Name *</label><input class="finput" id="coa-name" placeholder="e.g. Website costs" maxlength="200"></div>
       </div>
       <div class="field-group">
         <div class="field-wrap"><label class="field-label">Category *</label>
@@ -6155,11 +6088,8 @@ function openNewAccountModal(){
             <option value="Expenses">Expenses</option>
           </select>
         </div>
-        <div class="field-wrap"><label class="field-label">Nature</label>
-          <select class="finput" id="coa-nature"><option value="Debit">Debit</option><option value="Credit">Credit</option></select>
-        </div>
       </div>
-      <div class="field-wrap"><label class="field-label">Opening balance</label><input class="finput" id="coa-balance" type="number" min="0" step="0.01" value="0"></div>
+      <div style="font-size:11.5px;color:var(--t3);line-height:1.5;margin:-2px 0 6px">The account starts at zero. To give it an opening balance, post a journal to it (Manual Journals) — so the figure is in your books, not just on this page.</div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('coa-new-modal').classList.add('hidden')">Cancel</button>
         <button class="btn btn-primary" onclick="saveNewAccount()">Add account</button>
@@ -6170,8 +6100,6 @@ function openNewAccountModal(){
   document.getElementById('coa-code').value='';
   document.getElementById('coa-name').value='';
   document.getElementById('coa-cat').value='Assets';
-  document.getElementById('coa-nature').value='Debit';
-  document.getElementById('coa-balance').value='0';
   window._coaIdemKey=null;   // C1 Wave 1b: fresh submit-intent → a genuine new account never reuses the last token
   m.classList.remove('hidden');
 }
@@ -6180,8 +6108,6 @@ async function saveNewAccount(){
   const code=document.getElementById('coa-code').value.trim();
   const name=document.getElementById('coa-name').value.trim();
   const category=document.getElementById('coa-cat').value;
-  const nature=document.getElementById('coa-nature').value;
-  const balance=parseFloat(document.getElementById('coa-balance').value)||0;
   if(!code||!name){notify('Code and name are required',true);return;}
   // One idempotency token per submit-intent (reused on retry, reset on modal-open + success).
   window._coaIdemKey=window._coaIdemKey||(window.crypto?.randomUUID?window.crypto.randomUUID():'coa-'+Date.now()+'-'+Math.random().toString(36).slice(2));
@@ -6189,7 +6115,7 @@ async function saveNewAccount(){
   const _coaBtn=document.querySelector('#coa-new-modal .btn-primary');
   if(_coaBtn)_coaBtn.disabled=true;
   try{
-    const r=await fetch('/api/chart-of-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,name,category,nature,balance,idempotency_key:window._coaIdemKey})});
+    const r=await fetch('/api/chart-of-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,name,category,idempotency_key:window._coaIdemKey})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'API error');}
     window._coaIdemKey=null;   // success → next account mints a fresh token
     document.getElementById('coa-new-modal').classList.add('hidden');

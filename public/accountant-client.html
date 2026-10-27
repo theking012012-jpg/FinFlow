@@ -939,6 +939,7 @@ window.openPersonalPanel = function() {
 
 async function switchEntity(id, el) {
   _activeEntity = id;
+  if (document.getElementById('journal-form')?.classList.contains('open')) _loadJnlChart();   // FA-M7: that business's chart
   document.querySelectorAll('.entity-item').forEach(i=>i.classList.remove('active'));
   if (el) el.classList.add('active');
   const name = el?.textContent?.trim() || 'All entities';
@@ -1412,6 +1413,7 @@ function toggleJournalForm() {
   const f = document.getElementById('journal-form');
   f.classList.toggle('open');
   _fillJnlSelects();
+  if (f.classList.contains('open')) _loadJnlChart();
   if (f.classList.contains('open')) {
     const d = document.getElementById('jnl-date');
     if (!d.value) { var _n = new Date(); d.value = _n.getFullYear() + '-' + String(_n.getMonth()+1).padStart(2,'0') + '-' + String(_n.getDate()).padStart(2,'0'); }  // C3/F37: local date, not UTC (standalone page, no window.todayLocal)
@@ -1419,21 +1421,32 @@ function toggleJournalForm() {
   }
 }
 
-// M3: the same chart the owner's journal picker uses (app-main.js COA_ACCOUNTS). A journal line is booked by
-// its account CODE (first digit = type); a free-text name could never reach the ledger.
-const JNL_ACCOUNTS = [
-  ['1010','Checking Account'],['1020','Savings Account'],['1100','Accounts Receivable'],['1200','Inventory'],
-  ['1500','Equipment'],['2000','Accounts Payable'],['2100','Credit Card'],['2200','Tax Payable'],
-  ['3000',"Owner's Equity"],['3100','Retained Earnings'],['4000','Service Revenue'],['4100','Product Sales'],
-  ['5000','Salaries & Wages'],['5100','Rent'],['5200','Software Subscriptions'],['5300','Marketing'],
-];
+// FA-M7: the client business's ONE chart of accounts (GET /api/accountants/clients/:id/chart) — the same list the owner's
+// Chart of Accounts page and journal picker show. A line carries the account's `acct` and posts to exactly that account.
+let _jnlChart = null, _jnlChartFor = null;
 function _jnlAcctOptions() {
-  return '<option value="">Select account…</option>' + JNL_ACCOUNTS.map(a => `<option value="${a[0]}">${a[0]} ${esc(a[1])}</option>`).join('');
+  if (_jnlChart == null) return '<option value="">Loading the chart of accounts…</option>';
+  const usable = _jnlChart.filter(a => a.journal);
+  if (!usable.length) return '<option value="">No accounts in this business\'s chart</option>';
+  const groups = {}; usable.forEach(a => { (groups[a.category] = groups[a.category] || []).push(a); });
+  return '<option value="">Select account…</option>' + Object.entries(groups).map(([g, accs]) => '<optgroup label="' + esc(g) + '">'
+    + accs.map(a => '<option value="' + esc(a.acct) + '">' + esc(a.code) + ' ' + esc(a.name) + (a.kind === 'older' ? ' (older journal account)' : '') + '</option>').join('') + '</optgroup>').join('');
 }
-function _fillJnlSelects() {
-  document.querySelectorAll('#jnl-lines select.jnl-acct').forEach(sel => { if (!sel.options.length) sel.innerHTML = _jnlAcctOptions(); });
+async function _loadJnlChart() {
+  const key = String(_activeEntity || 'all');
+  if (_jnlChart != null && _jnlChartFor === key) return;
+  _jnlChart = null; _jnlChartFor = key; _fillJnlSelects(true);
+  try {
+    const q = (_activeEntity && _activeEntity !== 'all') ? '?entity_id=' + encodeURIComponent(_activeEntity) : '';
+    const r = await fetch(`/api/accountants/clients/${_userId}/chart` + q, { credentials: 'include' });
+    const j = r.ok ? await r.json() : null;
+    if (_jnlChartFor === key) _jnlChart = (j && Array.isArray(j.accounts)) ? j.accounts : [];
+  } catch (_) { if (_jnlChartFor === key) _jnlChart = []; }
+  _fillJnlSelects(true);
 }
-document.addEventListener('DOMContentLoaded', _fillJnlSelects);
+function _fillJnlSelects(force) {
+  document.querySelectorAll('#jnl-lines select.jnl-acct').forEach(sel => { if (force || !sel.options.length) { const v = sel.value; sel.innerHTML = _jnlAcctOptions(); sel.value = v; } });
+}
 
 function addJournalLine() {
   const lines = document.getElementById('jnl-lines');
@@ -1461,13 +1474,12 @@ async function submitJournal() {
   document.querySelectorAll('.jnl-line').forEach(row=>{
     const sel = row.querySelector('select.jnl-acct');
     const inputs = row.querySelectorAll('input');
-    const code = sel ? sel.value : '';
+    const acct = sel ? sel.value : '';
     const debit = parseFloat(inputs[0].value)||0;
     const credit = parseFloat(inputs[1].value)||0;
     if (!debit && !credit) return;
-    if (!code) { missingAcct = true; return; }
-    const acct = JNL_ACCOUNTS.find(a => a[0] === code);
-    lines.push({code, name: acct ? acct[1] : code, debit, credit});
+    if (!acct) { missingAcct = true; return; }
+    lines.push({acct, debit, credit});
   });
   if (missingAcct) { showToast('Choose an account for every line with an amount', 'error'); return; }
   if (lines.length < 2) { showToast('Add at least two lines (a debit and a credit)', 'error'); return; }

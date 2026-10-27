@@ -49,7 +49,8 @@ try {
   A('A2: actual/budget in the same row also use € (consistency held)', out.includes('€1,200') && out.includes('€1,000'), 'row totals not in € as expected');
 
   // ── structural: COA + journals now use the entity symbol ──
-  AS('COA totals use _nativeSymbol() (not literal $)', /const S = n=>_nativeSymbol\(\)\+Math\.abs\(n\)/.test(appMain));
+  // FA-M7: the COA totals now keep a negative sign ((n<0?'-':'')+…); the symbol is still _nativeSymbol().
+  AS('COA totals use _nativeSymbol() (not literal $)', /const S = n=>\(n<0\?'-':''\)\+_nativeSymbol\(\)\+Math\.abs\(n\)/.test(appMain));
   AS('Journals KPIs use _nativeSymbol() (not literal $)', /const S = n=>_nativeSymbol\(\)\+n\.toLocaleString/.test(appMain));
   AS('no local business formatter still hardcodes "=>\'$\'+"', !/=>\s*'\$'\s*\+/.test(appMain));
 

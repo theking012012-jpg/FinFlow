@@ -640,6 +640,28 @@ is invoiced, so it is not revenue); *budget remaining* = Σ max(0, budget − bi
 > Executed both ways: the current code → 9/0 (the 7 checks, plus both rows read on the rendered page); the code before
 > FIX-1 (`c193e2c`) → 8 failed (every project figure 0; only A10.7, which never depended on the project link, passed).
 
+## A11 · Chart of accounts & manual journals — 7
+
+Added 2026-10-27 (**FA-M7**). Before it the journal picker was a fixed template whose codes collided with the ledger's
+chart, every line posted to a separate "Journal <code>" account, and a journal to the business's own account left that
+account at 0 — none of these figures was on this list. **Expected values: hand arithmetic on the seed below, by the agent —
+owner to confirm.** Seed (`verify-fam7-one-chart.js`, business with nothing else): own account 6950 Website costs; an
+old-style journal (codes, no picked account) Dr 5000 15 / Cr 1010 15; picked journals Dr 6950 40 / Cr Cash 40 and
+Dr AR 25 / Cr Revenue 25.
+
+| # | Check | Expected | Result |
+|---|---|---|---|
+| A11.1 | Chart of Accounts — 6950 Website costs (one row) | 40 | PASS (2026-10-27) — `verify-fam7-one-chart.js` 35/0; page: `verify-fam7-one-chart-ui.js` 9/0 |
+| A11.2 | Chart of Accounts — 1000 Cash | −40 | PASS (2026-10-27) |
+| A11.3 | Balance sheet — Accounts Receivable (journal to built-in AR) | 25 | PASS (2026-10-27) |
+| A11.4 | P&L — revenue (journal to built-in Revenue) | 25 | PASS (2026-10-27) |
+| A11.5 | Chart of Accounts — older journal account J5000, named "Salaries & Wages" | 15 | PASS (2026-10-27) |
+| A11.6 | Chart of Accounts — new own account saved with a typed "opening balance" of 999 | 0 | PASS (2026-10-27) |
+| A11.7 | A journal to Cost of Goods Sold / payroll / FX accounts | refused (400, with the reason) | PASS (2026-10-27) |
+
+> Executed both ways: the fix → 35/0 (server) + 9/0 (pages); the code before it → 20 failed + a crash (server) and
+> 7 failed (pages): 6950 read 0, Cash 0, AR 0, revenue 0, the typed 999 showed, the COGS journal was stored.
+
 ---
 
 # PART B — ACTION CHECKS

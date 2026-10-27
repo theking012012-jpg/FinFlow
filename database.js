@@ -242,12 +242,32 @@ async function initDB() {
     `);
 
     // C1 Wave 1b — chart_of_accounts idempotency backstop (token, boot-safe). JSONB table, so the
-    // token lives in data->>'idempotency_key' like the 9 Wave-1 routes. NOT a natural key on `code`
-    // (that business-uniqueness is deferred post-launch, out-of-band — never in initDB).
+    // token lives in data->>'idempotency_key' like the 9 Wave-1 routes. (The natural key on `code` is the
+    // guarded idx_chart_of_accounts_code below — FA-M7.)
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_chart_of_accounts_idem_key
         ON chart_of_accounts (user_id, (data->>'idempotency_key'))
         WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
+    // FA-M7 (2026-10-27): one chart per business — an own account's code is unique within its business, backed by the
+    // database (the route also refuses it, 409). GUARDED like B1b: the old code allowed duplicates, so if any exist the
+    // index is NOT built and a warning names the read-only lister (tools/launch/list-chart-accounts.js); the owner decides
+    // (Rule 8). Rows with no business (entity_id NULL) count as one group. Mirrored by
+    // scripts/migrations/2026-10-27-chart-account-codes.sql.
+    await client.query(`
+      DO $coa$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_chart_of_accounts_code') THEN
+          IF EXISTS (SELECT 1 FROM chart_of_accounts WHERE data->>'code' IS NOT NULL
+                      GROUP BY user_id, COALESCE(entity_id, 0), data->>'code' HAVING count(*) > 1) THEN
+            RAISE WARNING 'idx_chart_of_accounts_code NOT created: duplicate account codes exist — run tools/launch/list-chart-accounts.js';
+          ELSE
+            CREATE UNIQUE INDEX idx_chart_of_accounts_code ON chart_of_accounts (user_id, COALESCE(entity_id, 0), (data->>'code')) WHERE data->>'code' IS NOT NULL;
+          END IF;
+        END IF;
+      END
+      $coa$;
     `);
 
     // LR11 — manual bank lines (POST /api/banking, stored in personal_transactions source:'banking') idempotency backstop.

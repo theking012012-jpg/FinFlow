@@ -49,9 +49,10 @@
     // C1 Wave 1: in-flight re-entry lock — a double-click on Draft/Post cannot fire a 2nd POST. UX
     // layer only; the durable guarantee is the DB idempotency index (idx_journals_idem_key).
     if (window._savingJournal) return;
-    const rawLines = (window._jeLines || []).filter(
-      l => l.code && (l.dr > 0 || l.cr > 0)
-    );
+    // FA-M7: a line names its account by `acct` (from the business's chart, /api/chart) — every line with an amount needs one.
+    const _withAmt = (window._jeLines || []).filter(l => l.dr > 0 || l.cr > 0);
+    if (_withAmt.some(l => !l.acct)) { tip('Choose an account for every line with an amount', true); return; }
+    const rawLines = _withAmt;
     if (rawLines.length < 2) { tip('Add at least 2 lines', true); return; }
 
     const totalDr = rawLines.reduce((s, l) => s + (l.dr || 0), 0);
@@ -65,8 +66,7 @@
 
     // Map frontend dr/cr fields → API debit/credit field names
     const apiLines = rawLines.map(l => ({
-      code:   l.code,
-      name:   l.name  || '',
+      acct:   l.acct,
       debit:  l.dr    || 0,
       credit: l.cr    || 0,
     }));

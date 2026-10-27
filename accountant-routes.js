@@ -253,7 +253,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc, chartForBusiness) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -1121,6 +1121,23 @@ If you cannot find a field, use null. Be concise.`;
     });
   }));
 
+  // ── FA-M7: THE CLIENT BUSINESS'S CHART OF ACCOUNTS (the journal form's account list) ──────────────
+  app.get('/api/accountants/clients/:userId/chart', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
+    const access = await pool.query(
+      `SELECT access_level, entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
+      [req.session.accountantId, userId]);
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const _ea = normalizeEntityAccess(access.rows[0].entity_access);
+    let eid = /^[1-9][0-9]*$/.test(String(req.query.entity_id || '')) ? parseInt(req.query.entity_id) : null;
+    if (eid == null) eid = ((await pool.query(`SELECT id FROM entities WHERE user_id = $1 ORDER BY (CASE WHEN (data->>'is_active')::int = 1 THEN 0 ELSE 1 END), id ASC LIMIT 1`, [parseInt(userId)])).rows[0] || {}).id ?? null;
+    if (eid == null) return res.status(400).json({ error: 'Client has no business yet.' });
+    if (!(await pool.query(`SELECT 1 FROM entities WHERE id = $1 AND user_id = $2`, [eid, parseInt(userId)])).rows[0]) return res.status(400).json({ error: 'Invalid entity for this client.' });
+    if (!_canRead(entityLevel(_ea, access.rows[0].access_level, eid))) return res.status(403).json({ error: 'No access to this business.' });
+    res.json({ entityId: eid, accounts: await chartForBusiness(parseInt(userId), eid) });
+  }));
+
   // ── ADD JOURNAL ENTRY ON BEHALF OF CLIENT ────────────────────────────────
   app.post('/api/accountants/clients/:userId/journal', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
@@ -1162,10 +1179,13 @@ If you cannot find a field, use null. Be concise.`;
     // portal journal could never reach the books. Accept `code`, or an `account` that starts with the code
     // ("4000 Service Revenue"); refuse anything else rather than store a journal that moves no figure.
     const _rawLines = Array.isArray(lines) ? lines : [];
-    const _lines = [];
+    let _lines = [];
+    // FA-M7: a line picked from the client business's chart carries `acct` and posts to exactly that account.
+    const _picked = _rawLines.some(l => l && l.acct != null && l.acct !== '');
     for (const l of _rawLines) {
       const _dr = parseFloat(l && l.debit) || 0, _cr = parseFloat(l && l.credit) || 0;
       if (!_dr && !_cr) continue;
+      if (_picked) { _lines.push({ acct: String((l && l.acct) || ''), debit: _dr, credit: _cr }); continue; }
       const _m = String((l && (l.code != null && l.code !== '' ? l.code : l.account)) || '').trim().match(/^([1-9][0-9]{2,5})\b/);
       if (!_m) return res.status(400).json({ error: 'Each journal line needs an account code from the chart of accounts (e.g. 4000 Service Revenue).' });
       _lines.push({ code: _m[1], name: String((l && (l.name || l.account)) || _m[1]).slice(0, 120), debit: _dr, credit: _cr });
@@ -1178,6 +1198,12 @@ If you cannot find a field, use null. Be concise.`;
     const _jDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date)
       : (entityTodayYmd ? await entityTodayYmd(_clientEntityId) : new Date().toISOString().slice(0, 10));
     if (await require('./period-lock').isLocked(pool, parseInt(userId), _clientEntityId, _jDate)) return res.status(403).json({ error: 'Period is locked.' });
+    if (_picked) {
+      if (_lines.some(l => !l.acct)) return res.status(400).json({ error: 'Choose an account for every line with an amount.' });
+      const _rl = require('./journal-chart.js').resolveLines(_lines, chartForBusiness ? await chartForBusiness(parseInt(userId), _clientEntityId) : []);
+      if (_rl.error) return res.status(400).json({ error: _rl.error, code: 'JOURNAL_ACCOUNT' });
+      _lines = _rl.lines;
+    }
     // M3: stored exactly like the owner's posted journal (server.js POST /api/journals): status 'Posted', ref,
     // debit/credit totals — and dual-written to the GL, which is where computeBooks reads journals from.
     let { row } = await db.insert('journals', {

@@ -45,7 +45,7 @@ documents keep the numbers they have — some old ones share a number (they came
 what the client is promised) and OVERDUE; use **Acknowledge** (emails the client) and **Tell accountant** (asks for their
 response, without naming the client). Set SUPPORT_EMAIL so the accountant's reply reaches you (it is the reply-to). (16) **refunded accountant bills (FA-L3i)** — a refund or lost dispute now
 takes the bill out of the accountant's earned and FinFlow's commission automatically; run
-`2026-10-24-earning-refunds.sql` if `SKIP_INIT_DDL` is set. Refunds made before this deploy are not back-applied (Rule 8).
+`2026-10-24-earning-refunds.sql` if `SKIP_INIT_DDL` is set. Refunds made before this deploy are not back-applied (Rule 8). (17) **test-data lister (SW2)** — `list-test-data.js` now also lists the customers / vendors that test invoices and bills saved, and shows a **KEPT** section: a marked contact that a real document uses. KEPT rows are never purged — fix those by hand in the app (rename the contact) after reading the documents it names.
 
 ## ⚡ UPDATE 2026-10-21
 

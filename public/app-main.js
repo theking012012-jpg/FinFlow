@@ -2700,6 +2700,10 @@ async function _fillContactPicker(inputId, listId, url, nameOf){
 }
 window._fillContactPicker=_fillContactPicker;
 const _custDisplayName=c=>String(c.company||'').trim()||`${c.fname||''} ${c.lname||''}`.trim();
+window._custDisplayName=_custDisplayName;
+// FA-B4: every document that names a customer / vendor offers the saved ones (the server saves and links a new name).
+window._pickCustomer=id=>_fillContactPicker(id,'ff-cust-list','/api/customers',_custDisplayName);
+window._pickVendor=id=>_fillContactPicker(id,'ff-vend-list','/api/vendors',v=>v.name);
 // Batch 9 (D3): "Save all…" — a preview of every name from invoices (or bills) not saved as a contact. Each is ticked,
 // EXCEPT a name that looks like a contact already saved ("ACME Limited" ~ "Acme Ltd"): that one starts unticked with the
 // reason, so a near-duplicate is never created by accident. Nothing is saved until "Save selected".

@@ -116,6 +116,7 @@
     window.openNewQuoteModal = function () {
       window._quoteEditId = null;   // LR9: a NEW quote — never the last one edited
       ['quote-client','quote-amount','quote-expiry','quote-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      window._pickCustomer?.('quote-client');   // FA-B4
       const s = document.getElementById('quote-status'); if (s) s.value = 'pending';
       const _qt = (t, sub) => { const m = document.getElementById('quote-modal'); if (!m) return; const h = m.querySelector('.modal-title'); if (h) h.textContent = t; const st = m.querySelector('.modal-sub'); if (st) st.textContent = sub; };   // FA-B6
       if (window.ffQuoteLineItems && window.ffQuoteLineItems.reset) window.ffQuoteLineItems.reset();
@@ -132,7 +133,8 @@
       if (!q) { notify('That quote could not be found — refresh and try again', true); return; }
       if (String(q.status || '').toLowerCase() === 'converted') { notify('This quote was converted to an invoice — edit the invoice instead', true); return; }
       const set = (fid, v) => { const el = document.getElementById(fid); if (el) el.value = v == null ? '' : v; };
-      set('quote-client', q.client); set('quote-expiry', String(q.expiry_date || '').slice(0, 10)); set('quote-notes', q.notes);
+      set('quote-client', q.client); window._pickCustomer?.('quote-client');   // FA-B4
+      set('quote-expiry', String(q.expiry_date || '').slice(0, 10)); set('quote-notes', q.notes);
       set('quote-status', q.status || 'pending'); set('quote-amount', q.amount != null ? Number(q.amount) : '');
       if (window.ffQuoteLineItems && window.ffQuoteLineItems.load) window.ffQuoteLineItems.load(Array.isArray(q.line_items) ? q.line_items : []);
       window._quoteEditId = id;
@@ -260,6 +262,7 @@
 
     window.openNewReceiptModal = function () {
       ['receipt-customer','receipt-amount','receipt-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      window._pickCustomer?.('receipt-customer');   // FA-B4
       const d = document.getElementById('receipt-date'); if (d) d.value = todayStr();
       const m = document.getElementById('receipt-method'); if (m) m.value = 'Card';
       window._srIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new receipt never reuses the last token
@@ -523,6 +526,7 @@
 
     window.openNewRecurringModal = function () {
       ['ri-client','ri-amount','ri-end'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      window._pickCustomer?.('ri-client');   // FA-B4
       const f = document.getElementById('ri-freq'); if (f) f.value = 'Monthly';
       const n = document.getElementById('ri-next'); if (n) n.value = todayStr();
       const s = document.getElementById('ri-status'); if (s) s.value = 'active';
@@ -708,6 +712,7 @@
 
     window.openNewCreditNoteModal = function () {
       ['cn-customer','cn-amount','cn-reason'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      window._pickCustomer?.('cn-customer');   // FA-B4
       const d = document.getElementById('cn-date'); if (d) d.value = todayStr();
       const s = document.getElementById('cn-status'); if (s) s.value = 'Open';
       window._cnIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new credit note never reuses the last token
@@ -1216,6 +1221,7 @@
 
     window.openMakePaymentModal = function () {
       ['pm-vendor','pm-amount','pm-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      window._pickVendor?.('pm-vendor');   // FA-B4
       const d = document.getElementById('pm-date'); if (d) d.value = todayStr();
       const m = document.getElementById('pm-method'); if (m) m.value = 'Bank Transfer';
       // F84: populate the (optional) bill selector from OPEN bills. Picking a bill links the payment
@@ -1362,6 +1368,7 @@
 
     window.openNewRecurringBillModal = function () {
       ['rb-vendor','rb-amount'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      window._pickVendor?.('rb-vendor');   // FA-B4
       const f = document.getElementById('rb-freq'); if (f) f.value = 'Monthly';
       const n = document.getElementById('rb-next'); if (n) n.value = todayStr();
       const s = document.getElementById('rb-status'); if (s) s.value = 'active';
@@ -1431,6 +1438,7 @@
 
     window.openNewVendorCreditModal = function () {
       ['vc-vendor','vc-amount','vc-reason'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      window._pickVendor?.('vc-vendor');   // FA-B4
       const d = document.getElementById('vc-date'); if (d) d.value = todayStr();
       const s = document.getElementById('vc-status'); if (s) s.value = 'Open';
       openModal('modal-vendor-credit');

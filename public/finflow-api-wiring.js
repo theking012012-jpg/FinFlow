@@ -382,10 +382,11 @@
         : document.getElementById('cust-lname')?.value?.trim();
       const email = document.getElementById('cust-email')?.value?.trim().toLowerCase().slice(0, 254);
 
-      if (!fname || !lname) { notify('First name and last name are required', true); return; }
-      if (!email || (typeof validateEmail === 'function' && !validateEmail(email))) {
-        notify('A valid email address is required', true); return;
-      }
+      // FA-B4: a customer is a person (first + last name) or a company — the same rule the server and the invoice form's
+      // auto-saved contacts use; the email is optional (checked only when given).
+      const _co = (document.getElementById('cust-company')?.value || '').trim();
+      if (!((fname && lname) || _co)) { notify('Enter a first and last name, or a company name', true); return; }
+      if (email && typeof validateEmail === 'function' && !validateEmail(email)) { notify('That email address is not valid', true); return; }
 
       // L17: no typed revenue — GET /api/customers derives it from the customer's invoices.
       const data = {

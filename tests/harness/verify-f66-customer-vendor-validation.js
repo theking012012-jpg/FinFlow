@@ -50,10 +50,11 @@ const LOGIN = { email: 'f66@finflow.test', password: 'harness-password-not-a-sec
     A('POST /api/customers valid → 201 (control: not blanket-rejected)', mk.status === 201, `status ${mk.status}`);
     const cid = mk.json && mk.json.id;
 
-    const badEmailCreate = await http.post('/api/customers', { fname: 'B', email: 'not-an-email' });
-    A('POST /api/customers malformed email → 400 (pre-fix: 201, stored junk)', badEmailCreate.status === 400, `status ${badEmailCreate.status}`);
+    // FA-B4: a customer needs a first + last name or a company, so these carry a full name — the email is what is tested.
+    const badEmailCreate = await http.post('/api/customers', { fname: 'B', lname: 'Bad', email: 'not-an-email' });
+    A('POST /api/customers malformed email → 400 (pre-fix: 201, stored junk)', badEmailCreate.status === 400 && /email/i.test(badEmailCreate.text || ''), `status ${badEmailCreate.status} ${badEmailCreate.text}`);
 
-    const noEmailCreate = await http.post('/api/customers', { fname: 'NoMail' });
+    const noEmailCreate = await http.post('/api/customers', { fname: 'No', lname: 'Mail' });
     A('POST /api/customers absent email → 201 (empty email still allowed)', noEmailCreate.status === 201, `status ${noEmailCreate.status}`);
 
     // ── PUT /api/customers/:id ───────────────────────────────────────────────

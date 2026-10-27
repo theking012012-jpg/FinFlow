@@ -2358,7 +2358,7 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   // F194: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
   const _li = normalizeLineItems(req.body?.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
-  if (client != null) patch.client = client;
+  if (client != null) { patch.client = String(client).trim().slice(0, 200); if (!patch.client) return res.status(400).json({ error: 'client required.' }); }
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
   else if (amount != null) { patch.amount = parseFloat(amount); if (req.body.line_items === null) patch.line_items = null; }   // batch 7: an explicit null clears the lines (the LR9 quote rule)
   if (due_date != null) patch.due_date = due_date;
@@ -2380,6 +2380,7 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   const _flipPaid = patch.status === 'paid' && String(row.status || '').toLowerCase() !== 'paid';
   if (patch.status === 'paid') delete patch.status;   // recalcInvoiceStatus derives it from the payments
   await db.updateById('invoices', row.id, patch);
+  if (patch.client != null) await relinkDocContact('invoices', scopeId(req), row.entity_id, row.id, row.client, patch.client, req);   // FA-B4b: the link follows a renamed client
   if (!_flipPaid && (patch.amount != null || patch.status != null)) await rederiveDocStatus('invoice', scopeId(req), row.id, _paidSoFar.hasPayments, _paidSoFar.paid);   // G3
   if (_flipPaid || (req.body && String(req.body.status || '').toLowerCase() === 'paid')) {
     await settleInvoiceRemaining(pool, {
@@ -2631,12 +2632,26 @@ async function _contactNameTaken(kind, uid, eid, name, exceptId) {
 }
 const _dupContactBody = (kind, c) => ({ code: 'DUPLICATE_CONTACT', existing_id: c.id,
   error: `You already have a ${kind} called "${kind === 'customer' ? (`${c.fname || ''} ${c.lname || ''}`.trim() || c.company) : c.name}" in this business. Open that one instead, or add something that tells them apart.` });
-// Save the document's name as a contact and link the document to it (invoices.customer_id / bills.vendor_id).
+// Save the document's name as a contact and link the document to it (customer_id / vendor_id).
+// FA-B4 (2026-10-27): EVERY document that names a customer or vendor — one map, so a new document type cannot ship with
+// a typed name only. [contact kind, the document's name field].
+const DOC_CONTACT = {
+  invoices: ['customer', 'client'], quotes: ['customer', 'client'], sales_receipts: ['customer', 'customer'],
+  credit_notes: ['customer', 'customer'], recurring_invoices: ['customer', 'client'],
+  bills: ['vendor', 'vendor'], payments_made: ['vendor', 'vendor'], vendor_credits: ['vendor', 'vendor'], recurring_bills: ['vendor', 'vendor'],
+};
 async function linkDocContact(table, uid, eid, docId, name, req, q = pool) {
-  const kind = table === 'invoices' ? 'customer' : 'vendor';
+  const kind = DOC_CONTACT[table][0];
   const id = await ensureContact(kind, uid, eid, name, req, q);
   if (id) await q.query(`UPDATE ${table} SET data = data || jsonb_build_object($1::text, $2::int) WHERE id = $3`, [kind + '_id', id, docId]);
   return id;
+}
+// FA-B4b: a document whose name changes follows it — the link moves to the (saved, or now saved) contact of the new name;
+// a name cleared to nothing drops the link. Called by every edit route that can change the name.
+async function relinkDocContact(table, uid, eid, docId, oldName, newName, req, q = pool) {
+  if (_contactKey(oldName) === _contactKey(newName)) return null;
+  if (!_contactKey(newName)) { await q.query(`UPDATE ${table} SET data = data - $1::text WHERE id = $2`, [DOC_CONTACT[table][0] + '_id', docId]); return null; }
+  return linkDocContact(table, uid, eid, docId, newName, req, q);
 }
 async function customerRevenueBook(uid, eid) {
   const scoped = r => r.entity_id == null || (eid != null && r.entity_id === eid);
@@ -2707,6 +2722,8 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   // the other (Rule 2). Coerce first so a non-string body (object/array) fails the regex → 400.
   const _cem = String(b.email == null ? '' : b.email).slice(0,200);
   if (_cem && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(_cem)) return res.status(400).json({ error: 'Invalid email address.' });
+  // FA-B4: a customer is a person (first + last) or a company — never nameless (it could not be matched or picked).
+  if (!((String(b.fname || '').trim() && String(b.lname || '').trim()) || String(b.company || '').trim())) return res.status(400).json({ error: 'Enter a first and last name, or a company name.', code: 'CUSTOMER_NAME' });
   const _custEnt = b.entity_id||req.entityId||null;  // F150: fall back to active entity (was body-only → NULL rows leaked into every entity)
   const _dup = await findRecentDuplicate('customers', scopeId(req), _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem, company: (b.company||'').trim().slice(0,200) } });   // batch 9: company too — a company-only customer matched ANY other company-only one made within 5 s
   if (_dup) return res.status(200).json(_dup);
@@ -4389,6 +4406,7 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   if (_dup) return res.json(_dup);
   let { row } = await db.insert('quotes', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client, num: null, amount: Number(_effAmount), expiry_date, status, notes, ...(_li.present ? { line_items: _li.line_items } : {}) });  // F150-class: request-scoped entity, not is_active
   row = await numberNewDoc('quotes', scopeId(req), row, null);   // FA-M6c
+  row.customer_id = await linkDocContact('quotes', scopeId(req), row.entity_id, row.id, client, req);   // FA-B4: the client is a saved customer
   await _auditRec(req, 'quotes', 'CREATE', null, row);   // FIX-3
   res.json(row);
 }));
@@ -4404,7 +4422,7 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   // F194 Phase 2b: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
   const _li = normalizeLineItems(b.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
-  if (b.client      != null) patch.client      = b.client;
+  if (b.client      != null) { patch.client = String(b.client).trim().slice(0, 200); if (!patch.client) return res.status(400).json({ error: 'client required' }); }
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
   else if (b.amount != null) { patch.amount = Number(b.amount); if (b.line_items === null) patch.line_items = null; }   // LR9: an explicit null clears the lines, so a typed total never sits beside stale lines (Rule 2)
   if (b.expiry_date != null) patch.expiry_date = b.expiry_date;
@@ -4413,6 +4431,7 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   // LR9: Convert to invoice records which invoice this quote became (the invoice itself is made by POST /api/invoices).
   if (b.invoice_id  != null) { const _iv = parseInt(b.invoice_id, 10); if (!(_iv > 0)) return res.status(400).json({ error: 'invoice_id must be an invoice id.' }); patch.invoice_id = _iv; }
   await db.updateById('quotes', Number(req.params.id), patch);
+  if (patch.client != null) await relinkDocContact('quotes', scopeId(req), row.entity_id, row.id, row.client, patch.client, req);   // FA-B4b
   const { rows: [_qtn] } = await pool.query(`SELECT * FROM quotes WHERE id = $1 LIMIT 1`, [row.id]);
   if (_qtn) await _auditRec(req, 'quotes', 'UPDATE', row, rowToObj(_qtn));   // FIX-3
   res.json({ ok: true });
@@ -5280,7 +5299,7 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
   // is what the F135 paid-flip block below reads (patch.amount), so that path is unaffected.
   const _li = normalizeLineItems(b.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
-  if (b.vendor     != null) patch.vendor     = b.vendor;
+  if (b.vendor     != null) { patch.vendor = String(b.vendor).trim().slice(0, 200); if (!patch.vendor) return res.status(400).json({ error: 'vendor required.' }); }
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
   else if (b.amount != null) { patch.amount = Number(b.amount); if (b.line_items === null) patch.line_items = null; }   // batch 7: an explicit null clears the lines (the LR9 quote rule)
   if (b.due_date   != null) patch.due_date   = b.due_date;
@@ -5302,6 +5321,7 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
   const _flipPaid = patch.status != null && String(patch.status).toLowerCase() === 'paid';
   if (_flipPaid) delete patch.status;
   await db.updateById('bills', Number(req.params.id), patch);
+  if (patch.vendor != null && row) await relinkDocContact('bills', scopeId(req), row.entity_id, row.id, row.vendor, patch.vendor, req);   // FA-B4b: the link follows a renamed vendor
   if (!_flipPaid && (patch.amount != null || patch.status != null)) await rederiveDocStatus('bill', scopeId(req), Number(req.params.id), _paidSoFar.hasPayments, _paidSoFar.paid);   // G3
   if (_flipPaid) {
     await settleBillRemaining(pool, {
@@ -5359,6 +5379,7 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('recurring_bills', scopeId(req), req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_bills', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  row.vendor_id = await linkDocContact('recurring_bills', scopeId(req), row.entity_id, row.id, row.vendor, req);   // FA-B4: a saved contact
   await _auditRec(req, 'recurring_bills', 'CREATE', null, row);   // FIX-3b
   res.json(row);
 }));
@@ -5370,12 +5391,13 @@ app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
   if (!_rblr) return res.status(404).json({ error: 'not found' });
   const { vendor, amount, frequency, next_run, status } = req.body || {};
   const patch = {};
-  if (vendor != null) patch.vendor = String(vendor).trim().slice(0, 200);
+  if (vendor != null) { patch.vendor = String(vendor).trim().slice(0, 200); if (!patch.vendor) return res.status(400).json({ error: 'vendor required' }); }
   if (amount != null) patch.amount = Number(amount);
   if (frequency != null) patch.frequency = frequency;
   if (next_run != null) patch.next_run = next_run;
   if (status != null) patch.status = status;
   await db.updateById('recurring_bills', Number(req.params.id), patch);
+  if (patch.vendor != null) await relinkDocContact('recurring_bills', scopeId(req), _rblr.entity_id, _rblr.id, _rblr.data && _rblr.data.vendor, patch.vendor, req);   // FA-B4b
   { const { rows: [_rbn] } = await pool.query(`SELECT * FROM recurring_bills WHERE id = $1 LIMIT 1`, [_rblr.id]); if (_rbn) await _auditRec(req, 'recurring_bills', 'UPDATE', rowToObj(_rblr), rowToObj(_rbn)); }   // FIX-3b
   res.json({ ok: true });
 }));
@@ -5478,6 +5500,7 @@ app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('recurring_invoices', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_invoices', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  row.customer_id = await linkDocContact('recurring_invoices', scopeId(req), row.entity_id, row.id, row.client, req);   // FA-B4: a saved contact
   await _auditRec(req, 'recurring_invoices', 'CREATE', null, row);   // FIX-3b
   res.json(row);
 }));
@@ -5489,13 +5512,14 @@ app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
   if (!_rinvr) return res.status(404).json({ error: 'not found' });
   const { client, amount, frequency, next_run, status, end_date } = req.body || {};
   const patch = {};
-  if (client != null) patch.client = String(client).trim().slice(0, 200);
+  if (client != null) { patch.client = String(client).trim().slice(0, 200); if (!patch.client) return res.status(400).json({ error: 'client required' }); }
   if (amount != null) patch.amount = Number(amount);
   if (frequency != null) patch.frequency = frequency;
   if (next_run != null) patch.next_run = next_run;
   if (status != null) patch.status = status;
   if (end_date != null) patch.end_date = end_date;
   await db.updateById('recurring_invoices', Number(req.params.id), patch);
+  if (patch.client != null) await relinkDocContact('recurring_invoices', scopeId(req), _rinvr.entity_id, _rinvr.id, _rinvr.data && _rinvr.data.client, patch.client, req);   // FA-B4b
   { const { rows: [_rin] } = await pool.query(`SELECT * FROM recurring_invoices WHERE id = $1 LIMIT 1`, [_rinvr.id]); if (_rin) await _auditRec(req, 'recurring_invoices', 'UPDATE', rowToObj(_rinvr), rowToObj(_rin)); }   // FIX-3b
   res.json({ ok: true });
 }));
@@ -5545,6 +5569,7 @@ app.post('/api/sales-receipts', requireAuth, lockGuard(LOCK_SPECS.sales_receipts
     throw e;
   }
   row = await numberNewDoc('sales_receipts', scopeId(req), row, num ? String(num).slice(0, 30) : null);   // FA-M6c
+  row.customer_id = await linkDocContact('sales_receipts', scopeId(req), row.entity_id, row.id, row.customer, req);   // FA-B4: a saved customer
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a walk-in cash sale is Dr Cash / Cr Revenue at its date (matches
   // computeBooks' salesReceipts revenue leg). Best-effort.
@@ -5562,7 +5587,7 @@ app.post('/api/sales-receipts', requireAuth, lockGuard(LOCK_SPECS.sales_receipts
 app.put('/api/sales-receipts/:id', requireAuth, requireOwnedRow('sales_receipts'), lockGuard(LOCK_SPECS.sales_receipts), wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
-  if (b.customer != null) patch.customer = String(b.customer).trim().slice(0, 200);
+  if (b.customer != null) { patch.customer = String(b.customer).trim().slice(0, 200); if (!patch.customer) return res.status(400).json({ error: 'customer required.' }); }
   if (b.amount   != null) patch.amount   = parseFloat(b.amount) || 0;
   if (b.date     != null) patch.date     = b.date;
   if (b.method   != null) patch.method   = String(b.method).slice(0, 50);
@@ -5572,6 +5597,7 @@ app.put('/api/sales-receipts/:id', requireAuth, requireOwnedRow('sales_receipts'
     `UPDATE sales_receipts SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
     [JSON.stringify(Object.fromEntries(Object.entries(patch).filter(([,v]) => v !== undefined))), Number(req.params.id), scopeId(req)]
   );
+  if (_srold && patch.customer != null) await relinkDocContact('sales_receipts', scopeId(req), _srold.entity_id, _srold.id, _srold.data && _srold.data.customer, patch.customer, req);   // FA-B4b
   if (_srold) { const _o = rowToObj(_srold); await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
   if (_srold) try { await _resyncAfterEdit(scopeId(req), 'sales_receipts', Number(req.params.id)); } catch (glErr) { console.error('[GL] sales_receipts edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
@@ -5722,6 +5748,7 @@ app.post('/api/credit-notes', requireAuth, lockGuard(LOCK_SPECS.credit_notes), w
     throw e;
   }
   row = await numberNewDoc('credit_notes', scopeId(req), row, num ? String(num).slice(0, 30) : null);   // FA-M6c
+  row.customer_id = await linkDocContact('credit_notes', scopeId(req), row.entity_id, row.id, row.customer, req);   // FA-B4: a saved customer
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a credit note is the REVENUE CONTRA (F58) — Dr Revenue (4000) /
   // Cr Accounts Receivable (1100) at its date, when status ∈ {Open,Applied} (Void contributes 0,
@@ -5746,7 +5773,7 @@ app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), l
   const b = req.body || {};
   const patch = {};
   const validStatuses = ['Open', 'Applied', 'Void'];
-  if (b.customer != null) patch.customer = String(b.customer).trim().slice(0, 200);
+  if (b.customer != null) { patch.customer = String(b.customer).trim().slice(0, 200); if (!patch.customer) return res.status(400).json({ error: 'customer required.' }); }
   if (b.amount   != null) patch.amount   = parseFloat(b.amount) || 0;
   if (b.date     != null) patch.date     = b.date;
   if (b.status   != null) { if (!['Open', 'Void'].includes(b.status)) return res.status(400).json({ error: 'A credit can be Open or Void; Applied is set by applying it.', code: 'STATUS_NOT_SETTABLE' }); patch.status = b.status; }   // FA-M6
@@ -5759,6 +5786,7 @@ app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), l
   if (_cnRefuse) return res.status(409).json(_cnRefuse);
   if (_cnchk) {
     await db.updateById('credit_notes', _cnchk.id, patch);
+    if (patch.customer != null) await relinkDocContact('credit_notes', scopeId(req), _cnchk.entity_id, _cnchk.id, _cnchk.data && _cnchk.data.customer, patch.customer, req);   // FA-B4b
     await recalcCreditApplied(pool, 'credit_note', _cnchk.id, scopeId(req));   // FA-M6b: Open / Applied follows what is applied
     const _o = rowToObj(_cnchk);
     await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'credit_notes', recordId: _cnchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
@@ -5916,6 +5944,7 @@ app.post('/api/payments-made', requireAuth, lockGuard(LOCK_SPECS.payments_made),
   }
   if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
   row = await numberNewDoc('payments_made', scopeId(req), row, null);   // FA-M6c
+  if (String(row.vendor || '').trim()) row.vendor_id = await linkDocContact('payments_made', scopeId(req), row.entity_id, row.id, row.vendor, req);   // FA-B4: a saved vendor
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a bill-LINKED payment SETTLES AP (Dr AP / Cr Cash); an ORPHAN
   // payment (no bill) is a direct disbursement EXPENSE (Dr Opex / Cr Cash) — mirrors computeBooks'
@@ -5969,6 +5998,7 @@ app.put('/api/payments-made/:id', requireAuth, requireOwnedRow('payments_made'),
   } else {
     await db.updateById('payments_made', _pmchk.id, patch);
   }
+  if (patch.vendor != null) await relinkDocContact('payments_made', scopeId(req), _pmchk.entity_id, _pmchk.id, _pmchk.data && _pmchk.data.vendor, patch.vendor, req);   // FA-B4b (a payment's vendor may be blank: the link drops)
   // F38 Step 3: recalc every bill this payment touched — the old link and the new one (deduped),
   // so amount/link changes redraw AP on both the previous and current bill.
   for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, scopeId(req)); }
@@ -6039,6 +6069,7 @@ app.post('/api/vendor-credits', requireAuth, lockGuard(LOCK_SPECS.vendor_credits
     throw e;
   }
   row = await numberNewDoc('vendor_credits', scopeId(req), row, num ? String(num).slice(0, 30) : null);   // FA-M6c
+  row.vendor_id = await linkDocContact('vendor_credits', scopeId(req), row.entity_id, row.id, row.vendor, req);   // FA-B4: a saved vendor
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'vendor_credits', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a vendor credit is the OPEX CONTRA (F58) — the exact mirror of a
   // credit note on revenue — Dr Accounts Payable (2000) / Cr Operating Expenses (6000) at its date,
@@ -6063,7 +6094,7 @@ app.put('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'
   const b = req.body || {};
   const patch = {};
   const validStatuses = ['Open', 'Applied', 'Void'];
-  if (b.vendor  != null) patch.vendor  = String(b.vendor).trim().slice(0, 200);
+  if (b.vendor  != null) { patch.vendor = String(b.vendor).trim().slice(0, 200); if (!patch.vendor) return res.status(400).json({ error: 'vendor required.' }); }
   if (b.amount  != null) patch.amount  = parseFloat(b.amount) || 0;
   if (b.date    != null) patch.date    = b.date;
   if (b.status  != null) { if (!['Open', 'Void'].includes(b.status)) return res.status(400).json({ error: 'A credit can be Open or Void; Applied is set by applying it.', code: 'STATUS_NOT_SETTABLE' }); patch.status = b.status; }   // FA-M6
@@ -6076,6 +6107,7 @@ app.put('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'
   if (_vcRefuse) return res.status(409).json(_vcRefuse);
   if (_vcchk) {
     await db.updateById('vendor_credits', _vcchk.id, patch);
+    if (patch.vendor != null) await relinkDocContact('vendor_credits', scopeId(req), _vcchk.entity_id, _vcchk.id, _vcchk.data && _vcchk.data.vendor, patch.vendor, req);   // FA-B4b
     await recalcCreditApplied(pool, 'vendor_credit', _vcchk.id, scopeId(req));   // FA-M6b
     const _o = rowToObj(_vcchk);
     await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'vendor_credits', recordId: _vcchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
@@ -7385,7 +7417,7 @@ async function _fireRecurringOnce(table, r, docTable, docData) {
       [r.user_id, r.entity_id || null, docData]);
     if (docTable === 'invoices') { const _n = await assignInvoiceNumber(cx, r.user_id, r.entity_id, doc.id); if (_n) doc.data = Object.assign({}, doc.data, { number: _n }); }   // B1b
     if (docTable === 'bills') { const _n = await assignBillNumber(cx, r.user_id, r.entity_id, doc.id); if (_n) doc.data = Object.assign({}, doc.data, { num: _n }); }   // FA-M5c
-    if (docTable === 'invoices' || docTable === 'bills') await linkDocContact(docTable, r.user_id, r.entity_id, doc.id, docTable === 'invoices' ? docData.client : docData.vendor, null, cx);   // batch 9
+    if (DOC_CONTACT[docTable]) await linkDocContact(docTable, r.user_id, r.entity_id, doc.id, docData[DOC_CONTACT[docTable][1]], null, cx);   // batch 9 / FA-B4
     await cx.query('COMMIT');
     return rowToObj(doc);
   } catch (e) {
@@ -7772,7 +7804,7 @@ async function _csvImport(uid, entityId, sessionUserId, type, content, mapping, 
     try { _ins = (await db.insert(spec.table, Object.assign({ user_id: uid, entity_id: entityId, import_key: importKey, idempotency_key: importKey, source: 'csv' }, m.data))).row; tally.added++;
       if (spec.table === 'invoices') await assignInvoiceNumber(pool, uid, entityId, _ins.id, m.sourceNumber);   // B1b
       if (spec.table === 'bills') await assignBillNumber(pool, uid, entityId, _ins.id, m.sourceNumber);   // FA-M5c
-      if (spec.table === 'invoices' || spec.table === 'bills') await linkDocContact(spec.table, uid, entityId, _ins.id, spec.table === 'invoices' ? m.data.client : m.data.vendor, null);   // batch 9
+      if (DOC_CONTACT[spec.table]) await linkDocContact(spec.table, uid, entityId, _ins.id, m.data[DOC_CONTACT[spec.table][1]], null);   // batch 9 / FA-B4
     }
     catch (e) { if (e.code === '23505') tally.duplicate++; else { tally.failed++; console.error('[csv import ' + type + ']', e.message); } }
     // M5: settle the paid part through the real payment writer (payment row + GL cash leg + status recalc).
@@ -9618,7 +9650,7 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
           const extra = (m.link && m.link.field && linkId) ? { [m.link.field]: linkId } : {};
           const { row: _cdRow } = await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
             import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data, extra));
-          if ((m.table === 'invoices' || m.table === 'bills') && _cdRow) await linkDocContact(m.table, uid, entityId, _cdRow.id, m.table === 'invoices' ? m.data.client : m.data.vendor, null);   // batch 9
+          if (DOC_CONTACT[m.table] && _cdRow) await linkDocContact(m.table, uid, entityId, _cdRow.id, m.data[DOC_CONTACT[m.table][1]], null);   // batch 9 / FA-B4
           if (m.table === 'invoices' && _cdRow) await assignInvoiceNumber(pool, uid, entityId, _cdRow.id, rec.invoiceNumber);   // B1b: the platform's own number, when free
           if (m.table === 'bills' && _cdRow) await assignBillNumber(pool, uid, entityId, _cdRow.id, rec.reference);   // FA-M5c: the platform's reference, when free
         }

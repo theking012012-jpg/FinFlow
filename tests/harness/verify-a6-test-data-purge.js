@@ -112,9 +112,10 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     const keys = listed ? [...listed.marked, ...listed.linked, ...listed.named, ...listed.review].map(x => x.table).sort() : null;
     // SW2: 17 + the 2 customers and 2 vendors the test invoices / bills saved (batch 9). The OLD lister also listed the
     // marked Harbor vendor a real bill uses → 22 keys with a 3rd 'vendors', and the purge deleted it (bug value below).
-    eq('1  lister finds the 21 test records by table', keys, ['accountant_clients', 'bills', 'bills', 'budget_targets', 'customers', 'customers', 'expenses', 'invoice_payments', 'invoices', 'invoices',
+    // FA-B4: the test receipt ("ZZ-LIVECHECK receipt") and quote ("ZZ-LIVECHECK quote") now save their customers too → 23.
+    eq('1  lister finds the 23 test records by table', keys, ['accountant_clients', 'bills', 'bills', 'budget_targets', 'customers', 'customers', 'customers', 'customers', 'expenses', 'invoice_payments', 'invoices', 'invoices',
       'payments_made', 'payroll_runs', 'personal_transactions', 'personal_transactions', 'projects', 'quotes', 'sales_receipts', 'support_requests', 'timesheet', 'vendors', 'vendors'].sort(),
-      ['accountant_clients', 'bills', 'bills', 'budget_targets', 'customers', 'customers', 'expenses', 'invoice_payments', 'invoices', 'invoices',
+      ['accountant_clients', 'bills', 'bills', 'budget_targets', 'customers', 'customers', 'customers', 'customers', 'expenses', 'invoice_payments', 'invoices', 'invoices',
       'payments_made', 'payroll_runs', 'personal_transactions', 'personal_transactions', 'projects', 'quotes', 'sales_receipts', 'support_requests', 'timesheet', 'vendors', 'vendors', 'vendors'].sort());
     const toRemove = listed ? JSON.stringify([...listed.marked, ...listed.linked, ...listed.named, ...listed.review]) : '';
     eq('1  lister names none of the real records for removal (Acme / Rent / Paper Co / Walk-in / Groceries / October / Harbor)', /Acme|"Rent"|Paper Co|Walk-in|Groceries|October|Harbor/.test(toRemove), false);
@@ -151,7 +152,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     const au = (await c.query(`SELECT table_name, action FROM audit_trail WHERE actor_type = 'system' AND (old_data->>'purge' IS NOT NULL OR table_name = 'budget_targets') ORDER BY table_name, action`)).rows.map(r => r.table_name + ' ' + r.action);
     eq('7  audit rows for the business removals', au.sort(), ['accountant_clients DELETE', 'bills DELETE', 'bills DELETE', 'budget_targets UPDATE', 'expenses DELETE', 'invoice_payments DELETE',
       'invoices DELETE', 'invoices DELETE', 'payments_made DELETE', 'payroll_runs VOID', 'projects DELETE', 'quotes DELETE', 'sales_receipts DELETE', 'support_requests DELETE', 'timesheet DELETE',
-      'customers DELETE', 'customers DELETE', 'vendors DELETE', 'vendors DELETE'].sort());
+      'customers DELETE', 'customers DELETE', 'customers DELETE', 'customers DELETE', 'vendors DELETE', 'vendors DELETE'].sort());
     const ph = (await c.query(`SELECT kind, action FROM personal_history WHERE actor_type = 'system' ORDER BY id`)).rows.map(r => r.kind + ' ' + r.action);
     eq('7  personal removals recorded in personal history (never the business trail)', ph.filter(x => /DELETE/.test(x)).sort(), ['owner_salary DELETE', 'personal_transactions DELETE']);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }

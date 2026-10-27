@@ -641,6 +641,8 @@ canvas{max-width:100%;display:block}
 /* FIX-4: `hidden` hides ANY element (it hid only overlays, so the Record Payment overpay warning and Stock In's supplier
    fields always showed). !important: later rules such as .field-group{display:grid} would otherwise win. */
 .hidden{display:none!important}
+/* FA-U2: at phone width every control on a page is at least 32 px tall (WCAG 2.2 target size is 24) — period toggles, currency chips and search boxes measured 18–22 px at 375 px. */
+@media (max-width:768px){ .page button, .page select, .page [role=button], .page input:not([type=checkbox]):not([type=radio]):not([type=hidden]) { min-height:32px; } }
 .modal{background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);padding:1.75rem;width:100%;max-width:480px;box-shadow:var(--shadow-lg);animation:modalIn .18s ease}
 .modal-wide{max-width:580px}
 @keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(8px)}}

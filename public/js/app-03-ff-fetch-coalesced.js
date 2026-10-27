@@ -26,7 +26,9 @@
             if (hit) return hit.then(function(r){ return r.clone(); });
             var p = _f(input, init);
             cache.set(url, p);
-            p.then(function(r){ if (!r || !r.ok) cache.delete(url); }, function(){ cache.delete(url); });
+            // FA-P1b: share only while IN FLIGHT. Once the request settles the entry is gone, so a later GET reads the
+            // server again (it used to keep every successful response for the whole window and answer repeats with it).
+            p.then(function(){ cache.delete(url); }, function(){ cache.delete(url); });
             return p.then(function(r){ return r.clone(); });
           }
         }

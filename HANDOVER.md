@@ -15,6 +15,7 @@ confirms in the Railway dashboard which commit is deployed and whether "wait for
 new HIGH advisory, body-parser 1.20.8 (GHSA-27r3-jxmh-p828). Fixed in `a96eea4` (1.20.9, lockfile only). The owner has
 seen these CI e-mails "from time to time" before → **owner request: a full re-check of the entire app once the current fixes
 are finished** (the 3× full sweep + a live walk-through), not just the targeted harnesses.
+**Latest (2026-10-27):** owner 3× sweep on `542ebd7` = 671/674 ×3; frozen list SW1–SW3 (AUDIT_MASTER, top of RECHECK_2026-10-24.md). Next session starts there, then FA-M7 onward.
 
 **Live behaviour that started with today's deploys (by design, verified):** the hourly billing job (lands due downgrades;
 retention warnings / deletion only for plans that END from now on — no existing account has `billing.access_ended_at`;

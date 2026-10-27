@@ -22,6 +22,7 @@
  * handlers (openModal, save) to SIMULATE a click is legitimate and different from reading.
  */
 
+const path = require('path');
 const clock = require('./clock.js');
 const bcrypt = require('bcryptjs');
 const { startScratchPostgres } = require('./pgScratch.js');
@@ -141,22 +142,6 @@ async function bootSpaInJsdom(opts = {}) {
   vc.on('log', (m) => consoleLogs.push(String(m)));
   vc.on('jsdomError', (e) => consoleErrors.push('jsdomError: ' + (e && e.message ? e.message : e)));
 
-  const dom = new JSDOM(htmlRes.text, {
-    url: origin + '/', runScripts: 'dangerously', resources: 'usable',
-    pretendToBeVisual: true, cookieJar: jar, virtualConsole: vc,
-  });
-  const { window } = dom;
-
-  // Pin the jsdom window clock so client period windows match the server probe.
-  window.Date = (function () {
-    const P = clock.PINNED_MS;
-    class PinnedDate extends window.Date {
-      constructor(...a) { if (a.length === 0) super(P); else super(...a); }
-      static now() { return P; }
-    }
-    return PinnedDate;
-  })();
-
   // The fetch layer: generic injection + wire capture. resources:'usable' loads <script src>
   // through jsdom's own loader, so app bundles are unaffected — only the app's /api calls pass
   // through here.
@@ -165,27 +150,58 @@ async function bootSpaInJsdom(opts = {}) {
   const reqLog = [];     // EVERY request (method + path), for boot-cost measurement
   const injected = [];
   const t0 = clock.RealDate.now();
-  window.fetch = (input, init = {}) => {
-    const url = typeof input === 'string' ? input : (input && input.url) || String(input);
-    const p = pathOf(url);
-    reqLog.push({ method: (init.method || 'GET').toUpperCase(), path: p, at: clock.RealDate.now() - t0 });
-    if (Object.prototype.hasOwnProperty.call(failMap, p)) {
-      const v = failMap[p];
-      injected.push({ path: p, as: v });
-      if (v === 'network') {
-        return Promise.reject(new TypeError(`Failed to fetch [injected network error: ${p}]`));
+  // FA-P1: install the clock pin and the fetch layer BEFORE the page parses (beforeParse), so the page's own scripts see
+  // them from their first line — as page scripts see fetch in a browser. (Before, scripts that ran during parse ran
+  // with no fetch and the real clock, and a script that wrapped fetch was silently discarded when this layer replaced
+  // it afterwards — that is how the coalescer's stale reads, FA-P1b, stayed hidden.)
+  const installLayers = (window) => {
+    // Pin the jsdom window clock so client period windows match the server probe.
+    window.Date = (function () {
+      const P = clock.PINNED_MS;
+      class PinnedDate extends window.Date {
+        constructor(...a) { if (a.length === 0) super(P); else super(...a); }
+        static now() { return P; }
       }
-      return Promise.resolve(new Response(JSON.stringify({ error: `injected ${v}` }), {
-        status: v, headers: { 'Content-Type': 'application/json' },
-      }));
-    }
-    if (init && init.body != null) {
-      wireLog.push({ method: (init.method || 'GET').toUpperCase(), path: p, body: String(init.body) });
-    }
-    const abs = url.startsWith('http') ? url : origin + (url.startsWith('/') ? url : '/' + url);
-    const headers = Object.assign({}, init.headers, { Cookie: cookiePair });
-    return nodeFetch(abs, Object.assign({}, init, { headers }));
+      return PinnedDate;
+    })();
+
+    window.fetch = (input, init = {}) => {
+      const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      const p = pathOf(url);
+      reqLog.push({ method: (init.method || 'GET').toUpperCase(), path: p, at: clock.RealDate.now() - t0 });
+      if (Object.prototype.hasOwnProperty.call(failMap, p)) {
+        const v = failMap[p];
+        injected.push({ path: p, as: v });
+        if (v === 'network') {
+          return Promise.reject(new TypeError(`Failed to fetch [injected network error: ${p}]`));
+        }
+        return Promise.resolve(new Response(JSON.stringify({ error: `injected ${v}` }), {
+          status: v, headers: { 'Content-Type': 'application/json' },
+        }));
+      }
+      if (init && init.body != null) {
+        wireLog.push({ method: (init.method || 'GET').toUpperCase(), path: p, body: String(init.body) });
+      }
+      const abs = url.startsWith('http') ? url : origin + (url.startsWith('/') ? url : '/' + url);
+      const headers = Object.assign({}, init.headers, { Cookie: cookiePair });
+      return nodeFetch(abs, Object.assign({}, init, { headers }));
+    };
   };
+
+  // FA-P1: the page's own scripts are files (no inline <script> under the strict CSP). A browser runs each one where it
+  // stands, blocking the parser; jsdom's loader runs <script src> late and asynchronously (DOMContentLoaded can fire
+  // first). So, as they ran before they became files, they are put back inline here: the moved page scripts (/js/…), the
+  // policy runtime + handler registry (/ff-csp.js, /_gen/ff-handlers.js) and the lazy-screen hook (/_gen/lazy-hook.js).
+  const PUB = path.join(__dirname, '..', '..', 'public');
+  const pageHtml = htmlRes.text.replace(/<script\b[^>]*\bsrc="\/(js\/[^"]+|ff-csp\.js|_gen\/ff-handlers\.js|_gen\/lazy-hook\.js)"[^>]*><\/script>/g,
+    (m, f) => { try { return '<script>\n' + require('fs').readFileSync(path.join(PUB, f), 'utf8').replace(/<\/script/gi, '<\\/script') + '\n</script>'; } catch (_) { return m; } });
+
+  const dom = new JSDOM(pageHtml, {
+    url: origin + '/', runScripts: 'dangerously', resources: 'usable',
+    pretendToBeVisual: true, cookieJar: jar, virtualConsole: vc,
+    beforeParse: installLayers,
+  });
+  const { window } = dom;
 
   const settle = async (iters = 200, ms = 100) => {
     for (let i = 0; i < iters; i++) await new Promise((r) => setTimeout(r, ms));

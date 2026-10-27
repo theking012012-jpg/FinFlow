@@ -2112,19 +2112,33 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="modal-overlay hidden" id="stock-out-modal">
         <div class="modal">
           <div class="modal-header">
-            <div><div class="modal-title">Stock Out / Sale</div><div class="modal-sub" id="so-sub">Record a sale or stock removal</div></div>
+            <div><div class="modal-title">Stock Out</div><div class="modal-sub" id="so-sub">A sale, or stock written off</div></div>
             <button class="modal-close" onclick="closeModal('stock-out-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <input type="hidden" id="so-item-idx">
+          <!-- FA-B7: a sale records what it sold for and to whom — its sales receipt (paid now) or invoice (on credit) is made with it -->
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label" for="so-qty">Quantity</label><input class="finput" id="so-qty" type="number" placeholder="e.g. 10" min="0.0001" step="any"></div>
-            <div class="field-wrap"><label class="field-label" for="so-ref">Reference</label><input class="finput" id="so-ref" placeholder="e.g. INV-200"></div>
+            <div class="field-wrap"><label class="field-label" for="so-kind">This is</label><select class="finput" id="so-kind" onchange="_soKindChange()"><option value="sale">A sale</option><option value="writeoff">A write-off (damaged, lost, own use)</option></select></div>
+          </div>
+          <div id="so-sale-fields">
+            <div class="field-group">
+              <div class="field-wrap"><label class="field-label" for="so-customer">Customer *</label><input class="finput" id="so-customer" placeholder="Who bought it" maxlength="200" autocomplete="off"></div>
+              <div class="field-wrap"><label class="field-label" for="so-price">Price each (<span data-cur="biz">USD</span>) *</label><input class="finput" id="so-price" type="number" min="0.01" step="any" placeholder="0.00" oninput="_soPreview()"></div>
+            </div>
+            <div class="field-group">
+              <div class="field-wrap"><label class="field-label" for="so-paid">Payment</label><select class="finput" id="so-paid" onchange="_soKindChange()"><option value="now">Paid now — a sales receipt</option><option value="invoice">On credit — an invoice</option></select></div>
+              <div class="field-wrap" id="so-method-wrap"><label class="field-label" for="so-method">Paid by</label><select class="finput" id="so-method"><option>Cash</option><option>Card</option><option>Bank Transfer</option><option>Other</option></select></div>
+            </div>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label" for="so-qty">Quantity</label><input class="finput" id="so-qty" type="number" placeholder="e.g. 10" min="0.0001" step="any" oninput="_soPreview()"></div>
+            <div class="field-wrap"><label class="field-label" for="so-ref">Reference</label><input class="finput" id="so-ref" placeholder="Optional — a sale uses its receipt / invoice number"></div>
             <div class="field-wrap"><label class="field-label" for="so-date">Date</label><input class="finput" id="so-date" type="date"></div>
           </div>
           <div id="so-cogs-preview" style="font-size:12px;padding:.5rem;background:var(--bg2);border-radius:var(--radius);color:var(--t2);margin-bottom:.5rem;display:none"></div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="closeModal('stock-out-modal')">Cancel</button>
-            <button class="btn btn-primary" onclick="submitStockOut()">Record Stock Out</button>
+            <button class="btn btn-primary" id="so-submit" onclick="submitStockOut()">Record sale</button>
           </div>
         </div>
       </div>
@@ -7309,7 +7323,9 @@ function openStockOutModal(idx){
   if(sub&&item)sub.textContent='Stock out for '+esc(item.name||'');
   const idxEl=document.getElementById('so-item-idx');
   if(idxEl)idxEl.value=idx;
-  ['so-qty','so-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['so-qty','so-ref','so-customer','so-price'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  { const _k=document.getElementById('so-kind'); if(_k) _k.value='sale'; const _p=document.getElementById('so-paid'); if(_p) _p.value='now'; const _m=document.getElementById('so-method'); if(_m) _m.value='Cash'; _soKindChange(); }   // FA-B7
+  if(typeof window._pickCustomer==='function') window._pickCustomer('so-customer');   // FA-B4: saved customers
   { const _d=document.getElementById('so-date'); if(_d) _d.value=(window.todayLocal?window.todayLocal():new Date().toISOString().slice(0,10)); }   // M32: the business day, editable
   const prev=document.getElementById('so-cogs-preview');
   if(prev)prev.style.display='none';
@@ -7362,12 +7378,31 @@ async function submitStockIn(){
   }catch(e){notify('Could not record stock in',true);}   // keep _stockInIdemKey for idempotent retry
   finally{window._savingStockIn=false;if(_siBtn)_siBtn.disabled=false;}
 }
+// FA-B7: a sale shows sale fields (customer, price, paid now / on credit); a write-off does not (it books only the cost).
+function _soKindChange(){
+  const sale=(document.getElementById('so-kind')||{}).value!=='writeoff';
+  const f=document.getElementById('so-sale-fields'); if(f) f.style.display=sale?'':'none';
+  const mw=document.getElementById('so-method-wrap'); if(mw) mw.style.display=(sale&&(document.getElementById('so-paid')||{}).value!=='invoice')?'':'none';
+  const b=document.getElementById('so-submit'); if(b) b.textContent=sale?'Record sale':'Record write-off';
+  _soPreview();
+}
+function _soPreview(){
+  const prev=document.getElementById('so-cogs-preview'); if(!prev) return;
+  const sale=(document.getElementById('so-kind')||{}).value!=='writeoff';
+  const qty=parseFloat((document.getElementById('so-qty')||{}).value)||0, price=parseFloat((document.getElementById('so-price')||{}).value)||0;
+  if(sale&&qty>0&&price>0){ prev.style.display='block'; prev.innerHTML='Sale: '+qty+' × '+S(price)+' = <strong style="color:var(--t1)">'+S(Math.round(qty*price*100)/100)+'</strong> revenue · the cost (FIFO) is worked out when you record it.'; }
+  else prev.style.display='none';
+}
 async function submitStockOut(){
   const idx=parseInt(document.getElementById('so-item-idx')?.value);
   const qty=parseFloat(document.getElementById('so-qty')?.value||0);
   const ref=document.getElementById('so-ref')?.value||'';
   if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
   if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
+  const _isSale=(document.getElementById('so-kind')||{}).value!=='writeoff';   // FA-B7
+  const _cust=(document.getElementById('so-customer')?.value||'').trim(), _price=parseFloat(document.getElementById('so-price')?.value||0);
+  if(_isSale&&!_cust){notify('Enter who bought it',true);return;}
+  if(_isSale&&!(_price>0)){notify('Enter the price each unit sold for',true);return;}
   const item=(window.inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
   if(!item._dbId){notify('Save this item before recording stock against it',true);return;}   // N110
@@ -7393,7 +7428,8 @@ async function submitStockOut(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item._dbId,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,date:(document.getElementById('so-date')?.value||undefined),idempotency_key:window._stockOutIdemKey}),
+      body:JSON.stringify(Object.assign({inventory_id:item._dbId,type:_isSale?'sale':'adjustment',quantity:qty,unit_cost:cogs/qty,reference:ref,date:(document.getElementById('so-date')?.value||undefined),idempotency_key:window._stockOutIdemKey},
+        _isSale?{sale:{price:_price,customer:_cust,paid:(document.getElementById('so-paid')||{}).value==='invoice'?'invoice':'now',method:(document.getElementById('so-method')||{}).value||'Cash'}}:{})),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
@@ -7402,9 +7438,11 @@ async function submitStockOut(){
     item.cogs=(parseFloat(item.cogs)||0)+cogs;
     item.low=item.units<(item.max||0)*.1;
     closeModal('stock-out-modal');
-    notify(`✓ -${qty} units · COGS ${S(cogs)}`);
+    { const _rev=_isSale?Math.round(qty*_price*100)/100:0;
+      notify(_isSale ? `✓ Sold ${qty} · ${S(_rev)} revenue (${data.sale&&data.sale.number?data.sale.number:'recorded'}) · cost ${S(cogs)} · profit ${S(Math.round((_rev-cogs)*100)/100)}` : `✓ Written off ${qty} · cost ${S(cogs)}`); }
     if(typeof renderInventory==='function')renderInventory();
     loadCOGS();
+    if(_isSale&&typeof window.refreshFinancials==='function') window.refreshFinancials('all');   // FA-B7: the new receipt / invoice
   }catch(e){notify('Could not record stock out',true);}   // keep _stockOutIdemKey for idempotent retry
   finally{window._savingStockOut=false;if(_soBtn)_soBtn.disabled=false;}
 }

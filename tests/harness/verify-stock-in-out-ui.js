@@ -73,11 +73,16 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
 
     window.openStockOutModal(idx);
     window.document.getElementById('so-qty').value = '4';
+    window.document.getElementById('so-customer').value = 'Counter sale';   // FA-B7: a sale names its buyer and price
+    window.document.getElementById('so-price').value = '20';
     await window.submitStockOut();
     await settle(8, 60);
     const m2 = await mv();
     const sale = m2.find(m => m.type === 'sale');
     A('Stock Out: sale movement on Bolts, qty 4 (bug: wrong item)', sale && sale.inventory_id === bolts._dbId && sale.q === 4, JSON.stringify(m2));
+    // FA-B7: the sale made its sales receipt — 4 × 20 = 80, to "Counter sale", referenced on the movement.
+    const _sr = ((await c.query(`SELECT data FROM sales_receipts WHERE data->>'customer' = 'Counter sale'`)).rows[0] || {}).data;
+    A('Stock Out made the sales receipt: 80 to "Counter sale" (bug: no receipt — cost booked, no revenue)', !!_sr && Number(_sr.amount) === 80, JSON.stringify(_sr || null));
     const prev = (window.document.getElementById('so-cogs-preview') || {}).textContent || '';
     const fmt = (typeof window.S === 'function') ? window.S(48) : '48';
     A('Stock Out preview shows FIFO COGS 48 (4 × 12) (bug: 0 — quantity_sold → 400)', prev.replace(/\s+/g, '').includes(String(fmt).replace(/\s+/g, '')), `preview "${prev}" want ${fmt}`);

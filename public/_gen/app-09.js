@@ -689,7 +689,9 @@ function openStockOutModal(idx){
   if(sub&&item)sub.textContent='Stock out for '+esc(item.name||'');
   const idxEl=document.getElementById('so-item-idx');
   if(idxEl)idxEl.value=idx;
-  ['so-qty','so-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['so-qty','so-ref','so-customer','so-price'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  { const _k=document.getElementById('so-kind'); if(_k) _k.value='sale'; const _p=document.getElementById('so-paid'); if(_p) _p.value='now'; const _m=document.getElementById('so-method'); if(_m) _m.value='Cash'; _soKindChange(); }   // FA-B7
+  if(typeof window._pickCustomer==='function') window._pickCustomer('so-customer');   // FA-B4: saved customers
   { const _d=document.getElementById('so-date'); if(_d) _d.value=(window.todayLocal?window.todayLocal():new Date().toISOString().slice(0,10)); }   // M32: the business day, editable
   const prev=document.getElementById('so-cogs-preview');
   if(prev)prev.style.display='none';
@@ -742,12 +744,31 @@ async function submitStockIn(){
   }catch(e){notify('Could not record stock in',true);}   // keep _stockInIdemKey for idempotent retry
   finally{window._savingStockIn=false;if(_siBtn)_siBtn.disabled=false;}
 }
+// FA-B7: a sale shows sale fields (customer, price, paid now / on credit); a write-off does not (it books only the cost).
+function _soKindChange(){
+  const sale=(document.getElementById('so-kind')||{}).value!=='writeoff';
+  const f=document.getElementById('so-sale-fields'); if(f) f.style.display=sale?'':'none';
+  const mw=document.getElementById('so-method-wrap'); if(mw) mw.style.display=(sale&&(document.getElementById('so-paid')||{}).value!=='invoice')?'':'none';
+  const b=document.getElementById('so-submit'); if(b) b.textContent=sale?'Record sale':'Record write-off';
+  _soPreview();
+}
+function _soPreview(){
+  const prev=document.getElementById('so-cogs-preview'); if(!prev) return;
+  const sale=(document.getElementById('so-kind')||{}).value!=='writeoff';
+  const qty=parseFloat((document.getElementById('so-qty')||{}).value)||0, price=parseFloat((document.getElementById('so-price')||{}).value)||0;
+  if(sale&&qty>0&&price>0){ prev.style.display='block'; prev.innerHTML='Sale: '+qty+' × '+S(price)+' = <strong style="color:var(--t1)">'+S(Math.round(qty*price*100)/100)+'</strong> revenue · the cost (FIFO) is worked out when you record it.'; }
+  else prev.style.display='none';
+}
 async function submitStockOut(){
   const idx=parseInt(document.getElementById('so-item-idx')?.value);
   const qty=parseFloat(document.getElementById('so-qty')?.value||0);
   const ref=document.getElementById('so-ref')?.value||'';
   if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
   if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
+  const _isSale=(document.getElementById('so-kind')||{}).value!=='writeoff';   // FA-B7
+  const _cust=(document.getElementById('so-customer')?.value||'').trim(), _price=parseFloat(document.getElementById('so-price')?.value||0);
+  if(_isSale&&!_cust){notify('Enter who bought it',true);return;}
+  if(_isSale&&!(_price>0)){notify('Enter the price each unit sold for',true);return;}
   const item=(window.inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
   if(!item._dbId){notify('Save this item before recording stock against it',true);return;}   // N110
@@ -773,7 +794,8 @@ async function submitStockOut(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item._dbId,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,date:(document.getElementById('so-date')?.value||undefined),idempotency_key:window._stockOutIdemKey}),
+      body:JSON.stringify(Object.assign({inventory_id:item._dbId,type:_isSale?'sale':'adjustment',quantity:qty,unit_cost:cogs/qty,reference:ref,date:(document.getElementById('so-date')?.value||undefined),idempotency_key:window._stockOutIdemKey},
+        _isSale?{sale:{price:_price,customer:_cust,paid:(document.getElementById('so-paid')||{}).value==='invoice'?'invoice':'now',method:(document.getElementById('so-method')||{}).value||'Cash'}}:{})),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
@@ -782,9 +804,11 @@ async function submitStockOut(){
     item.cogs=(parseFloat(item.cogs)||0)+cogs;
     item.low=item.units<(item.max||0)*.1;
     closeModal('stock-out-modal');
-    notify(`✓ -${qty} units · COGS ${S(cogs)}`);
+    { const _rev=_isSale?Math.round(qty*_price*100)/100:0;
+      notify(_isSale ? `✓ Sold ${qty} · ${S(_rev)} revenue (${data.sale&&data.sale.number?data.sale.number:'recorded'}) · cost ${S(cogs)} · profit ${S(Math.round((_rev-cogs)*100)/100)}` : `✓ Written off ${qty} · cost ${S(cogs)}`); }
     if(typeof renderInventory==='function')renderInventory();
     loadCOGS();
+    if(_isSale&&typeof window.refreshFinancials==='function') window.refreshFinancials('all');   // FA-B7: the new receipt / invoice
   }catch(e){notify('Could not record stock out',true);}   // keep _stockOutIdemKey for idempotent retry
   finally{window._savingStockOut=false;if(_soBtn)_soBtn.disabled=false;}
 }

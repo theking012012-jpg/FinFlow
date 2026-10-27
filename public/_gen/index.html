@@ -2111,19 +2111,33 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="modal-overlay hidden" id="stock-out-modal">
         <div class="modal">
           <div class="modal-header">
-            <div><div class="modal-title">Stock Out / Sale</div><div class="modal-sub" id="so-sub">Record a sale or stock removal</div></div>
+            <div><div class="modal-title">Stock Out</div><div class="modal-sub" id="so-sub">A sale, or stock written off</div></div>
             <button class="modal-close" onclick="closeModal('stock-out-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"></line><line x1="13" y1="1" x2="1" y2="13"></line></svg></button>
           </div>
           <input type="hidden" id="so-item-idx">
+          <!-- FA-B7: a sale records what it sold for and to whom — its sales receipt (paid now) or invoice (on credit) is made with it -->
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label" for="so-qty">Quantity</label><input class="finput" id="so-qty" type="number" placeholder="e.g. 10" min="0.0001" step="any"></div>
-            <div class="field-wrap"><label class="field-label" for="so-ref">Reference</label><input class="finput" id="so-ref" placeholder="e.g. INV-200"></div>
+            <div class="field-wrap"><label class="field-label" for="so-kind">This is</label><select class="finput" id="so-kind" onchange="_soKindChange()"><option value="sale">A sale</option><option value="writeoff">A write-off (damaged, lost, own use)</option></select></div>
+          </div>
+          <div id="so-sale-fields">
+            <div class="field-group">
+              <div class="field-wrap"><label class="field-label" for="so-customer">Customer *</label><input class="finput" id="so-customer" placeholder="Who bought it" maxlength="200" autocomplete="off"></div>
+              <div class="field-wrap"><label class="field-label" for="so-price">Price each (<span data-cur="biz">USD</span>) *</label><input class="finput" id="so-price" type="number" min="0.01" step="any" placeholder="0.00" oninput="_soPreview()"></div>
+            </div>
+            <div class="field-group">
+              <div class="field-wrap"><label class="field-label" for="so-paid">Payment</label><select class="finput" id="so-paid" onchange="_soKindChange()"><option value="now">Paid now — a sales receipt</option><option value="invoice">On credit — an invoice</option></select></div>
+              <div class="field-wrap" id="so-method-wrap"><label class="field-label" for="so-method">Paid by</label><select class="finput" id="so-method"><option>Cash</option><option>Card</option><option>Bank Transfer</option><option>Other</option></select></div>
+            </div>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label" for="so-qty">Quantity</label><input class="finput" id="so-qty" type="number" placeholder="e.g. 10" min="0.0001" step="any" oninput="_soPreview()"></div>
+            <div class="field-wrap"><label class="field-label" for="so-ref">Reference</label><input class="finput" id="so-ref" placeholder="Optional — a sale uses its receipt / invoice number"></div>
             <div class="field-wrap"><label class="field-label" for="so-date">Date</label><input class="finput" id="so-date" type="date"></div>
           </div>
           <div id="so-cogs-preview" style="font-size:12px;padding:.5rem;background:var(--bg2);border-radius:var(--radius);color:var(--t2);margin-bottom:.5rem;display:none"></div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="closeModal('stock-out-modal')">Cancel</button>
-            <button class="btn btn-primary" onclick="submitStockOut()">Record Stock Out</button>
+            <button class="btn btn-primary" id="so-submit" onclick="submitStockOut()">Record sale</button>
           </div>
         </div>
       </div>

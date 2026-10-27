@@ -13987,10 +13987,51 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
       throw e;
     }
   }
+  // FA-B7: a SALE says what it sold for and to whom. With `sale: { price, customer, paid: 'now' | 'invoice', method }` the
+  // revenue document is made WITH the stock movement — a sales receipt (paid now: Dr Cash / Cr Revenue) or an invoice (on
+  // credit: Dr AR / Cr Revenue, due by this business's terms) — one line "<item> × qty @ price", numbered, its customer
+  // saved and linked, posted to the ledger. Made FIRST (like M34's bill); if the movement fails it is removed, so neither
+  // exists without the other. The movement still books the FIFO cost (Dr COGS / Cr Inventory). A sale with no `sale`
+  // (older callers) is unchanged; a removal that is not a sale is a write-off (type 'adjustment').
+  const sale = (type === 'sale' && req.body && req.body.sale && typeof req.body.sale === 'object') ? req.body.sale : null;
+  let _saleDoc = null, _saleTable = null;
+  if (sale) {
+    const price = parseFloat(sale.price), customer = String(sale.customer || '').trim().slice(0, 200);
+    if (!(Number.isFinite(price) && price > 0)) return res.status(400).json({ error: 'Enter the price each unit sold for.', code: 'SALE_PRICE' });
+    if (!customer) return res.status(400).json({ error: 'Enter who bought it.', code: 'SALE_CUSTOMER' });
+    const sEid = item.entity_id != null ? item.entity_id : (req.entityId || null);
+    const sIdem = idem ? ('stock-sale:' + idem).slice(0, 64) : null;
+    if (sIdem) {   // a replay of a sale that already landed returns it (one document, one movement)
+      const { rows: [_mv0] } = await pool.query(`SELECT * FROM inventory_movements WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      if (_mv0) return res.status(200).json({ ..._mv0, cogs: null });
+    }
+    const amount = Math.round(qty * price * 100) / 100;
+    const lines = [{ desc: String(item.name || 'Stock').slice(0, 200), qty, rate: price }];
+    _saleTable = sale.paid === 'invoice' ? 'invoices' : 'sales_receipts';
+    try {
+      if (_saleTable === 'sales_receipts') {
+        ({ row: _saleDoc } = await db.insert('sales_receipts', { user_id: scopeId(req), entity_id: sEid, customer, num: null, amount, date: String(_mvDate).slice(0, 10),
+          method: String(sale.method || 'Cash').slice(0, 50), line_items: lines, inventory_item_id: item.id, idempotency_key: sIdem }));
+        _saleDoc = await numberNewDoc('sales_receipts', scopeId(req), _saleDoc, null);
+      } else {
+        ({ row: _saleDoc } = await db.insert('invoices', { user_id: scopeId(req), entity_id: sEid, client: customer, amount, amount_paid: 0, status: 'pending',
+          issue_date: String(_mvDate).slice(0, 10), due_date: await invoiceDueFromTerms(sEid, String(_mvDate).slice(0, 10)), notes: '', line_items: lines, inventory_item_id: item.id, idempotency_key: sIdem }));
+        { const _n = await assignInvoiceNumber(pool, scopeId(req), sEid, _saleDoc.id); if (_n) _saleDoc.number = _n; }
+      }
+      const _kind = DOC_CONTACT[_saleTable][0];
+      _saleDoc[_kind + '_id'] = await linkDocContact(_saleTable, scopeId(req), sEid, _saleDoc.id, customer, req);
+    } catch (e) {
+      if (_saleDoc) { try { await pool.query(`DELETE FROM ${_saleTable} WHERE id = $1 AND user_id = $2`, [_saleDoc.id, scopeId(req)]); } catch (_) {} }
+      if (e.code === '23505' && sIdem) return res.status(409).json({ error: 'This sale is already being recorded — refresh in a moment.' });
+      throw e;
+    }
+  }
   let out;
   try {
-    out = await recordStockMovement({ userId: scopeId(req), item, entityId: req.entityId || null, type, qty, unitCost: parseFloat(unit_cost) || 0, reference, notes, idem, date: _mvDate, contraCode: funding === 'bill' ? '2000' : '1000' });
+    const _ref = String(reference || '').trim() || (_saleDoc ? String(_saleDoc.number || _saleDoc.num || '') : '');
+    out = await recordStockMovement({ userId: scopeId(req), item, entityId: req.entityId || null, type, qty, unitCost: parseFloat(unit_cost) || 0, reference: _ref, notes, idem, date: _mvDate, contraCode: funding === 'bill' ? '2000' : '1000' });
   } catch (e) {
+    if (_saleDoc) { try { await pool.query(`DELETE FROM ${_saleTable} WHERE id = $1 AND user_id = $2`, [_saleDoc.id, scopeId(req)]); } catch (_) {} }   // FA-B7: no sale document without its stock movement
     if (_stockBill) { try { await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [_stockBill.id, scopeId(req)]); } catch (_) {} }   // M34: no bill without its purchase
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the movement already landed and the units were
@@ -14006,7 +14047,15 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
     await db.updateById('bills', _stockBill.id, { inventory_movement_id: movement.id });
     await recordAudit(pool, { userId: scopeId(req), entityId: _stockBill.entity_id || null, table: 'bills', recordId: _stockBill.id, action: 'CREATE', newData: { ..._stockBill, inventory_movement_id: movement.id }, req });
   }
-  res.status(201).json({ ...movement, cogs, bill_id: _stockBill ? _stockBill.id : undefined });
+  if (_saleDoc) {
+    await db.updateById(_saleTable, _saleDoc.id, { inventory_movement_id: movement.id });
+    const _full = { ..._saleDoc, inventory_movement_id: movement.id };
+    try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: _saleTable === 'invoices' ? 'invoice' : 'sales_receipt', row: _full }); }
+    catch (glErr) { console.error('[GL] stock-sale document posting failed (shadow, non-fatal):', glErr && glErr.message); }
+    await recordAudit(pool, { userId: scopeId(req), entityId: _full.entity_id || null, table: _saleTable, recordId: _full.id, action: 'CREATE', newData: _full, req });
+  }
+  res.status(201).json({ ...movement, cogs, bill_id: _stockBill ? _stockBill.id : undefined,
+    sale: _saleDoc ? { table: _saleTable, id: _saleDoc.id, number: _saleDoc.number || _saleDoc.num || null, amount: Number(_saleDoc.amount) } : undefined });
 }));
 
 app.get('/api/cogs', requireAuth, wrap(async (req, res) => {

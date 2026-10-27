@@ -52,7 +52,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
         setup: () => {
           window.inventory = window.inventory && window.inventory.length ? window.inventory : [{ name: 'Lock Item', units: 500, max: 200, dbId: null }];
           if (typeof window.openStockOutModal === 'function') window.openStockOutModal(0);
-          setVal('so-item-idx', '0'); setVal('so-qty', '3');
+          setVal('so-item-idx', '0'); setVal('so-qty', '3'); setVal('so-customer', 'Lock Buyer'); setVal('so-price', '5');   // FA-B7: a sale names its buyer and price
         },
         fn: () => window.submitStockOut },
     ];

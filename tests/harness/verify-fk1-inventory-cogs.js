@@ -18,8 +18,8 @@ A('[STRUCTURAL] inv-cogs no longer computes units×cost (inventory value)',
   !/_invKpi\('inv-cogs',\s*S\(window\.inventory\.reduce/.test(wm));
 A('[STRUCTURAL] inventory render triggers loadCOGS to populate the real figure', /window\._cogsTotal == null.*loadCOGS|loadCOGS.*window\._cogsTotal == null/.test(wm) || /window\.loadCOGS === 'function' && window\._cogsTotal == null/.test(wm));
 
-const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
-A('[STRUCTURAL] COGS KPI label is FIFO (not MAC)', /id="inv-cogs">\$0<\/div><div class="mc-change neutral">FIFO method/.test(html));
+const html = require('./appScripts.js').pageSource('index.html');
+A('[STRUCTURAL] COGS KPI label is FIFO (not MAC)', /id="inv-cogs">(?:\$0|—)<\/div><div class="mc-change neutral">FIFO method/.test(html)   /* FA-K1: an unloaded figure reads "—", not $0 */);
 A('[STRUCTURAL] no "MAC method" label remains on inv-cogs', !/id="inv-cogs">\$0<\/div><div class="mc-change neutral">MAC method/.test(html));
 
 const bundle = fs.readFileSync(path.join(process.cwd(), 'public', 'finflow-bundle.js'), 'utf8');

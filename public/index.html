@@ -1701,6 +1701,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <option value="bills">Bills</option>
                 <option value="payments_made">Bill payments</option>
                 <option value="vendor_credits">Vendor credits</option>
+                <option value="credit_applications">Credits applied</option>
                 <option value="vendors">Vendors</option>
                 <option value="payroll_runs,payroll">Payroll</option>
                 <option value="inventory">Inventory</option>
@@ -1717,7 +1718,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <option value="accountant_clients,accountant_messages,accountant_tasks,accountant_proposals,accountant_earnings,accountant_reviews,accountant_reports,accountant_deadlines">Accountant</option>
                 <option value="integrations">Connected services</option>
                 <option value="documents,templates,csv_import,codat_import">Documents &amp; imports</option>
-                <option value="users,settings,api_keys,support_requests">Sign-ins &amp; account</option>
+                <option value="users,settings,api_keys,support_requests,sso">Sign-ins &amp; account</option>
+                <option value="billing">Plan &amp; billing</option>
               </select>
               <select class="finput" id="audit-filter-action" style="font-size:11px;padding:4px 8px;width:auto" onchange="loadAuditTrail()">
                 <option value="all">All actions</option>
@@ -1733,6 +1735,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <option value="UNDO">Undo</option>
                 <option value="RECALC">Recalculate</option>
                 <option value="REMINDER_SENT">Reminder sent</option>
+                <option value="EMAIL_TEST_SENT">Test email sent</option>
+                <option value="PLAN_CHANGE">Plan change</option>
+                <option value="CANCEL">Plan cancelled</option>
+                <option value="RESUME">Plan kept (cancel undone)</option>
+                <option value="RENEWAL_NOTICE">Renewal notice</option>
+                <option value="DELETION_WARNING">Deletion warning</option>
                 <option value="INVITE">Invite</option>
                 <option value="ACCEPT">Accept</option>
                 <option value="UPLOAD">Upload</option>

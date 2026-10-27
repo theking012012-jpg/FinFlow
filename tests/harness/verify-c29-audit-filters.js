@@ -22,7 +22,7 @@ function written() {
   // Every audit_trail write goes through recordAudit (one INSERT). Callers: recordAudit / auditLog (server.js),
   // _audit (accountant-routes.js alias), logAudit(req, ACTION, TABLE, …) (server.js), _auditRec(req, TABLE, ACTION, …) (server.js, FIX-3). Object-literal bodies are
   // brace-matched, since they nest (newData: { … }).
-  const tables = new Set(), actions = new Set();
+  const tables = new Set(), actions = new Set(), onTable = new Map();   // onTable: action → the tables it is written on
   for (const f of ['server.js', 'accountant-routes.js']) {
     const s = fs.readFileSync(path.join(ROOT, f), 'utf8');
     for (const m of s.matchAll(/\b(?:recordAudit|auditLog|_audit)\([^,()]+,\s*\{/g)) {
@@ -31,14 +31,18 @@ function written() {
       const body = s.slice(m.index + m[0].length, i);
       const t = /\btable:\s*'([a-z_]+)'/.exec(body); const a = /\baction:\s*'([A-Z_]+)'/.exec(body);
       if (t) tables.add(t[1]); if (a) actions.add(a[1]);
+      if (a) { if (!onTable.has(a[1])) onTable.set(a[1], new Set()); onTable.get(a[1]).add(t ? t[1] : '?'); }
     }
     for (const m of s.matchAll(/\blogAudit\(req,\s*(?:'([A-Z_]+)'|[^,]*\?\s*'([A-Z_]+)'\s*:\s*'([A-Z_]+)'),\s*'([a-z_]+)'/g)) {
-      [m[1], m[2], m[3]].filter(Boolean).forEach(a => actions.add(a)); tables.add(m[4]);
+      [m[1], m[2], m[3]].filter(Boolean).forEach(a => { actions.add(a); if (!onTable.has(a)) onTable.set(a, new Set()); onTable.get(a).add(m[4]); }); tables.add(m[4]);
     }
     // FIX-3: _auditRec(req, TABLE, ACTION, old, new) — the JSONB-record wrapper over recordAudit (server.js).
-    for (const m of s.matchAll(/\b_auditRec\(req,\s*'([a-z_]+)',\s*'([A-Z_]+)'/g)) { tables.add(m[1]); actions.add(m[2]); }
+    for (const m of s.matchAll(/\b_auditRec\(req,\s*'([a-z_]+)',\s*'([A-Z_]+)'/g)) { tables.add(m[1]); actions.add(m[2]); if (!onTable.has(m[2])) onTable.set(m[2], new Set()); onTable.get(m[2]).add(m[1]); }
   }
   tables.delete('accountants');   // user_id NULL — never on an owner's trail
+  // SW3: an action written ONLY on those rows (CONDUCT_ACCEPT — an accountant accepting the Conduct Policy) can never
+  // appear on an owner's Audit page either, so an option for it would always show nothing. Exempt for the same reason.
+  for (const [act, ts] of onTable) if ([...ts].every(t => t === 'accountants')) actions.delete(act);
   return { tables: [...tables].sort(), actions: [...actions].sort() };
 }
 

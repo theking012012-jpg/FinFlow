@@ -34,6 +34,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
     // Intercept fetch and record write POSTs to the match endpoints.
     const writes = [];
+    const realFetch = window.fetch;
     window.fetch = async (url, opts = {}) => {
       const u = String(url); const method = (opts.method || 'GET').toUpperCase();
       if (method === 'POST' && /\/api\/bank-reconciliation\/match(-batch)?$/.test(u)) {
@@ -41,7 +42,11 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
         return { ok: true, status: 201, json: async () => ({ matched: (JSON.parse(opts.body||'{}').matches||[]).length, skipped: 0, rows: [] }) };
       }
       // GET /api/bank-reconciliation (loadBankRec refresh) — minimal valid shape
-      return { ok: true, status: 200, json: async () => ({ unmatchedBanking: [], unmatchedPayments: [], matched: [] }) };
+      if (/\/api\/bank-reconciliation(\?|$)/.test(u)) return { ok: true, status: 200, json: async () => ({ unmatchedBanking: [], unmatchedPayments: [], matched: [] }) };
+      // Anything else is the page's own boot traffic (documents, reports, …): the real server answers it. (This stub used
+      // to answer EVERY request with the bank-rec shape; a boot render that ran late under load — /api/documents —
+      // received it and crashed the run: "cache.reduce is not a function".)
+      return realFetch(url, opts);
     };
 
     // Stage 3 pairs (the same two-click interaction, three times).

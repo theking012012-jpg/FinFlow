@@ -2714,6 +2714,8 @@ async function _fillContactPicker(inputId, listId, url, nameOf){
 window._fillContactPicker=_fillContactPicker;
 const _custDisplayName=c=>String(c.company||'').trim()||`${c.fname||''} ${c.lname||''}`.trim();
 window._custDisplayName=_custDisplayName;
+// FA-U1: the theme's tertiary text colour (4.5:1+ on every background in both themes) — chart axis labels read it.
+window._ffT3=function(){ try { return getComputedStyle(document.documentElement).getPropertyValue('--t3').trim()||'#988a72'; } catch(_){ return '#988a72'; } };
 // FA-B8: every currency select offers every currency FinFlow supports (finflow-currency.js — Create Business, Settings
 // and onboarding offered 6, 6 and 5). The value already chosen is kept.
 function _ffFillCurrencySelects(){

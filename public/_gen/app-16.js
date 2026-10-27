@@ -130,10 +130,10 @@ function renderScenarioChart(projRev, projExp){
       tension:0.4,fill:true,pointRadius:2,borderWidth:2
     }]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9}}},
+      scales:{x:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:(window._ffT3?window._ffT3():'#988a72'),font:{size:9}}},
               // F124: native symbol — cashData projects from BASE.cash, never FX-converted. Matches
               // the sc-* cards this chart sits under.
-              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>window._fmtMoneyNativeAbbr(v)}}}}
+              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:(window._ffT3?window._ffT3():'#988a72'),font:{size:9},callback:v=>window._fmtMoneyNativeAbbr(v)}}}}
   });
 }
 

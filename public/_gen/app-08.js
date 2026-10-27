@@ -495,11 +495,11 @@ function renderMRRChart(){
       pointBackgroundColor:'#c9a84c',pointRadius:3,borderWidth:2,tension:0.35,fill:true
     }]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10}}},
+      scales:{x:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:(window._ffT3?window._ffT3():'#988a72'),font:{size:10}}},
               // F124: native symbol — the series is window._mrrChartData, which is never FX-converted
               // (F126) and, per F127, has no writer anywhere so it is always a flat zero line.
               // Matches the MRR/ARR cards above.
-              y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>window._fmtMoneyNativeAbbr(v)}}}}
+              y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:(window._ffT3?window._ffT3():'#988a72'),font:{size:10},callback:v=>window._fmtMoneyNativeAbbr(v)}}}}
   });
 }
 // ── 6. PLAID BANKING ────────────────────────────────────────────────────────

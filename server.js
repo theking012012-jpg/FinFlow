@@ -13873,13 +13873,33 @@ async function recordStockMovement({ userId, item, entityId = null, type, qty, u
   // in the next month while the invoice's revenue stayed in this one. movement_date is that business day (the
   // caller's date, else the entity's today); moved_at stays the genuine instant it was recorded.
   const _mvDay = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : await entityTodayYmd(_mvEnt);
-  const { rows: [movement] } = await pool.query(
-    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key, movement_date, contra_code)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11) RETURNING *`,
-    [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem, _mvDay, type === 'purchase' ? contraCode : null]);   // M34/M54
+  // FA-B7b (2026-10-27): stock leaves only if it is on hand — checked AT THE WRITE (Rule 9): one conditional decrement,
+  // so two sales racing for the last units cannot both pass. Only the browser checked before; the server sold 99 of 5,
+  // clamped the count to 0 and costed only the units it had. A failed insert below puts the units back.
+  const _out = type === 'sale' || type === 'adjustment';
+  if (_out) {
+    const { rows: [_ok] } = await pool.query(
+      `UPDATE inventory SET data = jsonb_set(data, '{units}', to_jsonb(COALESCE(NULLIF(data->>'units','')::numeric, 0) - $2::numeric)), updated_at = NOW()
+        WHERE id = $1 AND COALESCE(NULLIF(data->>'units','')::numeric, 0) >= $2::numeric RETURNING id`, [parseInt(item.id), qty]);
+    if (!_ok) {
+      const { rows: [_h] } = await pool.query(`SELECT data->>'units' AS u FROM inventory WHERE id = $1`, [item.id]);
+      const e = new Error('Only ' + (parseFloat(_h && _h.u) || 0) + ' in stock — record the purchase first, or take out fewer.');
+      e.status = 400; e.expose = true; e.code = 'INSUFFICIENT_STOCK'; throw e;
+    }
+  }
+  let movement;
+  try {
+    ({ rows: [movement] } = await pool.query(
+      `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key, movement_date, contra_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11) RETURNING *`,
+      [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem, _mvDay, type === 'purchase' ? contraCode : null]));   // M34/M54
+  } catch (e) {
+    if (_out) await pool.query(`UPDATE inventory SET data = jsonb_set(data, '{units}', to_jsonb(COALESCE(NULLIF(data->>'units','')::numeric, 0) + $2::numeric)) WHERE id = $1`, [parseInt(item.id), qty]);   // FA-B7b: undo the decrement
+    throw e;
+  }
   const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m, data->>'reorder_level' AS r FROM inventory WHERE id = $1`, [item.id]);
   const _units = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
-  const newUnits = type === 'purchase' ? _units + qty : Math.max(0, _units - qty);
+  const newUnits = type === 'purchase' ? _units + qty : _units;   // FA-B7b: a sale / write-off was already taken off above
   await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: FinFlowDates.isLowStock({ units: newUnits, reorder_level: _cur && _cur.r, max_units: _max }) ? 1 : 0 });   // G5: the one rule
   try {
     const _mDate = FinFlowDates._toYmd(movement.movement_date) || FinFlowDates._toYmd(movement.moved_at);   // M32

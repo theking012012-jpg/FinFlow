@@ -49,7 +49,7 @@ const OWNER={ email:'proj-owner@finflow.test', password:'harness-password-not-a-
     A('[STRUCTURAL] database.js backfills orphan projects to MIN entity', /UPDATE projects p SET entity_id[\s\S]*?MIN\(e\.id\)[\s\S]*?IS NULL/.test(dbjs));
     A('[STRUCTURAL] database.js backfills orphan timesheet to MIN entity', /UPDATE timesheet t SET entity_id[\s\S]*?MIN\(e\.id\)[\s\S]*?IS NULL/.test(dbjs));
     // STRUCTURAL: switchEntity refetches projects on switch
-    const ix=fs.readFileSync(path.join(__dirname,'..','..','public','index.html'),'utf8');
+    const ix=require('./appScripts.js').pageSource('index.html');
     // Bound the slice to the END of switchEntity (the next top-level `window.*` definition), not a
     // brittle fixed char window — the function grows over time and a fixed window silently truncated
     // the _loadProjectsFromDB call (it sat at ~offset 5987, cut off at 6000). Calls inside the body are

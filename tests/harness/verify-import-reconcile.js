@@ -75,7 +75,7 @@ const PW = 'harness-password-not-a-secret';
     A('scoped member forbidden (owner-only)', true); // covered by requireAuth + entityAccess gate; owner path proven above
 
     const fs = require('fs'); const path = require('path');
-    const idx = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+    const idx = require('./appScripts.js').pageSource('index.html');
     A('[STRUCTURAL] import UI surfaces the reconcile tie-out result', /j\.reconcile/.test(idx) && /trial balance ties/.test(idx));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (reconcile-verified import)`);

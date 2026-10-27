@@ -94,7 +94,7 @@ const csv = rows => rows.join('\n');
     A('unknown type rejected (400)', (await post('widgets', 'a,b', false)).status === 400);
 
     const fs = require('fs'); const path = require('path');
-    const idx = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+    const idx = require('./appScripts.js').pageSource('index.html');
     A('[STRUCTURAL] client ffImportCsv posts to /api/import/csv with preview then commit', /window\.ffImportCsv\s*=\s*function/.test(idx) && /\/api\/import\/csv/.test(idx) && /dryRun:\s*true/.test(idx));
     A('[STRUCTURAL] Invoices page exposes an Import CSV action', /ffImportCsv\('invoices'\)/.test(idx));
 

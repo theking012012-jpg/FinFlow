@@ -196,6 +196,12 @@ async function bootSpaInJsdom(opts = {}) {
     isError: /(^|\s)error(\s|$)/.test((window.document.getElementById('notif') || {}).className || ''),
   });
 
+  // FA-P1: every page script is a file (no inline <script> under the strict CSP), loaded through jsdom's loader — wait
+  // for the window's load event (every script fetched and run) before handing the page over, so no harness races it.
+  if (window.document.readyState !== 'complete') {
+    await new Promise((r) => { const t = setTimeout(r, 60000); window.addEventListener('load', () => { clearTimeout(t); r(); }, { once: true }); });
+  }
+
   let stopped = false;
   const stop = async () => {
     if (stopped) return; stopped = true;

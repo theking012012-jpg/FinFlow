@@ -18,8 +18,8 @@ const path = require('path');
   let pass = 0, fail = 0;
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
-  const idx = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
-  const admin = fs.readFileSync(path.join(process.cwd(), 'public', 'admin.html'), 'utf8');
+  const idx = require('./appScripts.js').pageSource('index.html');
+  const admin = require('./appScripts.js').pageSource('admin.html');
 
   // ── Part 1: STRUCTURAL ────────────────────────────────────────────────────────
   // Redesigned Help Center shell

@@ -504,23 +504,7 @@ footer{background:var(--bg1);border-top:1px solid var(--bd);padding:60px 5vw 32p
   </div>
 </footer>
 
-<script>
-window.addEventListener('scroll', () => {
-  document.getElementById('nav').classList.toggle('scrolled', window.scrollY > 40);
-});
-
-const obs = new IntersectionObserver(es => {
-  es.forEach(e => { if(e.isIntersecting) e.target.classList.add('visible'); });
-}, { threshold: .12 });
-document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
-
-function toggleFaq(el) {
-  const item = el.parentElement;
-  const isOpen = item.classList.contains('open');
-  document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
-  if (!isOpen) item.classList.add('open');
-}
-</script>
+<script src="/js/accountants-01-obs.js"></script>
 </main>
 </body>
 </html>

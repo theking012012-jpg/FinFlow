@@ -33,7 +33,7 @@ const API = {
   let pass = 0, fail = 0;
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
   try {
-    let html = fs.readFileSync(path.join(process.cwd(), 'public', 'accountant-dashboard.html'), 'utf8');
+    let html = require('./appScripts.js').pageSource('accountant-dashboard.html');
     // Replace the external tier-config <script src> with a minimal inline stub, and inject a fetch stub
     // BEFORE the page's own script so boot()'s API calls are served canned data (no server needed).
     const tierStub = `<script>window.FinFlowTiers={TIERS:[{name:'Bronze',min:1,max:24},{name:'Silver',min:25,max:49}],tierForAccountant:function(n){return this.TIERS[0];},commissionRateFor:function(){return 0;},estimateStripeFeeCents:function(){return 0;},splitBilling:function(c){return {billedCents:c,stripeFeeCents:0,commissionCents:0,accountantNetCents:c};}};

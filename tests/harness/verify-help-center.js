@@ -23,8 +23,8 @@ const path = require('path');
   let pass = 0, fail = 0;
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
-  const idx = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
-  const acct = fs.readFileSync(path.join(process.cwd(), 'public', 'accountant-dashboard.html'), 'utf8');
+  const idx = require('./appScripts.js').pageSource('index.html');
+  const acct = require('./appScripts.js').pageSource('accountant-dashboard.html');
 
   // ── CLIENT HELP CENTER ──────────────────────────────────────────────────────
   A('client: page-help div exists', /<div class="page" id="page-help">/.test(idx));

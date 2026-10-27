@@ -29,7 +29,7 @@ const API = {
   let pass = 0, fail = 0;
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
   try {
-    let html = fs.readFileSync(path.join(process.cwd(), 'public', 'accountant-dashboard.html'), 'utf8');
+    let html = require('./appScripts.js').pageSource('accountant-dashboard.html');
     const stub = `<script>window.FinFlowTiers={TIERS:[{name:'Bronze',min:1,max:24}],tierForAccountant:function(){return this.TIERS[0];},commissionRateFor:function(){return 0;},estimateStripeFeeCents:function(){return 0;},splitBilling:function(c){return {billedCents:c,stripeFeeCents:0,commissionCents:0,accountantNetCents:c};}};
       window.fetch=function(u){var p=String(u).split('?')[0];var data=(${JSON.stringify(API)})[p];return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(data==null?{}:data);}});};</script>`;
     html = html.replace('<script src="/tier-config.js"></script>', stub);

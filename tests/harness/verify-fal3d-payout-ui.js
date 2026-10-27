@@ -20,7 +20,7 @@ const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, 
 const settle = async (n) => { for (let i = 0; i < (n || 40); i++) await new Promise(r => setTimeout(r, 50)); };
 
 function page(file, api, inject) {
-  let html = fs.readFileSync(path.join(ROOT, 'public', file), 'utf8');
+  let html = require('./appScripts.js').pageSource(file);   // FA-P1: the page's scripts are files now
   const stub = `<script>window.fetch=function(u,o){var p=String(u).split('?')[0];var data=(${JSON.stringify(api)})[p];return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(data==null?{}:data);}});};window.open=function(){};</script>`;
   html = html.replace(/<head>/i, () => '<head>' + stub);
   // the REAL shared date helper (FA-L3f) — jsdom does not fetch <script src>

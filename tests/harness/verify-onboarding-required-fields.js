@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 let pass = 0, fail = 0;
 const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
-const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+const html = require('./appScripts.js').pageSource('index.html');
 
 A('Industry label marked required (*)', /for="ob-industry">Industry \*<\/label>/.test(html));
 A('Business address label marked required (*)', /for="ob-address">Business address \*<\/label>/.test(html));

@@ -50,7 +50,7 @@ async function main() {
     A('override → scale → 200 (bug: 400 Invalid plan)', r.status === 200 && (await plan(S)) === 'scale', `status ${r.status} plan=${await plan(S)}`);
 
     // the real admin.html users-row template, rendered for a Scale customer
-    const html = fs.readFileSync(path.join(process.cwd(), 'public', 'admin.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('admin.html');
     const m = html.match(/<select class="filter-select" id="plan-sel-\$\{u\.id\}"[\s\S]*?<\/select>/);
     const tpl = m ? m[0] : '';
     const dom = new JSDOM('<body></body>', { runScripts: 'outside-only', virtualConsole: new VirtualConsole() });

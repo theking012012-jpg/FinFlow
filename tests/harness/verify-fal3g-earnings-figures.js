@@ -109,7 +109,7 @@ const ROOT = path.join(__dirname, '..', '..');
 
     // the pages, rendered from the REAL responses above
     const render = async (file, api) => {
-      let html = fs.readFileSync(path.join(ROOT, 'public', file), 'utf8');
+      let html = require('./appScripts.js').pageSource(file);   // FA-P1: the page's scripts are files now
       const stub = `<script>window.fetch=function(u){var p=String(u).split('?')[0];var data=(${JSON.stringify(api)})[p];return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(data==null?{}:data);}});};window.open=function(){};window.Chart=function(){this.destroy=function(){};};HTMLCanvasElement.prototype.getContext=function(){return {};};</script>`;
       html = html.replace(/<head>/i, () => '<head>' + stub)
         .replace('<script src="/tier-config.js"></script>', () => '<script>' + fs.readFileSync(path.join(ROOT, 'tier-config.js'), 'utf8') + '</script>')

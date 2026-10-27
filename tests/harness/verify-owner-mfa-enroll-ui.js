@@ -29,7 +29,7 @@ const CARD = `
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
   // Structural: the real index.html must carry every ID this card JS drives.
-  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
+  const html = require('./appScripts.js').pageSource('index.html');
   for (const id of ['owner-mfa-section', 'owner-mfa-status', 'owner-mfa-enable-btn', 'owner-mfa-setup', 'owner-mfa-secret', 'owner-mfa-code', 'owner-mfa-disable', 'owner-mfa-dcode']) {
     A('index.html carries #' + id, html.includes('id="' + id + '"'));
   }

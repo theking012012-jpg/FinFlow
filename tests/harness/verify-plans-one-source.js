@@ -32,7 +32,7 @@ run('D-A — one plan definition; every surface says what plans.js says', async 
   A('1b the server\'s AI caps are the plans.js numbers', capsOk, JSON.stringify(['trial', 'pro', 'business', 'scale'].map(p => [p, aiCap.capFor(p, 'shared'), Plans.limit(p, 'ai')])));
 
   // ── landing page (static, generated from plans.js)
-  const ld = new JSDOM(fs.readFileSync(path.join(ROOT, 'public', 'landing.html'), 'utf8')).window.document;
+  const ld = new JSDOM(require('./appScripts.js').pageSource('landing.html')).window.document;
   for (const id of Plans.PAID) {
     const card = ld.querySelector('.p-card[data-plan="' + id + '"]');
     const got = card ? [...card.querySelectorAll('.p-feat')].map(e => norm(e.textContent).replace(/^✓\s*/, '')) : [];
@@ -48,7 +48,7 @@ run('D-A — one plan definition; every surface says what plans.js says', async 
   const ldAll = norm(ld.body.textContent);
   A('2f no unbuilt Enterprise promise on the landing page (white-label, on-premise, 99.9% SLA, SAML, custom AI prompts)', !/White-label|On-premise|99\.9%|SAML|Custom AI context/i.test(ldAll), (ldAll.match(/White-label|On-premise|99\.9%|SAML|Custom AI context/i) || [''])[0]);
   const gen = require(path.join(ROOT, 'scripts', 'gen-plan-cards.js'));
-  const cur = fs.readFileSync(path.join(ROOT, 'public', 'landing.html'), 'utf8');
+  const cur = require('./appScripts.js').pageSource('landing.html');
   A('2d landing.html is exactly what the generator writes from plans.js (nobody edited a card by hand)', gen.render(cur) === cur, 'run: node scripts/gen-plan-cards.js');
 
   // ── in-app Pricing page

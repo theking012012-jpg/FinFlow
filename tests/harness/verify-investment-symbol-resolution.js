@@ -24,8 +24,8 @@ const ROOT = path.join(__dirname, '..', '..');
   let pass = 0, fail = 0;
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
   try {
-    const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const blocks = html.match(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/g) || [];
+    const html = require('./appScripts.js').pageSource('index.html');
+    const blocks = require('./appScripts.js').inlineScriptBlocks('index.html');   // FA-P1: the page's scripts are files now
     const tag = blocks.find(b => b.includes('window.refreshMarketData') && b.includes('resolveSymbol'));
     A('investments script defines symbol resolution (resolveSymbol)', !!tag, 'resolveSymbol not present — fix missing');
     if (!tag) { console.log('\n  RED — ' + pass + ' passed, ' + fail + ' failed'); process.exit(1); }

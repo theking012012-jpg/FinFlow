@@ -58,7 +58,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     eq('Reports revenue caption', rc, 'Revenue issued, this fiscal year to date', 'Revenue issued, this fiscal year');
 
     // STRUCTURAL (labelled): the accountant portal's own captions — it reads the same D2-capped computeBooks year.
-    const acct = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'accountant-client.html'), 'utf8');
+    const acct = require('./appScripts.js').pageSource('accountant-client.html');
     eq('STRUCTURAL accountant portal subtitle', /id="dash-subtitle">Year to date overview</.test(acct), true, false);
     eq('STRUCTURAL accountant portal period caption (year)', /year:'Year to date'/.test(acct) && !/year:'Full year'/.test(acct), true, false);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }

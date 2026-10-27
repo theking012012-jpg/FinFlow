@@ -23,7 +23,7 @@ const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, 
 const AS = (n, ok, d) => A('[STRUCTURAL] ' + n, ok, d);
 
 try {
-  const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+  const html = require('./appScripts.js').pageSource('index.html');
   const appMain = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8');
 
   // ── execute the real renderBudget against a non-USD entity ──

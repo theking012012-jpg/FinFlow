@@ -62,7 +62,7 @@ async function child() {
   const page = (file, api) => {
     const stub = `<script>window.fetch=function(u){var p=String(u).split('?')[0];var data=(${JSON.stringify(api)})[p];return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(data==null?{}:data);}});};window.open=function(){};
       window.__charts=[];window.Chart=function(ctx,cfg){window.__charts.push(cfg);this.destroy=function(){};};HTMLCanvasElement.prototype.getContext=function(){return {};};</script>`;
-    const html = inlineScripts(read(file)).replace(/<head>/i, () => '<head>' + stub);
+    const html = inlineScripts(require('./appScripts.js').pageSource(file)).replace(/<head>/i, () => '<head>' + stub);
     return new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: new VirtualConsole(), url: 'https://finflow.test/' + file }).window;
   };
   const out = { offset: -new Date('2026-10-05T12:00:00Z').getTimezoneOffset() };

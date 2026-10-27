@@ -67,7 +67,7 @@ A('no unescaped user-data field in any HTML sink across render sources',
 // Explicit regression guards for the two sinks fixed in this pass.
 const am = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8');
 A('[GUARD] renderTimesheet escapes employee/project', /\$\{esc\(t\.employee\)\}/.test(am) && /\$\{esc\(t\.project\)\}/.test(am));
-const ad = fs.readFileSync(path.join(process.cwd(), 'public', 'accountant-dashboard.html'), 'utf8');
+const ad = require('./appScripts.js').pageSource('accountant-dashboard.html');
 A('[GUARD] accountant bill-client dropdown escapes client name/email', /\$\{esc\(c\.client_name/.test(ad));
 
 console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (H2 escaping sweep)`);

@@ -82,7 +82,7 @@ const OWNER2 = { email: 'stripefeed-noconn@finflow.test', password: 'harness-pas
     A('unconnected account → connected:false, empty charges (honest)', r2.json && r2.json.connected === false && (r2.json.charges || []).length === 0, JSON.stringify(r2.json).slice(0,160));
 
     // STRUCTURAL — client startStripeFeed now fetches the endpoint (no longer a stub).
-    const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     const fn = (html.match(/function startStripeFeed\(\)\{[\s\S]*?\n\}/) || [''])[0];
     AS('startStripeFeed fetches /api/stripe/feed', /fetch\('\/api\/stripe\/feed/.test(fn));
     AS('startStripeFeed renders charges (not just the connect stub)', /d\.charges/.test(fn) && /connected/.test(fn));

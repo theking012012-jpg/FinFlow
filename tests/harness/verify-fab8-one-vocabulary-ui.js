@@ -13,7 +13,7 @@ const path = require('path');
 const { run } = require('./clientMoneyKit.js');
 const CAT = require('../../public/finflow-categories.js');
 const CUR = require('../../public/finflow-currency.js');
-const html = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
+const html = require('./appScripts.js').pageSource('index.html');
 const listOf = id => { const m = html.match(new RegExp('<select[^>]*id="' + id + '"[^>]*>([\\s\\S]*?)</select>')); return m ? [...m[1].matchAll(/<option(?:\s+value="([^"]*)")?>([^<]*)<\/option>/g)].map(o => (o[1] != null ? o[1] : o[2]).replace(/&amp;/g, '&')).filter(Boolean) : []; };
 
 run('FA-B8 UI — one list per vocabulary', async ({ w, d, settle, eq, http }) => {

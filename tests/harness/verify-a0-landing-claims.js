@@ -17,7 +17,7 @@ const { JSDOM } = require('jsdom');
 let pass = 0, fail = 0;
 const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
-const html = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'landing.html'), 'utf8');
+const html = require('./appScripts.js').pageSource('landing.html');
 const d = new JSDOM(html).window.document;
 d.querySelectorAll('script,style').forEach(n => n.remove());
 const norm = s => String(s || '').replace(/\s+/g, ' ').trim();

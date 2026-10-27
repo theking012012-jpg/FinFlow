@@ -88,7 +88,7 @@ const num = s => parseFloat(String(s == null ? '' : s).replace(/[^0-9.\-]/g, '')
     A('server: no-entity_id resolves to ACTIVE entity E1 (2 rows) — the switch-away trap',
       Array.isArray(rActive.json) && rActive.json.length === 2, `got ${rActive.json && rActive.json.length}`);
 
-    const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     const startR = html.indexOf('function renderBizInvestments()');
     const endMark = html.indexOf('}', html.indexOf("console.warn('[BizHoldings]'"));
     const end = html.indexOf('}', endMark + 1) + 1;

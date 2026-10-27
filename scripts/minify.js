@@ -35,6 +35,8 @@ const TARGETS = [
   'finflow-currency.js',
   'finflow-categories.js',
   'finflow-api.js',
+  // FA-P1: the pages' own scripts (they were inline <script> blocks; under the strict CSP every script is a file).
+  ...fs.readdirSync(path.join(PUB, 'js')).filter(f => f.endsWith('.js')).map(f => 'js/' + f),
 ];
 
 let terser = null;
@@ -69,6 +71,7 @@ async function main() {
       if (result.error) throw result.error;
       const outCode = result.code || '';
       if (!outCode) throw new Error('empty output');
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
       fs.writeFileSync(dst, outCode);
       done++; srcTotal += srcStat.size; minTotal += Buffer.byteLength(outCode);
       console.log('[minify] ' + name + ': ' + srcStat.size + ' -> ' + Buffer.byteLength(outCode) + ' bytes');

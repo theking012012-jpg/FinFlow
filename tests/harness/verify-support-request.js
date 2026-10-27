@@ -95,9 +95,9 @@ const PW = 'harness-password-not-a-secret';
       JSON.stringify(clientListAfter));
 
     // UI wiring present (both audiences).
-    const idx = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+    const idx = require('./appScripts.js').pageSource('index.html');
     A('[STRUCTURAL] client Help Center has a contact form that posts to /api/support', /renderHelpCenter/.test(idx) && /'\/api\/support'/.test(idx));
-    const acctHtml = fs.readFileSync(path.join(process.cwd(), 'public', 'accountant-dashboard.html'), 'utf8');
+    const acctHtml = require('./appScripts.js').pageSource('accountant-dashboard.html');
     A('[STRUCTURAL] accountant dashboard has acctHelp that posts to /api/support', /acctHelp/.test(acctHtml) && /\/api\/support/.test(acctHtml));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (in-app support channel — clients + accountants)`);

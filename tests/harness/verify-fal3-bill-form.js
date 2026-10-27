@@ -28,7 +28,7 @@ let pass = 0, fail = 0;
 const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
 async function boot(tierSrc) {
-  let html = fs.readFileSync(path.join(ROOT, 'public', 'accountant-dashboard.html'), 'utf8');
+  let html = require('./appScripts.js').pageSource('accountant-dashboard.html');
   const fetchStub = `<script>window.__calls=[];window.open=function(){};window.fetch=function(u,o){var p=String(u).split('?')[0];window.__calls.push({p:p,body:o&&o.body||null});var data=(${JSON.stringify(API)})[p];if(p==='/api/accountants/bill-client')data={url:'https://checkout.stripe.test/c/x',emailed:true};return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(data==null?{}:data);}});};</script>`;
   if (html.split('<script src="/tier-config.js"></script>').length !== 2) throw new Error('tier-config <script> tag not found once');
   html = html.replace('<script src="/tier-config.js"></script>', () => fetchStub + '<script>' + tierSrc + '</script>');

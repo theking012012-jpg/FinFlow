@@ -22,7 +22,7 @@ const { JSDOM } = require('jsdom');
   const num = s => parseFloat(String(s || '').replace(/[^0-9.\-]/g, '')) || 0;
 
   try {
-    const src = fs.readFileSync(path.join(process.cwd(), 'public', 'accountant-client.html'), 'utf8');
+    const src = require('./appScripts.js').pageSource('accountant-client.html');
     // Extract the shipped renderTax() — delimited by its declaration and the next section marker.
     const start = src.indexOf('function renderTax(invoices, expenses)');
     const end = src.indexOf('// ── NOTES', start);

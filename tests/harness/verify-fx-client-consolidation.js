@@ -36,7 +36,7 @@ function sliceBalanced(src, header) {
   return src.slice(start, i);
 }
 function loadRealClient() {
-  const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+  const indexHtml = require('./appScripts.js').pageSource('index.html');
   // The real static table. LA15b moved it out of app-main.js into public/finflow-currency.js (app-main reads
   // window.FinFlowCurrency.CURRENCIES), so it is imported, not marker-sliced from source text (Rule 5 corollary).
   const { CURRENCIES } = require(path.join(ROOT, 'public', 'finflow-currency.js'));

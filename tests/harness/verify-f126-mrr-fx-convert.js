@@ -65,7 +65,7 @@ const OWNER = { email: 'f126-owner@finflow.test', password: 'harness-password-no
     A('A3: display=GBP (no rate) leaves amount native (1000), _fx.ok=false', g && Number(g.amount) === 1000 && g._fx && g._fx.ok === false, `amount=${g && g.amount} _fx=${JSON.stringify(g && g._fx)}`);
 
     // STRUCTURAL — client loadMRRData wired to the display path + honesty.
-    const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     AS('loadMRRData fetches recurring-invoices with ?display= when a display currency is active',
       /recurring-invoices'\+\(_dispCcy\?\('\?display='\+encodeURIComponent\(_dispCcy\)\)/.test(html));
     AS('MRR cards render the display symbol when converted, native otherwise',

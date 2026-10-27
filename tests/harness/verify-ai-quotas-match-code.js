@@ -24,7 +24,7 @@ run('AI quotas — every surface says what the server enforces; one cap, the ser
   eq('0  premise: the code\'s caps (hand-checked against ai-cap.js defaults)', [caps.pro, caps.business, caps.businessScan, caps.scale, caps.scaleScan], [500, 2000, 50, 5000, 100]);
 
   // landing page pricing cards — rendered text, one card per plan
-  const ld = new JSDOM(fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'landing.html'), 'utf8')).window.document;
+  const ld = new JSDOM(require('./appScripts.js').pageSource('landing.html')).window.document;
   const cards = [...ld.querySelectorAll('.p-card')].map(c => c.textContent.replace(/\s+/g, ' '));
   const card = t => cards.find(c => c.includes(t)) || '';
   // D-F (2026-10-23): Pro also has receipt scans, so its line reads like the others.

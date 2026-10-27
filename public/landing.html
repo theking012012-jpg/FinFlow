@@ -557,54 +557,9 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
 </footer>
 
 <script src="/plans.js"></script>
-<script>
-window.addEventListener('scroll',()=>{
-  document.getElementById('nav').classList.toggle('scrolled',window.scrollY>40);
-});
-const dbars=document.getElementById('dbars');
-if(dbars){
-  const rev=[68,74,72,81,85,79,88,92,84,95,96,102];
-  const exp=[42,45,44,48,50,47,52,55,51,58,57,62];
-  const mx=Math.max(...rev);
-  dbars.innerHTML=rev.map((r,i)=>`<div class="d-bar-group"><div class="d-bar-r" data-h="${Math.round(r/mx*74)}" style="background:var(--acc);opacity:.8"></div><div class="d-bar-e" data-h="${Math.round(exp[i]/mx*74)}" style="background:var(--bg3);border:1px solid var(--bd)"></div></div>`).join('');
-  setTimeout(()=>dbars.querySelectorAll('[data-h]').forEach(b=>b.style.height=b.dataset.h+'px'),500);
-}
-const obs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible');});},{threshold:.12});
-document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
-setTimeout(()=>{
-  const t=document.getElementById('t-typing'),a=document.getElementById('t-answer');
-  if(t)t.style.display='flex';
-  setTimeout(()=>{if(t)t.style.display='none';if(a)a.style.display='block';},2400);
-},3500);
-</script>
+<script src="/js/landing-01-dbars.js"></script>
 
-<script>
-var landingAnnual = false;
-function toggleLandingBilling() {
-  landingAnnual = !landingAnnual;
-  // D-A: prices from plans.js (the one plan definition); the fallback is the generated page's own numbers.
-  var P = (window.FinFlowPlans && window.FinFlowPlans.PLANS) || { pro: { monthly: 79, annualMonthly: 63 }, business: { monthly: 249, annualMonthly: 199 }, scale: { monthly: 400, annualMonthly: 320 } };
-  var pro = landingAnnual ? P.pro.annualMonthly : P.pro.monthly;
-  var biz = landingAnnual ? P.business.annualMonthly : P.business.monthly;
-  var scale = landingAnnual ? P.scale.annualMonthly : P.scale.monthly;
-  var track = document.getElementById('toggle-track');
-  var thumb = document.getElementById('toggle-thumb');
-  if (track) track.style.background = landingAnnual ? 'var(--acc)' : 'var(--bd2)';
-  if (thumb) thumb.style.left = landingAnnual ? '23px' : '3px';
-  var proEl = document.getElementById('land-price-pro');
-  var bizEl = document.getElementById('land-price-biz');
-  var proPer = document.getElementById('land-period-pro');
-  var bizPer = document.getElementById('land-period-biz');
-  var scaleEl = document.getElementById('land-price-scale');
-  var scalePer = document.getElementById('land-period-scale');
-  if (proEl) proEl.textContent = pro;
-  if (bizEl) bizEl.textContent = biz;
-  if (scaleEl) scaleEl.textContent = scale;
-  if (proPer) proPer.textContent = landingAnnual ? '$' + (pro*12).toLocaleString('en-US') + '/yr · save $' + ((P.pro.monthly-pro)*12).toLocaleString('en-US') : 'per month';
-  if (bizPer) bizPer.textContent = landingAnnual ? '$' + (biz*12).toLocaleString('en-US') + '/yr · save $' + ((P.business.monthly-biz)*12).toLocaleString('en-US') : 'per month';
-  if (scalePer) scalePer.textContent = landingAnnual ? '$' + (scale*12).toLocaleString('en-US') + '/yr · save $' + ((P.scale.monthly-scale)*12).toLocaleString('en-US') : 'per month';
-}
-</script>
+<script src="/js/landing-02-landing-annual.js"></script>
 </body>
 </html>
 

@@ -27,7 +27,7 @@ function extract(src, marker) {
   throw new Error('unbalanced');
 }
 
-const IDX = fs.readFileSync(path.resolve(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
+const IDX = require('./appScripts.js').pageSource('index.html');
 const fnSrc = extract(IDX, 'window.ffImportStatement = function');
 
 console.log('\n' + '='.repeat(78));

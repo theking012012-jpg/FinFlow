@@ -222,7 +222,7 @@ const CH = {
       /import-charge[\s\S]*?fetch\('https:\/\/api\.stripe\.com\/v1\/charges\/'/.test(srv));
     AS('server: feed annotates inBooks from sales_receipts idempotency keys',
       /idempotency_key' = ANY\(\$2\)[\s\S]*?c\.inBooks = _booked\.has/.test(srv));
-    const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     AS('client: startStripeFeed renders an "Add to books" control for un-booked succeeded charges',
       /c\.inBooks/.test(html) && /Add to books/.test(html) && /ffImportStripeCharge/.test(html));
     AS('client: ffImportStripeCharge POSTs import-charge then refreshes money surfaces',

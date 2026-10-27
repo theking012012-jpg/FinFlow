@@ -63,7 +63,7 @@ process.on('uncaughtException', (e) => { const s = String(e && e.message || e); 
     const t = id => ((d.getElementById(id) || {}).textContent || '').trim();
     A('3  Items "Low Stock" 2 — the same rule (bug: 3, stock < 10)', t('items-lowstock') === '2', t('items-lowstock'));
     A('4  Items "Active" 5 — low stock is not a status (bug: 2)', t('items-active') === '5', t('items-active'));
-    const html = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     A('[STRUCTURAL] the inventory Edit form has its own reorder-level field; "(max units)" is gone', /id="edit-inv-reorder"/.test(html) && !/Reorder level \(max units\)/.test(html), '');
   } catch (e) { console.error('\n  FATAL:', e && e.stack || e); fail++; }
   finally { try { if (boot && boot.stop) await boot.stop(); } catch (_) {} }

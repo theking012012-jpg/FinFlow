@@ -13,7 +13,7 @@ const path = require('path');
 let pass = 0, fail = 0;
 const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
-const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+const html = require('./appScripts.js').pageSource('index.html');
 A('[STRUCTURAL] allocation bars carry ids (biz-alloc-eq/fi/re/cash)',
   /id="biz-alloc-eq"/.test(html) && /id="biz-alloc-fi"/.test(html) && /id="biz-alloc-re"/.test(html) && /id="biz-alloc-cash"/.test(html));
 A('[STRUCTURAL] render classifies holdings into buckets and populates', /F-E2: populate the business asset-allocation bars[\s\S]{0,900}biz-alloc-eq-bar/.test(html));

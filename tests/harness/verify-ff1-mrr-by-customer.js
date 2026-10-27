@@ -12,7 +12,7 @@ const path = require('path');
 let pass = 0, fail = 0;
 const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
-const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+const html = require('./appScripts.js').pageSource('index.html');
 const fn = (html.match(/async function loadMRRData\(\)\{[\s\S]*?\n\}/) || [''])[0];
 A('[STRUCTURAL] loadMRRData populates #mrr-by-customer', /getElementById\('mrr-by-customer'\)/.test(fn) && /_byCust/.test(fn));
 A('[STRUCTURAL] loadMRRData sets active-customers count (#mrr-customers)', /getElementById\('mrr-customers'\)/.test(fn));

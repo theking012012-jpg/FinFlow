@@ -21,9 +21,9 @@ const ROOT = path.join(__dirname, '..', '..');
   let pass = 0, fail = 0;
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
   try {
-    const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     A('Add Holding modal has a symbol-suggest dropdown', /id="h-ticker-suggest"/.test(html));
-    const blocks = html.match(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/g) || [];
+    const blocks = require('./appScripts.js').inlineScriptBlocks('index.html');   // FA-P1: the page's scripts are files now
     const tag = blocks.find(b => b.includes('window.ffHoldingSearch') && b.includes('window.ffHoldingPick'));
     A('picker script defines ffHoldingSearch + ffHoldingPick', !!tag);
     if (!tag) { console.log('\n  RED — ' + pass + ' passed, ' + fail + ' failed'); process.exit(1); }

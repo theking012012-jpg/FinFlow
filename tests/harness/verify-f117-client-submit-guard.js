@@ -39,7 +39,7 @@ function sliceFn(src, header){
   try {
     // ── Extract the REAL functions from source ──
     const appMain = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8').replace(/\r\n/g, '\n');
-    const html    = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+    const html    = require('./appScripts.js').pageSource('index.html').replace(/\r\n/g, '\n');
     const guardSrc = sliceFn(appMain, 'async function withSubmitGuard(btn, fn, opts){');
     const fxSrc    = sliceFn(html, 'async function addFXRate(btn){');
     A('extracted withSubmitGuard from app-main.js', !!guardSrc, 'header not found');

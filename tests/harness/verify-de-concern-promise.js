@@ -53,7 +53,7 @@ const { HarnessHttp } = require('./httpClient.js');
     const row = (await c.query(`SELECT * FROM accountant_reports WHERE accountant_id = $1`, [acc])).rows[0] || {};
     A('2  the report stores that deadline: 2026-07-28T17:00Z (bug: nothing stored)', row.respond_by && new Date(row.respond_by).toISOString() === '2026-07-28T17:00:00.000Z', String(row.respond_by));
     // STRUCTURAL (labelled, Rule 5): the words the client reads — no value can express that a sentence is gone
-    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     A('3  [structural] the report dialog no longer promises "within 24 hours"; it states the policy\'s 2 business days', !/reviews reports within 24 hours|review within 24 hours/.test(html) && /acknowledge every report within 2 business days/.test(html), '');
 
     const admin = new HarnessHttp(base, { xff: '198.51.100.61' });

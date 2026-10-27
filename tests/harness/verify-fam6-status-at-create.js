@@ -72,7 +72,7 @@ async function main() {
     eq('6e …and reopened', (await http.put('/api/credit-notes/' + cnId, { status: 'Open' })).status, 200);
     eq('6f …but never typed "Applied" (bug: 200 — any status was accepted on edit)', (await http.put('/api/credit-notes/' + cnId, { status: 'Applied' })).status, 400, 200);
     // [STRUCTURAL] the create forms no longer offer what cannot be chosen (markup; the server rules above are executed)
-    const html = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     A('[STRUCTURAL] invoice form offers no "Overdue"; bill form no "Due Soon"/"Overdue"; credit forms Open only; item form no "Low Stock"',
       !/id="inv-status">[^]*?value="overdue"[^]*?<\/select>/.test(html.slice(html.indexOf('id="inv-status"'), html.indexOf('id="inv-status"') + 400))
       && !/value="due_soon"/.test(html.slice(html.indexOf('id="bill-status"'), html.indexOf('id="bill-status"') + 400))

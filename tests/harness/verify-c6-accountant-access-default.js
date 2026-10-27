@@ -44,7 +44,7 @@ run('C6 — accountant links start with nothing granted; personal panel has inco
   A("after the grant the accountant reads A's books", !!books.summary);
 
   // The panel: the page's own openPersonalPanel on the server's real response.
-  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'accountant-client.html'), 'utf8');
+  const html = require('./appScripts.js').pageSource('accountant-client.html');
   const m = html.match(/window\.openPersonalPanel = function\(\) \{[\s\S]*?\n\};/);
   A('[STRUCTURAL] openPersonalPanel found in accountant-client.html', !!m);
   const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only' });

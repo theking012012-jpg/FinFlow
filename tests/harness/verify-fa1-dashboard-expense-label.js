@@ -15,7 +15,7 @@ const path = require('path');
 let pass = 0, fail = 0;
 const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
-const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+const html = require('./appScripts.js').pageSource('index.html');
 // The dashboard block is the one with id="exp-sal" (values). Its labels must now carry exp-*-lbl ids.
 A('[STRUCTURAL] dashboard label spans have exp-sal-lbl/exp-rent-lbl/exp-sw-lbl/exp-mkt-lbl',
   /id="exp-sal-lbl"/.test(html) && /id="exp-rent-lbl"/.test(html) && /id="exp-sw-lbl"/.test(html) && /id="exp-mkt-lbl"/.test(html));

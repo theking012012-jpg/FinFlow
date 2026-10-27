@@ -23,7 +23,7 @@ run('D-G step 6 — the FAQ and the Terms match the code', async ({ w, d, settle
   A('4  security: at-rest encryption attributed to the database provider (Supabase, AES-256), in transit TLS — not FinFlow\'s own claim', /Supabase/.test(faq) && /TLS/.test(faq), faq.slice(-500));
   A('5  yearly plans: leave any time, refund = paid minus months used at the monthly price; reminder 30 days before renewal', /leave any time/i.test(faq) && /monthly price/i.test(faq) && /30 days/.test(faq), faq.slice(-700));
 
-  const terms = new JSDOM(fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'terms.html'), 'utf8')).window.document.body.textContent.replace(/\s+/g, ' ');
+  const terms = new JSDOM(require('./appScripts.js').pageSource('terms.html')).window.document.body.textContent.replace(/\s+/g, ' ');
   A('6  Terms §6: cancel from Settings; monthly ends at period end; yearly refund rule; 30-day renewal reminder (bug: "non-refundable", no way to cancel)', /Plan & billing/.test(terms) && /monthly price/i.test(terms) && /30 days before/i.test(terms) && !/Fees are non-refundable except/i.test(terms), terms.slice(terms.indexOf('6. Free trial'), terms.indexOf('6. Free trial') + 600));
   A('7  Terms §10: after a paid plan ends — 90 days read-only, a warning 14 days before deletion, the audit trail kept', /90 days/.test(terms) && /14 days/.test(terms), terms.slice(terms.indexOf('10. Ending'), terms.indexOf('10. Ending') + 600));
 });

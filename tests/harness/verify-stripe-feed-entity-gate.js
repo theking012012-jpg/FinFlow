@@ -48,7 +48,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     A('on the bound entity: the charge renders normally', /2,000/.test(feedHtml2) && /in books/.test(feedHtml2), feedHtml2.slice(0,160));
 
     // STRUCTURAL — switchEntity clears the money-flow river so stale currency/data can't linger.
-    const html = fs.readFileSync(path.join(process.cwd(),'public','index.html'),'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     AS('switchEntity clears the money-flow river (river-wrap) on switch', /switchEntity=async function[\s\S]*?river-wrap[\s\S]*?Loading/.test(html));
     AS('feed gate keys off books.entity_id vs the active entity', /_stripeBooksEntity/.test(html) && /d\.books\.entity_id!==_actId/.test(html));
 

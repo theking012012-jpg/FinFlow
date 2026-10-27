@@ -17,7 +17,7 @@
  */
 'use strict';
 
-const SW_VERSION = 'finflow-v5-2026-08-24';
+const SW_VERSION = 'finflow-v6-2026-10-27';
 const SHELL_CACHE = 'shell-' + SW_VERSION;
 
 // Precached on install so the very first offline launch has a shell to paint.
@@ -76,7 +76,9 @@ self.addEventListener('fetch', (event) => {
 
   // Navigations + code assets: network-first, cache only as offline fallback.
   const isNav = req.mode === 'navigate';
-  const isCode = url.pathname === '/app-main.js' || url.pathname === '/finflow-bundle.js';
+  // FA-P1: every same-origin script and stylesheet (the pages' own scripts are files now, not inline) — so an offline
+  // launch still has them, and online always runs the newest.
+  const isCode = url.origin === self.location.origin && /\.(js|css)$/.test(url.pathname);
   if (isNav || isCode) {
     event.respondWith(
       fetch(req)

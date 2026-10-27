@@ -58,7 +58,7 @@ const num = s => parseFloat(String(s == null ? '' : s).replace(/[^0-9.\-]/g, '')
     A('owner login 200', (await http.post('/api/auth/login', OWNER)).status === 200);
 
     // Extract the real business render functions (incl. _reseedLive + the window._reseedLive export).
-    const html = fs.readFileSync(path.join(process.cwd(), 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     // Anchor on renderBizInvestments (present pre- AND post-fix) so the PRE-FIX build reaches the
     // behavioural assertions (and fails there) instead of bailing at extraction. Pull in the real
     // _reseedLive only when this build has it (post-fix); pre-fix simply runs without it.

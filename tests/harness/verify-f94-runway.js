@@ -36,7 +36,7 @@ const dlabel = (ymd) => { const p = ymd.split('-'); return (+p[2]) + ' ' + MONS[
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
   const SKIP = (n) => { skip++; console.log('  SKIP  ' + n); };
   try {
-    const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://x.test/app' });
     const { window } = dom;
     const doc = window.document;

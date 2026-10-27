@@ -23,7 +23,7 @@ const PAGES = ['dashboard', 'banking', 'bank-rec', 'invoices', 'customers', 'quo
 const TOKENS_ALL = ['Acme Ltd', 'Beta Co', 'Supply Co', 'Widget', 'Sam Field', 'Olive Owner', 'NWHOLD', 'NW BANK LINE', '3,600', 'Net Host', 'NW Petty Cash'];
 
 run('C1 — switching business leaves nothing of the previous one on any page; Personal unchanged', async ({ w, d, ev, settle, eq, A, http }) => {
-  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
+  const html = require('./appScripts.js').pageSource('index.html');
   const TOKENS = TOKENS_ALL.filter(t => !html.includes(t));
   const pageText = id => { const el = d.getElementById('page-' + id); return el ? el.textContent.replace(/\s+/g, ' ') : ''; };
   const open = async id => { try { w.showPage(id); } catch (_) {} await settle(12, 50); };

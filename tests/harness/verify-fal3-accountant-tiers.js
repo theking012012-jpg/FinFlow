@@ -16,7 +16,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const T = require(path.join(ROOT, 'tier-config.js'));
 let pass = 0, fail = 0;
 const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
-const html = fs.readFileSync(path.join(ROOT, 'public', 'accountants.html'), 'utf8');
+const html = require('./appScripts.js').pageSource('accountants.html');
 const d = new JSDOM(html).window.document;
 const text = d.body.textContent.replace(/\s+/g, ' ');
 const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

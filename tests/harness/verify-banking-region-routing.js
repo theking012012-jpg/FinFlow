@@ -22,7 +22,7 @@ const ROOT = path.join(__dirname, '..', '..');
   let pass = 0, fail = 0;
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
   try {
-    const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
 
     // ── 1. Un-orphan (static structure) ──
     const mBank = html.match(/<div class="page" id="page-banking">([\s\S]*?)\n      <\/div>/);

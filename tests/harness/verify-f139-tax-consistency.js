@@ -134,7 +134,7 @@ async function insertJson(c, table, userId, entityId, ymd, data) {
     // ── Accountant "taxable" = the SHIPPED renderTax(), fed the REAL /books response ──
     // Extract the actual function from accountant-client.html (verify-f138 technique) and run it in
     // a minimal DOM. This executes the real UI code path, not a re-implementation (Rule 14).
-    const src = fs.readFileSync(path.join(process.cwd(), 'public', 'accountant-client.html'), 'utf8');
+    const src = require('./appScripts.js').pageSource('accountant-client.html');
     const start = src.indexOf('function renderTax(invoices, expenses)');
     const end = src.indexOf('// ── NOTES', start);
     A('renderTax extracted from accountant-client.html', start >= 0 && end > start, `start=${start} end=${end}`);

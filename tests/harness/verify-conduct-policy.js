@@ -34,7 +34,7 @@ const ROOT = path.join(__dirname, '..', '..');
   const V = Conduct ? Conduct.VERSION : '?';
 
   // the document
-  const pol = fs.existsSync(path.join(ROOT, 'public', 'conduct.html')) ? new JSDOM(fs.readFileSync(path.join(ROOT, 'public', 'conduct.html'), 'utf8')).window.document : null;
+  const pol = fs.existsSync(path.join(ROOT, 'public', 'conduct.html')) ? new JSDOM(require('./appScripts.js').pageSource('conduct.html')).window.document : null;
   const polText = pol ? pol.body.textContent.replace(/\s+/g, ' ') : '';
   A('1  /conduct.html exists and its version equals conduct-policy.js', !!pol && (pol.querySelector('meta[name="conduct-version"]') || {}).content === V, pol ? 'meta=' + (pol.querySelector('meta[name="conduct-version"]') || {}).content : 'no page');
   A('1b it states the off-platform rule and penalties (24 months, conversion fee, warning → suspension → removal)', /24 months/.test(polText) && /conversion fee/i.test(polText) && /Suspension/.test(polText) && /Permanent removal/.test(polText), polText.slice(0, 120));

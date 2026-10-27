@@ -1,1 +1,0 @@
-(function(){var p=new URLSearchParams(window.location.search);if(p.get('signup')==='1'&&typeof showRegister==='function')showRegister();})();

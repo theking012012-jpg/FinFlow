@@ -34,7 +34,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../..');
 const APP = fs.readFileSync(path.join(ROOT, 'public/app-main.js'), 'utf8');
-const IDX = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
+const IDX = require('./appScripts.js').pageSource('index.html');
 
 let pass = 0, fail = 0;
 const A = (name, got, want, bugWould) => {

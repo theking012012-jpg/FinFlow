@@ -6,7 +6,7 @@
  */
 const fs = require('fs'), path = require('path');
 const { run } = require('./clientMoneyKit.js');
-const html = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'index.html'), 'utf8');
+const html = require('./appScripts.js').pageSource('index.html');
 run('FA-K1 — no literal $0 KPI cards', async ({ w, d, settle, eq }) => {
   eq('1  STRUCTURAL: KPI cards with a literal "$0" in the markup', (html.match(/<div class="mc-val[^"]*"[^>]*>\$0</g) || []).length, 0, 52);
   const bare = [];

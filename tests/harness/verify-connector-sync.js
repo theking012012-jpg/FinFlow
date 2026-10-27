@@ -21,9 +21,9 @@ const ROOT = path.join(__dirname, '..', '..');
   let pass = 0, fail = 0;
   const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
   try {
-    const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+    const html = require('./appScripts.js').pageSource('index.html');
     // Extract the connections-hub inline <script> (the one that defines connSyncNow).
-    const blocks = html.match(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/g) || [];
+    const blocks = require('./appScripts.js').inlineScriptBlocks('index.html');   // FA-P1: the page's scripts are files now
     const iifeTag = blocks.find(b => b.includes('window.connSyncNow') && b.includes('INTEGRATIONS='));
     A('connections-hub script contains a Sync-now trigger (window.connSyncNow)', !!iifeTag,
       'no inline script defines window.connSyncNow — A2 not present');

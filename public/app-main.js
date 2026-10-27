@@ -2305,7 +2305,20 @@ function _syncMobileFab(id){
 }
 window._syncMobileFab = _syncMobileFab;
 
+// FA-B12: a page change closes every open form (.modal-overlay) — a form belongs to the page it was opened on. The Cowork
+// test stacked 15 forms open across page changes. Closed through closeModal (its wrappers reset edit state / focus trap);
+// a form shown by style.display is hidden the same way. The confirm dialog and onboarding are not forms (other classes).
+function _ffCloseOpenForms(){
+  document.querySelectorAll('.modal-overlay').forEach(m=>{
+    const shown = !m.classList.contains('hidden') && m.style.display !== 'none';
+    if(!shown) return;
+    if(m.style.display){ m.style.display = 'none'; return; }   // a form shown by style.display (e.g. edit employee) is closed the same way it opens
+    try { if(m.id && typeof window.closeModal==='function') window.closeModal(m.id); else m.classList.add('hidden'); } catch(_){ m.classList.add('hidden'); }
+  });
+}
+window._ffCloseOpenForms=_ffCloseOpenForms;
 function showPage(id, el){
+  _ffCloseOpenForms();   // FA-B12
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const pg=document.getElementById('page-'+id);

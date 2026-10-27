@@ -5010,11 +5010,50 @@ function renderCustomers(filter='', _fromUnsaved){
       <span style="font-size:12px;color:var(--t2)">${esc(c.company||'—')}</span>
       <span style="font-family:var(--font-mono);font-weight:600">${esc(S(c.revenue))}</span>
       <span><span class="badge ${esc(badge)}">${esc(c.status)}</span></span>
-      <span class="table-actions"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openCustomerModal(${Number(c.id)})">Edit</button></span>
+      <span class="table-actions"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openCustomerPortal(${Number(c.id)})" title="A private link where this customer sees their invoices and pays online">Portal</button><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openCustomerModal(${Number(c.id)})">Edit</button></span>
     </div>`;
   }).join('')+unsavedHtml;
 }
 function filterCustomers(){renderCustomers(document.getElementById('cust-search').value)}
+// FA-B10b: the customer's portal link — a private page where they see their open and paid invoices and what they owe,
+// and pay online. One live link per customer; "New link" replaces it (the old one stops working); "Turn off" revokes it.
+async function openCustomerPortal(id){
+  const c=(customers||[]).find(x=>Number(x.id)===Number(id)); if(!c) return;
+  const name=(c.fname||c.lname)?((c.fname||'')+' '+(c.lname||'')).trim():(c.company||'this customer');
+  const call=async(method)=>{ const r=await fetch('/api/customers/'+Number(id)+'/portal-link',{method,credentials:'include',headers:{'Content-Type':'application/json'},body:method==='GET'?undefined:'{}'}); const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'Could not update the portal link.'); return j; };
+  let old=document.getElementById('cust-portal-modal'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='cust-portal-modal'; ov.className='modal-overlay'; ov.style.display='flex';
+  const box=document.createElement('div'); box.className='modal'; box.style.maxWidth='460px';
+  ov.appendChild(box); document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+  const btn=(text,cls,fn)=>{ const b=document.createElement('button'); b.className='btn '+cls+' btn-sm'; b.textContent=text; b.addEventListener('click',fn); return b; };
+  const paint=(link,err)=>{
+    box.textContent='';
+    const h=document.createElement('div'); h.className='modal-title'; h.textContent='Portal link — '+name; box.appendChild(h);
+    const p=document.createElement('div'); p.className='modal-sub'; p.style.marginBottom='12px';
+    p.textContent='A private page where '+name+' sees their open and paid invoices, what they owe, and can pay online. No account needed.'; box.appendChild(p);
+    if(err){ const e=document.createElement('div'); e.style.cssText='color:var(--red);font-size:12px;margin-bottom:8px'; e.textContent=err; box.appendChild(e); }
+    const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px';
+    if(link){
+      const inp=document.createElement('input'); inp.id='cust-portal-url'; inp.readOnly=true; inp.value=link.url; inp.style.cssText='width:100%;font-family:var(--font-mono);font-size:12px';
+      inp.addEventListener('focus',()=>inp.select()); box.appendChild(inp);
+      const meta=document.createElement('div'); meta.id='cust-portal-meta'; meta.style.cssText='font-size:12px;color:var(--t2);margin-top:6px';
+      const d=v=>v?new Date(v).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'';
+      meta.textContent='Works until '+d(link.expires_at)+' · '+(link.view_count?('opened '+link.view_count+' time'+(link.view_count===1?'':'s')+', last '+d(link.last_viewed_at)):'not opened yet');
+      box.appendChild(meta);
+      row.appendChild(btn('Turn off','btn-ghost',async()=>{ try{ await call('DELETE'); paint(null); notify('Portal link turned off — the old link no longer works'); }catch(e){ paint(link,e.message); } }));
+      row.appendChild(btn('New link','btn-ghost',async()=>{ try{ const j=await call('POST'); paint(j.link); notify('New portal link made — the old one no longer works'); }catch(e){ paint(link,e.message); } }));
+      row.appendChild(btn('Copy link','btn-primary',async()=>{ try{ await navigator.clipboard.writeText(link.url); notify('Link copied'); }catch(_){ inp.focus(); inp.select(); notify('Select the link and copy it'); } }));
+    } else {
+      row.appendChild(btn('Cancel','btn-ghost',close));
+      row.appendChild(btn('Create link','btn-primary',async()=>{ try{ const j=await call('POST'); paint(j.link); }catch(e){ paint(null,e.message); } }));
+    }
+    box.appendChild(row);
+  };
+  try{ paint((await call('GET')).link); }catch(e){ paint(null,e.message); }
+}
+window.openCustomerPortal=openCustomerPortal;
 function openCustomerModal(id=null){
   const del=document.getElementById('cust-delete-btn');
   if(id){

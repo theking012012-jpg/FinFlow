@@ -483,6 +483,15 @@ async function initDB() {
       UNIQUE (user_id, entity_id, kind, ref_id, stage))`);
     // FA-M6b: a credit note applied to an invoice / a vendor credit applied to a bill. Same statements as
     // scripts/migrations/2026-10-24-credit-applications.sql.
+    // FA-B10b: a customer's private portal link. Only the token's hash is looked up; the token itself is kept encrypted
+    // (encTok) so the owner can copy the link again. One live link per customer (a new one revokes the old). Same
+    // statements as scripts/migrations/2026-10-27-customer-portal-links.sql.
+    await client.query(`CREATE TABLE IF NOT EXISTS customer_portal_links (
+      id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, entity_id INTEGER NOT NULL,
+      customer_id INTEGER NOT NULL, token_hash CHAR(64) NOT NULL UNIQUE, token_enc TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), expires_at TIMESTAMPTZ NOT NULL, revoked_at TIMESTAMPTZ,
+      last_viewed_at TIMESTAMPTZ, view_count INTEGER NOT NULL DEFAULT 0)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_customer_portal_links_customer ON customer_portal_links (user_id, customer_id)`);
     await client.query(`CREATE TABLE IF NOT EXISTS credit_applications (
       id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, entity_id INTEGER,
       kind VARCHAR(16) NOT NULL CHECK (kind IN ('credit_note', 'vendor_credit')),

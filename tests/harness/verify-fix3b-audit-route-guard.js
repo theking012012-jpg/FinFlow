@@ -22,6 +22,7 @@ const ALLOWED = {
   "EXEMPT": {
     reason: "no stored change to books or access: a calculation, a suggestion, a what-if, the business in view, a session switch, a report, a draft, a log line, a Stripe checkout page (the subscription changes only on Stripe's webhook); accountant routes that are disabled (record-commission 410, reactivate-client 403), a live 'typing' signal, a résumé / membership check or AI read that stores nothing, and the three consent routes that audit INSIDE _activateLink (CLIENT_ACTIVATE)",
     routes: [
+      "POST /api/portal/view",   // FA-B10b: the customer portal read; it stores only the link view counter (no books, no access)
       "POST /api/accountants/record-commission",
       "POST /api/accountants/reactivate-client",
       "POST /api/accountants/clients/:userId/typing",
@@ -48,6 +49,13 @@ const ALLOWED = {
       "POST /api/reports/cash-flow",
       "POST /api/reports/profit-loss",
       "PUT /api/scenario",
+    ],
+  },
+  "EXEMPT-FAB10b": {
+    reason: "the audit row is written inside the ONE payment-link writer both routes call, _issuePaymentLink (FA-B10b, 2026-10-27: the owner's pay-link button and the customer portal's Pay share it); the portal's Pay writes nothing at all when it hands back the link already made for the amount owed",
+    routes: [
+      "POST /api/invoices/:id/payment-link",
+      "POST /api/portal/pay",
     ],
   },
   "EXEMPT-LC3e": {

@@ -30,6 +30,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     const shown = () => !!m() && !m().classList.contains('hidden');
     const opts = m() ? [...m().querySelectorAll('option')].map(o => o.value) : [];
     A('1  Entities shows the picker offering USD and TTD', shown() && opts.includes('USD') && opts.includes('TTD'), JSON.stringify({ shown: shown(), opts }));
+    A('1  FA-B14: it is an inline banner on the page, not a blocking pop-up (no .modal-overlay)', !!m() && !m().classList.contains('modal-overlay') && !!m().closest('#page-entities'), m() ? m().className : 'missing');
     if (shown()) {
       m().querySelector('select').value = 'TTD';
       const btn = [...m().querySelectorAll('button')].find(b => /Use this currency/.test(b.textContent)); if (btn) btn.click();

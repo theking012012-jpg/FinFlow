@@ -382,28 +382,29 @@ function _maybeAskReportingCurrency(){
   const curs = [...new Set(ENTITIES.map(e => e.currency).filter(Boolean))];
   if (curs.length < 2) return;
   window._rcAsked = true;
+  // FA-B14: an inline banner above the combined figures, not a blocking pop-up — the page stays usable, the banner stays
+  // until a currency is chosen (and a page change, FA-B12, never closes it: it is not a form).
   let m = document.getElementById('rc-ask-modal');
+  const _pl = document.getElementById('consol-pl');
   if (!m) {
-    m = document.createElement('div'); m.id = 'rc-ask-modal'; m.className = 'modal-overlay hidden';
-    document.body.appendChild(m);
+    m = document.createElement('div'); m.id = 'rc-ask-modal'; m.className = 'rc-ask-banner';
+    m.style.cssText = 'border:1px solid var(--acc2);background:var(--acc-bg);border-radius:var(--radius);padding:.75rem 1rem;margin:0 0 1rem';
+    if (_pl && _pl.parentNode) _pl.parentNode.insertBefore(m, _pl); else document.body.appendChild(m);
   }
   const def = consolCurrency && curs.includes(consolCurrency) ? consolCurrency : curs[0];
-  m.innerHTML = `<div class="modal" style="max-width:400px">
-    <div class="modal-header"><div><div class="modal-title">Which currency for your combined figures?</div>
-      <div class="modal-sub">Your businesses use ${curs.map(esc).join(' and ')}. "All entities" totals are shown in one currency.</div></div></div>
-    <div class="field-wrap"><label class="field-label" for="rc-ask-select">Report all businesses in</label>
-      <select class="finput" id="rc-ask-select">${curs.map(c => `<option value="${esc(c)}"${c === def ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
-    <div style="font-size:11.5px;color:var(--t3);margin:4px 2px 0">You can change this any time in Settings.</div>
-    <div class="modal-footer"><button class="btn btn-primary" id="rc-ask-use">Use this currency</button></div>
-  </div>`;
+  m.innerHTML = `<div style="font-size:13px;font-weight:600;color:var(--t1)">Which currency for your combined figures?</div>
+    <div style="font-size:12px;color:var(--t2);margin:2px 0 8px">Your businesses use ${curs.map(esc).join(' and ')}. "All entities" totals are shown in one currency — you can change it any time in Settings.</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="field-label" for="rc-ask-select" style="margin:0">Report all businesses in</label>
+      <select class="finput" id="rc-ask-select" style="width:auto">${curs.map(c => `<option value="${esc(c)}"${c === def ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
+      <button class="btn btn-primary btn-sm" id="rc-ask-use">Use this currency</button></div>`;
+  m.classList.remove('hidden');
   m.querySelector('#rc-ask-use').onclick = async function () {
     const v = m.querySelector('#rc-ask-select').value;
     const s = document.getElementById('s-reporting-currency'); if (s) s.value = v;
     if (typeof window.saveReportingCurrency === 'function') await window.saveReportingCurrency();
-    closeModal('rc-ask-modal');
+    m.classList.add('hidden');
     if (typeof window.renderEntities === 'function') window.renderEntities(); else renderConsolPL();
   };
-  openModal('rc-ask-modal');
 }
 function renderConsolPL(){
   _consolCaption();

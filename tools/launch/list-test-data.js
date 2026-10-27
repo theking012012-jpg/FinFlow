@@ -10,6 +10,7 @@
  * What counts as test data (LAUNCH_STATUS 1.6, COWORK_RETEST_RESULTS_2026-10-20.md):
  *   MARKED   any business / personal record whose text contains ZZ-QA, AUDIT TEST or ZZ-LIVECHECK
  *   LINKED   payments on a marked invoice / bill; time entries on a marked project
+ *   KEPT     (shown, never purged) a marked customer / vendor that a real, unmarked document is linked to
  *   NAMED    accountant links to "QA Tester" / "Claude TestCPA"; the November 2026 payroll run on a Cowork test account
  *            (e-mail contains "+cowork") with its owner-salary row in Personal; the FreshBooks integration request;
  *            the "Software" budget target key on a Cowork test account (REVIEW — a key inside a real row, see below)
@@ -36,6 +37,26 @@ async function findTestData(c) {
     if (!have.has(t)) continue;
     const { rows } = await c.query(`SELECT id, user_id, entity_id, data FROM ${t} WHERE data::text ILIKE ANY($1::text[]) ORDER BY id`, [MARKERS]);
     for (const r of rows) out.marked.push({ table: t, id: r.id, user_id: r.user_id, entity_id: r.entity_id, label: label(r.data), amount: r.data && r.data.amount != null ? Number(r.data.amount) : null });
+  }
+  // SW2 (2026-10-27): since batch 9 every invoice / bill saves its contact, so a test document leaves a marked contact
+  // behind — that contact IS test data and is listed. But a marked contact that a REAL (unmarked) document links to
+  // (its customer_id / vendor_id) is never listed for removal: it is shown under KEPT and the owner decides by hand.
+  const LINKS = { customers: { key: 'customer_id', tables: ['invoices', 'sales_receipts', 'quotes', 'credit_notes', 'recurring_invoices', 'payments_received'] },
+                  vendors:   { key: 'vendor_id',   tables: ['bills', 'payments_made', 'vendor_credits', 'recurring_bills', 'expenses'] } };
+  out.kept = [];
+  for (const [ct, ln] of Object.entries(LINKS)) {
+    const mine = out.marked.filter(m => m.table === ct);
+    if (!mine.length) continue;
+    const users = new Map();
+    for (const t of ln.tables) {
+      if (!have.has(t)) continue;
+      const { rows } = await c.query(`SELECT id, (data->>'${ln.key}')::int AS cid FROM ${t} WHERE (data->>'${ln.key}') ~ '^[0-9]+$' AND (data->>'${ln.key}')::int = ANY($1::int[]) AND NOT (data::text ILIKE ANY($2::text[])) ORDER BY id`, [mine.map(m => m.id), MARKERS]);
+      rows.forEach(r => { if (!users.has(r.cid)) users.set(r.cid, []); users.get(r.cid).push(t + ' #' + r.id); });
+    }
+    for (const m of mine) if (users.has(m.id)) {
+      out.marked.splice(out.marked.indexOf(m), 1);
+      out.kept.push(Object.assign({}, m, { why: 'marked, but real ' + users.get(m.id).join(', ') + ' use' + (users.get(m.id).length === 1 ? 's' : '') + ' it — never purged; fix by hand' }));
+    }
   }
   const ids = t => out.marked.filter(m => m.table === t).map(m => m.id);
   const seen = new Set(out.marked.map(m => m.table + ':' + m.id));
@@ -109,6 +130,7 @@ if (require.main === module) {
       show('LINKED — attached to a marked record', f.linked);
       show('NAMED — test records with no marker', f.named);
       show('REVIEW — part of a real row', f.review);
+      show('KEPT — marked, but a real document uses it (NOT removed by the purge)', f.kept);
       const n = f.marked.length + f.linked.length + f.named.length + f.review.length;
       console.log(`\n${n} test records · fingerprint ${fingerprint(f)}`);
       console.log('If ANY line above is a real record, stop — do not run the purge. Otherwise: node tools/launch/purge-test-data.js');

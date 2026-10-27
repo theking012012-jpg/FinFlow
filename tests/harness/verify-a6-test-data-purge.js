@@ -6,14 +6,17 @@
  * Seed — one Cowork-style account (e-mail contains "+cowork"), business Northwind:
  *   REAL  invoice Acme 1,000 (+ payment 400) · expense Rent 300 · bill Paper Co 200 · receipt 150 ·
  *         payroll run "October 2026" paid (owner on it → an owner-salary row in Personal) · budget Rent 60,000 ·
- *         personal "Groceries" 120
+ *         personal "Groceries" 120 · vendor "Harbor Supplies" whose contact field says "AUDIT TEST import desk" (MARKED) with
+ *         a real bill 120 linked to it (SW2: a marked contact a real document uses — must be KEPT, never purged)
  *   TEST  invoice "ZZ-LIVECHECK flow" 777 (+ payment 40) · invoice "AUDIT TEST ZZ" 7,777 · expense "AUDIT TEST EXP" 888 ·
  *         bill "AUDIT TEST VENDOR" 444 · bill "ZZ-LIVECHECK bill C4" 30 (+ payment 30) · receipt "ZZ-LIVECHECK receipt" 50
  *         · project "ZZ-LIVECHECK P1" + 1.5 h on it · quote "ZZ-LIVECHECK quote" · run "November 2026" PAID (+ owner
  *         salary) · budget key Software 600 · FreshBooks request · personal "ZZ-LIVECHECK personal" 5 · link to
  *         accountant "QA Tester"
  * The ledger's per-account balances are measured BEFORE any test record exists — the independent expectation (Rule 6).
- *   1  lister: finds every test record, none of the real ones; changes nothing
+ *   1  lister: finds every test record, none of the real ones; changes nothing. SW2: since batch 9 each test invoice /
+ *      bill also saved its contact ("ZZ-LIVECHECK flow", "AUDIT TEST ZZ" customers; "AUDIT TEST VENDOR",
+ *      "ZZ-LIVECHECK bill C4" vendors) — test data, listed and purged; Harbor Supplies is listed under KEPT only
  *   2  dry run changes nothing; --apply without --expect → refused; wrong fingerprint → refused
  *   3  a test record inside a LOCKED period → refused, nothing changed
  *   4  apply: every business account balance back to the pre-test baseline, to the cent      (a raw delete leaves
@@ -64,8 +67,12 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     await J('PUT', '/api/payroll-runs/' + octRun.id + '/approve', {}); await J('PUT', '/api/payroll-runs/' + octRun.id + '/mark-paid', { confirm_future: true });   // V1 (D1): a future month — a confirmed prepayment
     await J('PUT', '/api/budget-targets', { Rent: 60000 });   // the body IS the map (as the app sends it)
     await J('POST', '/api/personal-transactions', { description: 'Groceries', amount: 120, currency: 'USD', category: 'Food', tx_type: 'expense', tx_date: '2026-07-07' });
+    const harbor = await J('POST', '/api/vendors', { name: 'Harbor Supplies', contact: 'AUDIT TEST import desk' });
+    const hBill = await J('POST', '/api/bills', { vendor: 'Harbor Supplies', amount: 120, status: 'unpaid', issue_date: '2026-07-08', due_date: '2026-08-08', idempotency_key: 'r-b2' });
+    const hLinked = (await c.query(`SELECT data->>'vendor_id' v FROM bills WHERE id = $1`, [hBill.id])).rows[0].v;
+    eq('0  seed: the real Harbor bill is linked to the marked Harbor vendor (else §1 KEPT proves nothing)', hLinked, String(harbor.id));
 
-    const TABLES = ['invoices', 'invoice_payments', 'expenses', 'bills', 'payments_made', 'sales_receipts', 'payroll_runs', 'payroll_run_lines', 'projects', 'timesheet', 'quotes', 'personal_transactions', 'support_requests'];
+    const TABLES = ['customers', 'vendors', 'invoices', 'invoice_payments', 'expenses', 'bills', 'payments_made', 'sales_receipts', 'payroll_runs', 'payroll_run_lines', 'projects', 'timesheet', 'quotes', 'personal_transactions', 'support_requests'];
     const snap = async () => { const o = {}; for (const t of TABLES) o[t] = (await c.query(`SELECT * FROM ${t} ORDER BY id`)).rows.map(r => JSON.stringify(Object.assign({}, r, { updated_at: undefined }))); return o; };
     const realRows = await snap();
     const ledger = async () => Object.fromEntries((await c.query(
@@ -103,9 +110,15 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     const L = run(LIST, ['--json']);
     let listed = null; try { listed = JSON.parse(L.out.slice(L.out.indexOf('{'))); } catch (_) {}
     const keys = listed ? [...listed.marked, ...listed.linked, ...listed.named, ...listed.review].map(x => x.table).sort() : null;
-    eq('1  lister finds the 17 test records by table', keys, ['accountant_clients', 'bills', 'bills', 'budget_targets', 'expenses', 'invoice_payments', 'invoices', 'invoices',
-      'payments_made', 'payroll_runs', 'personal_transactions', 'personal_transactions', 'projects', 'quotes', 'sales_receipts', 'support_requests', 'timesheet'].concat([]).sort());
-    eq('1  lister names none of the real records (Acme / Rent / Paper Co / Walk-in / Groceries / October)', /Acme|"Rent"|Paper Co|Walk-in|Groceries|October/.test(L.out), false);
+    // SW2: 17 + the 2 customers and 2 vendors the test invoices / bills saved (batch 9). The OLD lister also listed the
+    // marked Harbor vendor a real bill uses → 22 keys with a 3rd 'vendors', and the purge deleted it (bug value below).
+    eq('1  lister finds the 21 test records by table', keys, ['accountant_clients', 'bills', 'bills', 'budget_targets', 'customers', 'customers', 'expenses', 'invoice_payments', 'invoices', 'invoices',
+      'payments_made', 'payroll_runs', 'personal_transactions', 'personal_transactions', 'projects', 'quotes', 'sales_receipts', 'support_requests', 'timesheet', 'vendors', 'vendors'].sort(),
+      ['accountant_clients', 'bills', 'bills', 'budget_targets', 'customers', 'customers', 'expenses', 'invoice_payments', 'invoices', 'invoices',
+      'payments_made', 'payroll_runs', 'personal_transactions', 'personal_transactions', 'projects', 'quotes', 'sales_receipts', 'support_requests', 'timesheet', 'vendors', 'vendors', 'vendors'].sort());
+    const toRemove = listed ? JSON.stringify([...listed.marked, ...listed.linked, ...listed.named, ...listed.review]) : '';
+    eq('1  lister names none of the real records for removal (Acme / Rent / Paper Co / Walk-in / Groceries / October / Harbor)', /Acme|"Rent"|Paper Co|Walk-in|Groceries|October|Harbor/.test(toRemove), false);
+    eq('1  the marked Harbor vendor a real bill uses is listed under KEPT, naming that bill', listed && listed.kept ? listed.kept.map(k => [k.table, k.id, /bills #/.test(k.why)]) : null, [['vendors', harbor.id, true]], null);
     eq('1  lister changed nothing', await fullFp() === f0, true);
 
     // 2 dry run + refusals
@@ -131,13 +144,14 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     eq('5  November run VOIDED (kept), its owner salary removed; October\'s salary stays', [nov && nov.status, sal], ['voided', [octRun.id]]);
     const after = await snap();
     const missing = []; for (const t of TABLES) for (const r of realRows[t]) if (!after[t].includes(r)) missing.push(t + ':' + JSON.parse(r).id);
-    eq('6  every real row byte-identical after the purge', missing, []);
+    eq('6  every real row byte-identical after the purge (contacts included — the old lister lost vendors:' + harbor.id + ')', missing, [], ['vendors:' + harbor.id]);
     eq('6  budget row: Rent 60,000 kept, Software gone', (await c.query(`SELECT data->'targets' t FROM budget_targets WHERE user_id = $1`, [uid])).rows.map(r => r.t), [{ Rent: 60000 }]);
     const L2 = run(LIST);
     eq('7  lister now finds 0', (L2.out.match(/(\d+) test records/) || [])[1], '0');
     const au = (await c.query(`SELECT table_name, action FROM audit_trail WHERE actor_type = 'system' AND (old_data->>'purge' IS NOT NULL OR table_name = 'budget_targets') ORDER BY table_name, action`)).rows.map(r => r.table_name + ' ' + r.action);
     eq('7  audit rows for the business removals', au.sort(), ['accountant_clients DELETE', 'bills DELETE', 'bills DELETE', 'budget_targets UPDATE', 'expenses DELETE', 'invoice_payments DELETE',
-      'invoices DELETE', 'invoices DELETE', 'payments_made DELETE', 'payroll_runs VOID', 'projects DELETE', 'quotes DELETE', 'sales_receipts DELETE', 'support_requests DELETE', 'timesheet DELETE']);
+      'invoices DELETE', 'invoices DELETE', 'payments_made DELETE', 'payroll_runs VOID', 'projects DELETE', 'quotes DELETE', 'sales_receipts DELETE', 'support_requests DELETE', 'timesheet DELETE',
+      'customers DELETE', 'customers DELETE', 'vendors DELETE', 'vendors DELETE'].sort());
     const ph = (await c.query(`SELECT kind, action FROM personal_history WHERE actor_type = 'system' ORDER BY id`)).rows.map(r => r.kind + ' ' + r.action);
     eq('7  personal removals recorded in personal history (never the business trail)', ph.filter(x => /DELETE/.test(x)).sort(), ['owner_salary DELETE', 'personal_transactions DELETE']);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }

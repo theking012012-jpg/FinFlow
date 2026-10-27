@@ -2137,6 +2137,13 @@ function normalizeEntityProfile(b) {
 // every existing invoice and API caller keeps working (backward-compatible). Returns { error } on any
 // invalid shape (rejected 400, never silently stored), or { present, line_items, amount }.
 const _LI_MAX_ROWS = 200;
+// FA-B5: every item a line names must be an item of this account, in this business (or one with no business).
+async function lineItemRefsError(uid, eid, items) {
+  const ids = [...new Set((items || []).map(i => i && i.item_id).filter(Boolean))];
+  if (!ids.length) return null;
+  const { rows } = await pool.query(`SELECT id FROM items WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) AND id = ANY($3::int[])`, [uid, eid, ids]);
+  return rows.length === ids.length ? null : 'A line names an item that is not in this business\'s items. Pick it again from the list.';
+}
 function normalizeLineItems(raw) {
   if (raw == null) return { present: false, line_items: null, amount: null };
   if (!Array.isArray(raw)) return { error: 'line_items must be an array.' };
@@ -2150,7 +2157,9 @@ function normalizeLineItems(raw) {
     const rate = Number(it.rate);
     if (!Number.isFinite(qty)  || qty  < 0) return { error: 'line item qty must be a number ≥ 0.' };
     if (!Number.isFinite(rate) || rate < 0) return { error: 'line item rate must be a number ≥ 0.' };
-    items.push({ desc: String(it.desc == null ? '' : it.desc).slice(0, 200), qty, rate });
+    // FA-B5: a line picked from the items list carries its item (checked against this business by lineItemRefsError).
+    const _iid = (it.item_id != null && /^[1-9][0-9]{0,9}$/.test(String(it.item_id))) ? Number(it.item_id) : null;
+    items.push(Object.assign({ desc: String(it.desc == null ? '' : it.desc).slice(0, 200), qty, rate }, _iid ? { item_id: _iid } : {}));
     sum += qty * rate;
   }
   const amount = Math.round(sum * 100) / 100;
@@ -2223,6 +2232,7 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   // F194: when line_items are supplied, the DERIVED Σ qty×rate is the canonical amount (Rule 2).
   const _li = normalizeLineItems(req.body?.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
+  { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   const _effAmount = _li.present ? _li.amount : amount;
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required.' });
   if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' });
@@ -2358,6 +2368,7 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   // F194: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
   const _li = normalizeLineItems(req.body?.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
+  { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   if (client != null) { patch.client = String(client).trim().slice(0, 200); if (!patch.client) return res.status(400).json({ error: 'client required.' }); }
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
   else if (amount != null) { patch.amount = parseFloat(amount); if (req.body.line_items === null) patch.line_items = null; }   // batch 7: an explicit null clears the lines (the LR9 quote rule)
@@ -4399,6 +4410,7 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   // leg keys on this; the derived amount is purely the quote total.
   const _li = normalizeLineItems(req.body?.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
+  { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   const _effAmount = _li.present ? _li.amount : amount;
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req);
@@ -4422,6 +4434,7 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   // F194 Phase 2b: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
   const _li = normalizeLineItems(b.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
+  { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   if (b.client      != null) { patch.client = String(b.client).trim().slice(0, 200); if (!patch.client) return res.status(400).json({ error: 'client required' }); }
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
   else if (b.amount != null) { patch.amount = Number(b.amount); if (b.line_items === null) patch.line_items = null; }   // LR9: an explicit null clears the lines, so a typed total never sits beside stale lines (Rule 2)
@@ -5212,6 +5225,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   // is recognized at FULL amount by issue_date (server.js:~4373), so Σ reaches OpEx by exactly Σ.
   const _li = normalizeLineItems(req.body?.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
+  { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   const _effAmount = _li.present ? _li.amount : amount;
   if (!vendor || _effAmount == null) return res.status(400).json({ error: 'vendor and amount required' });
   if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
@@ -5299,6 +5313,7 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
   // is what the F135 paid-flip block below reads (patch.amount), so that path is unaffected.
   const _li = normalizeLineItems(b.line_items);
   if (_li.error) return res.status(400).json({ error: _li.error });
+  { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   if (b.vendor     != null) { patch.vendor = String(b.vendor).trim().slice(0, 200); if (!patch.vendor) return res.status(400).json({ error: 'vendor required.' }); }
   if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
   else if (b.amount != null) { patch.amount = Number(b.amount); if (b.line_items === null) patch.line_items = null; }   // batch 7: an explicit null clears the lines (the LR9 quote rule)

@@ -790,6 +790,7 @@
       const ymd = v => (window.FinFlowDates ? (window.FinFlowDates._toYmd(v) || '') : String(v || '').slice(0, 10));
       set('inv-client', r.client); set('inv-amount', r.amount != null ? Number(r.amount) : '');
       set('inv-issue', ymd(r.issue_date)); set('inv-due', ymd(r.due_date));
+      if (window._docTermsSet) window._docTermsSet('inv', ymd(r.issue_date), ymd(r.due_date));   // FA-B5: this invoice's own terms
       set('inv-status', String(r.status || 'pending').toLowerCase()); set('inv-desc', r.notes);
       const lines = Array.isArray(raw && raw.line_items) ? raw.line_items : (Array.isArray(r.line_items) ? r.line_items : []);
       if (lines.length && window.ffInvLineItems && window.ffInvLineItems.load) window.ffInvLineItems.load(lines);
@@ -3729,6 +3730,7 @@ function clearAIChat(){
       { const t = document.querySelector('#bill-modal .modal-title'); if (t) t.textContent = 'New Bill'; }
       try { if (window.ffBillLineItems && window.ffBillLineItems.reset) window.ffBillLineItems.reset(); } catch (_) {}
       if (typeof window._fillContactPicker === 'function') window._fillContactPicker('bill-vendor', 'ff-vend-list', '/api/vendors', v => v.name);   // batch 9: pick a saved vendor
+      if (window._docTermsSet) window._docTermsSet('bill');   // FA-B5
       if (typeof window._invDueHint === 'function') window._invDueHint('bill');   // FA-M5b: the due date the terms give, before saving
       openModal('bill-modal');
     };
@@ -3743,6 +3745,7 @@ function clearAIChat(){
       const ymd = v => (window.FinFlowDates ? (window.FinFlowDates._toYmd(v) || '') : String(v || '').slice(0, 10));
       set('bill-vendor', b.vendor); set('bill-amount', b.amount != null ? Number(b.amount) : '');
       set('bill-issue', ymd(b.issue_date)); set('bill-due', ymd(b.due_date));
+      if (window._docTermsSet) window._docTermsSet('bill', ymd(b.issue_date), ymd(b.due_date));   // FA-B5: this bill's own terms
       set('bill-status', String(b.status || 'unpaid').toLowerCase()); set('bill-notes', b.notes);
       if (Array.isArray(b.line_items) && b.line_items.length && window.ffBillLineItems && window.ffBillLineItems.load) window.ffBillLineItems.load(b.line_items);
       window._billEditId = b.id;

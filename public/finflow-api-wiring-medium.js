@@ -118,6 +118,7 @@
       const ymd = v => (window.FinFlowDates ? (window.FinFlowDates._toYmd(v) || '') : String(v || '').slice(0, 10));
       set('inv-client', r.client); set('inv-amount', r.amount != null ? Number(r.amount) : '');
       set('inv-issue', ymd(r.issue_date)); set('inv-due', ymd(r.due_date));
+      if (window._docTermsSet) window._docTermsSet('inv', ymd(r.issue_date), ymd(r.due_date));   // FA-B5: this invoice's own terms
       set('inv-status', String(r.status || 'pending').toLowerCase()); set('inv-desc', r.notes);
       const lines = Array.isArray(raw && raw.line_items) ? raw.line_items : (Array.isArray(r.line_items) ? r.line_items : []);
       if (lines.length && window.ffInvLineItems && window.ffInvLineItems.load) window.ffInvLineItems.load(lines);

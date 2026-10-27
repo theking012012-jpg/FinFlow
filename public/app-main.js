@@ -2754,6 +2754,25 @@ window._invDueHint=function(prefix){
   const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]+t)).toISOString().slice(0,10);   // calendar arithmetic, no timezone
   el.textContent='Due '+fl(d)+' ('+(t?'Net '+t:'due on receipt')+') — from your payment terms in Settings. Pick a date to change it.';
 };
+// FA-B5: per-document terms. The Terms list sets this document's due date from its issue date ("Your terms" leaves the
+// due date to the business's payment terms, as before); a changed issue date moves a terms-set due date with it; typing a
+// due date makes the terms "Custom". The printed Terms line reads the document's own dates (finflow-docview docTerms).
+const _addDaysYmd=(ymd,n)=>{ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd||''); return m?new Date(Date.UTC(+m[1],+m[2]-1,+m[3]+n)).toISOString().slice(0,10):''; };
+window._docTermsChange=function(p, fromIssue){
+  const sel=document.getElementById(p+'-terms'), due=document.getElementById(p+'-due'); if(!sel||!due) return window._invDueHint(p);
+  const v=sel.value, iss=(document.getElementById(p+'-issue')||{}).value||((typeof _entityToday==='function')?_entityToday():'');
+  if(v===''){ if(!fromIssue) due.value=''; }
+  else if(v!=='custom'){ due.value=_addDaysYmd(iss, Number(v)); }
+  window._invDueHint(p);
+};
+window._docDueTyped=function(p){ const sel=document.getElementById(p+'-terms'); if(sel) sel.value=(document.getElementById(p+'-due')||{}).value?'custom':''; window._invDueHint(p); };
+// Reset (new document) or show a saved document's terms (edit): the option matching its dates, else Custom.
+window._docTermsSet=function(p, issue, due){
+  const sel=document.getElementById(p+'-terms'); if(!sel) return;
+  const t=_bizPaymentTerms(); const own=sel.querySelector('option[value=""]'); if(own) own.textContent='Your terms ('+(t?'Net '+t:'due on receipt')+')';
+  const n=(issue&&due&&window._ffDocTerms)?window._ffDocTerms({issue_date:issue,due_date:due}):null;
+  sel.value = (n==null) ? '' : (sel.querySelector('option[value="'+n+'"]') ? String(n) : 'custom');
+};
 function openInvoiceModal(){
   // F117 commit B: a fresh invoice modal = a fresh submit-intent. Clear the idempotency token so
   // the next Create mints a NEW one — two genuinely separate invoices carry DIFFERENT tokens and
@@ -2770,6 +2789,7 @@ function openInvoiceModal(){
   _sv('inv-status','pending');
   _sv('inv-desc','');
   try { if (window.ffInvLineItems) window.ffInvLineItems.reset(); } catch(_){}  // F194: clear line-items editor + unlock amount
+  window._docTermsSet('inv');   // FA-B5: "Your terms (Net N)" until another is picked
   window._invDueHint();   // batch 8: the due date the terms give, shown before saving
   _fillContactPicker('inv-client','ff-cust-list','/api/customers',_custDisplayName);   // batch 9: pick a saved customer
   openModal('invoice-modal');

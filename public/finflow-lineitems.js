@@ -22,6 +22,18 @@
 (function () {
   'use strict';
   function $(id) { return document.getElementById(id); }
+  // FA-B5: the business's saved items (Items page), one datalist shared by the three editors; refreshed on each new form.
+  var _items = [];
+  function itemByName(v) { var k = String(v || '').trim().toLowerCase(); if (!k) return null; for (var i = 0; i < _items.length; i++) if (String(_items[i].name || '').trim().toLowerCase() === k) return _items[i]; return null; }
+  function loadItems() {
+    try {
+      fetch('/api/items', { credentials: 'include' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
+        _items = (Array.isArray(rows) ? rows : []).filter(function (i) { return i && i.name && String(i.status || 'Active').toLowerCase() !== 'inactive'; });
+        var dl = $('ff-items-dl'); if (!dl) { dl = document.createElement('datalist'); dl.id = 'ff-items-dl'; document.body.appendChild(dl); }
+        dl.innerHTML = _items.map(function (i) { var o = document.createElement('option'); o.value = i.name; return o.outerHTML; }).join('');
+      }).catch(function () {});
+    } catch (_) {}
+  }
   function money(n) { try { if (typeof S === 'function') return S(n); } catch (_) {} return '$' + (parseFloat(n) || 0).toFixed(2); }
   function num(v) { var n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
 
@@ -31,7 +43,7 @@
   function makeLI(p) {
     var ROW = ''
       + '<tr class="' + p + '-li-row" style="border-bottom:1px solid var(--bd,#2a2318)">'
-      +   '<td style="padding:4px 6px 4px 0"><input class="finput ' + p + '-li-desc" placeholder="Item or service" style="font-size:13px;padding:6px 8px"></td>'
+      +   '<td style="padding:4px 6px 4px 0"><input class="finput ' + p + '-li-desc" list="ff-items-dl" autocomplete="off" placeholder="Item or service" aria-label="Item or service" style="font-size:13px;padding:6px 8px"></td>'
       +   '<td style="padding:4px 6px"><input class="finput ' + p + '-li-qty" type="number" min="0" step="any" placeholder="1" style="font-size:13px;padding:6px 8px;text-align:center"></td>'
       +   '<td style="padding:4px 6px"><input class="finput ' + p + '-li-rate" type="number" min="0" step="any" placeholder="0.00" style="font-size:13px;padding:6px 8px;text-align:right"></td>'
       +   '<td class="' + p + '-li-line" style="padding:4px 6px;text-align:right;color:var(--t2,#b9ad93);font-size:13px;white-space:nowrap">—</td>'
@@ -43,6 +55,7 @@
     function rowEls() { var b = $(p + '-li-rows'); return b ? Array.prototype.slice.call(b.querySelectorAll('.' + p + '-li-row')) : []; }
     function readRow(tr) {
       return {
+        itemId: tr.getAttribute('data-item-id') ? Number(tr.getAttribute('data-item-id')) : null,
         desc: (tr.querySelector('.' + p + '-li-desc') || {}).value || '',
         qty:  num((tr.querySelector('.' + p + '-li-qty')  || {}).value),
         rate: num((tr.querySelector('.' + p + '-li-rate') || {}).value),
@@ -57,7 +70,7 @@
       rowEls().forEach(function (tr) {
         var v = readRow(tr);
         var filled = v.desc.trim() !== '' || v.qty > 0 || v.rate > 0;
-        if (filled) out.push({ desc: v.desc.trim(), qty: v.qty, rate: v.rate });
+        if (filled) out.push(Object.assign({ desc: v.desc.trim(), qty: v.qty, rate: v.rate }, v.itemId ? { item_id: v.itemId } : {}));
       });
       return out.length ? out : null;
     }
@@ -86,7 +99,21 @@
       recompute();
     }
 
+    // FA-B5: typing or picking a saved item's name links the line to it and, when the rate is still empty, fills it —
+    // the selling price on invoices and quotes, the cost (else the price) on bills. Change the name and the link drops.
+    function pickItem(input) {
+      var tr = input.closest ? input.closest('.' + p + '-li-row') : null; if (!tr) return;
+      var it = itemByName(input.value);
+      if (!it) { tr.removeAttribute('data-item-id'); return; }
+      tr.setAttribute('data-item-id', String(it.id));
+      var rate = tr.querySelector('.' + p + '-li-rate'), qty = tr.querySelector('.' + p + '-li-qty');
+      var r = p === 'bill' ? (it.cost != null && it.cost !== '' ? it.cost : it.price) : it.price;
+      if (rate && !(num(rate.value) > 0) && num(r) > 0) rate.value = String(num(r));
+      if (qty && !(num(qty.value) > 0)) qty.value = '1';
+    }
+
     function reset() {
+      loadItems();
       var b = $(p + '-li-rows'); if (b) b.innerHTML = '';
       var amt = $(p + '-amount'); if (amt) { amt.readOnly = false; amt.style.opacity = ''; amt.title = ''; }
       var totRow = $(p + '-li-total'); if (totRow) totRow.style.display = 'none';
@@ -97,7 +124,11 @@
       wrap._ffWired = true;
       var addBtn = $(p + '-li-add'); if (addBtn) addBtn.addEventListener('click', addRow);
       // one delegated listener each for edits and row-removal
-      wrap.addEventListener('input', function (e) { if (e.target && reDesc.test(e.target.className)) recompute(); });
+      wrap.addEventListener('input', function (e) {
+        if (!e.target || !reDesc.test(e.target.className)) return;
+        if (e.target.classList.contains(p + '-li-desc')) pickItem(e.target);
+        recompute();
+      });
       wrap.addEventListener('click', function (e) {
         var btn = e.target && e.target.closest ? e.target.closest('.' + p + '-li-del') : null;
         if (!btn) return;
@@ -117,6 +148,7 @@
         if (d) d.value = it && it.desc != null ? String(it.desc) : '';
         if (q) q.value = it && it.qty != null ? String(it.qty) : '';
         if (r) r.value = it && it.rate != null ? String(it.rate) : '';
+        if (it && it.item_id) tr.setAttribute('data-item-id', String(it.item_id)); else tr.removeAttribute('data-item-id');
       });
       recompute();
     }

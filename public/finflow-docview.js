@@ -53,8 +53,7 @@
       // validated server-side; wiring an upload is a separate piece of work — see AUDIT_MASTER F196.
       logo:   p.logo || window._invoiceLogoDataURL || window._companyLogo || null,
       currency: (e && e.currency) || 'USD',
-      style:  docStyle(e && e.doc_style),
-      terms:  (e && e.payment_terms != null && e.payment_terms !== '' && isFinite(e.payment_terms)) ? Number(e.payment_terms) : 30,   // batch 8: this business's payment terms
+      style:  docStyle(e && e.doc_style),   // (FA-B5b: the printed terms come from each document's own dates — docTerms)
     };
   }
 
@@ -81,6 +80,16 @@
   function dlabel(v){ var d = ymd(v); if (!d) return '—'; var p = d.split('-'); var M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return (+p[2]) + ' ' + M[(+p[1]-1)] + ' ' + p[0]; }
 
   // ── the reusable renderer: a full white document, ready for print/iframe ──
+  // FA-B5b: a document's terms are its own — the days from its issue date to its due date (calendar arithmetic, no
+  // timezone). The printed "Terms" line used the BUSINESS setting, so an invoice given its own due date (10 days) printed
+  // "Net 30" beside "Due" 10 days out. null = no due date (nothing printed).
+  function docTerms(doc) {
+    var ymd = function (v) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; };
+    var i = ymd(doc && doc.issue_date), d = ymd(doc && doc.due_date);
+    if (i == null || d == null || d < i) return null;
+    return Math.round((d - i) / 86400000);
+  }
+  window._ffDocTerms = docTerms;
   // doc: { number, party, party_address, issue_date, due_date, status, notes, amount, tax, line_items:[{desc,qty,rate}], currency }
   function buildDocumentHTML(doc, kind, styleOverride){
     doc = doc || {};
@@ -157,7 +166,7 @@
 
     var footer = S.poweredBy ? '<div style="text-align:center;margin-top:34px;padding-top:16px;border-top:1px solid #eee"><span style="font-size:10px;color:#bbb;letter-spacing:.08em">POWERED BY </span><span style="font-size:10px;font-weight:700;color:'+acc+';letter-spacing:.06em;font-family:Georgia,serif;font-style:italic">FinFlow</span></div>' : '';
     var dates = (doc.issue_date ? '<div><span style="color:#999">Date:</span> '+dlabel(doc.issue_date)+'</div>' : '') + (doc.due_date ? '<div><span style="color:#999">Due:</span> '+dlabel(doc.due_date)+'</div>' : '')
-      + (kind === 'invoice' || !kind ? '<div><span style="color:#999">Terms:</span> '+(L.terms ? 'Net '+L.terms+' — due within '+L.terms+' days' : 'Due on receipt')+'</div>' : '');   // FA-B1 part 2: the terms are on the invoice
+      + ((kind === 'invoice' || !kind) && docTerms(doc) != null ? '<div><span style="color:#999">Terms:</span> '+(docTerms(doc) ? 'Net '+docTerms(doc)+' — due within '+docTerms(doc)+' days' : 'Due on receipt')+'</div>' : '');   // FA-B1 part 2 / FA-B5b: THIS invoice's terms (its own dates), never the business default beside a different due date
     if (S.template === 'compact') {   // a narrow receipt-style page
       var crow = function(a, b, st){ return '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed #ddd;'+(st||'')+'"><span>'+a+'</span><span>'+b+'</span></div>'; };
       var lines = items ? items.map(function(i){ return crow(esc(i.desc || '—') + ' × ' + (parseFloat(i.qty)||0), money((parseFloat(i.qty)||0) * (parseFloat(i.rate)||0), cur)); }).join('') : crow(esc(doc.notes || doc.description || K.title), money(subtotal, cur));

@@ -210,13 +210,43 @@ Personal and Investments). For each: PASS if it renders with no error banner, bl
 no red console error. Then repeat Dashboard, Invoices, Expenses and Personal in a **phone-sized window (~390 px wide)**
 and note anything cut off or unusable.
 
+
+**C16. Bank-linking widgets under the strict security policy (FA-P1).** The app runs under a Content-Security-Policy
+with no inline code; the browser refuses anything the policy does not allow and reports each refusal to the server.
+Plaid (bank linking) and Belvo (Latin America bank linking) open the provider's own window, loaded from the provider's
+servers — **no automated test can reach them**, so this live check is the only verification they have.
+Do **not** link a bank or type any credentials (ground rule 4): opening each widget and closing it is the whole check —
+loading it is what the policy has to allow.
+
+1. **Baseline (needs the platform admin login — if you do not have it, mark steps 1 and 4 BLOCKED and do the rest).**
+   In a separate private window, sign in at `/admin`, then open `/api/admin/csp-report`. Record `total`, `unique` and
+   every row (`directive`, `blocked`, `source`, `count`). The list lives in the server's memory: it is **emptied by
+   every deploy or restart** and collects refusals from **every** user's browser since then. So do steps 1–4 in one
+   sitting, and if Railway redeploys in between, start again from step 1.
+2. **Plaid.** In the app (Northwind Studio, DevTools Console open, Preserve log on): Connections → the **Plaid** card →
+   Connect. Wait until the Plaid window is fully shown, then close it with its own ✕ / Exit. Record what appeared.
+3. **Belvo.** Connections → the **Belvo** card → Connect. Wait until the Belvo widget is fully shown, then close it.
+   Record what appeared.
+4. **After.** Reload `/api/admin/csp-report` and compare it with the baseline.
+
+- **PASS:** each widget opens; the Console shows **no** `Refused to …` / `Content Security Policy` line during steps 2–3;
+  and the report has **no new row** whose `source` is a FinFlow page or file (`/`, `/app`, `/js/…`, `/finflow-bundle.js`,
+  `/ff-csp.js`, …) or whose `blocked` is a `plaid.com` / `belvo.io` / `belvo.com` address.
+- **FAIL:** a widget does not open while the Console shows a refusal, or any such new row appears. Copy the full
+  Console line(s) and the new row(s) — the `directive` names the part of the policy to fix (`script-src`,
+  `frame-src`, `connect-src`, …).
+- **BLOCKED:** a widget does not open and the app says linking is not set up (e.g. "Bank linking is unavailable right
+  now", "Latin America bank linking isn't set up yet", or "…isn't enabled yet — use ⬆ Import"). That is missing
+  provider keys on the server, not the policy — record the exact message.
+- Rows that were already in the baseline, or whose `source` is a browser extension (`chrome-extension://…`,
+  `moz-extension://…`), are not FinFlow's — list them under Notes, they do not fail the check.
 ---
 
 ## Final summary (put this at the top of your report)
 
 - Part A: how many PASS / FAIL out of 12 (A0–A11).
 - Part B: how many PASS / FAIL out of 11 (B1–B11) — and every figure that differs from 13 Oct, with what explains it.
-- Part C: how many PASS / FAIL / SKIPPED / BLOCKED out of 15 (C1–C15).
+- Part C: how many PASS / FAIL / SKIPPED / BLOCKED out of 16 (C1–C16).
 - Every FAIL in one line each, worst first.
 - The `ZZ-LIVECHECK` records you created (for the owner to clean up).
 - Every red console error, and any full page reload, with the step.

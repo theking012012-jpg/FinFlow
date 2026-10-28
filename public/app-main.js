@@ -6362,12 +6362,19 @@ window._fmtBytes=_fmtBytes;
 async function renderDocuments(){
   const l=document.getElementById('documents-list');if(!l)return;
   l.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
+  // FA-P1d: only a list is a list. A 200 whose body is not an array (a proxy page, an {error}, null) is a failed load —
+  // said as one, never shown as "No documents yet" (and never handed to the cards' .reduce or this .filter, uncaught).
+  let loadFailed=false;
   try{
     const res=await fetch('/api/documents',{credentials:'include'});
     if(!res.ok)throw new Error();
-    _docsCache=await res.json();
-  }catch(e){_docsCache=[];}
+    const body=await res.json();
+    if(!Array.isArray(body))throw new Error('not a list');
+    _docsCache=body;
+  }catch(e){_docsCache=[];loadFailed=true;}
   window._docsCache=_docsCache;   // LR13: the cards (finflow-api-wiring-medium.js) read window._docsCache — a script `let` is not on window
+  window._docsLoadFailed=loadFailed;   // FA-P1d: the cards show "—", not a made-up 0
+  if(loadFailed){l.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--red);font-size:13px">Could not load your documents — check your connection and try again.</div>';return;}
   const filtered=docsFilter==='all'?_docsCache:_docsCache.filter(d=>d.type===docsFilter);
   if(!filtered.length){l.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No documents yet. Click Upload to add your first file.</div>';return;}
   l.innerHTML=filtered.map(d=>`

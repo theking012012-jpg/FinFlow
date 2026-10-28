@@ -1226,8 +1226,10 @@
     if (typeof _medOrigRenderDocuments === 'function') {
       window.renderDocuments = async function () {
         await _medOrigRenderDocuments();
-        const cache = window._docsCache || [];
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        // FA-P1d: a failed load (or anything that is not a list) shows "—" on every card — not 0, not the last visit's figures.
+        if (window._docsLoadFailed || !Array.isArray(window._docsCache)) { ['docs-count', 'docs-storage', 'docs-added'].forEach(id => set(id, '—')); return; }
+        const cache = window._docsCache;
         set('docs-count', cache.length);
         // LR13: size is BYTES (a number) — it was parsed as KB. Same formatter as the list (app-main _fmtBytes).
         const totalBytes = cache.reduce((s, d) => s + (parseFloat(d.size) || 0), 0);

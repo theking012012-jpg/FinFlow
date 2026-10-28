@@ -1,0 +1,7 @@
+/* FA-U2b (full-app audit 2026-10-27): the pages outside the app at phone width — nav, footer and standalone links measured
+   14–22 px tall (WCAG 2.2 target size is 24). At phone width each is at least 32 px tall; a link inside a sentence keeps
+   its line (WCAG exempts it). One file, linked by every page outside /app. */
+@media (max-width:768px){
+  nav a, footer a { display:flex; align-items:center; min-height:32px; }
+  a.back, a.nav-link, .back a, .footer-links a { display:inline-flex; align-items:center; min-height:32px; }
+}

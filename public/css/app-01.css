@@ -489,6 +489,14 @@ canvas{max-width:100%;display:block}
 .hidden{display:none!important}
 /* FA-U2: at phone width every control on a page is at least 32 px tall (WCAG 2.2 target size is 24) — period toggles, currency chips and search boxes measured 18–22 px at 375 px. */
 @media (max-width:768px){ .page button, .page select, .page [role=button], .page input:not([type=checkbox]):not([type=radio]):not([type=hidden]) { min-height:32px; } }
+/* FA-U2b (full-app audit 2026-10-27, every page at 375 px): icon buttons (✏ ✕) were 23 px wide and the switch 36 × 20 —
+   at phone width a button is at least 32 px wide too, and every switch is 44 × 24 with an 18 px thumb. */
+@media (max-width:768px){
+  .page button, .page [role=button] { min-width:32px; }
+  /* label.toggle: one more step of specificity — the base .toggle rules come later in this file */
+  label.toggle{width:44px;height:24px} label.toggle .toggle-track{border-radius:12px}
+  label.toggle .toggle-thumb{width:18px;height:18px} label.toggle input:checked~.toggle-thumb{left:22px}
+}
 .modal{background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);padding:1.75rem;width:100%;max-width:480px;box-shadow:var(--shadow-lg);animation:modalIn .18s ease}
 .modal-wide{max-width:580px}
 @keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(8px)}}

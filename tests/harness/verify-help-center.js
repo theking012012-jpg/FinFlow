@@ -50,7 +50,7 @@ const path = require('path');
   A('client: contact form posts /api/support with category help-center', /category:'help-center'/.test(idx) && /fetch\('\/api\/support'/.test(idx));
 
   // ── ACCOUNTANT HELP ─────────────────────────────────────────────────────────
-  A('accountant: Help control wired to acctHelp()', /onclick="acctHelp\(\)"/.test(acct));
+  A('accountant: Help control wired to acctHelp()', /data-on-click="acctHelp\(\)"/.test(acct));
   A('accountant: acctHelp overlay defined', /window\.acctHelp\s*=\s*function/.test(acct) && /acct-help-ov/.test(acct));
   const howBlock = (acct.match(/var HOW\s*=\s*\[([\s\S]*?)\];/) || [])[1] || '';
   const howCount = (howBlock.match(/\['/g) || []).length;

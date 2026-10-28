@@ -18,12 +18,14 @@ const { JSDOM } = require('jsdom');
 const { run } = require('./moneyFixKit.js');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'finflow-api.js'), 'utf8');
+const RUNTIME = ['ff-csp.js', '_gen/ff-handlers.js'].map(f => fs.readFileSync(path.join(__dirname, '..', '..', 'public', f), 'utf8')).join('\n;\n');
 const tick = ms => new Promise(r => setTimeout(r, ms));
 
 function gate(base, query) {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { runScripts: 'outside-only', pretendToBeVisual: true, url: base + '/app' + query });
   const w = dom.window;
   w.fetch = (p, o) => global.fetch(new URL(String(p), base), o);   // the real server
+  w.eval(RUNTIME);   // FA-P1: as the page does — the policy runtime + handler registry load first
   w.eval(SRC.replace(/location\.reload\(\)/g, 'window.__reloaded=true'));   // jsdom cannot reload; record it
   return w;
 }

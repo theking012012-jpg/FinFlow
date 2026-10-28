@@ -68,9 +68,9 @@ const path = require('path');
     A('[jsdom] extracted the help markup + module', !!page && s > 0 && hook > s, `page=${!!page} s=${s} hook=${hook}`);
 
     const doc = `<!doctype html><html><head></head><body>
-      <div class="nav-item" onclick="showPage('invoices',this)">Invoices</div>
-      <button onclick="openInvoiceModal()">+ New invoice</button>
-      <button onclick="openAddBizModal(event)">+ Add business</button>
+      <div class="nav-item" data-on-click="showPage('invoices',this)">Invoices</div>
+      <button data-on-click="openInvoiceModal()">+ New invoice</button>
+      <button data-on-click="openAddBizModal(event)">+ Add business</button>
       ${page}</body></html>`;
     const dom = new JSDOM(doc, { runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
@@ -85,6 +85,7 @@ const path = require('path');
       if (url.indexOf('/api/help/ask') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ reply: 'Switch the entity picker to the consolidated view.', links: [{ page: 'entities', label: 'Businesses' }] }) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     };
+    w.eval(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'public', 'js', 'app-04-esc.js'), 'utf8'));   // the page's global esc (loaded first in index.html)
     w.eval(js);
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     const d = w.document;

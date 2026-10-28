@@ -8,7 +8,8 @@
  */
 const fs = require('fs');
 const path = require('path');
-const P = f => fs.readFileSync(path.join(process.cwd(), f), 'utf8');
+// FA-P1: a page's own scripts are files now — read the page as it was (scripts + stylesheets back inline).
+const P = f => /^public\/[^/]+\.html$/.test(f) ? require('./appScripts.js').pageSource(f.slice(7)) : fs.readFileSync(path.join(process.cwd(), f), 'utf8');
 
 (function () {
   let pass = 0, fail = 0;

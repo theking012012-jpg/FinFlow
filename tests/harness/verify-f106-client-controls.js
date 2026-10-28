@@ -58,8 +58,10 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
       if (/deletePayrollRun\(1\)/.test(html) && /voidPayrollRun\(2\)/.test(html)) break;
     }
 
-    A('draft row shows Delete (not Void)', /deletePayrollRun\(1\)/.test(html) && !/voidPayrollRun\(1\)/.test(html), html.slice(0, 0));
-    A('approved row shows Void (not Delete)', /voidPayrollRun\(2\)/.test(html) && !/deletePayrollRun\(2\)/.test(html));
+    // FA-P1: each button's run id rides in data-arg-id (the handler is constant code)
+    const ctl = (fn, id) => new RegExp('data-arg-id="' + id + '" data-on-click="' + fn + '\\(Number\\(this\\.dataset\\.argId\\)\\)"').test(html);
+    A('draft row shows Delete (not Void)', ctl('deletePayrollRun', 1) && !ctl('voidPayrollRun', 1), html.slice(0, 0));
+    A('approved row shows Void (not Delete)', ctl('voidPayrollRun', 2) && !ctl('deletePayrollRun', 2));
     A('voided row shows NEITHER control (terminal state)', !/voidPayrollRun\(3\)/.test(html) && !/deletePayrollRun\(3\)/.test(html));
     A('voided badge rendered', /voided/.test(html));
 

@@ -66,11 +66,13 @@ A('unpaid invoice: "Pay link" button present', /Pay link/.test(el.innerHTML));
 A('unpaid invoice: still has Record Payment (not replaced)', /Record Payment/.test(el.innerHTML));
 
 // Execute the button's onclick and assert the id/URL it actually produces.
-const call = (el.innerHTML.match(/ffInvoicePayLinkChoose\(window\.userInvoices\[0\][^)]*\)/) || [])[0];
-A('unpaid invoice: Pay link wired through ffInvoicePayLinkChoose(window.userInvoices[0]...)', !!call, el.innerHTML.slice(0, 240));
+// FA-P1: the handler is constant code; the row index rides in data-arg-idx (read through this.dataset, as a click does)
+const btnM = el.innerHTML.match(/data-arg-idx="(\d+)" data-on-click="(ffInvoicePayLinkChoose\(window\.userInvoices\[Number\(this\.dataset\.argIdx\)\][^"]*)"/);
+const call = btnM && btnM[1] === '0' ? btnM[2] : null;
+A('unpaid invoice: Pay link wired through ffInvoicePayLinkChoose(window.userInvoices[<this row>]...)', !!call, el.innerHTML.slice(0, 240));
 if (call) {
   calledId = 'MISSING'; calledUrl = null;
-  eval(call);
+  (function () { eval(call); }).call({ dataset: { argIdx: btnM[1] } });   // `this` = the button, as when it is clicked
   A('EXECUTED: id resolves to the DB id 42, not undefined (F181 regression guard)', calledId === 42, 'got id: ' + calledId);
   A('EXECUTED: builds /api/invoices/42/payment-link (never /undefined/)', calledUrl === '/api/invoices/42/payment-link', 'got url: ' + calledUrl);
 }

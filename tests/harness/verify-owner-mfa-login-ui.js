@@ -39,6 +39,9 @@ const { JSDOM, VirtualConsole } = require('jsdom');
   };
 
   try {
+    // FA-P1: as the page does — the policy runtime (applies data-style, runs data-on-* handlers) loads first
+    window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'ff-csp.js'), 'utf8'));
+    window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'public', '_gen', 'ff-handlers.js'), 'utf8'));
     window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'finflow-api.js'), 'utf8'));
     await new Promise(r => setTimeout(r, 60)); // boot() → me() 401 → showAuthGate()
 

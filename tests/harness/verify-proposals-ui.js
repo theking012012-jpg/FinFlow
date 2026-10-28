@@ -8,7 +8,8 @@
  */
 const fs = require('fs');
 const path = require('path');
-const P = f => fs.readFileSync(path.join(process.cwd(), f), 'utf8');
+// FA-P1: a page's own scripts are files now — read the page as it was (scripts + stylesheets back inline).
+const P = f => /^public\/[^/]+\.html$/.test(f) ? require('./appScripts.js').pageSource(f.slice(7)) : fs.readFileSync(path.join(process.cwd(), f), 'utf8');
 
 (function () {
   let pass = 0, fail = 0;
@@ -24,7 +25,7 @@ const P = f => fs.readFileSync(path.join(process.cwd(), f), 'utf8');
   // Client surface
   A('client: proposals mount on My Accountant page', /id="acct-proposals"/.test(idx));
   A('client: loadMyProposals reads the endpoint', /window\.loadMyProposals/.test(idx) && /\/api\/accountants\/my-accountant\/proposals/.test(idx));
-  A('client: Accept/Decline call respondProposal', /window\.respondProposal/.test(idx) && /respondProposal\(\$\{p\.id\},'accept'/.test(idx) && /respondProposal\(\$\{p\.id\},'decline'/.test(idx));
+  A('client: Accept/Decline call respondProposal', /window\.respondProposal/.test(idx) && /data-arg-id="\$\{p\.id\}" data-on-click="respondProposal\(Number\(this\.dataset\.argId\),'accept'/.test(idx) && /data-arg-id="\$\{p\.id\}" data-on-click="respondProposal\(Number\(this\.dataset\.argId\),'decline'/.test(idx));   // FA-P1: the id rides in data-arg-id
   A('client: respond posts action to the endpoint', /proposals\/'\+id\+'\/respond/.test(idx) && /body:JSON\.stringify\(\{action:action\}\)/.test(idx));
   A('client: proposals load when the page opens', /if \(typeof loadMyProposals === 'function'\) loadMyProposals\(\)/.test(idx));
   A('client: fee formatted with currency', /_fmtFee/.test(idx));
@@ -50,7 +51,7 @@ const P = f => fs.readFileSync(path.join(process.cwd(), f), 'utf8');
   A('rollup: attention section mount', /id="attention-section"/.test(dash) && /id="attention-list"/.test(dash));
   A('rollup: loadRollup reads /api/accountants/rollup', /function loadRollup/.test(dash) && /\/api\/accountants\/rollup/.test(dash));
   A('rollup: loaded on dashboard boot', /loadRollup\(\);/.test(dash));
-  A('rollup: rows deep-link into the client via viewBooks', /viewBooks\(\$\{cl\.user_id\}/.test(dash));
+  A('rollup: rows deep-link into the client via viewBooks', /data-arg-user-id="\$\{cl\.user_id\}"[^>]*data-on-click="viewBooks\(Number\(this\.dataset\.argUserId\)/.test(dash));   // FA-P1: the id rides in data-arg-user-id
 
   console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (marketplace UI wiring: proposals + requests + rollup)`);
   console.log('');

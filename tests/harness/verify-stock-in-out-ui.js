@@ -60,7 +60,7 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
     window.renderInventory();
     await settle(6, 60);
     const html = (window.document.getElementById('inventory-list') || {}).innerHTML || '';
-    A('"+ In" and "− Out" buttons are rendered for saved items (bug: absent)', html.includes(`openStockInModal(${idx})`) && html.includes(`openStockOutModal(${idx})`), html.slice(0, 200));
+    A('"+ In" and "− Out" buttons are rendered for saved items (bug: absent)', /* FA-P1: the row index rides in data-arg-idx */ html.includes(`data-arg-idx="${idx}" data-on-click="openStockInModal(Number(this.dataset.argIdx))"`) && html.includes(`data-arg-idx="${idx}" data-on-click="openStockOutModal(Number(this.dataset.argIdx))"`), html.slice(0, 200));
 
     const mv = async () => (await c.query(`SELECT inventory_id, type, quantity::float q, unit_cost::float uc FROM inventory_movements WHERE inventory_id IN (SELECT id FROM inventory WHERE data->>'name' IN ('Nuts','Bolts')) ORDER BY id`)).rows;
     window.openStockInModal(idx);

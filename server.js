@@ -129,36 +129,29 @@ app.use((req, res, next) => {
   // these are used by FinFlow, Plaid Link, or Stripe, which run in iframes/redirects). browsing-topics
   // opts out of the Topics/FLoC ad API.
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=(), browsing-topics=()');
+  // FA-P1 (2026-10-27): the STRICT policy — no 'unsafe-inline' for scripts or styles. FinFlow's pages carry no inline
+  // <script>, no on<event>="…" handler and no style="…" / <style>: scripts and stylesheets are files, handlers are
+  // data-on-<event> run by /ff-csp.js only when their code is in the generated registry, styles are data-style applied
+  // through the CSS object model (see public/ff-csp.js; scripts/csp-scan.js + verify-fap1-csp-clean keep it that way).
+  // So markup injected into a page can run no script and set no inline style. Every violation is reported to
+  // /api/csp-report (Reporting API + report-uri), so a regression shows up in production rather than as a dead button.
+  res.setHeader('Reporting-Endpoints', 'csp-endpoint="/api/csp-report"');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +   // Plaid Link + Belvo widget SDKs
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +   // L22: 'self' for vendored stylesheets (/vendor/tabler-icons)
+    "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +   // Plaid Link + Belvo widget SDKs
+    "script-src-attr 'none'; " +   // no inline event-handler attribute, ever
+    "style-src 'self' https://fonts.googleapis.com; " +   // L22: 'self' for vendored stylesheets (/vendor/tabler-icons)
+    "style-src-attr 'none'; " +   // no style="…" attribute (styles are applied through element.style — allowed)
     "font-src 'self' https://fonts.gstatic.com; " +
     "img-src 'self' data: blob:; " +
     "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +   // F49: dropped dead ws:/wss:. *.plaid.com/*.belvo.*: bank-link widgets
     "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; " +   // Plaid + Belvo render their flows in an iframe
     "frame-ancestors 'none'; " +
+    "form-action 'self'; " +
     "object-src 'none'; " +
-    "base-uri 'self';"
+    "base-uri 'self'; " +
+    "report-to csp-endpoint; report-uri /api/csp-report;"
   );
-  // F207 — CSP nonce/hash migration, measurement phase. When CSP_REPORT_ONLY=1, ALSO send a STRICT
-  // report-only policy (no 'unsafe-inline') that BLOCKS NOTHING but reports every inline script/handler/
-  // style to /api/csp-report. Browsing the app then yields the exact list to fix before flipping the
-  // enforced policy. Off by default (no overhead/noise) — turn on only while measuring.
-  if (/^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || '')) {
-    // Modern Chromium delivers CSP violations via the Reporting API (report-to + Reporting-Endpoints),
-    // having largely deprecated report-uri. Send both so old and new browsers report.
-    res.setHeader('Reporting-Endpoints', 'csp-endpoint="/api/csp-report"');
-    res.setHeader('Content-Security-Policy-Report-Only',
-      "default-src 'self'; " +
-      "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +
-      "style-src 'self' https://fonts.googleapis.com; " +
-      "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; " +
-      "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +
-      "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; " +
-      "report-to csp-endpoint; report-uri /api/csp-report;"
-    );
-  }
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
@@ -973,7 +966,7 @@ app.get('/api/admin/csp-report', (req, res) => {
   const rows = [..._cspReports.values()].sort((a, b) => b.count - a.count);
   const byDirective = {};
   for (const r of rows) byDirective[r.directive] = (byDirective[r.directive] || 0) + r.count;
-  res.json({ enabled: /^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || ''), total: rows.reduce((s, r) => s + r.count, 0), unique: rows.length, byDirective, rows });
+  res.json({ enabled: true, enforced: true, total: rows.reduce((s, r) => s + r.count, 0), unique: rows.length, byDirective, rows });
 });
 
 app.use('/api', (req, res, next) =>

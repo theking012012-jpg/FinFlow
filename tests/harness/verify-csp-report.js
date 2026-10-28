@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * verify-csp-report.js — F207: the CSP nonce/hash migration MEASUREMENT phase is safe and works.
- *   • CSP_REPORT_ONLY=1 adds a STRICT report-only policy (no 'unsafe-inline') that BLOCKS NOTHING
- *   • the enforced CSP is UNCHANGED (still has 'unsafe-inline' — nothing breaks)
- *   • POST /api/csp-report accepts the browsers' real report content types and aggregates them;
- *     only the platform admin reads the aggregate (N71)
+ * verify-csp-report.js — F207 → FA-P1 (2026-10-27): the STRICT policy is ENFORCED, and it reports.
+ *   • the enforced CSP has no 'unsafe-inline' for scripts or styles, and forbids inline handler / style ATTRIBUTES
+ *     (script-src-attr / style-src-attr 'none'); the old report-only measurement header is gone (its job is done)
+ *   • every violation is reported (report-to + report-uri) to POST /api/csp-report, which accepts the browsers' real
+ *     report content types and aggregates them; only the platform admin reads the aggregate (N71)
+ *   (What the browser does under the policy is executed in Chromium by verify-fap1-strict-csp.)
  *
- *   CSP_REPORT_ONLY=1 node -r ./tests/harness/clock.js tests/harness/verify-csp-report.js
+ *   node -r ./tests/harness/clock.js tests/harness/verify-csp-report.js
  */
-process.env.CSP_REPORT_ONLY = '1';
 process.env.ADMIN_PASSWORD = 'harness-admin-password';
 require('./clock.js');
 const { startScratchPostgres } = require('./pgScratch.js');
@@ -29,12 +29,14 @@ const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, 
     const res = await http.get('/healthz');
     const ro = res.headers.get('content-security-policy-report-only') || '';
     const enforced = res.headers.get('content-security-policy') || '';
-    A('report-only header present when CSP_REPORT_ONLY=1', !!ro);
-    A('report-only script-src has NO unsafe-inline (strict)', /script-src 'self'/.test(ro) && !/script-src[^;]*unsafe-inline/.test(ro), ro.slice(0, 120));
-    A('report-only points at the collector', /report-uri \/api\/csp-report/.test(ro));
-    A('report-only uses the Reporting API (report-to)', /report-to csp-endpoint/.test(ro), ro.slice(0,160));
+    const dir = n => (enforced.match(new RegExp('(?:^|;)\\s*' + n + ' ([^;]*)')) || [])[1] || null;
+    A('ENFORCED script-src has no \'unsafe-inline\' (old: it had)', dir('script-src') != null && !/unsafe-inline/.test(dir('script-src')), dir('script-src'));
+    A('ENFORCED style-src has no \'unsafe-inline\' (old: it had)', dir('style-src') != null && !/unsafe-inline/.test(dir('style-src')), dir('style-src'));
+    A('inline handler attributes forbidden outright (script-src-attr \'none\')', dir('script-src-attr') === "'none'", dir('script-src-attr'));
+    A('style attributes forbidden outright (style-src-attr \'none\')', dir('style-src-attr') === "'none'", dir('style-src-attr'));
+    A('the enforced policy reports (report-to + report-uri → the collector)', /report-to csp-endpoint/.test(enforced) && /report-uri \/api\/csp-report/.test(enforced), enforced.slice(-80));
     A('Reporting-Endpoints header names the collector', /csp-endpoint="\/api\/csp-report"/.test(res.headers.get('reporting-endpoints') || ''), res.headers.get('reporting-endpoints'));
-    A('ENFORCED CSP is unchanged (still unsafe-inline — nothing blocked)', /script-src[^;]*'unsafe-inline'/.test(enforced));
+    A('no report-only measurement header any more', !ro, ro.slice(0, 80));
 
     // Collector accepts an unauthenticated report and aggregates it — with the content types BROWSERS
     // actually send (N71: the F22 JSON-only gate used to 415 them, so no real report ever arrived).
@@ -57,7 +59,7 @@ const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, 
     A('both browser formats aggregated into one row with count 2', (rd.json?.rows || []).some(r => r.count === 2 && r.directive === 'script-src-elem'), JSON.stringify(rd.json?.rows));
     A('by-directive summary present', rd.json?.byDirective && rd.json.byDirective['script-src-elem'] === 2, JSON.stringify(rd.json?.byDirective));
 
-    console.log('\n' + (fail === 0 ? '  ALL GREEN — ' + pass + ' passed, 0 failed  (CSP report-only measurement: safe, collects, admin-readable)'
+    console.log('\n' + (fail === 0 ? '  ALL GREEN — ' + pass + ' passed, 0 failed  (strict CSP enforced, reports collected, admin-readable)'
                                    : '  ' + fail + ' FAILED, ' + pass + ' passed'));
   } catch (e) {
     console.error('[csp] PROBE ERROR — ' + (e && e.stack ? e.stack : String(e))); fail = fail || 1;

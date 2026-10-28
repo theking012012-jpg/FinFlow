@@ -38,8 +38,6 @@ if [ -f tests/harness/verification-sync.js ]; then
   }
 fi
 
-exit 0
-
 # ── FA-P1 handler-registry guard ─────────────────────────────────────────────
 # Pages run under a Content-Security-Policy with no 'unsafe-inline': a data-on-<event> handler runs only if its code is
 # in public/_gen/ff-handlers.js, which scripts/gen-handlers.js builds from the source. A stale registry means a button
@@ -50,3 +48,5 @@ if [ -f scripts/gen-handlers.js ]; then
     exit 1
   }
 fi
+
+exit 0

@@ -13,6 +13,10 @@
  *   5 an event that does not bubble (mouseenter, a dispatched non-bubbling change) runs only the target's handler
  *   6 a handler that throws is reported, and the next handler up still runs
  *   7 code that is not in the registry does not run, and is reported once        old code: no runtime at all
+ *   8 the attribute and the on<event> PROPERTY are one slot, as in the browser: a script that assigns el.onclick = fn
+ *     replaces the data-on-click handler, el.onclick = null disables it, and reading el.onclick returns it
+ *     (found by the owner's sweep 2026-10-28: the Pricing buttons re-point / disable themselves that way — before the
+ *     fix one click on "Start free trial" ran BOTH handlers: two checkouts; a muted "Current plan" still started one)
  */
 const fs = require('fs');
 const path = require('path');
@@ -48,6 +52,7 @@ const dom = new JSDOM(`<!doctype html><body>
   <div id="p4" data-on-change="window.__order.push(this.id)"><input id="c4" data-on-change="window.__order.push(this.id)"></div>
   <div id="p5" data-on-click="window.__order.push(this.id)"><span id="c5" data-on-click="throw new Error('boom')">c</span></div>
   <button id="evil" data-on-click="window.__pwned = 1">e</button>
+  <button id="s1" data-on-click="window.__order.push(this.id)">s1</button><button id="s2" data-on-click="window.__order.push(this.id)">s2</button><button id="s3" data-on-click="window.__order.push(this.id)">s3</button>
 </body>`, { runScripts: 'outside-only', virtualConsole: vc, url: 'http://localhost/' });
 const w = dom.window, d = w.document;
 w.eval(runtime);
@@ -83,6 +88,14 @@ setTimeout(() => {
   d.getElementById('evil').click(); d.getElementById('evil').click();
   eq('7  code not in the registry does not run', w.__pwned, undefined);
   eq('7  …and is reported once (not per click)', errors.slice(e0).filter(e => /not a registered handler/.test(e)).length, 1);
+  w.__order = [];
+  d.getElementById('s1').onclick = function () { w.__order.push('prop'); };
+  d.getElementById('s1').click();
+  eq('8  el.onclick = fn replaces the data-on-click handler (one slot) — fn runs, the attribute\'s does not', w.__order, ['prop'], ['s1', 'prop']);
+  w.__order = []; d.getElementById('s2').onclick = null; d.getElementById('s2').click();
+  eq('8  el.onclick = null disables it', w.__order, [], ['s2']);
+  w.__order = []; const got = d.getElementById('s3').onclick; if (typeof got === 'function') got();
+  eq('8  reading el.onclick returns the data-on-click handler (callable, `this` = the element)', [typeof got, w.__order], ['function', ['s3']], ['object', []]);
   console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);
   process.exitCode = fail === 0 ? 0 : 1;
 }, 20);

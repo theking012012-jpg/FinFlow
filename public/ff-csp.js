@@ -44,13 +44,34 @@
     try { r = fn.call(el, ev); } catch (e) { report(e); return; }
     if (r === false) ev.preventDefault();
   }
+  // In a browser the inline attribute and the on<event> PROPERTY are ONE handler slot: a script that assigns
+  // el.onclick = fn (or null) REPLACES the attribute's handler, and reading el.onclick returns it. FinFlow relies on it
+  // (the Pricing buttons re-point / disable themselves that way). The same slot for data-on-<event>: once a script has
+  // assigned el.on<event>, that element's data-on-<event> no longer runs; until then, reading el.on<event> returns it.
+  var assigned = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function overridden(el, type) { var a = assigned && assigned.get(el); return !!(a && a[type]); }
+  [window.HTMLElement, window.SVGElement].forEach(function (C) {
+    if (!C || !assigned) return;
+    EVENTS.forEach(function (type) {
+      var d = Object.getOwnPropertyDescriptor(C.prototype, 'on' + type);
+      if (!d || !d.set || !d.get) return;
+      Object.defineProperty(C.prototype, 'on' + type, { configurable: true, enumerable: d.enumerable,
+        get: function () {
+          var v = d.get.call(this);
+          if (v != null || overridden(this, type)) return v;
+          var code = this.getAttribute('data-on-' + type), fn = code == null ? null : H[code], el = this;
+          return typeof fn === 'function' ? function (ev) { return fn.call(el, ev); } : null;
+        },
+        set: function (v) { var a = assigned.get(this) || {}; a[type] = true; assigned.set(this, a); d.set.call(this, v); } });
+    });
+  });
   function dispatch(ev) {
     var type = ev.type, attr = 'data-on-' + type, t = ev.target;
     if (t && t.nodeType !== 1) t = t.parentElement || null;
     if (!t || typeof t.hasAttribute !== 'function') return;
-    if (!ev.bubbles || NO_BUBBLE[type]) { if (t.hasAttribute(attr)) run(t, type, ev); return; }
+    if (!ev.bubbles || NO_BUBBLE[type]) { if (t.hasAttribute(attr) && !overridden(t, type)) run(t, type, ev); return; }
     for (var el = t; el && el.nodeType === 1; el = el.parentElement) {
-      if (el.hasAttribute(attr)) run(el, type, ev);
+      if (el.hasAttribute(attr) && !overridden(el, type)) run(el, type, ev);
       if (ev.cancelBubble) break;
     }
   }

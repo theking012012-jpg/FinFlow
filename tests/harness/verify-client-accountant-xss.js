@@ -64,7 +64,7 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
     A('payload visible as text in My Accountant', mine && mine.textContent.includes('<img src=x') && mine.textContent.includes('<b>Evil Firm</b>'), mine && mine.textContent.slice(0, 160));
     const calls = [];
     window.requestAccountant = async (id, name) => { calls.push([id, name]); };
-    const btn = grid && [...grid.querySelectorAll('button')].find(b => /Request access/.test(b.textContent) && (b.getAttribute('onclick') || '').includes(String(accB)));
+    const btn = grid && [...grid.querySelectorAll('button')].find(b => /Request access/.test(b.textContent) && /* FA-P1: the id rides in a data-arg-* attribute */ [...b.attributes].some(a => /^data-arg-/.test(a.name) && a.value === String(accB)));
     A('Request access button for B present', !!btn, grid && grid.innerHTML.slice(0, 300));
     if (btn) { try { btn.click(); } catch (_) {} }
     await settle(5);

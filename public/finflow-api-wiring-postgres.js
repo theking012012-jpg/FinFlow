@@ -79,7 +79,7 @@
       ? window.crypto.randomUUID()
       : 'je-' + Date.now() + '-' + Math.random().toString(36).slice(2));
     window._savingJournal = true;
-    const _jeBtns = document.querySelectorAll('#journal-entry-modal [onclick*="saveJournalEntry"]');
+    const _jeBtns = document.querySelectorAll('#journal-entry-modal [data-on-click*="saveJournalEntry"]');
     _jeBtns.forEach(b => { b.disabled = true; });
     try {
       await api('POST', '/api/journals', { date, description, lines: apiLines, status, idempotency_key: window._jeIdemKey });
@@ -355,7 +355,7 @@
       const span = banner.querySelector('span[style*="flex"]');
       if (span) {
         span.innerHTML =
-          'Your data is <strong style="color:#f2e8d5">securely stored in the cloud</strong> ' +
+          'Your data is <strong data-style="color:#f2e8d5">securely stored in the cloud</strong> ' +
           '— backed by PostgreSQL on Supabase. It\'s safe across all browsers and devices.';
       }
     }, 600);

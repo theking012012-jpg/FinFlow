@@ -161,12 +161,12 @@
     div.className = 'package-row';
     div.id = 'pkg-' + id;
     div.innerHTML = `
-      <input type="text" placeholder="e.g. Personal tax return" id="pkg-name-${id}" style="font-size:12px">
-      <div style="position:relative">
-        <span class="rate-sym" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:12px">${esc(rateSymbol())}</span>
-        <input type="number" placeholder="200" id="pkg-price-${id}" min="0" style="padding-left:34px;font-size:12px">
+      <input type="text" placeholder="e.g. Personal tax return" id="pkg-name-${id}" data-style="font-size:12px">
+      <div data-style="position:relative">
+        <span class="rate-sym" data-style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:12px">${esc(rateSymbol())}</span>
+        <input type="number" placeholder="200" id="pkg-price-${id}" min="0" data-style="padding-left:34px;font-size:12px">
       </div>
-      <button type="button" class="pkg-remove" onclick="removePackage(${id})">×</button>
+      <button type="button" class="pkg-remove" data-arg-id="${id}" data-on-click="removePackage(Number(this.dataset.argId))">×</button>
     `;
     document.getElementById('packages-list').appendChild(div);
     if (packageCount >= 4) document.getElementById('add-package-btn').style.display = 'none';

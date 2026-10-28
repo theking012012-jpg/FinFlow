@@ -1,0 +1,35 @@
+/* Mobile responsive CSS — was injected by app-main.js as a <style> appended to <head> (FA-P1, 2026-10-27: no inline
+   style under the strict Content-Security-Policy, so it is a file linked at the end of index.html's <head>). */
+@media (max-width: 700px) {
+  /* Mobile fix: removed the sidebar display:none rule — it overrode the off-canvas drawer and made
+     the hamburger appear dead. The drawer opens via .sidebar.open (openSidebar in index.html). */
+  .topbar-right #themeBtn { display: none; }
+  #currency-picker-wrap { display: none; }
+  #pMonth,#pQ,#pY { display: none; }
+  #month-nav { display: none !important; }
+  .metrics-grid { grid-template-columns: 1fr 1fr !important; gap: 7px; }
+  .metrics-grid-3 { grid-template-columns: 1fr 1fr !important; gap: 7px; }
+  .two-col { grid-template-columns: 1fr !important; }
+  .mc-val { font-size: 26px !important; }
+  .mc { padding: .65rem .8rem; }
+  .canvas-wrap { height: 140px !important; }
+  #river-card { display: none !important; }
+  .page-title { font-size: 14px; }
+  .period-label { display: none; }
+  .field-group { grid-template-columns: 1fr !important; }
+  /* Mobile fix: removed the injected mobile-bottom-nav display:flex bar + its mob-nav-item styling —
+     it was a SECOND bottom nav duplicating index.html's canonical mob-bottom-nav. The injected bar
+     is no longer appended (appendChild commented below). */
+  .mobile-fab {
+    position: fixed; bottom: 72px; right: 16px; width: 48px; height: 48px;
+    border-radius: 50%; background: var(--acc); color: #0e0b08; border: none;
+    font-size: 24px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 20px var(--acc-glow); cursor: pointer; z-index: 501;
+    transition: transform .15s cubic-bezier(.34,1.6,.64,1), box-shadow .15s;
+  }
+  .mobile-fab:active { transform: scale(.93); }
+}
+@media (min-width: 701px) {
+  #mobile-bottom-nav { display: none !important; }
+  .mobile-fab { display: none !important; }
+}

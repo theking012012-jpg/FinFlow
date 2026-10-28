@@ -24,7 +24,7 @@
         document.getElementById('invite-summary').innerHTML =
           'You have been invited to join <b>' + esc(data.accountName) + '</b> as ' +
           '<span class="role-chip">' + esc(data.role) + '</span><br>' +
-          '<span style="color:var(--t3)">for ' + esc(data.email) + '</span>';
+          '<span data-style="color:var(--t3)">for ' + esc(data.email) + '</span>';
 
         if (emailHasAccount) {
           document.getElementById('existing-email').textContent = data.email;

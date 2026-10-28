@@ -51,11 +51,11 @@
       modal.innerHTML = `<div class="modal">
         <div class="modal-header">
           <div><div class="modal-title">Invoice Details</div><div class="modal-sub" id="ivm-sub"></div></div>
-          <button class="modal-close" onclick="document.getElementById('inv-view-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('inv-view-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div id="ivm-body" style="margin-top:4px"></div>
+        <div id="ivm-body" data-style="margin-top:4px"></div>
       </div>`;
       document.body.appendChild(modal);
     }
@@ -65,25 +65,25 @@
     const _stBadge = { paid:'b-green', pending:'b-amber', partial:'b-blue', overdue:'b-red' }[_st] || 'b-amber';
     document.getElementById('ivm-sub').textContent = _stTitle + ' invoice — ' + (inv.client || '');
     document.getElementById('ivm-body').innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">
+      <div data-style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">
         <div>
-          <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Client</div>
-          <div style="font-size:14px;font-weight:600;color:var(--t1);margin-top:4px">${e(inv.client)}</div>
+          <div data-style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Client</div>
+          <div data-style="font-size:14px;font-weight:600;color:var(--t1);margin-top:4px">${e(inv.client)}</div>
         </div>
         <div>
-          <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Amount</div>
-          <div style="font-size:14px;font-weight:600;color:var(--acc);margin-top:4px;font-family:var(--font-mono)">${money(inv.amount)}</div>
+          <div data-style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Amount</div>
+          <div data-style="font-size:14px;font-weight:600;color:var(--acc);margin-top:4px;font-family:var(--font-mono)">${money(inv.amount)}</div>
         </div>
         <div>
-          <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Due Date</div>
-          <div style="font-size:13px;color:var(--t2);margin-top:4px">${e(inv.due || '—')}</div>
+          <div data-style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Due Date</div>
+          <div data-style="font-size:13px;color:var(--t2);margin-top:4px">${e(inv.due || '—')}</div>
         </div>
         <div>
-          <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Status</div>
-          <div style="margin-top:4px"><span class="badge ${_stBadge}">${e(inv.status)}</span></div>
+          <div data-style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Status</div>
+          <div data-style="margin-top:4px"><span class="badge ${_stBadge}">${e(inv.status)}</span></div>
         </div>
       </div>
-      ${inv.notes ? `<div style="margin-top:16px;padding:10px;background:var(--bg2);border-radius:var(--radius);font-size:12px;color:var(--t2);line-height:1.5">${e(inv.notes)}</div>` : ''}
+      ${inv.notes ? `<div data-style="margin-top:16px;padding:10px;background:var(--bg2);border-radius:var(--radius);font-size:12px;color:var(--t2);line-height:1.5">${e(inv.notes)}</div>` : ''}
     `;
     modal.classList.remove('hidden');
     if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
@@ -121,18 +121,18 @@
     const el = document.getElementById('timesheet-list');
     if (!el) return;
     if (!_tsData.length) {
-      el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No time entries yet — click + Log Time to add one</div>';
+      el.innerHTML = '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No time entries yet — click + Log Time to add one</div>';
       return;
     }
     el.innerHTML = _tsData.map(t => `
-      <div style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px 36px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-        <span style="font-weight:500">${e(t.employee)}</span>
-        <span style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(_tsProjectLabel(t) || '—')}</span>
-        <span style="color:var(--t2)">${e(t.date || '—')}</span>
-        <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
+      <div data-style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px 36px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+        <span data-style="font-weight:500">${e(t.employee)}</span>
+        <span data-style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(_tsProjectLabel(t) || '—')}</span>
+        <span data-style="color:var(--t2)">${e(t.date || '—')}</span>
+        <span data-style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
         <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
-        <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
-        <span style="display:inline-flex;gap:2px"><button class="btn btn-ghost btn-sm" style="padding:0 4px" title="Edit" onclick="editTimesheetEntry(${t.id})">✎</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button></span>
+        <span data-style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
+        <span data-style="display:inline-flex;gap:2px"><button class="btn btn-ghost btn-sm" data-style="padding:0 4px" title="Edit" data-arg-id="${t.id}" data-on-click="editTimesheetEntry(Number(this.dataset.argId))">✎</button><button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7;padding:0 4px" data-arg-id="${t.id}" data-on-click="deleteTimesheetEntry(Number(this.dataset.argId))">✕</button></span>
       </div>`).join('');
   }
 
@@ -179,7 +179,7 @@
     modal.innerHTML = `<div class="modal">
       <div class="modal-header">
         <div><div class="modal-title">Log Time</div><div class="modal-sub">Record a time entry</div></div>
-        <button class="modal-close" onclick="document.getElementById('ts-log-modal').classList.add('hidden')">
+        <button class="modal-close" data-on-click="document.getElementById('ts-log-modal').classList.add('hidden')">
           <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
         </button>
       </div>
@@ -199,8 +199,8 @@
         <div class="field-wrap"><label class="field-label">Rate (<span data-cur="biz">USD</span>/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="document.getElementById('ts-log-modal').classList.add('hidden')">Cancel</button>
-        <button class="btn btn-primary" onclick="saveTimesheetEntry()">Save entry →</button>
+        <button class="btn btn-ghost" data-on-click="document.getElementById('ts-log-modal').classList.add('hidden')">Cancel</button>
+        <button class="btn btn-primary" data-on-click="saveTimesheetEntry()">Save entry →</button>
       </div>
     </div>`;
     document.body.appendChild(modal);
@@ -333,7 +333,7 @@
     } else if (state === 'error') {
       [0, 1, 2].forEach(i => { if (mcs[i]) mcs[i].textContent = '—'; });
       if (chgs[1]) {
-        chgs[1].innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window.renderReports&&window.renderReports()') : 'Retry');
+        chgs[1].innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('renderReports') : 'Retry');
         chgs[1].className = 'mc-change dn';
       }
     }
@@ -454,15 +454,15 @@
         const roleLabel = roleLabels[m.role] || m.role || 'Member';
         const roleCls   = roleClasses[m.role] || 'role-viewer';
         return `<div class="team-member-row">
-          <div class="team-avatar" style="background:${col}22;color:${col};border:1px solid ${col}44">${e(initials)}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(m.name)}</div>
-            <div style="font-size:11px;color:var(--t3)">${e(m.email || '')}</div>
+          <div class="team-avatar" data-style="background:${col}22;color:${col};border:1px solid ${col}44">${e(initials)}</div>
+          <div data-style="flex:1;min-width:0">
+            <div data-style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(m.name)}</div>
+            <div data-style="font-size:11px;color:var(--t3)">${e(m.email || '')}</div>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+          <div data-style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
             <span class="role-badge ${roleCls}">${e(roleLabel)}</span>
-            <span style="font-size:10px;color:var(--t3)">${e(m.lastSeen || 'Active')}</span>
-            ${m._tmId ? `<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick='openMemberAccess(${m._tmId}, ${JSON.stringify(m.entity_access || null)})'>Businesses</button>` : ''}
+            <span data-style="font-size:10px;color:var(--t3)">${e(m.lastSeen || 'Active')}</span>
+            ${m._tmId ? `<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:2px 8px" data-arg-id="${m._tmId}" data-arg-access="${String(JSON.stringify(m.entity_access || null)).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" data-on-click="openMemberAccess(Number(this.dataset.argId), JSON.parse(this.dataset.argAccess))">Businesses</button>` : ''}
           </div>
         </div>`;
       }).join('');
@@ -493,21 +493,21 @@
       modal = document.createElement('div');
       modal.id = 'member-access-modal';
       modal.className = 'modal-overlay hidden';
-      modal.innerHTML = `<div class="modal" style="max-width:360px">
+      modal.innerHTML = `<div class="modal" data-style="max-width:360px">
         <div class="modal-header">
           <div class="modal-title">Business access</div>
-          <button class="modal-close" onclick="document.getElementById('member-access-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('member-access-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div style="margin-top:8px"><label class="flabel">Businesses this member can access</label>
-          <div id="ma-entities" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
-            <div style="font-size:12px;color:var(--t3)">Loading…</div>
+        <div data-style="margin-top:8px"><label class="flabel">Businesses this member can access</label>
+          <div id="ma-entities" data-style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
+            <div data-style="font-size:12px;color:var(--t3)">Loading…</div>
           </div>
         </div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('member-access-modal').classList.add('hidden')">Cancel</button>
-          <button class="btn btn-primary btn-sm" onclick="saveMemberAccess()">Save access</button>
+        <div class="modal-footer" data-style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('member-access-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" data-on-click="saveMemberAccess()">Save access</button>
         </div>
       </div>`;
       document.body.appendChild(modal);
@@ -520,8 +520,8 @@
       const granted = Array.isArray(access) ? access.map(Number) : null;   // null = all currently
       const box = document.getElementById('ma-entities');
       if (box) box.innerHTML = (ents && ents.length)
-        ? ents.map(en => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="ma-ent-cb" value="${en.id}" ${(!granted || granted.includes(en.id)) ? 'checked' : ''}> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
-        : '<div style="font-size:12px;color:var(--t3)">No businesses yet</div>';
+        ? ents.map(en => `<label data-style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="ma-ent-cb" value="${en.id}" ${(!granted || granted.includes(en.id)) ? 'checked' : ''}> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
+        : '<div data-style="font-size:12px;color:var(--t3)">No businesses yet</div>';
     } catch (_) {}
   };
 
@@ -572,7 +572,7 @@
     _pjKpi('proj-unbilled', money(_projects.reduce((s, p) => s + Math.max(0, (parseFloat(p.budget) || 0) - (parseFloat(p.billed) || 0)), 0)));
     window._refreshDashboardUI?.();
     if (!_projects.length) {
-      l.innerHTML = '<div style="padding:16px 0;color:var(--t3);font-size:13px">No projects yet. Click + New Project to add one.</div>';
+      l.innerHTML = '<div data-style="padding:16px 0;color:var(--t3);font-size:13px">No projects yet. Click + New Project to add one.</div>';
       return;
     }
     const colorMap = { 'In Progress': 'b-blue', 'Completed': 'b-green', 'On Hold': 'b-amber' };
@@ -580,22 +580,22 @@
       const billed = p.billed || 0;
       const budget = p.budget || 0;
       const pct    = budget > 0 ? Math.min(100, Math.round((billed / budget) * 100)) : 0;
-      return `<div style="padding:10px 0;border-bottom:1px solid var(--bd)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      return `<div data-style="padding:10px 0;border-bottom:1px solid var(--bd)">
+        <div data-style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <div>
-            <div style="font-size:13px;font-weight:500;color:var(--t1)">${e(p.name)}</div>
-            <div style="font-size:11px;color:var(--t3)">${e(p.client || '—')} · ${e(p.hours || 0)}h logged</div>
+            <div data-style="font-size:13px;font-weight:500;color:var(--t1)">${e(p.name)}</div>
+            <div data-style="font-size:11px;color:var(--t3)">${e(p.client || '—')} · ${e(p.hours || 0)}h logged</div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="text-align:right">
-              <div style="font-size:11px;color:var(--t3)">Billable value / Budget</div>
-              <div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${window._fmtMoneyNative(billed)} / ${window._fmtMoneyNative(budget)}</div>
+          <div data-style="display:flex;align-items:center;gap:10px">
+            <div data-style="text-align:right">
+              <div data-style="font-size:11px;color:var(--t3)">Billable value / Budget</div>
+              <div data-style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${window._fmtMoneyNative(billed)} / ${window._fmtMoneyNative(budget)}</div>
             </div>
             <span class="badge ${colorMap[p.status] || 'b-blue'}">${e(p.status)}</span>
-            <button class="btn btn-ghost btn-sm" onclick="deleteProject(${p.id})" style="color:var(--red);padding:2px 6px" title="Delete">✕</button>
+            <button class="btn btn-ghost btn-sm" data-arg-id="${p.id}" data-on-click="deleteProject(Number(this.dataset.argId))" data-style="color:var(--red);padding:2px 6px" title="Delete">✕</button>
           </div>
         </div>
-        <div class="bar-track" style="height:4px"><div class="bar-fill" style="width:${pct}%;background:${p.status === 'Completed' ? 'var(--green)' : 'var(--acc)'}"></div></div>
+        <div class="bar-track" data-style="height:4px"><div class="bar-fill" data-style="width:${pct}%;background:${p.status === 'Completed' ? 'var(--green)' : 'var(--acc)'}"></div></div>
       </div>`;
     }).join('');
   }
@@ -609,11 +609,11 @@
       modal.innerHTML = `<div class="modal">
         <div class="modal-header">
           <div class="modal-title">New Project</div>
-          <button class="modal-close" onclick="document.getElementById('proj-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('proj-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <div data-style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
           <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
           <div><label class="flabel">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
           <div><label class="flabel">Budget (<span data-cur="biz">USD</span>)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
@@ -625,9 +625,9 @@
             </select>
           </div>
         </div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('proj-modal').classList.add('hidden')">Cancel</button>
-          <button class="btn btn-primary btn-sm" onclick="saveProject()">Save Project</button>
+        <div class="modal-footer" data-style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('proj-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" data-on-click="saveProject()">Save Project</button>
         </div>
       </div>`;
       document.body.appendChild(modal);
@@ -714,22 +714,22 @@
       // 88vh with a SCROLLING body — otherwise the modal overflows and clips the top KPIs / bottom Net
       // Profit (as it did on first ship). Header + footer stay pinned; #rpt-body scrolls (min-height:0
       // lets the flex child actually shrink and scroll).
-      modal.innerHTML = `<div class="modal" style="max-width:480px;max-height:88vh;display:flex;flex-direction:column">
-        <div class="modal-header" style="flex:0 0 auto">
+      modal.innerHTML = `<div class="modal" data-style="max-width:480px;max-height:88vh;display:flex;flex-direction:column">
+        <div class="modal-header" data-style="flex:0 0 auto">
           <div>
             <div class="modal-title" id="rpt-title"></div>
             <div class="modal-sub" id="rpt-sub"></div>
           </div>
-          <button class="modal-close" onclick="document.getElementById('report-gen-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('report-gen-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div id="rpt-body" style="margin-top:12px;font-size:13px;color:var(--t2);overflow-y:auto;flex:1 1 auto;min-height:0">Loading…</div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;flex:0 0 auto">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('report-gen-modal').classList.add('hidden')">Close</button>
-          <button class="btn btn-ghost btn-sm" id="rpt-csv-btn" onclick="window._rptExport('csv')">CSV</button>
-          <button class="btn btn-ghost btn-sm" id="rpt-pdf-btn" onclick="window._rptExport('pdf')">PDF</button>
-          <button class="btn btn-primary btn-sm" onclick="window.print()">Print ↗</button>
+        <div id="rpt-body" data-style="margin-top:12px;font-size:13px;color:var(--t2);overflow-y:auto;flex:1 1 auto;min-height:0">Loading…</div>
+        <div class="modal-footer" data-style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;flex:0 0 auto">
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('report-gen-modal').classList.add('hidden')">Close</button>
+          <button class="btn btn-ghost btn-sm" id="rpt-csv-btn" data-on-click="window._rptExport('csv')">CSV</button>
+          <button class="btn btn-ghost btn-sm" id="rpt-pdf-btn" data-on-click="window._rptExport('pdf')">PDF</button>
+          <button class="btn btn-primary btn-sm" data-on-click="window.print()">Print ↗</button>
         </div>
       </div>`;
       document.body.appendChild(modal);
@@ -740,23 +740,22 @@
     // built from var(--...)-driven inline styles, flipping the vars re-themes every element (tiles,
     // bars, text) to dark-on-white for paper without touching the on-screen (dark) rendering.
     // NOTE: on-paper appearance is owner-confirmed via print preview — jsdom cannot render @media print.
-    if (!document.getElementById('rpt-print-css')) {
-      const _pcss = document.createElement('style');
-      _pcss.id = 'rpt-print-css';
-      _pcss.textContent = '@media print {'
+    // FA-P1: a constructed stylesheet (no <style> element under the strict Content-Security-Policy), added once, the
+    // first time a report is generated — exactly when the <style> used to be.
+    if (window.ffAdoptCss && !window.ffAdoptCss.has('rpt-print-css')) {
+      window.ffAdoptCss('rpt-print-css', '@media print {'
         + ' body > *:not(#report-gen-modal){display:none !important;}'
         + ' #report-gen-modal{position:static !important;background:#fff !important;}'
         + ' #report-gen-modal .modal{--bg2:#f4f1ea;--bd:#d9d2c4;--t1:#1a1712;--t2:#3a352c;--t3:#6a6255;--green:#1f7a44;--red:#a23b2e;--acc:#9a7d2e;background:#fff !important;color:#111 !important;max-width:none !important;max-height:none !important;box-shadow:none !important;border:none !important;}'
         + ' #report-gen-modal #rpt-body{overflow:visible !important;max-height:none !important;}'
         + ' #report-gen-modal .modal-footer, #report-gen-modal .modal-close{display:none !important;}'
         + ' @page{margin:14mm;}'
-        + '}';
-      document.head.appendChild(_pcss);
+        + '}');
     }
     window._rptExportData = null;   // C15: the renderer below sets it (a report's own figures, as plain numbers)
     document.getElementById('rpt-title').textContent = name;
     document.getElementById('rpt-sub').textContent = 'Generated ' + new Date().toLocaleDateString();
-    document.getElementById('rpt-body').innerHTML = '<div style="color:var(--t3)">Loading data…</div>';
+    document.getElementById('rpt-body').innerHTML = '<div data-style="color:var(--t3)">Loading data…</div>';
     modal.classList.remove('hidden');
     if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
 
@@ -766,8 +765,8 @@
       const m = n => (typeof window._fmtMoneyNative === 'function')
         ? window._fmtMoneyNative(n)
         : (typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2));
-      const hdr = l => `<div style="font-size:11px;color:var(--acc, #c8a44a);font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:9px 0 4px;border-bottom:1px solid var(--acc-bg, rgba(200,164,74,.18));margin-bottom:2px">${l}</div>`;
-      const row = (label, val, opts = {}) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
+      const hdr = l => `<div data-style="font-size:11px;color:var(--acc, #c8a44a);font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:9px 0 4px;border-bottom:1px solid var(--acc-bg, rgba(200,164,74,.18));margin-bottom:2px">${l}</div>`;
+      const row = (label, val, opts = {}) => `<div data-style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span data-style="color:var(--t2)">${e(label)}</span><span data-style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
       const _rptBody = html => { document.getElementById('rpt-body').innerHTML = html; };
       // L12/L13: every report covers the dashboard's ACTIVE period (year ⇒ fiscal year) — the convention
       // P&L / Sales by Customer / Expense Report already followed. Payroll runs belong to the period they
@@ -781,11 +780,11 @@
       };
       // ── F137 rich shared helpers (used across the report renderers). ────────────────────────────
       const _gold = 'var(--acc, #c8a44a)';
-      const tile = (label, val, sub, cls) => `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div>${sub ? `<div style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div>` : ''}</div>`;
-      const tiles = arr => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">${arr.join('')}</div>`;
-      const pillHtml = t => `<span style="font-size:10px;font-weight:600;color:${_gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
+      const tile = (label, val, sub, cls) => `<div data-style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div data-style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div data-style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div>${sub ? `<div data-style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div>` : ''}</div>`;
+      const tiles = arr => `<div data-style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">${arr.join('')}</div>`;
+      const pillHtml = t => `<span data-style="font-size:10px;font-weight:600;color:${_gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
       // A share-bar row: label + amount + a proportional bar (share of `denom`).
-      const shareRow = (label, amt, denom, color) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:${color || 'var(--t1)'}">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${denom > 0 ? Math.max(2, Math.round(Math.abs(amt) / denom * 100)) : 0}%"></i></div></div>`;
+      const shareRow = (label, amt, denom, color) => `<div data-style="padding:6px 0"><div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t2)">${e(label)}</span><span data-style="font-family:var(--font-mono);color:${color || 'var(--t1)'}">${m(amt)}</span></div><div data-style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i data-style="display:block;height:100%;background:${_gold};opacity:.75;width:${denom > 0 ? Math.max(2, Math.round(Math.abs(amt) / denom * 100)) : 0}%"></i></div></div>`;
       // Paired-series monthly SVG bar chart (rows: [{label, a, b}]). Inline SVG → prints cleanly.
       const barChart = (cap, series, aLabel, bLabel) => {
         const rws = series.slice(-6);
@@ -800,12 +799,12 @@
           bars += `<rect x="${(cx - bw - 1).toFixed(1)}" y="${base - ah}" width="${bw.toFixed(1)}" height="${ah}" rx="1" fill="${_gold}"/>`;
           bars += `<rect x="${(cx + 1).toFixed(1)}" y="${base - bh}" width="${bw.toFixed(1)}" height="${bh}" rx="1" fill="var(--t3)"/>`;
         });
-        const xl = rws.map(r => `<span style="flex:1;text-align:center">${e(r.label || '')}</span>`).join('');
-        return `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
-          <div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">${e(cap)}</div>
-          <svg viewBox="0 0 ${CW} ${CH}" style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
-          <div style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
-          <div style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${_gold};margin:0 4px 0 8px;vertical-align:middle"></span>${e(aLabel)}<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>${e(bLabel)}</div>
+        const xl = rws.map(r => `<span data-style="flex:1;text-align:center">${e(r.label || '')}</span>`).join('');
+        return `<div data-style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
+          <div data-style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">${e(cap)}</div>
+          <svg viewBox="0 0 ${CW} ${CH}" data-style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
+          <div data-style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
+          <div data-style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span data-style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${_gold};margin:0 4px 0 8px;vertical-align:middle"></span>${e(aLabel)}<span data-style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>${e(bLabel)}</div>
         </div>`;
       };
 
@@ -833,11 +832,11 @@
                 + row('Lines cleared', n + ' line' + (n === 1 ? '' : 's'))
                 + row('Saved by', e(r.created_by || '—') + ' · ' + e(fd(String(r.created_at || '').slice(0, 10))))
                 + (r.status === 'undone' ? row('Undone by', e(r.undone_by || '—') + ' · ' + e(fd(String(r.undone_at || '').slice(0, 10)))) : '')
-                + (r.changed_since ? `<div style="font-size:12px;color:var(--amber);padding:4px 0">⚠ ${r.changed_since} line${r.changed_since === 1 ? '' : 's'} changed by the bank after this reconciliation — review before trusting it.</div>` : '')
-                + (r.lines || []).map(l => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0 2px 10px;color:var(--t3)"><span>${e(l.missing ? '(line no longer in the feed)' : fd(l.date) + ' · ' + (l.description || ''))}</span><span style="font-family:var(--font-mono)">${l.missing ? '' : c2(l.amount)}</span></div>`).join('')
-                + (latest && r.id === latest.id ? `<div style="text-align:right;margin:6px 0 10px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ffUndoReconciliation(${r.id})">Undo this reconciliation</button></div>` : '');
+                + (r.changed_since ? `<div data-style="font-size:12px;color:var(--amber);padding:4px 0">⚠ ${r.changed_since} line${r.changed_since === 1 ? '' : 's'} changed by the bank after this reconciliation — review before trusting it.</div>` : '')
+                + (r.lines || []).map(l => `<div data-style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0 2px 10px;color:var(--t3)"><span>${e(l.missing ? '(line no longer in the feed)' : fd(l.date) + ' · ' + (l.description || ''))}</span><span data-style="font-family:var(--font-mono)">${l.missing ? '' : c2(l.amount)}</span></div>`).join('')
+                + (latest && r.id === latest.id ? `<div data-style="text-align:right;margin:6px 0 10px"><button class="btn btn-ghost btn-sm" data-style="font-size:11px" data-arg-id="${r.id}" data-on-click="ffUndoReconciliation(Number(this.dataset.argId))">Undo this reconciliation</button></div>` : '');
             }).join('')
-            : '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No reconciliations saved yet. Bank Rec → Reconcile: enter your statement\'s closing balance, tick the lines on it, and finish at a 0.00 difference.</div>'));
+            : '<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No reconciliations saved yet. Bank Rec → Reconcile: enter your statement\'s closing balance, tick the lines on it, and finish at a 0.00 difference.</div>'));
         return;
       }
 
@@ -849,7 +848,7 @@
       // is labelled as excluding it. Returns before the generic render so the P&L cards do not also show.
       if (name === 'Balance Sheet') {
         const bs = await api('POST', '/api/reports/balance-sheet', {});
-        const cashCell = bs.cashTracked === false ? '<span style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
+        const cashCell = bs.cashTracked === false ? '<span data-style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
         const ta = parseFloat(bs.totalAssets) || 0, tl = parseFloat(bs.totalLiabilities) || 0, eq = parseFloat(bs.equity) || 0;
         const denomBS = Math.max(1, ta, tl);
         // GL Phase 5b: the balance sheet may now be ledger-sourced (bs.source==='gl') with a REAL cash
@@ -889,7 +888,7 @@
                  + (_payL > 0 ? row('Payroll Liabilities', m(_payL), { color: 'var(--red)' }) : ''))
           + row('Total Liabilities', m(tl), { color: 'var(--red)', bold: true })
           + (_L ? hdr('Equity') + _lineRows(_L.equity, 'var(--t2)') : '')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span data-style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`
           // ASC 830 CTA is SUPPLEMENTARY (the closing-rate translation view); it is not part of the Equity total above,
           // so it renders after that total — between the equity lines and their total it would break the footing.
           + (Math.abs(_cta) >= 0.01 ? row('Cumulative Translation Adjustment (ASC 830, supplementary)', m(_cta), { color: 'var(--t2)' }) : '')
@@ -899,7 +898,7 @@
           + (() => {
               const _h = window.bizHoldings || [];
               const _mv = _h.reduce((s, x) => s + (parseFloat(x.shares) || 0) * (parseFloat(x.price) || parseFloat(x._lastPrice) || parseFloat(x.costPer) || parseFloat(x.cost) || 0), 0);
-              return _mv > 0 ? `<div style="margin-top:12px;font-size:11px;color:var(--t3);line-height:1.5">Note: business investment holdings (market value ${m(_mv)}) are tracked in <strong>Investments</strong> and are not posted to the double-entry books, so they are excluded from this balance sheet. It reflects only booked activity.</div>` : '';
+              return _mv > 0 ? `<div data-style="margin-top:12px;font-size:11px;color:var(--t3);line-height:1.5">Note: business investment holdings (market value ${m(_mv)}) are tracked in <strong>Investments</strong> and are not posted to the double-entry books, so they are excluded from this balance sheet. It reflects only booked activity.</div>` : '';
             })());
         return;
       }
@@ -918,7 +917,7 @@
         const net = tin - tout;
         const detail = rows.map(r => {
           const rn = (parseFloat(r.inflow) || 0) - (parseFloat(r.outflow) || 0);
-          return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">${e(r.month || '')}</span><span style="color:var(--t3);font-family:var(--font-mono);font-size:11px">${m(r.inflow)} in / ${m(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${rn >= 0 ? 'var(--green)' : 'var(--red)'}">${m(rn)}</span></div>`;
+          return `<div data-style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span data-style="color:var(--t2)">${e(r.month || '')}</span><span data-style="color:var(--t3);font-family:var(--font-mono);font-size:11px">${m(r.inflow)} in / ${m(r.outflow)} out</span><span data-style="font-family:var(--font-mono);color:${rn >= 0 ? 'var(--green)' : 'var(--red)'}">${m(rn)}</span></div>`;
         }).join('');
         _rptBody(
           tiles([
@@ -929,8 +928,8 @@
           ])
           + barChart('Cash in vs out — monthly', rows.map(r => ({ label: r.month, a: parseFloat(r.inflow) || 0, b: parseFloat(r.outflow) || 0 })), 'Inflow', 'Outflow')
           + hdr('Monthly detail')
-          + (detail || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No cash movement recorded.</div>')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Cash Flow</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
+          + (detail || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No cash movement recorded.</div>')
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Cash Flow</span><span data-style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
         return;
       }
 
@@ -992,7 +991,7 @@
             tile('Overdue', m(ar.overdueTotal || 0), (ar.overdueCount || 0) + ' invoices', (ar.overdueTotal || 0) > 0 ? 'var(--red)' : 'var(--t2)'),
           ])
           + hdr('Outstanding by customer')
-          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding receivables.</div>')
+          + (rows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding receivables.</div>')
           + row('Total Receivable', m(_arTotal), { bold: true, color: 'var(--green)' }));
         return;
       }
@@ -1041,7 +1040,7 @@
             tile('Largest', vendorEntries.length ? m(vendorEntries[0][1]) : m(0), vendorEntries.length ? String(vendorEntries[0][0]) : '—'),
           ])
           + hdr('Outstanding by vendor')
-          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding payables.</div>')
+          + (rows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding payables.</div>')
           + row('Total Payable', m(apTotal), { bold: true, color: 'var(--red)' }));
         return;
       }
@@ -1102,7 +1101,7 @@
             tile('Top Customer', entries.length ? m(entries[0][1]) : m(0), entries.length ? String(entries[0][0]) : '—'),
           ])
           + hdr('Revenue by customer — ' + (PERIOD_LABEL[period] || period))
-          + (custRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No revenue from named customers in this period.</div>')
+          + (custRows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No revenue from named customers in this period.</div>')
           + remRow
           + row('Total Revenue', m(total), { bold: true, color: 'var(--green)' }));
         return;
@@ -1127,7 +1126,7 @@
         const tGross = _recog.reduce((s, x) => s + x.g, 0);
         const tNet = _recog.reduce((s, x) => s + x.n, 0);
         const gDen = Math.max(1, ...runData.map(x => x.g));
-        const runRows = runData.map(x => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(x.period)} <span style="color:var(--t3);font-size:11px">${e(x.status)}${_RPT_PAYROLL_RECOGNISED.includes(x.status) ? '' : ' · not in totals'}</span></span><span style="font-family:var(--font-mono)">net ${m(x.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(x.g / gDen * 100))}%"></i></div><div style="font-size:10px;color:var(--t3);margin-top:2px">gross ${m(x.g)}</div></div>`).join('');
+        const runRows = runData.map(x => `<div data-style="padding:6px 0"><div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t2)">${e(x.period)} <span data-style="color:var(--t3);font-size:11px">${e(x.status)}${_RPT_PAYROLL_RECOGNISED.includes(x.status) ? '' : ' · not in totals'}</span></span><span data-style="font-family:var(--font-mono)">net ${m(x.n)}</span></div><div data-style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i data-style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(x.g / gDen * 100))}%"></i></div><div data-style="font-size:10px;color:var(--t3);margin-top:2px">gross ${m(x.g)}</div></div>`).join('');
         _rptBody(
           tiles([
             tile('Total Gross', m(tGross), 'approved + paid runs (Σ line items)', 'var(--red)'),
@@ -1136,8 +1135,8 @@
             tile('Deductions', m(Math.round((tGross - tNet) * 100) / 100), 'gross − net'),
           ])
           + hdr('Payroll runs (gross = Σ line items, basis C)')
-          + (runRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs yet.</div>')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Gross / Net</span><span style="font-family:var(--font-mono)">${m(tGross)} / ${m(tNet)}</span></div>`);
+          + (runRows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs yet.</div>')
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Gross / Net</span><span data-style="font-family:var(--font-mono)">${m(tGross)} / ${m(tNet)}</span></div>`);
         return;
       }
 
@@ -1161,8 +1160,8 @@
 
         // Hero KPI tiles. M45 (money audit 2026-10-09): "Expenses" is OPERATING expenses (totalExpenses — COGS is
         // already taken in Gross Profit); its caption said "incl. payroll + COGS" over a value that excludes COGS.
-        const tile = (label, val, sub, cls) => `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div></div>`;
-        const kpis = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        const tile = (label, val, sub, cls) => `<div data-style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div data-style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div data-style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div><div data-style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div></div>`;
+        const kpis = `<div data-style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
           ${tile('Revenue', m(rev), 'issued', 'var(--green)')}
           ${tile('Gross Profit', m(gp), pct(gp, rev) + ' margin')}
           ${tile('Net Profit', m(net), pct(net, rev) + ' net margin', net >= 0 ? 'var(--green)' : 'var(--red)')}
@@ -1184,12 +1183,12 @@
             bars += `<rect x="${(cx - bw - 1).toFixed(1)}" y="${base - rh}" width="${bw.toFixed(1)}" height="${rh}" rx="1" fill="${gold}"/>`;
             bars += `<rect x="${(cx + 1).toFixed(1)}" y="${base - eh}" width="${bw.toFixed(1)}" height="${eh}" rx="1" fill="var(--t3)"/>`;
           });
-          const xl = rws.map(r => `<span style="flex:1;text-align:center">${e(r.month || '')}</span>`).join('');
-          chart = `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
-            <div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">Revenue vs Expenses — monthly</div>
-            <svg viewBox="0 0 ${CW} ${CH}" style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
-            <div style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
-            <div style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${gold};margin:0 4px 0 8px;vertical-align:middle"></span>Revenue<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>Expenses</div>
+          const xl = rws.map(r => `<span data-style="flex:1;text-align:center">${e(r.month || '')}</span>`).join('');
+          chart = `<div data-style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
+            <div data-style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">Revenue vs Expenses — monthly</div>
+            <svg viewBox="0 0 ${CW} ${CH}" data-style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
+            <div data-style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
+            <div data-style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span data-style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${gold};margin:0 4px 0 8px;vertical-align:middle"></span>Revenue<span data-style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>Expenses</div>
           </div>`;
         }
 
@@ -1216,24 +1215,24 @@
         }
         if (Math.abs(_gap) >= 0.01) catList.push(['Unreconciled difference', _gap]);
         catList.sort((a, b) => b[1] - a[1]);
-        const catBar = ([label, amt]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:var(--red)">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${gold};opacity:.75;width:${exp > 0 ? Math.max(2, Math.round((amt / exp) * 100)) : 0}%"></i></div></div>`;
-        const pill = t => `<span style="font-size:10px;font-weight:600;color:${gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
+        const catBar = ([label, amt]) => `<div data-style="padding:6px 0"><div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t2)">${e(label)}</span><span data-style="font-family:var(--font-mono);color:var(--red)">${m(amt)}</span></div><div data-style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i data-style="display:block;height:100%;background:${gold};opacity:.75;width:${exp > 0 ? Math.max(2, Math.round((amt / exp) * 100)) : 0}%"></i></div></div>`;
+        const pill = t => `<span data-style="font-size:10px;font-weight:600;color:${gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
 
         // C14: the month-by-month table (every month of the period). Its total row is the statement's own totals; if
         // the months ever fail to add up to them the gap is shown, never hidden.
         let monthly = '';
         if (prows.length) {
           const n = v => parseFloat(v) || 0;
-          const cell = (v, c) => `<td style="padding:4px 6px;text-align:right;font-family:var(--font-mono);${c ? 'color:' + c : ''}">${v}</td>`;
+          const cell = (v, c) => `<td data-style="padding:4px 6px;text-align:right;font-family:var(--font-mono);${c ? 'color:' + c : ''}">${v}</td>`;
           const sum = k => Math.round(prows.reduce((t, r) => t + n(r[k]), 0) * 100) / 100;
           const off = [['revenue', rev], ['cogs', cogs], ['expenses', exp], ['netProfit', net]].filter(([k, t]) => Math.abs(sum(k) - t) >= 0.01);
           monthly = hdr('By month')
-            + `<table id="pl-monthly" style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px"><thead><tr style="color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">`
-            + `<th style="text-align:left;padding:4px 6px">Month</th><th style="text-align:right;padding:4px 6px">Revenue</th><th style="text-align:right;padding:4px 6px">Cost of goods</th><th style="text-align:right;padding:4px 6px">Expenses</th><th style="text-align:right;padding:4px 6px">Net</th></tr></thead><tbody>`
-            + prows.map(r => `<tr style="border-top:1px solid var(--bd)"><td style="padding:4px 6px;color:var(--t2)">${e(r.month || '')}</td>${cell(m(n(r.revenue)))}${cell(m(n(r.cogs)))}${cell(m(n(r.expenses)))}${cell(m(n(r.netProfit)), n(r.netProfit) >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`).join('')
-            + `<tr style="border-top:2px solid var(--bd);font-weight:700"><td style="padding:4px 6px">Total</td>${cell(m(rev))}${cell(m(cogs))}${cell(m(exp))}${cell(m(net), net >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`
+            + `<table id="pl-monthly" data-style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px"><thead><tr data-style="color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">`
+            + `<th data-style="text-align:left;padding:4px 6px">Month</th><th data-style="text-align:right;padding:4px 6px">Revenue</th><th data-style="text-align:right;padding:4px 6px">Cost of goods</th><th data-style="text-align:right;padding:4px 6px">Expenses</th><th data-style="text-align:right;padding:4px 6px">Net</th></tr></thead><tbody>`
+            + prows.map(r => `<tr data-style="border-top:1px solid var(--bd)"><td data-style="padding:4px 6px;color:var(--t2)">${e(r.month || '')}</td>${cell(m(n(r.revenue)))}${cell(m(n(r.cogs)))}${cell(m(n(r.expenses)))}${cell(m(n(r.netProfit)), n(r.netProfit) >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`).join('')
+            + `<tr data-style="border-top:2px solid var(--bd);font-weight:700"><td data-style="padding:4px 6px">Total</td>${cell(m(rev))}${cell(m(cogs))}${cell(m(exp))}${cell(m(net), net >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`
             + `</tbody></table>`
-            + (off.length ? `<div style="font-size:11px;color:var(--red);margin:-6px 0 10px">The months do not add up to the totals (${off.map(([k]) => k).join(', ')}) — please report this.</div>` : '');
+            + (off.length ? `<div data-style="font-size:11px;color:var(--red);margin:-6px 0 10px">The months do not add up to the totals (${off.map(([k]) => k).join(', ')}) — please report this.</div>` : '');
         }
 
         // C15: what CSV / PDF export — the statement and the monthly table, as plain numbers (2 dp) in the
@@ -1264,11 +1263,11 @@
           + row('Total Revenue', m(rev), { bold: true, color: 'var(--green)' })
           + hdr('Cost of Sales')
           + row('Cost of Goods Sold (FIFO)', '− ' + m(cogs), { color: 'var(--red)' })
-          + `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd);font-weight:600"><span>Gross Profit ${pill(pct(gp, rev) + ' margin')}</span><span style="font-family:var(--font-mono)">${m(gp)}</span></div>`
+          + `<div data-style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd);font-weight:600"><span>Gross Profit ${pill(pct(gp, rev) + ' margin')}</span><span data-style="font-family:var(--font-mono)">${m(gp)}</span></div>`
           + hdr('Operating Expenses')
           + catList.map(catBar).join('')
           + row('Total Operating Expenses', m(exp), { bold: true, color: 'var(--red)' })
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Net Profit ${pill(pct(net, rev) + ' net margin')}</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Net Profit ${pill(pct(net, rev) + ' net margin')}</span><span data-style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`
           + ((() => {
               // GL consolidation: when viewing the consolidated group, surface DETECTED intercompany trade
               // and the eliminated group P&L. Only renders when the server returns intercompany data
@@ -1279,8 +1278,8 @@
               return hdr('Intercompany (group consolidation)')
                 + row('Intercompany revenue (detected)', '\u2212 ' + m(icRev), { color: 'var(--t2)' })
                 + row('Intercompany expense (detected)', '\u2212 ' + m(icExp), { color: 'var(--t2)' })
-                + (el ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700"><span>Group Net Profit (eliminated) ${pill('intercompany removed')}</span><span style="font-family:var(--font-mono);color:${(parseFloat(el.netProfit)||0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(parseFloat(el.netProfit)||0)}</span></div>` : '')
-                + `<div style="font-size:10px;color:var(--t3);margin-top:6px">Detected by matching a customer/vendor name to another of your entities. The figures above are the primary (transaction-precise) consolidation; eliminated is the group view net of internal trade.</div>`;
+                + (el ? `<div data-style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700"><span>Group Net Profit (eliminated) ${pill('intercompany removed')}</span><span data-style="font-family:var(--font-mono);color:${(parseFloat(el.netProfit)||0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(parseFloat(el.netProfit)||0)}</span></div>` : '')
+                + `<div data-style="font-size:10px;color:var(--t3);margin-top:6px">Detected by matching a customer/vendor name to another of your entities. The figures above are the primary (transaction-precise) consolidation; eliminated is the group view net of internal trade.</div>`;
             })()));
         return;
       }
@@ -1309,7 +1308,7 @@
             tile('Not Deductible', m(nonDed), 'excluded from tax', 'var(--t2)'),
           ])
           + hdr('Deductible by category')
-          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No deductible expenses recorded.</div>')
+          + (rows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No deductible expenses recorded.</div>')
           + row('Total Deductible', m(ded), { bold: true, color: 'var(--green)' }));
         return;
       }
@@ -1375,20 +1374,20 @@
         window.removeTaxLine = (i) => { window._readTaxInputs(); window._taxLines.splice(i, 1); if (!window._taxLines.length) window._taxLines.push({ label: 'Income tax', type: 'taxable', value: 0, note: '' }); window._renderTaxWorksheet(); persistTax(); };
         window._renderTaxWorksheet = () => {
           const opt = (v, lbl, cur) => `<option value="${v}"${cur === v ? ' selected' : ''}>${lbl}</option>`;
-          const lineRows = window._taxLines.map((l, i) => `<div style="padding:8px 0;border-bottom:1px solid var(--bd)">
-            <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-              <input id="tl-label-${i}" value="${e(l.label)}" oninput="onTaxEdit()" placeholder="Tax name" style="flex:1;min-width:0;background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 7px;font-size:12px">
-              <input id="tl-val-${i}" type="number" step="0.1" min="0" value="${l.value}" oninput="onTaxEdit()" style="width:62px;text-align:right;font-family:var(--font-mono);background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 6px;font-size:12px">
-              <select id="tl-type-${i}" onchange="onTaxEdit()" style="background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 4px;font-size:11px">${opt('taxable', '% taxable', l.type)}${opt('revenue', '% revenue', l.type)}${opt('fixed', 'fixed $', l.type)}</select>
-              <button onclick="removeTaxLine(${i})" title="Remove" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 3px">✕</button>
+          const lineRows = window._taxLines.map((l, i) => `<div data-style="padding:8px 0;border-bottom:1px solid var(--bd)">
+            <div data-style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+              <input id="tl-label-${i}" value="${e(l.label)}" data-on-input="onTaxEdit()" placeholder="Tax name" data-style="flex:1;min-width:0;background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 7px;font-size:12px">
+              <input id="tl-val-${i}" type="number" step="0.1" min="0" value="${l.value}" data-on-input="onTaxEdit()" data-style="width:62px;text-align:right;font-family:var(--font-mono);background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 6px;font-size:12px">
+              <select id="tl-type-${i}" data-on-change="onTaxEdit()" data-style="background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 4px;font-size:11px">${opt('taxable', '% taxable', l.type)}${opt('revenue', '% revenue', l.type)}${opt('fixed', 'fixed $', l.type)}</select>
+              <button data-arg-i="${i}" data-on-click="removeTaxLine(Number(this.dataset.argI))" title="Remove" data-style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 3px">✕</button>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-              <input id="tl-note-${i}" value="${e(l.note)}" oninput="onTaxEdit()" placeholder="note (optional)" style="flex:1;min-width:0;background:none;border:none;color:var(--t3);font-size:11px;padding:0">
-              <span style="font-family:var(--font-mono);color:var(--red);font-size:12px">= <span id="tl-amt-${i}">${m(r2(lineAmt(l)))}</span></span>
+            <div data-style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <input id="tl-note-${i}" value="${e(l.note)}" data-on-input="onTaxEdit()" placeholder="note (optional)" data-style="flex:1;min-width:0;background:none;border:none;color:var(--t3);font-size:11px;padding:0">
+              <span data-style="font-family:var(--font-mono);color:var(--red);font-size:12px">= <span id="tl-amt-${i}">${m(r2(lineAmt(l)))}</span></span>
             </div></div>`).join('');
           const total = totalTax(), q = Math.round(total / 4);
           _rptBody(
-            `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">Add a line per tax you owe — each a % of taxable income, % of revenue, or a fixed amount. <strong>Rough estimate — not tax advice.</strong> Cross-border obligations (foreign tax credits, worldwide income, capital gains) aren't computed here — enter them as fixed amounts and consult a professional. Your lines also feed your accountant's Tax Summary.</div>`
+            `<div data-style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">Add a line per tax you owe — each a % of taxable income, % of revenue, or a fixed amount. <strong>Rough estimate — not tax advice.</strong> Cross-border obligations (foreign tax credits, worldwide income, capital gains) aren't computed here — enter them as fixed amounts and consult a professional. Your lines also feed your accountant's Tax Summary.</div>`
             + tiles([
               tile('Estimated Tax', `<span id="tl-total">${m(total)}</span>`, 'sum of all lines', 'var(--red)'),
               tile('Per Quarter', `<span id="tl-quarter">${m(q)}</span>`, 'set aside each Q', 'var(--red)'),
@@ -1397,8 +1396,8 @@
             ])
             + hdr('Tax lines')
             + lineRows
-            + `<button onclick="addTaxLine()" style="margin-top:8px;background:none;border:1px dashed var(--acc,#c8a44a);color:var(--acc,#c8a44a);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;width:100%">+ Add tax line</button>`
-            + `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Total Estimated Tax <span style="color:var(--t3);font-size:11px;font-weight:500">(<span id="tl-fq">${m(q)}</span>/quarter)</span></span><span style="font-family:var(--font-mono);color:var(--red)" id="tl-total2">${m(total)}</span></div>`);
+            + `<button data-on-click="addTaxLine()" data-style="margin-top:8px;background:none;border:1px dashed var(--acc,#c8a44a);color:var(--acc,#c8a44a);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;width:100%">+ Add tax line</button>`
+            + `<div data-style="margin-top:12px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Total Estimated Tax <span data-style="color:var(--t3);font-size:11px;font-weight:500">(<span id="tl-fq">${m(q)}</span>/quarter)</span></span><span data-style="font-family:var(--font-mono);color:var(--red)" id="tl-total2">${m(total)}</span></div>`);
         };
         window._renderTaxWorksheet();
         return;
@@ -1408,10 +1407,10 @@
       // state (F123 class), never a fabricated return. ────────────────────────────────────────────
       if (name === 'VAT Return') {
         _rptBody(
-          `<div style="text-align:center;padding:28px 16px;color:var(--t2)">
-            <div style="font-size:30px;margin-bottom:10px">🧾</div>
-            <div style="font-size:15px;font-weight:600;color:var(--t1);margin-bottom:6px">VAT / GST is not tracked</div>
-            <div style="font-size:12px;color:var(--t3);line-height:1.5;max-width:340px;margin:0 auto">FinFlow doesn’t record VAT or sales tax on invoices or bills, so a VAT return can’t be produced from your data. If you’re VAT/GST-registered and need this, VAT tracking can be added as a feature.</div>
+          `<div data-style="text-align:center;padding:28px 16px;color:var(--t2)">
+            <div data-style="font-size:30px;margin-bottom:10px">🧾</div>
+            <div data-style="font-size:15px;font-weight:600;color:var(--t1);margin-bottom:6px">VAT / GST is not tracked</div>
+            <div data-style="font-size:12px;color:var(--t3);line-height:1.5;max-width:340px;margin:0 auto">FinFlow doesn’t record VAT or sales tax on invoices or bills, so a VAT return can’t be produced from your data. If you’re VAT/GST-registered and need this, VAT tracking can be added as a feature.</div>
           </div>`);
         return;
       }
@@ -1433,7 +1432,7 @@
         }));
         const emps = Object.entries(byEmp).sort((a, b) => b[1].g - a[1].g);
         const gDen = Math.max(1, ...emps.map(([, v]) => v.g));
-        const rows = emps.map(([nm, v]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(nm)}</span><span style="font-family:var(--font-mono)">gross ${m(v.g)} · net ${m(v.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(v.g / gDen * 100))}%"></i></div></div>`).join('');
+        const rows = emps.map(([nm, v]) => `<div data-style="padding:6px 0"><div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t2)">${e(nm)}</span><span data-style="font-family:var(--font-mono)">gross ${m(v.g)} · net ${m(v.n)}</span></div><div data-style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i data-style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(v.g / gDen * 100))}%"></i></div></div>`).join('');
         _rptBody(
           tiles([
             tile('People', String(emps.length), 'on payroll runs'),
@@ -1441,10 +1440,10 @@
             tile('Total Withheld', m(Math.round((tG - tN) * 100) / 100), 'deductions'),
             tile('Total Net', m(tN), 'take-home', 'var(--green)'),
           ])
-          + `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:var(--t2)">Pay per person from approved and paid payroll runs. <strong>Payments to contractors outside payroll are not included</strong> — they are expenses or bills.</div>`
+          + `<div data-style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:var(--t2)">Pay per person from approved and paid payroll runs. <strong>Payments to contractors outside payroll are not included</strong> — they are expenses or bills.</div>`
           + hdr('Pay by person')
-          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs recorded.</div>')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Wages / Net</span><span style="font-family:var(--font-mono)">${m(tG)} / ${m(tN)}</span></div>`);
+          + (rows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs recorded.</div>')
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Wages / Net</span><span data-style="font-family:var(--font-mono)">${m(tG)} / ${m(tN)}</span></div>`);
         return;
       }
       // ── F128: DELEGATE to the canonical client engines. Do NOT recompute. ────────────────────
@@ -1517,33 +1516,33 @@
       // computeExpenseBreakdown itself and adds up to the Expenses figure above (it used to list expense categories only).
       const _tbl = (title, m) => {
         const rows = Object.entries(m || {}).sort((a, b) => b[1] - a[1])
-          .map(([k, amt]) => `<tr><td style="padding:3px 0;color:var(--t2)">${e(k)}</td><td style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
-        return rows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">${e(title)}</div>
-        <table style="width:100%;border-collapse:collapse">${rows}<tr style="border-top:1px solid var(--bd)"><td style="padding:3px 0;font-weight:600">Total</td><td style="text-align:right;font-family:var(--font-mono);font-weight:600">${money(expTotal)}</td></tr></table>` : '';
+          .map(([k, amt]) => `<tr><td data-style="padding:3px 0;color:var(--t2)">${e(k)}</td><td data-style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
+        return rows ? `<div data-style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">${e(title)}</div>
+        <table data-style="width:100%;border-collapse:collapse">${rows}<tr data-style="border-top:1px solid var(--bd)"><td data-style="padding:3px 0;font-weight:600">Total</td><td data-style="text-align:right;font-family:var(--font-mono);font-weight:600">${money(expTotal)}</td></tr></table>` : '';
       };
       const _byCat = (typeof window._expenseCategoryRows === 'function') ? Object.fromEntries(window._expenseCategoryRows(breakdown, { all: true })) : {};   // D3: the one category decomposition
       const catRows = _tbl('By source', breakdown.bySource) + _tbl('By category', _byCat) + _tbl('By vendor', breakdown.byVendor);
 
       document.getElementById('rpt-body').innerHTML = `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-          <div style="background:var(--bg2);border-radius:6px;padding:10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Revenue</div>
-            <div style="font-size:16px;font-weight:600;color:var(--green)">${money(revenue)}</div>
-            <div style="font-size:10px;color:var(--t3)">issued, ${e(PERIOD_LABEL[period] || period)}</div>
+        <div data-style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+          <div data-style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div data-style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Revenue</div>
+            <div data-style="font-size:16px;font-weight:600;color:var(--green)">${money(revenue)}</div>
+            <div data-style="font-size:10px;color:var(--t3)">issued, ${e(PERIOD_LABEL[period] || period)}</div>
           </div>
-          <div style="background:var(--bg2);border-radius:6px;padding:10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Expenses</div>
-            <div style="font-size:16px;font-weight:600;color:var(--red)">${money(expTotal)}</div>
-            <div style="font-size:10px;color:var(--t3)">incl. bills &amp; payroll</div>
+          <div data-style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div data-style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Expenses</div>
+            <div data-style="font-size:16px;font-weight:600;color:var(--red)">${money(expTotal)}</div>
+            <div data-style="font-size:10px;color:var(--t3)">incl. bills &amp; payroll</div>
           </div>
-          <div style="background:var(--bg2);border-radius:6px;padding:10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Net Profit</div>
-            <div style="font-size:16px;font-weight:600;color:${profit >= 0 ? 'var(--green)' : 'var(--red)'}">${money(profit)}</div>
+          <div data-style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div data-style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Net Profit</div>
+            <div data-style="font-size:16px;font-weight:600;color:${profit >= 0 ? 'var(--green)' : 'var(--red)'}">${money(profit)}</div>
           </div>
-          <div style="background:var(--bg2);border-radius:6px;padding:10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Outstanding</div>
-            <div style="font-size:16px;font-weight:600;color:var(--amber)">${money(outstanding)}</div>
-            <div style="font-size:10px;color:var(--t3)">all time</div>
+          <div data-style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div data-style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Outstanding</div>
+            <div data-style="font-size:16px;font-weight:600;color:var(--amber)">${money(outstanding)}</div>
+            <div data-style="font-size:10px;color:var(--t3)">all time</div>
           </div>
         </div>
         ${catRows}`;
@@ -1614,14 +1613,14 @@
       modal = document.createElement('div');
       modal.id = 'invite-modal';
       modal.className = 'modal-overlay hidden';
-      modal.innerHTML = `<div class="modal" style="max-width:360px">
+      modal.innerHTML = `<div class="modal" data-style="max-width:360px">
         <div class="modal-header">
           <div class="modal-title">Invite Team Member</div>
-          <button class="modal-close" onclick="document.getElementById('invite-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('invite-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <div data-style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
           <div><label class="flabel">Name *</label><input id="inv-name" class="finput" placeholder="Full name"></div>
           <div><label class="flabel">Email *</label><input id="inv-email" class="finput" type="email" placeholder="email@company.com"></div>
           <div><label class="flabel">Role</label>
@@ -1632,14 +1631,14 @@
             </select>
           </div>
           <div><label class="flabel">Businesses this member can access</label>
-            <div id="inv-entities" style="display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
-              <div style="font-size:12px;color:var(--t3)">Loading…</div>
+            <div id="inv-entities" data-style="display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
+              <div data-style="font-size:12px;color:var(--t3)">Loading…</div>
             </div>
           </div>
         </div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('invite-modal').classList.add('hidden')">Cancel</button>
-          <button class="btn btn-primary btn-sm" onclick="sendInvite()">Send Invite</button>
+        <div class="modal-footer" data-style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('invite-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" data-on-click="sendInvite()">Send Invite</button>
         </div>
       </div>`;
       document.body.appendChild(modal);
@@ -1664,8 +1663,8 @@
       const ents = await api('GET', '/api/entities');
       const box = document.getElementById('inv-entities');
       if (box) box.innerHTML = (ents && ents.length)
-        ? ents.map(en => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="inv-ent-cb" value="${en.id}" checked> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
-        : '<div style="font-size:12px;color:var(--t3)">No businesses yet</div>';
+        ? ents.map(en => `<label data-style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="inv-ent-cb" value="${en.id}" checked> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
+        : '<div data-style="font-size:12px;color:var(--t3)">No businesses yet</div>';
     } catch (_) {}
   };
 
@@ -1702,22 +1701,22 @@
       let h;
       if (b.paid) {
         const per = b.interval === 'year' ? 'year' : 'month';
-        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)} · billed ${b.interval === 'year' ? 'yearly' : 'monthly'} · $${Number(b.price).toLocaleString('en-US')} a ${per}</div>`
+        h = `<div data-style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)} · billed ${b.interval === 'year' ? 'yearly' : 'monthly'} · $${Number(b.price).toLocaleString('en-US')} a ${per}</div>`
           + (b.periodEnd
               ? (b.cancelAtPeriodEnd
-                  ? `<div style="color:var(--amber)">Cancels on ${e(_bDate(b.periodEnd))} — you keep full access until then.</div>`
+                  ? `<div data-style="color:var(--amber)">Cancels on ${e(_bDate(b.periodEnd))} — you keep full access until then.</div>`
                   : `<div>Renews on ${e(_bDate(b.periodEnd))}.</div>`)
               : '');
       } else if (b.readOnly) {
-        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">No active plan — your books are read-only</div><div>You can view and export everything. Choose a plan to make changes again.</div>`
+        h = `<div data-style="font-size:15px;color:var(--t1);font-weight:500">No active plan — your books are read-only</div><div>You can view and export everything. Choose a plan to make changes again.</div>`
           // D-G step 4: when a PAID plan ended, the books are kept 90 days, then deleted — say when, and how to keep them.
-          + (b.deleteOn ? `<div style="margin-top:6px;color:var(--amber)">Your plan ended on ${e(_bDate(b.accessEndedAt))}. Your books will be deleted on <strong>${e(_bDate(b.deleteOn))}</strong> unless you choose a plan before then — we e-mail you 14 days before. Export a copy any time: Settings → Your data → Download my data.</div>` : '');
+          + (b.deleteOn ? `<div data-style="margin-top:6px;color:var(--amber)">Your plan ended on ${e(_bDate(b.accessEndedAt))}. Your books will be deleted on <strong>${e(_bDate(b.deleteOn))}</strong> unless you choose a plan before then — we e-mail you 14 days before. Export a copy any time: Settings → Your data → Download my data.</div>` : '');
       } else {
-        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)}</div>` + (b.trialEnds ? `<div>Ends on ${e(_bDate(b.trialEnds))}. No card needed until you choose a plan.</div>` : '');
+        h = `<div data-style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)}</div>` + (b.trialEnds ? `<div>Ends on ${e(_bDate(b.trialEnds))}. No card needed until you choose a plan.</div>` : '');
       }
-      h += `<div style="margin-top:.75rem;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="showPage('pricing')">${b.paid ? 'Change plan' : 'Choose a plan'}</button>`
-        + (b.paid && !b.cancelAtPeriodEnd ? `<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ffCancelPlan()">Cancel plan</button>` : '')
-        + (b.paid && b.cancelAtPeriodEnd ? `<button class="btn btn-primary btn-sm" onclick="ffResumePlan()">Keep my plan</button>` : '')
+      h += `<div data-style="margin-top:.75rem;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-on-click="showPage('pricing')">${b.paid ? 'Change plan' : 'Choose a plan'}</button>`
+        + (b.paid && !b.cancelAtPeriodEnd ? `<button class="btn btn-ghost btn-sm" data-style="color:var(--red)" data-on-click="ffCancelPlan()">Cancel plan</button>` : '')
+        + (b.paid && b.cancelAtPeriodEnd ? `<button class="btn btn-primary btn-sm" data-on-click="ffResumePlan()">Keep my plan</button>` : '')
         + `</div><div id="billing-cancel-box"></div>`;
       el.innerHTML = h;
     } catch (err) { el.textContent = 'Could not load your plan — ' + err.message; }
@@ -1735,10 +1734,10 @@
         : `You paid <strong>${_money2(p.paid)}</strong> for this year. ${p.monthsUsed} month${p.monthsUsed === 1 ? '' : 's'} used × ${_money2(p.monthlyPrice)} (the monthly price) = ${_money2(p.used)}. `
           + (p.refund > 0 ? `We refund <strong>${_money2(p.refund)}</strong> to the card you paid with. ` : 'No refund is due. ')
           + `Access ends today. ${keep}`;
-      box.innerHTML = `<div style="margin-top:.75rem;padding:12px 14px;border:1px solid var(--red-bd);border-radius:var(--radius);background:var(--red-bg)">
-          <div style="color:var(--t1);margin-bottom:8px">${what}</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="billing-cancel-confirm" style="background:var(--red);color:#fff" onclick="ffConfirmCancel()">Cancel my plan</button>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('billing-cancel-box').innerHTML=''">Keep my plan</button></div></div>`;
+      box.innerHTML = `<div data-style="margin-top:.75rem;padding:12px 14px;border:1px solid var(--red-bd);border-radius:var(--radius);background:var(--red-bg)">
+          <div data-style="color:var(--t1);margin-bottom:8px">${what}</div>
+          <div data-style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="billing-cancel-confirm" data-style="background:var(--red);color:#fff" data-on-click="ffConfirmCancel()">Cancel my plan</button>
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('billing-cancel-box').innerHTML=''">Keep my plan</button></div></div>`;
     } catch (err) { box.textContent = 'Could not prepare the cancellation — ' + err.message; }
   };
   window.ffConfirmCancel = async function () {
@@ -1768,7 +1767,7 @@
     if (sel) sel.value = m;
     let d;
     try { d = await api('GET', '/api/saas-metrics?month=' + encodeURIComponent(m)); }
-    catch (err) { body.innerHTML = `<div style="color:var(--t3)">${e(err.message)}</div>`; return; }
+    catch (err) { body.innerHTML = `<div data-style="color:var(--t3)">${e(err.message)}</div>`; return; }
     window._saas = d;
     const x = d.metrics || {}, cur = d.currency || 'USD';
     const sym = (window.CURRENCIES && window.CURRENCIES[cur] && window.CURRENCIES[cur].symbol) || (cur === 'USD' ? '$' : cur + ' ');
@@ -1778,41 +1777,41 @@
     const nm = k => (d.names && d.names[k]) || String(k).replace(/^(ff|stripe):/, '');
     if (title) title.textContent = 'Growth & retention — ' + _ymLabel(m);
     const flagFor = re => (x.flags || []).find(f => re.test(f));
-    const tile = (id, label, val, key, hint) => `<button type="button" class="mrr-metric" id="${id}" data-working="${key || ''}" style="text-align:left;cursor:${key ? 'pointer' : 'default'};border:1px solid var(--bd);background:none;border-radius:var(--radius);padding:10px" title="${e(hint || 'Show how this is worked out')}">
-        <div class="mrr-val" style="font-size:18px">${val}</div><div class="mrr-label">${e(label)}</div></button>`;
-    const ltvTxt = x.ltv != null ? money(x.ltv) : `<span style="font-size:12px;color:var(--t3)">${e(flagFor(/Lifetime value/) || 'Not available')}</span>`;
-    const cacTxt = x.cac != null ? money(x.cac) : `<span style="font-size:12px;color:var(--t3)">${e(flagFor(/new customers/) || 'Not available')}</span>`;
-    const mvRow = (label, amt, keys, color) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)"><span><span style="color:var(--t1)">${e(label)}</span> <span style="color:var(--t3)">${(keys || []).map(k => e(nm(k))).join(', ') || '—'}</span></span><span style="font-family:var(--font-mono);color:${color}">${money(amt)}</span></div>`;
+    const tile = (id, label, val, key, hint) => `<button type="button" class="mrr-metric" id="${id}" data-working="${key || ''}" data-style="text-align:left;cursor:${key ? 'pointer' : 'default'};border:1px solid var(--bd);background:none;border-radius:var(--radius);padding:10px" title="${e(hint || 'Show how this is worked out')}">
+        <div class="mrr-val" data-style="font-size:18px">${val}</div><div class="mrr-label">${e(label)}</div></button>`;
+    const ltvTxt = x.ltv != null ? money(x.ltv) : `<span data-style="font-size:12px;color:var(--t3)">${e(flagFor(/Lifetime value/) || 'Not available')}</span>`;
+    const cacTxt = x.cac != null ? money(x.cac) : `<span data-style="font-size:12px;color:var(--t3)">${e(flagFor(/new customers/) || 'Not available')}</span>`;
+    const mvRow = (label, amt, keys, color) => `<div data-style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)"><span><span data-style="color:var(--t1)">${e(label)}</span> <span data-style="color:var(--t3)">${(keys || []).map(k => e(nm(k))).join(', ') || '—'}</span></span><span data-style="font-family:var(--font-mono);color:${color}">${money(amt)}</span></div>`;
     const cohorts = (d.cohorts || []).slice(-12);
     const maxOff = cohorts.reduce((mx, g) => Math.max(mx, g.months.length), 0);
-    const cohortHtml = cohorts.length ? `<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11.5px;min-width:420px"><thead><tr><th style="text-align:left;padding:4px 6px;color:var(--t3)">Started</th><th style="padding:4px 6px;color:var(--t3)">Customers</th>${Array.from({ length: maxOff }, (_, i) => `<th style="padding:4px 6px;color:var(--t3)">M${i}</th>`).join('')}</tr></thead><tbody>`
-      + cohorts.map(g => `<tr><td style="padding:4px 6px;color:var(--t1)">${e(_ymLabel(g.start).replace(/ (\d{4})$/, ' $1'))}</td><td style="padding:4px 6px;text-align:center">${g.size}</td>${g.months.map(r => `<td style="padding:4px 6px;text-align:center;background:rgba(201,168,76,${(r.customerPct || 0) / 400})" title="Revenue retained: ${r.mrrPct == null ? '—' : r.mrrPct + '%'}">${r.customerPct}%</td>`).join('')}</tr>`).join('')
-      + `</tbody></table><div style="font-size:11px;color:var(--t3);margin-top:4px">Share of each starting group of customers still paying; hover a cell for the share of their revenue kept.</div></div>` : '<div style="color:var(--t3)">No subscription history yet.</div>';
+    const cohortHtml = cohorts.length ? `<div data-style="overflow-x:auto"><table data-style="border-collapse:collapse;font-size:11.5px;min-width:420px"><thead><tr><th data-style="text-align:left;padding:4px 6px;color:var(--t3)">Started</th><th data-style="padding:4px 6px;color:var(--t3)">Customers</th>${Array.from({ length: maxOff }, (_, i) => `<th data-style="padding:4px 6px;color:var(--t3)">M${i}</th>`).join('')}</tr></thead><tbody>`
+      + cohorts.map(g => `<tr><td data-style="padding:4px 6px;color:var(--t1)">${e(_ymLabel(g.start).replace(/ (\d{4})$/, ' $1'))}</td><td data-style="padding:4px 6px;text-align:center">${g.size}</td>${g.months.map(r => `<td data-style="padding:4px 6px;text-align:center;background:rgba(201,168,76,${(r.customerPct || 0) / 400})" title="Revenue retained: ${r.mrrPct == null ? '—' : r.mrrPct + '%'}">${r.customerPct}%</td>`).join('')}</tr>`).join('')
+      + `</tbody></table><div data-style="font-size:11px;color:var(--t3);margin-top:4px">Share of each starting group of customers still paying; hover a cell for the share of their revenue kept.</div></div>` : '<div data-style="color:var(--t3)">No subscription history yet.</div>';
     const st = d.settings || {};
     body.innerHTML =
-      `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">`
+      `<div data-style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">`
       + tile('saas-nrr', 'Net revenue retention', pc(x.nrr), 'nrr') + tile('saas-grr', 'Gross revenue retention', pc(x.grr), 'grr')
       + tile('saas-customer-churn', 'Customer churn', pc(x.customerChurnRate), 'customerChurnRate') + tile('saas-revenue-churn', 'Revenue churn', pc(x.revenueChurnRate), 'revenueChurnRate')
       + tile('saas-arpa', 'Revenue per customer (ARPA)', x.arpa != null ? money(x.arpa) : '—', 'arpa') + tile('saas-cac', 'Cost to win a customer (CAC)', cacTxt, x.cac != null ? 'cac' : '')
       + tile('saas-payback', 'Months to earn back CAC', x.paybackMonths != null ? Number(x.paybackMonths).toFixed(1) + ' months' : '—', x.paybackMonths != null ? 'paybackMonths' : '')
       + tile('saas-ltv', 'Lifetime value (LTV)', ltvTxt, x.ltv != null ? 'ltv' : '')
-      + `</div><div id="saas-working" style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid var(--acc);border-radius:var(--radius);font-size:12px"></div>`
-      + `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">`
-      +   `<div id="saas-movement"><div style="font-weight:600;color:var(--t1);margin-bottom:4px">What changed in ${e(_ymLabel(m))}</div>`
+      + `</div><div id="saas-working" data-style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid var(--acc);border-radius:var(--radius);font-size:12px"></div>`
+      + `<div data-style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">`
+      +   `<div id="saas-movement"><div data-style="font-weight:600;color:var(--t1);margin-bottom:4px">What changed in ${e(_ymLabel(m))}</div>`
       +     mvRow('New', x.newMrr, x.newCustomers, 'var(--green)') + mvRow('Came back', x.reactivation, [], 'var(--green)') + mvRow('Expanded', x.expansion, x.expandedCustomers, 'var(--acc)')
       +     mvRow('Reduced', -(x.contraction || 0), x.contractedCustomers, 'var(--amber)') + mvRow('Left', -(x.churnedMrr || 0), x.churnedCustomers, 'var(--red)') + `</div>`
-      +   `<div id="saas-cohorts"><div style="font-weight:600;color:var(--t1);margin-bottom:4px">Retention by starting month</div>${cohortHtml}</div>`
+      +   `<div id="saas-cohorts"><div data-style="font-weight:600;color:var(--t1);margin-bottom:4px">Retention by starting month</div>${cohortHtml}</div>`
       + `</div>`
-      + `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">`
-      +   `<div style="flex:1 1 260px"><label class="flabel" for="saas-cats">Expense categories that count as winning customers</label><input class="finput" id="saas-cats" value="${e((st.acquisitionCategories || []).join(', '))}"></div>`
-      +   `<div style="width:150px"><label class="flabel" for="saas-payroll-pct">Share of payroll (%)</label><input class="finput" id="saas-payroll-pct" type="number" min="0" max="100" value="${Number(st.salesPayrollPct || 0)}"></div>`
-      +   `<button class="btn btn-ghost btn-sm" onclick="ffSaveSaasSettings()">Save</button></div>`
-      + `<div style="font-size:11px;color:var(--t3);margin-top:6px">Sources: ${d.sources && d.sources.finflowLines || 0} recurring invoices in FinFlow${d.sources && d.sources.stripeConnected ? ', ' + (d.sources.stripeLines || 0) + ' Stripe subscription invoices' : ''}${d.sources && d.sources.otherCurrencySkipped ? ' · ' + d.sources.otherCurrencySkipped + ' Stripe invoices in another currency not included' : ''}${d.sources && d.sources.stripeError ? ' · Stripe could not be read: ' + e(d.sources.stripeError) : ''}. Gross margin from your books: ${d.grossMargin == null ? '—' : (d.grossMargin * 100).toFixed(1) + '%'}.</div>`;
+      + `<div data-style="margin-top:14px;padding-top:10px;border-top:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">`
+      +   `<div data-style="flex:1 1 260px"><label class="flabel" for="saas-cats">Expense categories that count as winning customers</label><input class="finput" id="saas-cats" value="${e((st.acquisitionCategories || []).join(', '))}"></div>`
+      +   `<div data-style="width:150px"><label class="flabel" for="saas-payroll-pct">Share of payroll (%)</label><input class="finput" id="saas-payroll-pct" type="number" min="0" max="100" value="${Number(st.salesPayrollPct || 0)}"></div>`
+      +   `<button class="btn btn-ghost btn-sm" data-on-click="ffSaveSaasSettings()">Save</button></div>`
+      + `<div data-style="font-size:11px;color:var(--t3);margin-top:6px">Sources: ${d.sources && d.sources.finflowLines || 0} recurring invoices in FinFlow${d.sources && d.sources.stripeConnected ? ', ' + (d.sources.stripeLines || 0) + ' Stripe subscription invoices' : ''}${d.sources && d.sources.otherCurrencySkipped ? ' · ' + d.sources.otherCurrencySkipped + ' Stripe invoices in another currency not included' : ''}${d.sources && d.sources.stripeError ? ' · Stripe could not be read: ' + e(d.sources.stripeError) : ''}. Gross margin from your books: ${d.grossMargin == null ? '—' : (d.grossMargin * 100).toFixed(1) + '%'}.</div>`;
     body.querySelectorAll('[data-working]').forEach(b => { const k = b.getAttribute('data-working'); if (!k) return; b.onclick = () => {
       const wv = (x.working || {})[k], box = document.getElementById('saas-working');
       if (!wv || !box) return;
-      const inp = Object.entries(wv.inputs || {}).filter(([kk, v]) => typeof v !== 'object' || Array.isArray(v)).map(([kk, v]) => `<div><span style="color:var(--t3)">${e(kk)}</span>: ${e(Array.isArray(v) ? v.join(', ') : v)}</div>`).join('');
-      box.innerHTML = `<div style="color:var(--t1);font-weight:600;margin-bottom:4px">${e(b.querySelector('.mrr-label').textContent)}</div><div style="margin-bottom:6px">${e(wv.formula)}</div>${inp}`;
+      const inp = Object.entries(wv.inputs || {}).filter(([kk, v]) => typeof v !== 'object' || Array.isArray(v)).map(([kk, v]) => `<div><span data-style="color:var(--t3)">${e(kk)}</span>: ${e(Array.isArray(v) ? v.join(', ') : v)}</div>`).join('');
+      box.innerHTML = `<div data-style="color:var(--t1);font-weight:600;margin-bottom:4px">${e(b.querySelector('.mrr-label').textContent)}</div><div data-style="margin-bottom:6px">${e(wv.formula)}</div>${inp}`;
       box.style.display = 'block'; }; });
     // the breakdown tiles + the churn card, for the same completed month (ONE writer — the engine)
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -1838,16 +1837,16 @@
     let c;
     try { c = await api('GET', '/api/sso/config'); } catch (err) { el.textContent = err.message; return; }
     const ent = window.FinFlowPlans && window.FinFlowPlans.has(typeof currentUserPlan !== 'undefined' ? currentUserPlan : '', 'sso');
-    if (!ent) { el.innerHTML = `<div>Sign in through your company's identity provider (Google Workspace, Microsoft Entra ID, Okta and other OpenID Connect providers). Single sign-on is part of the Enterprise plan — <a href="#" onclick="showPage('pricing');return false" style="color:var(--acc)">talk to us</a>.</div>`; return; }
-    el.innerHTML = `<div style="margin-bottom:8px">${c.enabled ? '<strong style="color:var(--green)">On</strong> for ' + e((c.domains || []).join(', ')) : 'Off'} — your team signs in through your identity provider (OpenID Connect: Google Workspace, Microsoft Entra ID, Okta, Auth0…). SAML is not supported.</div>
-      <div style="font-size:11.5px;color:var(--t3);margin-bottom:8px">In your provider, register this redirect URL: <code id="sso-redirect">${e(c.redirectUri || '')}</code></div>
+    if (!ent) { el.innerHTML = `<div>Sign in through your company's identity provider (Google Workspace, Microsoft Entra ID, Okta and other OpenID Connect providers). Single sign-on is part of the Enterprise plan — <a href="#" data-on-click="showPage('pricing');return false" data-style="color:var(--acc)">talk to us</a>.</div>`; return; }
+    el.innerHTML = `<div data-style="margin-bottom:8px">${c.enabled ? '<strong data-style="color:var(--green)">On</strong> for ' + e((c.domains || []).join(', ')) : 'Off'} — your team signs in through your identity provider (OpenID Connect: Google Workspace, Microsoft Entra ID, Okta, Auth0…). SAML is not supported.</div>
+      <div data-style="font-size:11.5px;color:var(--t3);margin-bottom:8px">In your provider, register this redirect URL: <code id="sso-redirect">${e(c.redirectUri || '')}</code></div>
       <div class="field-wrap"><label class="field-label" for="sso-issuer">Issuer URL</label><input class="finput" id="sso-issuer" placeholder="https://login.example.com" value="${e(c.issuer || '')}"></div>
       <div class="field-group"><div class="field-wrap"><label class="field-label" for="sso-client">Client ID</label><input class="finput" id="sso-client" value="${e(c.client_id || '')}"></div>
         <div class="field-wrap"><label class="field-label" for="sso-secret">Client secret</label><input class="finput" id="sso-secret" type="password" placeholder="${c.hasSecret ? 'Saved — leave blank to keep' : ''}"></div></div>
       <div class="field-wrap"><label class="field-label" for="sso-domains">E-mail domains (comma-separated)</label><input class="finput" id="sso-domains" placeholder="yourcompany.com" value="${e((c.domains || []).join(', '))}"></div>
-      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-enforce" ${c.enforce ? 'checked' : ''}> Require single sign-on for these domains (you, the owner, can always use your password)</label>
-      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-jit" ${c.jitViewer ? 'checked' : ''}> New people from these domains can join as Viewers</label>
-      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" onclick="ffSaveSso()">Save</button>${c.enabled ? '<button class="btn btn-ghost btn-sm" onclick="ffSaveSso(false)">Turn off</button>' : ''}</div>`;
+      <label data-style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-enforce" ${c.enforce ? 'checked' : ''}> Require single sign-on for these domains (you, the owner, can always use your password)</label>
+      <label data-style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-jit" ${c.jitViewer ? 'checked' : ''}> New people from these domains can join as Viewers</label>
+      <div data-style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" data-on-click="ffSaveSso()">Save</button>${c.enabled ? '<button class="btn btn-ghost btn-sm" data-on-click="ffSaveSso(false)">Turn off</button>' : ''}</div>`;
   };
   window.ffSaveSso = async function (on) {
     const v = id => (document.getElementById(id) || {}).value || '';

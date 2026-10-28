@@ -133,17 +133,17 @@
               card.className='conn-card'+(on?' is-connected':'');
               card.innerHTML=(on?'<div class="conn-dot"></div>':'')
                 +'<div class="conn-card-top">'
-                +'<div class="conn-card-logo" style="background:'+col2+'22;color:'+col2+';border-color:'+col2+'33">'+item.name.charAt(0)+'</div>'
+                +'<div class="conn-card-logo" data-style="background:'+col2+'22;color:'+col2+';border-color:'+col2+'33">'+item.name.charAt(0)+'</div>'
                 +'<div><div class="conn-card-name">'+item.name+'</div>'
-                +'<span class="conn-cat-badge" style="background:'+col2+'22;color:'+col2+'">'+item.cat+'</span>'
+                +'<span class="conn-cat-badge" data-style="background:'+col2+'22;color:'+col2+'">'+item.cat+'</span>'
                 +'</div></div>'
                 +'<div class="conn-card-desc">'+item.desc+'</div>'
-                +(COVERS[item.name]?'<div style="font-size:10px;color:var(--t3);line-height:1.35;margin-top:-3px">'+COVERS[item.name]+'</div>':'')
+                +(COVERS[item.name]?'<div data-style="font-size:10px;color:var(--t3);line-height:1.35;margin-top:-3px">'+COVERS[item.name]+'</div>':'')
                 +'<div class="conn-card-footer">'
-                +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
-                +((on&&SYNC_MAP[item.name])?'<button class="conn-toggle-btn disconn" data-sync="'+item.name+'" style="margin-right:6px" title="Pull the latest data from '+item.name+'" onclick="event.stopPropagation();connSyncNow(\''+item.name+'\')">&#8635; Sync now</button>':'')
-                +((on&&item.name==='Codat')?'<button class="conn-toggle-btn conn" style="margin-right:6px" title="Import your existing accounting data into FinFlow" onclick="event.stopPropagation();ffCodatMigrate()">&#8681; Import books</button>':'')
-                +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle('+idx+')">'+(on?'Disconnect':(built?'Connect':'Request'))+'</button>'
+                +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span data-style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
+                +((on&&SYNC_MAP[item.name])?'<button class="conn-toggle-btn disconn" data-sync="'+item.name+'" data-style="margin-right:6px" title="Pull the latest data from '+item.name+'" data-arg-name="'+item.name+'" data-on-click="event.stopPropagation();connSyncNow(this.dataset.argName)">&#8635; Sync now</button>':'')
+                +((on&&item.name==='Codat')?'<button class="conn-toggle-btn conn" data-style="margin-right:6px" title="Import your existing accounting data into FinFlow" data-on-click="event.stopPropagation();ffCodatMigrate()">&#8681; Import books</button>':'')
+                +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" data-arg-idx="'+idx+'" data-on-click="connToggle(Number(this.dataset.argIdx))">'+(on?'Disconnect':(built?'Connect':'Request'))+'</button>'
                 +'</div>';
               return card;
             }
@@ -151,7 +151,7 @@
               var sec=document.createElement('div');
               sec.className='conn-section';
               sec.innerHTML='<div class="conn-section-hdr">'
-                +'<div class="conn-section-icon" style="background:'+col+'22;color:'+col+'">'+title.charAt(0)+'</div>'
+                +'<div class="conn-section-icon" data-style="background:'+col+'22;color:'+col+'">'+title.charAt(0)+'</div>'
                 +'<span class="conn-section-title">'+title+'</span>'
                 +'<span class="conn-section-ct">'+items.length+' '+sub+'</span>'
                 +'</div><div class="conn-grid"></div>';
@@ -171,7 +171,7 @@
               var req=document.createElement('div');
               req.style.cssText='margin:18px 2px 4px;padding:12px 14px;border:1px dashed var(--bd2);border-radius:var(--radius-lg);color:var(--t2);font-size:12px;line-height:1.5';
               req.innerHTML='Don’t see what you use? FinFlow reaches '+INTEGRATIONS.length+'+ tools through these hubs and our aggregators. '
-                +'<a style="color:var(--acc);cursor:pointer;text-decoration:underline" onclick="var s=document.getElementById(\'conn-search\');if(s){s.focus();s.scrollIntoView({block:\'center\'});}">Search the directory</a> to find and request a specific one.';
+                +'<a data-style="color:var(--acc);cursor:pointer;text-decoration:underline" data-on-click="var s=document.getElementById(\'conn-search\');if(s){s.focus();s.scrollIntoView({block:\'center\'});}">Search the directory</a> to find and request a specific one.';
               catalog.appendChild(req);
             } else if(soonItems.length){
               // BROWSING (search/filter active): show the matching directory entries to request.

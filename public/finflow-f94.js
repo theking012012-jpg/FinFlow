@@ -195,12 +195,12 @@
       // F191: inline region editor so an EXISTING entity can be localised (there is no other entity-edit UI).
       note.innerHTML = summary
         + ' <button class="f94-linkbtn" data-f94act="region-toggle">'+(e.timezone||e.country||e.opening_cash!=null?'Edit entity settings':'Set region &amp; opening cash')+'</button>'
-        + '<div id="f94-region" style="display:none;margin-top:9px;padding-top:9px;border-top:1px dashed var(--bd);display:none">'
-        + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
-        + '<label style="font-size:10.5px;color:var(--t2)">Timezone<br><select id="f94-tz" style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;min-width:180px"></select></label>'
-        + '<label style="font-size:10.5px;color:var(--t2)">Country (holidays)<br><select id="f94-country" style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;min-width:180px"></select></label>'
-        + '<label style="font-size:10.5px;color:var(--t2)">Opening cash today ('+esc(e.currency||'USD')+')<br><input id="f94-openingcash" type="number" min="0" step="0.01" placeholder="e.g. 12000" value="'+(e.opening_cash!=null?esc(String(e.opening_cash)):'')+'" style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;width:150px"></label>'
-        + '<button class="f94-newbtn" style="margin:0" data-f94act="region-save">Save</button>'
+        + '<div id="f94-region" data-style="display:none;margin-top:9px;padding-top:9px;border-top:1px dashed var(--bd);display:none">'
+        + '<div data-style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+        + '<label data-style="font-size:10.5px;color:var(--t2)">Timezone<br><select id="f94-tz" data-style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;min-width:180px"></select></label>'
+        + '<label data-style="font-size:10.5px;color:var(--t2)">Country (holidays)<br><select id="f94-country" data-style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;min-width:180px"></select></label>'
+        + '<label data-style="font-size:10.5px;color:var(--t2)">Opening cash today ('+esc(e.currency||'USD')+')<br><input id="f94-openingcash" type="number" min="0" step="0.01" placeholder="e.g. 12000" value="'+(e.opening_cash!=null?esc(String(e.opening_cash)):'')+'" data-style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;width:150px"></label>'
+        + '<button class="f94-newbtn" data-style="margin:0" data-f94act="region-save">Save</button>'
         + '<button class="f94-linkbtn" data-f94act="region-cancel">Cancel</button>'
         + '</div></div>';
       _fillRegionSelect($('f94-tz'), 'tz', e.timezone || '');
@@ -335,9 +335,9 @@
     for (var d=1; d<=dim; d++){
       var ds = viewY+'-'+String(viewM+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
       var its = byDay[d] || [], isToday = ds===today, sel = dayFilter===ds;
-      var chips = its.slice(0,3).map(function(it){ return '<span class="chip '+icClass[it.kind]+'"><span class="cd" style="background:currentColor"></span>'+esc(it.who)+'</span>'; }).join('');
+      var chips = its.slice(0,3).map(function(it){ return '<span class="chip '+icClass[it.kind]+'"><span class="cd" data-style="background:currentColor"></span>'+esc(it.who)+'</span>'; }).join('');
       if (its.length>3) chips += '<span class="chip more">+'+(its.length-3)+'</span>';
-      var dots = its.slice(0,4).map(function(it){ return '<span class="d '+icClass[it.kind]+'" style="background:currentColor"></span>'; }).join('');
+      var dots = its.slice(0,4).map(function(it){ return '<span class="d '+icClass[it.kind]+'" data-style="background:currentColor"></span>'; }).join('');
       html += '<div class="cell'+(its.length?' has':'')+(isToday?' today':'')+(sel?' sel':'')+'" data-day="'+ds+'"><span class="num">'+d+'</span>'+chips+'<span class="dots">'+dots+'</span></div>';
     }
     host.innerHTML = html;
@@ -356,7 +356,7 @@
     if (df) { if (dayFilter) { df.classList.add('on'); $('f94-dayFilterLabel').textContent = 'Only '+dayFilter; } else df.classList.remove('on'); }
     // F94 Phase 4: when a calendar day is selected, offer "+ New on this day" (opens the create
     // modal pre-filled with that date). Shown in both the empty and populated agenda states.
-    var newDay = dayFilter ? '<button type="button" id="f94-newDayBtn" class="f94-newday" style="display:block;width:100%;margin:0 0 10px;padding:9px 12px;border:1px dashed var(--acc,#c9a84c);border-radius:8px;background:transparent;color:var(--acc,#c9a84c);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer">+ New on '+esc(dlabel(dayFilter))+' (recurring)</button>' : '';   // F94 B1: label the create affordance honestly — this page creates recurring schedules, not one-off documents
+    var newDay = dayFilter ? '<button type="button" id="f94-newDayBtn" class="f94-newday" data-style="display:block;width:100%;margin:0 0 10px;padding:9px 12px;border:1px dashed var(--acc,#c9a84c);border-radius:8px;background:transparent;color:var(--acc,#c9a84c);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer">+ New on '+esc(dlabel(dayFilter))+' (recurring)</button>' : '';   // F94 B1: label the create affordance honestly — this page creates recurring schedules, not one-off documents
     var _wireNewDay = function(){ var nd = $('f94-newDayBtn'); if (nd) nd.onclick = function(){ openModal(dayFilter); }; };
     if (!shown.length) {
       host.innerHTML = newDay + '<div class="empty">'+(items.length ? 'Nothing matches this filter.' : 'No scheduled documents for this entity yet. Recurring invoices, bills and future-dated documents will appear here.')+'</div>';
@@ -372,7 +372,7 @@
     var today = entityToday(), showSections = !dayFilter, lastK = -1;
     host.innerHTML = newDay + groups.map(function(date){
       var section = '';
-      if (showSections){ var b = _bucket(date, today); if (b.k !== lastK){ lastK = b.k; section = '<div class="f94-section" style="margin:14px 0 8px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t2)">'+b.label+'</div>'; } }
+      if (showSections){ var b = _bucket(date, today); if (b.k !== lastK){ lastK = b.k; section = '<div class="f94-section" data-style="margin:14px 0 8px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t2)">'+b.label+'</div>'; } }
       var its = byDate[date], p = date.split('-'), dt = new Date(+p[0], +p[1]-1, +p[2]);
       var dow = ['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getDay()];
       var rel = relLabel(date), tot = its.reduce(function(a,it){ return a + signed(it); }, 0);

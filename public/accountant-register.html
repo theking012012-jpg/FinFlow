@@ -2,340 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="/ff-csp.js"></script><script src="/_gen/ff-handlers.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FinFlow — Join as an Accountant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0e0e0c;
-    --bg2: #141410;
-    --card: #1a1a15;
-    --card2: #1f1f18;
-    --gold: #c9a84c;
-    --gold-light: #e8cc7a;
-    --gold-dim: #8a6f2e;
-    --text: #f0ead6;
-    --text2: #9a9278;
-    --text3: #5a5540;
-    --border: #2a2820;
-    --border2: #3a3828;
-    --green: #4a9c6d;
-    --green-bg: #0d1f15;
-    --red: #c45c5c;
-    --red-bg: #1f0d0d;
-    --amber: #c48a2a;
-    --amber-bg: #1f1608;
-    --radius: 12px;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Jost', sans-serif;
-    font-weight: 300;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* ── NOISE TEXTURE OVERLAY ── */
-  body::before {
-    content: '';
-    position: fixed; inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
-    pointer-events: none; z-index: 0; opacity: 0.4;
-  }
-
-  /* ── NAV ── */
-  nav {
-    position: relative; z-index: 10;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 40px;
-    border-bottom: 1px solid var(--border);
-  }
-  .nav-brand { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: var(--gold); letter-spacing: 0.05em; }
-  .nav-sub { font-size: 12px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; }
-  .nav-login { font-size: 13px; color: var(--text2); text-decoration: none; border: 1px solid var(--border2); border-radius: 6px; padding: 7px 16px; transition: all 0.2s; }
-  .nav-login:hover { color: var(--gold); border-color: var(--gold-dim); }
-
-  /* ── HERO ── */
-  .hero {
-    position: relative; z-index: 1;
-    text-align: center;
-    padding: 72px 24px 48px;
-  }
-  .hero-eyebrow { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); margin-bottom: 20px; }
-  .hero-title {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: clamp(40px, 6vw, 72px);
-    font-weight: 300;
-    line-height: 1.1;
-    color: var(--text);
-    margin-bottom: 20px;
-  }
-  .hero-title em { font-style: italic; color: var(--gold-light); }
-  .hero-sub { font-size: 15px; color: var(--text2); max-width: 520px; margin: 0 auto 48px; line-height: 1.7; }
-
-  /* ── BENEFITS ROW ── */
-  .benefits {
-    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
-    margin-bottom: 56px; padding: 0 24px;
-    position: relative; z-index: 1;
-  }
-  .benefit-pill {
-    display: flex; align-items: center; gap: 8px;
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 100px; padding: 8px 16px;
-    font-size: 13px; color: var(--text2);
-  }
-  .benefit-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); flex-shrink: 0; }
-
-  /* ── MAIN LAYOUT ── */
-  .main {
-    position: relative; z-index: 1;
-    display: grid;
-    grid-template-columns: 1fr 420px;
-    gap: 32px;
-    max-width: 1060px;
-    margin: 0 auto;
-    padding: 0 24px 80px;
-    width: 100%;
-  }
-
-  /* ── REFERRAL TIERS ── */
-  .tiers-section h2 {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: 28px; font-weight: 400;
-    margin-bottom: 8px;
-    color: var(--text);
-  }
-  .tiers-section .section-sub { font-size: 13px; color: var(--text2); margin-bottom: 28px; line-height: 1.6; }
-
-  .tier-card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 24px;
-    margin-bottom: 12px;
-    display: grid; grid-template-columns: 48px 1fr auto;
-    align-items: center; gap: 16px;
-    transition: border-color 0.2s;
-    position: relative; overflow: hidden;
-  }
-  .tier-card::before {
-    content: '';
-    position: absolute; left: 0; top: 0; bottom: 0;
-    width: 3px;
-    background: var(--gold-dim);
-    transition: background 0.2s;
-  }
-  .tier-card:hover { border-color: var(--border2); }
-  .tier-card:hover::before { background: var(--gold); }
-
-  .tier-badge {
-    width: 44px; height: 44px; border-radius: 10px;
-    background: var(--card2); border: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Cormorant Garamond', serif; font-size: 18px; font-weight: 600; color: var(--gold);
-  }
-  .tier-info h3 { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
-  .tier-info p { font-size: 12px; color: var(--text2); }
-  .tier-earn { text-align: right; }
-  .tier-earn .amount { font-family: 'Cormorant Garamond', serif; font-size: 24px; font-weight: 600; color: var(--gold-light); }
-  .tier-earn .per { font-size: 11px; color: var(--text3); }
-
-  .commission-box {
-    background: linear-gradient(135deg, var(--card2), var(--card));
-    border: 1px solid var(--border2);
-    border-radius: var(--radius); padding: 20px 24px;
-    margin-top: 24px;
-    display: flex; align-items: center; gap: 16px;
-  }
-  .commission-icon {
-    width: 40px; height: 40px; border-radius: 10px;
-    background: var(--gold-dim); display: flex; align-items: center; justify-content: center;
-    font-size: 18px; flex-shrink: 0;
-  }
-  .commission-box h4 { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
-  .commission-box p { font-size: 12px; color: var(--text2); line-height: 1.5; }
-
-  .dashboard-preview {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 20px;
-    margin-top: 12px;
-  }
-  .dashboard-preview h3, .dashboard-preview h4 { font-size: 13px; color: var(--text2); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.08em; }
-  .dp-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .dp-row:last-child { border-bottom: none; }
-  .dp-label { font-size: 13px; color: var(--text2); }
-  .dp-val { font-size: 13px; color: var(--text); font-weight: 500; }
-  .dp-val.gold { color: var(--gold-light); }
-  .dp-val.green { color: var(--green); }
-
-  /* ── FORM CARD ── */
-  .form-card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 16px; padding: 32px;
-    position: sticky; top: 24px; align-self: start;
-  }
-  .form-title { font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 400; color: var(--text); margin-bottom: 6px; }
-  .form-sub { font-size: 13px; color: var(--text2); margin-bottom: 28px; line-height: 1.5; }
-
-  /* ── STEP INDICATOR ── */
-  .steps { display: flex; gap: 0; margin-bottom: 28px; }
-  .step {
-    flex: 1; text-align: center; position: relative;
-    padding-bottom: 12px;
-    border-bottom: 2px solid var(--border);
-    font-size: 11px; color: var(--text3); letter-spacing: 0.05em; text-transform: uppercase;
-    transition: all 0.3s;
-  }
-  .step.active { border-bottom-color: var(--gold); color: var(--gold); }
-  .step.done { border-bottom-color: var(--green); color: var(--green); }
-  .step-num {
-    display: block; width: 22px; height: 22px; border-radius: 50%;
-    background: var(--card2); border: 1px solid var(--border);
-    margin: 0 auto 6px; line-height: 20px; font-size: 10px;
-    transition: all 0.3s;
-  }
-  .step.active .step-num { background: var(--gold); border-color: var(--gold); color: var(--bg); }
-  .step.done .step-num { background: var(--green); border-color: var(--green); color: white; }
-
-  /* ── FORM ELEMENTS ── */
-  .form-group { margin-bottom: 16px; }
-  label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; letter-spacing: 0.03em; }
-  label span.req { color: var(--gold); }
-  input, select, textarea {
-    width: 100%; background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 14px;
-    font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 300;
-    color: var(--text); outline: none; transition: border-color 0.2s;
-    appearance: none;
-  }
-  input:focus, select:focus, textarea:focus { border-color: var(--gold-dim); }
-  input::placeholder { color: var(--text3); }
-  select option { background: var(--card2); }
-  textarea { resize: vertical; min-height: 70px; }
-
-  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
-  /* ── VERIFICATION BOX ── */
-  .verify-box {
-    background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px;
-    margin-bottom: 16px;
-  }
-  .verify-box-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .verify-badge { font-size: 10px; background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); border-radius: 4px; padding: 2px 8px; letter-spacing: 0.05em; text-transform: uppercase; }
-  .verify-box h4 { font-size: 13px; color: var(--text); font-weight: 500; }
-  .verify-box p { font-size: 12px; color: var(--text2); margin-bottom: 10px; line-height: 1.5; }
-  .verify-options { display: flex; flex-direction: column; gap: 8px; }
-  .verify-option {
-    display: flex; align-items: center; gap: 10px;
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 6px; padding: 10px 12px; cursor: pointer; transition: all 0.2s;
-  }
-  .verify-option:hover { border-color: var(--border2); }
-  .verify-option.selected { border-color: var(--gold-dim); background: rgba(201,168,76,0.05); }
-  .verify-option input[type="radio"] { display: none; }
-  .verify-radio {
-    width: 14px; height: 14px; border-radius: 50%;
-    border: 1.5px solid var(--border2); flex-shrink: 0;
-    transition: all 0.2s;
-  }
-  .verify-option.selected .verify-radio { border-color: var(--gold); background: var(--gold); box-shadow: 0 0 0 3px rgba(201,168,76,0.15); }
-  .verify-option-text { font-size: 12px; color: var(--text2); }
-  .verify-option.selected .verify-option-text { color: var(--text); }
-
-  /* ── MEMBERSHIP LOOKUP ── */
-  .membership-lookup { display: flex; gap: 8px; margin-top: 8px; }
-  .membership-lookup input { flex: 1; }
-  .lookup-btn {
-    background: var(--card2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 14px; cursor: pointer;
-    font-size: 12px; color: var(--text2); white-space: nowrap;
-    font-family: 'Jost', sans-serif;
-    transition: all 0.2s;
-  }
-  .lookup-btn:hover { border-color: var(--gold-dim); color: var(--gold); }
-  .lookup-btn.loading { opacity: 0.6; pointer-events: none; }
-
-  .lookup-result {
-    margin-top: 8px; padding: 10px 12px; border-radius: 6px;
-    font-size: 12px; display: none;
-  }
-  .lookup-result.success { background: var(--green-bg); border: 1px solid var(--green); color: var(--green); }
-  .lookup-result.error { background: var(--red-bg); border: 1px solid var(--red); color: var(--red); }
-  .lookup-result.pending { background: var(--amber-bg); border: 1px solid var(--amber); color: var(--amber); }
-
-  /* ── BUTTONS ── */
-  .btn-primary {
-    width: 100%; background: var(--gold);
-    border: none; border-radius: 8px; padding: 13px;
-    font-family: 'Jost', sans-serif; font-size: 14px; font-weight: 500;
-    color: var(--bg); cursor: pointer; transition: all 0.2s;
-    margin-top: 8px;
-  }
-  .btn-primary:hover { background: var(--gold-light); }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-secondary {
-    width: 100%; background: transparent;
-    border: 1px solid var(--border); border-radius: 8px; padding: 11px;
-    font-family: 'Jost', sans-serif; font-size: 13px;
-    color: var(--text2); cursor: pointer; transition: all 0.2s;
-    margin-top: 8px;
-  }
-  .btn-secondary:hover { border-color: var(--border2); color: var(--text); }
-
-  /* ── PANE SWITCHING ── */
-  .pane { display: none; }
-  .pane.active { display: block; }
-
-  /* ── SUCCESS STATE ── */
-  .success-state { text-align: center; padding: 20px 0; }
-  .success-icon { font-size: 48px; margin-bottom: 16px; }
-  .success-state h3 { font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 400; color: var(--text); margin-bottom: 8px; }
-  .success-state p { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 20px; }
-  .status-timeline { text-align: left; }
-  .status-item { display: flex; gap: 12px; margin-bottom: 14px; align-items: flex-start; }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-  .status-dot.done { background: var(--green); }
-  .status-dot.pending { background: var(--amber); }
-  .status-dot.future { background: var(--text3); }
-  .status-item-text h5 { font-size: 13px; color: var(--text); font-weight: 500; }
-  .status-item-text p { font-size: 12px; color: var(--text2); }
-
-  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-  .terms-note { font-size: 11px; color: var(--text3); text-align: center; line-height: 1.5; }
-  .terms-note a { color: var(--gold-dim); text-decoration: none; }
-
-  /* PACKAGE ROW */
-  .package-row { display:grid; grid-template-columns:1fr 100px 28px; gap:8px; align-items:center; }
-  .package-row input { font-size:12px; }
-  .pkg-remove { background:none; border:1px solid var(--border); border-radius:6px; color:var(--text3); cursor:pointer; width:28px; height:34px; font-size:16px; transition:all .2s; }
-  .pkg-remove:hover { border-color:var(--red); color:var(--red); }
-
-  /* RESUME UPLOAD */
-  .resume-box { border: 1.5px dashed var(--border2); border-radius: 10px; padding: 18px; text-align: center; cursor: pointer; transition: all .2s; margin-bottom: 16px; background: var(--bg2); position: relative; }
-  .resume-box:hover { border-color: var(--gold-dim); }
-  .resume-box input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
-  .resume-status { display: none; padding: 10px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; }
-  .resume-status.loading { display: block; background: var(--amber-bg); border: 1px solid var(--amber); color: var(--amber); }
-  .resume-status.success { display: block; background: var(--green-bg); border: 1px solid var(--green); color: var(--green); }
-  .resume-status.error { display: block; background: var(--red-bg); border: 1px solid var(--red); color: var(--red); }
-  .resume-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0; }
-  .resume-divider-line { flex: 1; border-top: 1px solid var(--border); }
-  .resume-divider-text { font-size: 11px; color: var(--text3); }
-
-  @media (max-width: 768px) {
-    .main { grid-template-columns: 1fr; }
-    nav { padding: 16px 20px; }
-    .benefits { display: none; }
-    .form-row { grid-template-columns: 1fr; }
-    .form-card { position: static; }
-  }
-</style>
+<link rel="stylesheet" href="/css/accountant-register-01.css">
 </head>
 <body>
 <main>
@@ -345,8 +17,8 @@
     <div class="nav-brand">FinFlow</div>
     <div class="nav-sub">Professional Network</div>
   </div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <a href="/app" style="font-size:12px;color:var(--text3);text-decoration:none">Are you a client? <span style="color:var(--gold-dim)">Sign up here →</span></a>
+  <div data-style="display:flex;align-items:center;gap:12px">
+    <a href="/app" data-style="font-size:12px;color:var(--text3);text-decoration:none">Are you a client? <span data-style="color:var(--gold-dim)">Sign up here →</span></a>
     <a href="/accountant-login" class="nav-login">Accountant login</a>
   </div>
 </nav>
@@ -416,13 +88,13 @@
       </div>
     </div>
 
-    <div style="margin-top: 28px;">
-      <h2 style="font-family: 'Cormorant Garamond', serif; font-size: 24px; font-weight: 400; margin-bottom: 8px;">Your accountant dashboard</h2>
+    <div data-style="margin-top: 28px;">
+      <h2 data-style="font-family: 'Cormorant Garamond', serif; font-size: 24px; font-weight: 400; margin-bottom: 8px;">Your accountant dashboard</h2>
       <p class="section-sub">Once verified, you get a dedicated dashboard to manage all clients, view their books (with permission), track filing deadlines, and monitor your earnings.</p>
       <div class="dashboard-preview">
         <h3>Dashboard preview</h3>
         <div class="dp-row"><span class="dp-label">Active clients</span><span class="dp-val">12</span></div>
-        <div class="dp-row"><span class="dp-label">Pending filings</span><span class="dp-val" style="color:var(--amber)">3 due this week</span></div>
+        <div class="dp-row"><span class="dp-label">Pending filings</span><span class="dp-val" data-style="color:var(--amber)">3 due this week</span></div>
         <div class="dp-row"><span class="dp-label">MTD earnings</span><span class="dp-val gold">$840</span></div>
         <div class="dp-row"><span class="dp-label">Referral tier</span><span class="dp-val green">Starter (12 clients)</span></div>
         <div class="dp-row"><span class="dp-label">Verification status</span><span class="dp-val green">✓ Verified</span></div>
@@ -446,10 +118,10 @@
     <div class="pane active" id="pane1">
       <!-- RESUME UPLOAD -->
       <div class="resume-box" id="resume-drop-zone">
-        <input type="file" id="resume-file" aria-label="Upload your resume (PDF or Word)" accept=".pdf,.doc,.docx" onchange="handleResumeUpload(this.files[0])">
-        <div style="font-size:22px;margin-bottom:6px">📄</div>
-        <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:3px">Upload your CV / Resume</div>
-        <div style="font-size:12px;color:var(--text3)">AI will auto-fill your profile · PDF or Word · optional</div>
+        <input type="file" id="resume-file" aria-label="Upload your resume (PDF or Word)" accept=".pdf,.doc,.docx" data-on-change="handleResumeUpload(this.files[0])">
+        <div data-style="font-size:22px;margin-bottom:6px">📄</div>
+        <div data-style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:3px">Upload your CV / Resume</div>
+        <div data-style="font-size:12px;color:var(--text3)">AI will auto-fill your profile · PDF or Word · optional</div>
       </div>
       <div class="resume-status" id="resume-status"></div>
       <div class="resume-divider">
@@ -512,7 +184,7 @@
         <label for="bio">Short bio</label>
         <textarea id="bio" placeholder="e.g. 10 years experience with SMEs in the Caribbean region. Specialise in VAT, corporate tax, and payroll compliance."></textarea>
       </div>
-      <button class="btn-primary" onclick="goStep2()">Continue to credentials →</button>
+      <button class="btn-primary" data-on-click="goStep2()">Continue to credentials →</button>
     </div>
 
     <!-- PANE 2: CREDENTIALS -->
@@ -521,20 +193,20 @@
         <div class="verify-box-header">
           <span class="verify-badge">Verification required</span>
         </div>
-        <h4 style="margin-bottom: 6px;">How would you like to verify your credentials?</h4>
+        <h4 data-style="margin-bottom: 6px;">How would you like to verify your credentials?</h4>
         <p>We verify every accountant before listing. Choose your preferred method:</p>
         <div class="verify-options">
-          <label class="verify-option" onclick="selectVerify(this, 'membership')">
+          <label class="verify-option" data-on-click="selectVerify(this, 'membership')">
             <input type="radio" name="verify" value="membership">
             <div class="verify-radio"></div>
             <div class="verify-option-text"><strong>Professional body membership</strong> — ACCA, ICAEW, CPA, ICATT etc.</div>
           </label>
-          <label class="verify-option" onclick="selectVerify(this, 'employer')">
+          <label class="verify-option" data-on-click="selectVerify(this, 'employer')">
             <input type="radio" name="verify" value="employer">
             <div class="verify-radio"></div>
             <div class="verify-option-text"><strong>Former employer reference</strong> — We call your previous firm to verify</div>
           </label>
-          <label class="verify-option" onclick="selectVerify(this, 'institution')">
+          <label class="verify-option" data-on-click="selectVerify(this, 'institution')">
             <input type="radio" name="verify" value="institution">
             <div class="verify-radio"></div>
             <div class="verify-option-text"><strong>Academic institution</strong> — Accounting degree verification</div>
@@ -543,19 +215,19 @@
       </div>
 
       <!-- CREDENTIAL PROOF UPLOAD (Step F — persisted for manual admin review) -->
-      <div style="margin-top:18px;">
-        <label style="display:block;font-size:13px;color:var(--text);font-weight:500;margin-bottom:6px">Upload credential proof <span style="color:var(--text3);font-weight:400">(recommended)</span></label>
-        <div class="resume-box" style="margin-bottom:8px">
-          <input type="file" id="credential-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" onchange="handleCredentialUpload(this.files[0])">
-          <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:3px">Attach your certificate, practising licence or membership card</div>
-          <div style="font-size:12px;color:var(--text3)">PDF, image, or Word · max 5 MB</div>
+      <div data-style="margin-top:18px;">
+        <label data-style="display:block;font-size:13px;color:var(--text);font-weight:500;margin-bottom:6px">Upload credential proof <span data-style="color:var(--text3);font-weight:400">(recommended)</span></label>
+        <div class="resume-box" data-style="margin-bottom:8px">
+          <input type="file" id="credential-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" data-on-change="handleCredentialUpload(this.files[0])">
+          <div data-style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:3px">Attach your certificate, practising licence or membership card</div>
+          <div data-style="font-size:12px;color:var(--text3)">PDF, image, or Word · max 5 MB</div>
         </div>
         <div class="resume-status" id="credential-status"></div>
-        <div style="font-size:11px;color:var(--text3);line-height:1.5">A FinFlow admin reviews this document <strong>manually</strong> before your profile goes live — it is not auto-verified, and it is never shown to clients. Used only to confirm your credentials.</div>
+        <div data-style="font-size:11px;color:var(--text3);line-height:1.5">A FinFlow admin reviews this document <strong>manually</strong> before your profile goes live — it is not auto-verified, and it is never shown to clients. Used only to confirm your credentials.</div>
       </div>
 
       <!-- MEMBERSHIP LOOKUP -->
-      <div id="verify-membership" style="display:none;">
+      <div id="verify-membership" data-style="display:none;">
         <div class="form-group">
           <label for="prof-body">Professional body <span class="req">*</span></label>
           <select id="prof-body">
@@ -572,12 +244,12 @@
         <div class="form-group">
           <label for="membership-num">Membership number <span class="req">*</span></label>
           <input type="text" id="membership-num" placeholder="e.g. AB12345678">
-          <div class="lookup-result pending" style="display:block;">A FinFlow admin will verify your membership with the professional body before your profile goes live. This is a manual review — no automatic approval.</div>
+          <div class="lookup-result pending" data-style="display:block;">A FinFlow admin will verify your membership with the professional body before your profile goes live. This is a manual review — no automatic approval.</div>
         </div>
       </div>
 
       <!-- EMPLOYER REFERENCE -->
-      <div id="verify-employer" style="display:none;">
+      <div id="verify-employer" data-style="display:none;">
         <div class="form-group">
           <label for="emp-firm">Firm / employer name <span class="req">*</span></label>
           <input type="text" id="emp-firm" placeholder="e.g. PricewaterhouseCoopers TT">
@@ -596,11 +268,11 @@
           <label for="emp-years">Years worked there <span class="req">*</span></label>
           <input type="text" id="emp-years" placeholder="e.g. 2018 – 2023">
         </div>
-        <div class="lookup-result pending" style="display:block;">Our team will call this reference within 1 business day. Your profile goes live once confirmed.</div>
+        <div class="lookup-result pending" data-style="display:block;">Our team will call this reference within 1 business day. Your profile goes live once confirmed.</div>
       </div>
 
       <!-- INSTITUTION -->
-      <div id="verify-institution" style="display:none;">
+      <div id="verify-institution" data-style="display:none;">
         <div class="form-group">
           <label for="inst-name">Institution name <span class="req">*</span></label>
           <input type="text" id="inst-name" placeholder="e.g. University of the West Indies">
@@ -619,10 +291,10 @@
           <label for="inst-id">Student ID / grad number</label>
           <input type="text" id="inst-id" placeholder="Used to verify with the institution">
         </div>
-        <div class="lookup-result pending" style="display:block;">Our team will contact the institution's registrar to confirm your qualification.</div>
+        <div class="lookup-result pending" data-style="display:block;">Our team will contact the institution's registrar to confirm your qualification.</div>
       </div>
 
-      <div class="form-group" style="margin-top:16px;">
+      <div class="form-group" data-style="margin-top:16px;">
         <label for="experience">Years of experience <span class="req">*</span></label>
         <select id="experience">
           <option value="">Select...</option>
@@ -639,50 +311,50 @@
         <input type="text" id="referral" placeholder="If someone referred you to FinFlow">
       </div>
 
-      <button class="btn-primary" onclick="goStep3()">Continue to pricing →</button>
-      <button class="btn-secondary" onclick="goStep1()">← Back</button>
+      <button class="btn-primary" data-on-click="goStep3()">Continue to pricing →</button>
+      <button class="btn-secondary" data-on-click="goStep1()">← Back</button>
     </div>
 
     <!-- PANE 3: PRICING -->
     <div class="pane" id="pane3">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;line-height:1.6;">
+      <div data-style="font-size:13px;color:var(--text2);margin-bottom:20px;line-height:1.6;">
         List your rates upfront so clients know what to expect. This is optional but accountants with listed prices earn a
-        <span style="color:var(--gold);font-weight:500">Transparent Pricing</span> badge and get more client requests.
+        <span data-style="color:var(--gold);font-weight:500">Transparent Pricing</span> badge and get more client requests.
       </div>
 
       <div class="form-group">
         <label for="rate-currency">Currency for your rates</label>
-        <select id="rate-currency" onchange="syncRateSymbols()" style="margin-bottom:10px"></select>
+        <select id="rate-currency" data-on-change="syncRateSymbols()" data-style="margin-bottom:10px"></select>
         <label for="rate-hourly">Hourly rate</label>
-        <div style="position:relative">
-          <span class="rate-sym" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:13px">$</span>
-          <input type="number" id="rate-hourly" placeholder="e.g. 75" min="0" style="padding-left:40px">
+        <div data-style="position:relative">
+          <span class="rate-sym" data-style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:13px">$</span>
+          <input type="number" id="rate-hourly" placeholder="e.g. 75" min="0" data-style="padding-left:40px">
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Leave blank if you prefer to quote per project</div>
+        <div data-style="font-size:11px;color:var(--text3);margin-top:4px">Leave blank if you prefer to quote per project</div>
       </div>
 
       <div class="form-group">
         <label>Service packages</label>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Add up to 4 fixed-price services clients can select when requesting you</div>
-        <div id="packages-list" style="display:flex;flex-direction:column;gap:8px"></div>
-        <button type="button" class="btn-secondary" id="add-package-btn" onclick="addPackage()" style="margin-top:8px;padding:8px 14px;font-size:12px;width:auto">+ Add service package</button>
+        <div data-style="font-size:11px;color:var(--text3);margin-bottom:8px">Add up to 4 fixed-price services clients can select when requesting you</div>
+        <div id="packages-list" data-style="display:flex;flex-direction:column;gap:8px"></div>
+        <button type="button" class="btn-secondary" id="add-package-btn" data-on-click="addPackage()" data-style="margin-top:8px;padding:8px 14px;font-size:12px;width:auto">+ Add service package</button>
       </div>
 
       <div class="form-group">
         <label for="pricing-note">Pricing note (optional)</label>
-        <textarea id="pricing-note" placeholder="e.g. Rates vary by complexity. Free 15-min consultation available." style="min-height:60px"></textarea>
+        <textarea id="pricing-note" placeholder="e.g. Rates vary by complexity. Free 15-min consultation available." data-style="min-height:60px"></textarea>
       </div>
 
-      <div style="background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--text2)">
-        <span style="color:var(--gold)">✦ Transparent Pricing badge</span> — Filling in at least one rate or package earns you this badge on your directory listing. Clients trust transparent accountants 3× more.
+      <div data-style="background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--text2)">
+        <span data-style="color:var(--gold)">✦ Transparent Pricing badge</span> — Filling in at least one rate or package earns you this badge on your directory listing. Clients trust transparent accountants 3× more.
       </div>
 
-      <label class="conduct-accept" style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--text2);margin:4px 0 16px;cursor:pointer">
-        <input type="checkbox" id="conduct-accept" required style="margin-top:3px;accent-color:var(--gold)">
-        <span>I have read and accept the <a href="/conduct.html" target="_blank" rel="noopener" style="color:var(--gold)">Professional Conduct Policy</a> (version <span id="conduct-version">1.0</span>), including keeping work with FinFlow clients on the platform (section 8).</span>
+      <label class="conduct-accept" data-style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--text2);margin:4px 0 16px;cursor:pointer">
+        <input type="checkbox" id="conduct-accept" required data-style="margin-top:3px;accent-color:var(--gold)">
+        <span>I have read and accept the <a href="/conduct.html" target="_blank" rel="noopener" data-style="color:var(--gold)">Professional Conduct Policy</a> (version <span id="conduct-version">1.0</span>), including keeping work with FinFlow clients on the platform (section 8).</span>
       </label>
-      <button class="btn-primary" onclick="submitForm()">Submit application →</button>
-      <button class="btn-secondary" onclick="goStep2Pricing()">← Back</button>
+      <button class="btn-primary" data-on-click="submitForm()">Submit application →</button>
+      <button class="btn-secondary" data-on-click="goStep2Pricing()">← Back</button>
     </div>
 
     <!-- PANE 4: SUCCESS -->

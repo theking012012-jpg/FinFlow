@@ -34,16 +34,16 @@ window.ffLinkBelvo = async function(onLinked, onError, scope){
 window.ffConnectWiPay = function(onConnected){
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:flex;align-items:center;justify-content:center';
-  ov.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:12px;width:100%;max-width:400px;padding:20px">'
-    +'<div style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light);margin-bottom:4px">Connect WiPay</div>'
-    +'<div style="font-size:12px;color:var(--t2);margin-bottom:14px">Enter your WiPay merchant credentials to accept Caribbean card payments.</div>'
-    +'<label style="font-size:11px;color:var(--t2)">Account number</label>'
-    +'<input id="wp-acct" class="finput" style="margin:4px 0 10px" placeholder="1234567890">'
-    +'<label style="font-size:11px;color:var(--t2)">API key</label>'
-    +'<input id="wp-key" class="finput" type="password" style="margin:4px 0 10px" placeholder="Your WiPay API key">'
-    +'<label style="font-size:11px;color:var(--t2)">Country</label>'
-    +'<select id="wp-country" class="finput" style="margin:4px 0 14px"><option value="TT">Trinidad & Tobago</option><option value="JM">Jamaica</option><option value="BB">Barbados</option><option value="GY">Guyana</option><option value="LC">St. Lucia</option></select>'
-    +'<div style="display:flex;gap:8px;justify-content:flex-end"><button id="wp-cancel" class="btn btn-ghost btn-sm">Cancel</button><button id="wp-save" class="btn btn-primary btn-sm">Connect</button></div></div>';
+  ov.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:12px;width:100%;max-width:400px;padding:20px">'
+    +'<div data-style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light);margin-bottom:4px">Connect WiPay</div>'
+    +'<div data-style="font-size:12px;color:var(--t2);margin-bottom:14px">Enter your WiPay merchant credentials to accept Caribbean card payments.</div>'
+    +'<label data-style="font-size:11px;color:var(--t2)">Account number</label>'
+    +'<input id="wp-acct" class="finput" data-style="margin:4px 0 10px" placeholder="1234567890">'
+    +'<label data-style="font-size:11px;color:var(--t2)">API key</label>'
+    +'<input id="wp-key" class="finput" type="password" data-style="margin:4px 0 10px" placeholder="Your WiPay API key">'
+    +'<label data-style="font-size:11px;color:var(--t2)">Country</label>'
+    +'<select id="wp-country" class="finput" data-style="margin:4px 0 14px"><option value="TT">Trinidad & Tobago</option><option value="JM">Jamaica</option><option value="BB">Barbados</option><option value="GY">Guyana</option><option value="LC">St. Lucia</option></select>'
+    +'<div data-style="display:flex;gap:8px;justify-content:flex-end"><button id="wp-cancel" class="btn btn-ghost btn-sm">Cancel</button><button id="wp-save" class="btn btn-primary btn-sm">Connect</button></div></div>';
   document.body.appendChild(ov);
   var close=function(){ try{ov.remove();}catch(e){} };
   ov.querySelector('#wp-cancel').onclick=close;
@@ -74,12 +74,12 @@ window.ffConnectCreds = function(key, onConnected){
   var cfg=window.FF_CRED[key]; if(!cfg) return;
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:flex;align-items:center;justify-content:center';
-  var inputs=cfg.fields.map(function(f){return '<label style="font-size:11px;color:var(--t2)">'+f.l+'</label><input data-k="'+f.k+'" class="finput" '+(f.s?'type="password"':'')+' style="margin:4px 0 10px">';}).join('');
-  ov.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:12px;width:100%;max-width:400px;padding:20px">'
-    +'<div style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light);margin-bottom:4px">Connect '+cfg.label+'</div>'
-    +'<div style="font-size:12px;color:var(--t2);margin-bottom:14px">Enter your '+cfg.label+' API credentials. They\'re encrypted before storage.</div>'
+  var inputs=cfg.fields.map(function(f){return '<label data-style="font-size:11px;color:var(--t2)">'+f.l+'</label><input data-k="'+f.k+'" class="finput" '+(f.s?'type="password"':'')+' data-style="margin:4px 0 10px">';}).join('');
+  ov.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:12px;width:100%;max-width:400px;padding:20px">'
+    +'<div data-style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light);margin-bottom:4px">Connect '+cfg.label+'</div>'
+    +'<div data-style="font-size:12px;color:var(--t2);margin-bottom:14px">Enter your '+cfg.label+' API credentials. They\'re encrypted before storage.</div>'
     +inputs
-    +'<div style="display:flex;gap:8px;justify-content:flex-end"><button id="cc-cancel" class="btn btn-ghost btn-sm">Cancel</button><button id="cc-save" class="btn btn-primary btn-sm">Connect</button></div></div>';
+    +'<div data-style="display:flex;gap:8px;justify-content:flex-end"><button id="cc-cancel" class="btn btn-ghost btn-sm">Cancel</button><button id="cc-save" class="btn btn-primary btn-sm">Connect</button></div></div>';
   document.body.appendChild(ov);
   var close=function(){ try{ov.remove();}catch(e){} };
   ov.querySelector('#cc-cancel').onclick=close;
@@ -185,23 +185,23 @@ window.ffCodatMigrate = async function(){
     if(t.locked) bits.push(t.locked+' in a locked period');
     if(t.skipped) bits.push(t.skipped+' skipped');
     if(t.error) bits.push('⚠ '+t.error);
-    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)">'
-      +'<span style="font-size:12.5px;color:var(--t1)">'+LABEL[k]+'</span>'
-      +'<span style="font-size:12px;color:var(--t2);text-align:right"><b style="color:var(--acc-light)">'+(t.added||0)+'</b> to import'
-      +(bits.length?('<div style="font-size:10.5px;color:var(--t3)">'+bits.join(' · ')+'</div>'):'')+'</span></div>';
+    return '<div data-style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)">'
+      +'<span data-style="font-size:12.5px;color:var(--t1)">'+LABEL[k]+'</span>'
+      +'<span data-style="font-size:12px;color:var(--t2);text-align:right"><b data-style="color:var(--acc-light)">'+(t.added||0)+'</b> to import'
+      +(bits.length?('<div data-style="font-size:10.5px;color:var(--t3)">'+bits.join(' · ')+'</div>'):'')+'</span></div>';
   }).join('');
   const curs=Object.keys(curSet);
   const warn = curs.length>1
-    ? '<div style="font-size:11px;color:var(--amber,#e0a500);margin-top:8px">⚠ Mixed currencies in source ('+curs.join(', ')+'). Amounts import as-is — confirm they match this entity\'s currency.</div>'
-    : (curs.length===1 ? '<div style="font-size:11px;color:var(--t3);margin-top:8px">Source currency: '+curs[0]+'. Amounts import as-is.</div>' : '');
+    ? '<div data-style="font-size:11px;color:var(--amber,#e0a500);margin-top:8px">⚠ Mixed currencies in source ('+curs.join(', ')+'). Amounts import as-is — confirm they match this entity\'s currency.</div>'
+    : (curs.length===1 ? '<div data-style="font-size:11px;color:var(--t3);margin-top:8px">Source currency: '+curs[0]+'. Amounts import as-is.</div>' : '');
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:3300;display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:14px;width:100%;max-width:440px;max-height:88vh;overflow:auto;padding:22px">'
-    +'<div style="font-family:var(--font-display);font-style:italic;font-size:19px;color:var(--acc-light);margin-bottom:2px">Import your books'+(pv.platform?(' — '+String(pv.platform).replace(/[<>&]/g,'')):'')+'</div>'
-    +'<div style="font-size:12px;color:var(--t2);margin-bottom:14px">Review what will be imported. Nothing is written until you confirm. Re-running is safe — already-imported records are skipped.</div>'
+  ov.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:14px;width:100%;max-width:440px;max-height:88vh;overflow:auto;padding:22px">'
+    +'<div data-style="font-family:var(--font-display);font-style:italic;font-size:19px;color:var(--acc-light);margin-bottom:2px">Import your books'+(pv.platform?(' — '+String(pv.platform).replace(/[<>&]/g,'')):'')+'</div>'
+    +'<div data-style="font-size:12px;color:var(--t2);margin-bottom:14px">Review what will be imported. Nothing is written until you confirm. Re-running is safe — already-imported records are skipped.</div>'
     +rows+warn
-    +'<div style="font-size:12.5px;color:var(--t1);margin:14px 0 4px"><b style="color:var(--acc-light)">'+totalNew+'</b> new record'+(totalNew===1?'':'s')+' will be imported.</div>'
-    +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">'
+    +'<div data-style="font-size:12.5px;color:var(--t1);margin:14px 0 4px"><b data-style="color:var(--acc-light)">'+totalNew+'</b> new record'+(totalNew===1?'':'s')+' will be imported.</div>'
+    +'<div data-style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">'
     +'<button id="cm-cancel" class="btn btn-ghost btn-sm">Cancel</button>'
     +'<button id="cm-go" class="btn btn-primary btn-sm"'+(totalNew?'':' disabled')+'>Import '+totalNew+' record'+(totalNew===1?'':'s')+'</button>'
     +'</div></div>';
@@ -280,42 +280,41 @@ var HELP_ARTICLE_TOURS = {
 // ── Guided tours — spotlight + tooltip walkthroughs on the real UI ─────────────
 var HELP_TOURS = {
   'create-invoice': { title:'Create an invoice', steps:[
-    {page:'invoices', sel:".nav-item[onclick^=\"showPage('invoices'\"]", title:'Open Invoices', body:'Invoices lives here in the sidebar \u2014 every bill you send is created and tracked from this page.'},
-    {page:'invoices', sel:'button[onclick="openInvoiceModal()"]', title:'Start a new invoice', body:'Click \u201c+ New invoice\u201d, choose the customer, add line items, and set the issue and due dates.'},
+    {page:'invoices', sel:".nav-item[data-on-click^=\"showPage('invoices'\"]", title:'Open Invoices', body:'Invoices lives here in the sidebar \u2014 every bill you send is created and tracked from this page.'},
+    {page:'invoices', sel:'button[data-on-click="openInvoiceModal()"]', title:'Start a new invoice', body:'Click \u201c+ New invoice\u201d, choose the customer, add line items, and set the issue and due dates.'},
     {page:'invoices', sel:null, title:'Save & get paid', body:'Saving posts it to your books and shows it in Outstanding until paid. Use \u201cRecord payment\u201d or a pay link when it settles.'}
   ]},
   'log-expense': { title:'Log an expense', steps:[
-    {page:'expenses', sel:".nav-item[onclick^=\"showPage('expenses'\"]", title:'Open Expenses', body:'Track money going out here. Bills to suppliers (accounts payable) live on the Bills page instead.'},
-    {page:'expenses', sel:'button[onclick="openExpenseModal()"]', title:'Add an expense', body:'Enter the amount, category and date \u2014 or use Scan receipt to auto-extract the vendor, amount and date from a photo or PDF.'}
+    {page:'expenses', sel:".nav-item[data-on-click^=\"showPage('expenses'\"]", title:'Open Expenses', body:'Track money going out here. Bills to suppliers (accounts payable) live on the Bills page instead.'},
+    {page:'expenses', sel:'button[data-on-click="openExpenseModal()"]', title:'Add an expense', body:'Enter the amount, category and date \u2014 or use Scan receipt to auto-extract the vendor, amount and date from a photo or PDF.'}
   ]},
   'run-payroll': { title:'Run payroll', steps:[
     {page:'payroll', sel:'#nav-payroll', title:'Open Payroll', body:'Add your employees here, then create a pay run for the period.'},
     {page:'payroll', sel:null, title:'Approve, then pay', body:'Review gross, bonus and overtime, then Approve \u2014 that posts to the books. \u201cMark paid\u201d records the cash-out; a paid run can\u2019t be reverted.'}
   ]},
   'connect-bank': { title:'Connect a bank feed', steps:[
-    {page:'banking', sel:".nav-item[onclick^=\"showPage('banking'\"]", title:'Open Banking', body:'Link a live bank feed (Plaid for US/CA/UK/EU, Belvo for Latin America).'},
+    {page:'banking', sel:".nav-item[data-on-click^=\"showPage('banking'\"]", title:'Open Banking', body:'Link a live bank feed (Plaid for US/CA/UK/EU, Belvo for Latin America).'},
     {page:'banking', sel:null, title:'No coverage? Import instead', body:'Upload an OFX/QFX/CSV statement from any bank \u2014 the transactions flow into the same place as a live feed.'}
   ]},
   'add-entity': { title:'Add another business', steps:[
-    {page:'entities', sel:'button[onclick="openAddBizModal(event)"]', title:'Add a business', body:'Each business is its own set of books. Add one with its name, currency and country \u2014 the timezone is inferred automatically.'},
+    {page:'entities', sel:'button[data-on-click="openAddBizModal(event)"]', title:'Add a business', body:'Each business is its own set of books. Add one with its name, currency and country \u2014 the timezone is inferred automatically.'},
     {page:'entities', sel:null, title:'Consolidate them', body:'Switch the entity picker to the consolidated view to see every business combined in your base currency, converted at each transaction\u2019s own FX rate.'}
   ]},
   'reconcile': { title:'Reconcile transactions', steps:[
-    {page:'banking', sel:'button[onclick="openReconcileModal()"]', title:'Open Reconcile', body:'Match feed or imported lines against your invoices, bills and expenses.'},
+    {page:'banking', sel:'button[data-on-click="openReconcileModal()"]', title:'Open Reconcile', body:'Match feed or imported lines against your invoices, bills and expenses.'},
     {page:'banking', sel:null, title:'Matched once, never twice', body:'A matched item posts to the books a single time \u2014 reconciliation never double-counts.'}
   ]}
 };
 (function ensureTourStyle(){
-  if(document.getElementById('tour-style')) return;
-  var s=document.createElement('style'); s.id='tour-style';
-  s.textContent='.tour-dim{position:fixed;inset:0;z-index:1400;background:transparent}'
+  // FA-P1: a constructed stylesheet (no <style> element under the strict Content-Security-Policy)
+  if(!window.ffAdoptCss || window.ffAdoptCss.has('tour-style')) return;
+  window.ffAdoptCss('tour-style', '.tour-dim{position:fixed;inset:0;z-index:1400;background:transparent}'
     +'.tour-ring{position:fixed;z-index:1401;border-radius:9px;box-shadow:0 0 0 9999px rgba(8,6,4,.66),0 0 0 2px var(--acc);transition:all .22s ease;pointer-events:none}'
     +'.tour-tip{position:fixed;z-index:1402;max-width:310px;background:var(--bg1);border:1px solid var(--bd2);border-radius:13px;padding:16px 17px;box-shadow:0 16px 50px rgba(0,0,0,.6)}'
     +'.tour-tip h4{margin:0 0 6px;font-size:14.5px;color:var(--t1);font-weight:600}'
     +'.tour-tip p{margin:0 0 13px;font-size:12.7px;color:var(--t2);line-height:1.55}'
     +'.tour-tip .tr{display:flex;align-items:center;justify-content:space-between;gap:8px}'
-    +'.tour-dot{display:flex;gap:4px}.tour-dot i{width:5px;height:5px;border-radius:50%;background:var(--bd2)}.tour-dot i.on{background:var(--acc)}';
-  document.head.appendChild(s);
+    +'.tour-dot{display:flex;gap:4px}.tour-dot i{width:5px;height:5px;border-radius:50%;background:var(--bd2)}.tour-dot i.on{background:var(--acc)}');
 })();
 window.startTour = function(id){
   var t=HELP_TOURS[id]; if(!t) return;
@@ -339,7 +338,7 @@ window.startTour = function(id){
     var dots=t.steps.map(function(_,k){ return '<i class="'+(k===i?'on':'')+'"></i>'; }).join('');
     var last=i===t.steps.length-1;
     tip.innerHTML='<h4>'+_helpEsc(step.title)+'</h4><p>'+_helpEsc(step.body)+'</p>'
-      +'<div class="tr"><span class="tour-dot">'+dots+'</span><span style="display:flex;gap:6px">'
+      +'<div class="tr"><span class="tour-dot">'+dots+'</span><span data-style="display:flex;gap:6px">'
       +(i>0?'<button class="btn btn-ghost btn-sm" id="tour-back">Back</button>':'')
       +'<button class="btn btn-primary btn-sm" id="tour-next">'+(last?'Done':'Next')+'</button></span></div>';
     // position tooltip: below the ring if room, else centered
@@ -357,22 +356,22 @@ window.startTour = function(id){
 // ── Ask FinFlow — grounded AI help ─────────────────────────────────────────────
 function _helpLinkChips(links){
   if(!links||!links.length) return '';
-  return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'+links.map(function(l){
-    return '<button class="btn btn-ghost btn-sm" onclick="if(window.showPage)window.showPage(\''+l.page+'\')">'+_helpEsc(l.label)+' \u2192</button>';
+  return '<div data-style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'+links.map(function(l){
+    return '<button class="btn btn-ghost btn-sm" data-arg-page="'+l.page+'" data-on-click="if(window.showPage)window.showPage(this.dataset.argPage)">'+_helpEsc(l.label)+' \u2192</button>';
   }).join('')+'</div>';
 }
 // Threaded, multi-turn conversation state (survives navigation; cleared by "New chat").
 var _helpConvo=[];
 function _helpRenderThread(){
   var t=document.getElementById('help-ask-thread'); if(!t) return;
-  if(!_helpConvo.length){ t.innerHTML='<div style="color:var(--t3);font-size:12.5px;padding:6px 2px">Ask anything about using FinFlow \u2014 e.g. \u201chow do I consolidate my two businesses?\u201d It remembers the conversation, so you can follow up.</div>'; return; }
+  if(!_helpConvo.length){ t.innerHTML='<div data-style="color:var(--t3);font-size:12.5px;padding:6px 2px">Ask anything about using FinFlow \u2014 e.g. \u201chow do I consolidate my two businesses?\u201d It remembers the conversation, so you can follow up.</div>'; return; }
   var html=_helpConvo.map(function(m){
-    if(m.role==='user') return '<div style="text-align:right;margin:8px 0"><span style="display:inline-block;background:var(--acc);color:#16120d;border-radius:12px 12px 3px 12px;padding:8px 11px;font-size:12.7px;max-width:85%;text-align:left">'+_helpEsc(m.content)+'</span></div>';
-    if(m.role==='assistant') return '<div style="margin:8px 0"><div style="display:inline-block;background:var(--bg3);border:1px solid var(--bd);border-radius:12px 12px 12px 3px;padding:9px 12px;font-size:12.9px;color:var(--t1);line-height:1.55;white-space:pre-wrap;max-width:92%">'+_helpEsc(m.content)+'</div>'+(m.links?_helpLinkChips(m.links):'')+'</div>';
-    return '<div style="margin:8px 0;font-size:12px;color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:8px 11px">'+_helpEsc(m.content)+'</div>';
+    if(m.role==='user') return '<div data-style="text-align:right;margin:8px 0"><span data-style="display:inline-block;background:var(--acc);color:#16120d;border-radius:12px 12px 3px 12px;padding:8px 11px;font-size:12.7px;max-width:85%;text-align:left">'+_helpEsc(m.content)+'</span></div>';
+    if(m.role==='assistant') return '<div data-style="margin:8px 0"><div data-style="display:inline-block;background:var(--bg3);border:1px solid var(--bd);border-radius:12px 12px 12px 3px;padding:9px 12px;font-size:12.9px;color:var(--t1);line-height:1.55;white-space:pre-wrap;max-width:92%">'+_helpEsc(m.content)+'</div>'+(m.links?_helpLinkChips(m.links):'')+'</div>';
+    return '<div data-style="margin:8px 0;font-size:12px;color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:8px 11px">'+_helpEsc(m.content)+'</div>';
   }).join('');
   var hasAnswer=_helpConvo.some(function(m){return m.role==='assistant'&&!m.pending;});
-  if(hasAnswer) html+='<div style="display:flex;justify-content:flex-end;margin-top:4px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="window.helpEscalate(this)">Still need help? Send this to support \u2192</button></div>';
+  if(hasAnswer) html+='<div data-style="display:flex;justify-content:flex-end;margin-top:4px"><button class="btn btn-ghost btn-sm" data-style="font-size:11px" data-on-click="window.helpEscalate(this)">Still need help? Send this to support \u2192</button></div>';
   t.innerHTML=html; t.scrollTop=t.scrollHeight;
 }
 window.helpNewChat=function(){ _helpConvo=[]; _helpRenderThread(); var i=document.getElementById('help-ask-input'); if(i)i.value=''; };
@@ -407,38 +406,38 @@ window.helpEscalate=function(btn){
 };
 function renderAskPanel(){
   var el=document.getElementById('help-ask'); if(!el) return;
-  el.innerHTML='<div style="background:linear-gradient(180deg,var(--acc-bg),var(--bg1));border:1px solid var(--bd2);border-radius:14px;padding:16px 17px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px"><svg viewBox="0 0 16 16" style="width:16px;height:16px;fill:var(--acc)"><path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z"/></svg><span style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light)">Ask FinFlow</span><span style="flex:1"></span><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="window.helpNewChat()">New chat</button></div>'
-    +'<div id="help-ask-thread" style="max-height:340px;overflow-y:auto;margin-bottom:10px"></div>'
-    +'<div style="display:flex;gap:8px"><input id="help-ask-input" placeholder="Ask a question\u2026" autocomplete="off" style="flex:1;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--t1);padding:10px 12px;font-size:13px" onkeydown="if(event.key===\'Enter\'){event.preventDefault();window.helpAsk();}">'
-    +'<button class="btn btn-primary btn-sm" onclick="window.helpAsk()">Ask</button></div></div>';
+  el.innerHTML='<div data-style="background:linear-gradient(180deg,var(--acc-bg),var(--bg1));border:1px solid var(--bd2);border-radius:14px;padding:16px 17px">'
+    +'<div data-style="display:flex;align-items:center;gap:8px;margin-bottom:9px"><svg viewBox="0 0 16 16" data-style="width:16px;height:16px;fill:var(--acc)"><path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z"/></svg><span data-style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light)">Ask FinFlow</span><span data-style="flex:1"></span><button class="btn btn-ghost btn-sm" data-style="font-size:11px" data-on-click="window.helpNewChat()">New chat</button></div>'
+    +'<div id="help-ask-thread" data-style="max-height:340px;overflow-y:auto;margin-bottom:10px"></div>'
+    +'<div data-style="display:flex;gap:8px"><input id="help-ask-input" placeholder="Ask a question\u2026" autocomplete="off" data-style="flex:1;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--t1);padding:10px 12px;font-size:13px" data-on-keydown="if(event.key===\'Enter\'){event.preventDefault();window.helpAsk();}">'
+    +'<button class="btn btn-primary btn-sm" data-on-click="window.helpAsk()">Ask</button></div></div>';
   _helpRenderThread();
 }
 
 // ── Getting-started checklist (live from real data) ─────────────────────────────
 function renderChecklist(){
   var el=document.getElementById('help-checklist'); if(!el) return;
-  el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:4px 2px">Loading your setup progress\u2026</div>';
+  el.innerHTML='<div data-style="color:var(--t3);font-size:12px;padding:4px 2px">Loading your setup progress\u2026</div>';
   fetch('/api/help/progress',{credentials:'include'}).then(function(r){ return r.ok?r.json():null; }).then(function(d){
     if(!d||!d.steps){ el.innerHTML=''; return; }
     var pct=Math.round((d.completed/d.total)*100);
     var rows=d.steps.map(function(s){
       var check=s.done
-        ? '<svg viewBox="0 0 16 16" style="width:17px;height:17px;flex-shrink:0"><circle cx="8" cy="8" r="8" fill="var(--acc)"/><path d="M4.5 8.2l2.2 2.2 4.8-4.8" fill="none" stroke="#16120d" stroke-width="1.6"/></svg>'
-        : '<svg viewBox="0 0 16 16" style="width:17px;height:17px;flex-shrink:0"><circle cx="8" cy="8" r="7.2" fill="none" stroke="var(--bd2)" stroke-width="1.4"/></svg>';
+        ? '<svg viewBox="0 0 16 16" data-style="width:17px;height:17px;flex-shrink:0"><circle cx="8" cy="8" r="8" fill="var(--acc)"/><path d="M4.5 8.2l2.2 2.2 4.8-4.8" fill="none" stroke="#16120d" stroke-width="1.6"/></svg>'
+        : '<svg viewBox="0 0 16 16" data-style="width:17px;height:17px;flex-shrink:0"><circle cx="8" cy="8" r="7.2" fill="none" stroke="var(--bd2)" stroke-width="1.4"/></svg>';
       var action=s.done
-        ? '<span style="font-size:11px;color:var(--acc)">Done</span>'
+        ? '<span data-style="font-size:11px;color:var(--acc)">Done</span>'
         : (s.tour
-            ? '<button class="btn btn-ghost btn-sm" onclick="window.startTour(\''+s.tour+'\')">Show me how</button>'
-            : '<button class="btn btn-ghost btn-sm" onclick="if(window.showPage)window.showPage(\''+s.page+'\')">Open \u2192</button>');
-      return '<div style="display:flex;align-items:center;gap:11px;padding:9px 0;border-top:1px solid var(--bd)">'+check
-        +'<span style="flex:1;font-size:13px;color:'+(s.done?'var(--t2)':'var(--t1)')+';'+(s.done?'text-decoration:line-through;text-decoration-color:var(--t3)':'')+'">'+_helpEsc(s.label)+'</span>'+action+'</div>';
+            ? '<button class="btn btn-ghost btn-sm" data-arg-tour="'+s.tour+'" data-on-click="window.startTour(this.dataset.argTour)">Show me how</button>'
+            : '<button class="btn btn-ghost btn-sm" data-arg-page="'+s.page+'" data-on-click="if(window.showPage)window.showPage(this.dataset.argPage)">Open \u2192</button>');
+      return '<div data-style="display:flex;align-items:center;gap:11px;padding:9px 0;border-top:1px solid var(--bd)">'+check
+        +'<span data-style="flex:1;font-size:13px;color:'+(s.done?'var(--t2)':'var(--t1)')+';'+(s.done?'text-decoration:line-through;text-decoration-color:var(--t3)':'')+'">'+_helpEsc(s.label)+'</span>'+action+'</div>';
     }).join('');
     var head=d.allDone
-      ? '<div style="font-size:13px;color:var(--acc-light)">You\u2019re all set \u2014 every setup step is complete. \u2728</div>'
-      : '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc)">Getting started \u00b7 '+d.completed+' of '+d.total+'</span><span style="font-size:11px;color:var(--t3)">'+pct+'%</span></div>'
-        +'<div style="height:5px;background:var(--bg3);border-radius:3px;margin:8px 0 2px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--acc);border-radius:3px;transition:width .4s"></div></div>';
-    el.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:16px 17px">'+head+rows+'</div>';
+      ? '<div data-style="font-size:13px;color:var(--acc-light)">You\u2019re all set \u2014 every setup step is complete. \u2728</div>'
+      : '<div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span data-style="font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc)">Getting started \u00b7 '+d.completed+' of '+d.total+'</span><span data-style="font-size:11px;color:var(--t3)">'+pct+'%</span></div>'
+        +'<div data-style="height:5px;background:var(--bg3);border-radius:3px;margin:8px 0 2px;overflow:hidden"><div data-style="height:100%;width:'+pct+'%;background:var(--acc);border-radius:3px;transition:width .4s"></div></div>';
+    el.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:16px 17px">'+head+rows+'</div>';
   }).catch(function(){ el.innerHTML=''; });
 }
 
@@ -449,13 +448,13 @@ function renderTickets(){
     if(!d||!d.requests||!d.requests.length){ el.innerHTML=''; return; }
     var rows=d.requests.slice(0,10).map(function(t){
       var open=(t.status||'open')==='open';
-      var badge='<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:'+(open?'var(--amber-bg)':'var(--green-bg)')+';color:'+(open?'var(--amber)':'var(--green)')+'">'+(open?'Open':'Resolved')+'</span>';
+      var badge='<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:'+(open?'var(--amber-bg)':'var(--green-bg)')+';color:'+(open?'var(--amber)':'var(--green)')+'">'+(open?'Open':'Resolved')+'</span>';
       var when=t.created_at?new Date(t.created_at).toLocaleDateString():'';
-      var resp=t.response?'<div style="margin-top:7px;padding:8px 10px;background:var(--bg2);border-left:2px solid var(--acc);border-radius:5px;font-size:12px;color:var(--t2);white-space:pre-wrap">'+_helpEsc(t.response)+'</div>':'';
-      return '<div style="padding:11px 0;border-top:1px solid var(--bd)"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-size:13px;color:var(--t1)">'+_helpEsc(t.subject||'(no subject)')+'</span>'+badge+'</div>'
-        +'<div style="font-size:11.5px;color:var(--t3);margin-top:2px">'+_helpEsc(t.category||'general')+' \u00b7 '+when+'</div>'+resp+'</div>';
+      var resp=t.response?'<div data-style="margin-top:7px;padding:8px 10px;background:var(--bg2);border-left:2px solid var(--acc);border-radius:5px;font-size:12px;color:var(--t2);white-space:pre-wrap">'+_helpEsc(t.response)+'</div>':'';
+      return '<div data-style="padding:11px 0;border-top:1px solid var(--bd)"><div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span data-style="font-size:13px;color:var(--t1)">'+_helpEsc(t.subject||'(no subject)')+'</span>'+badge+'</div>'
+        +'<div data-style="font-size:11.5px;color:var(--t3);margin-top:2px">'+_helpEsc(t.category||'general')+' \u00b7 '+when+'</div>'+resp+'</div>';
     }).join('');
-    el.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:16px 17px"><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:2px">Your requests</div>'+rows+'</div>';
+    el.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:16px 17px"><div data-style="font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:2px">Your requests</div>'+rows+'</div>';
   }).catch(function(){ el.innerHTML=''; });
 }
 
@@ -465,31 +464,31 @@ function renderCats(filterCat){
   var cats=[], byCat={};
   HELP_ARTICLES.forEach(function(a){ if(!byCat[a.c]){ byCat[a.c]=[]; cats.push(a.c); } byCat[a.c].push(a); });
   // category chips
-  var chips='<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:20px">'
-    +'<button class="help-chip btn btn-'+(!filterCat?'primary':'ghost')+' btn-sm" onclick="window._helpFilterCat(\'\')">All</button>'
+  var chips='<div data-style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:20px">'
+    +'<button class="help-chip btn btn-'+(!filterCat?'primary':'ghost')+' btn-sm" data-on-click="window._helpFilterCat(\'\')">All</button>'
     +cats.map(function(c){
       var m=HELP_CAT_META[c]||{i:''};
-      return '<button class="help-chip btn btn-'+(filterCat===c?'primary':'ghost')+' btn-sm" onclick="window._helpFilterCat(\''+c.replace(/'/g,"\\'")+'\')"><svg viewBox="0 0 16 16" style="width:12px;height:12px;vertical-align:-1px;margin-right:5px;fill:none;stroke:currentColor;stroke-width:1.3">'+m.i+'</svg>'+_helpEsc(c)+'</button>';
+      return '<button class="help-chip btn btn-'+(filterCat===c?'primary':'ghost')+' btn-sm" data-arg-c="'+esc(c)+'" data-on-click="window._helpFilterCat(this.dataset.argC)"><svg viewBox="0 0 16 16" data-style="width:12px;height:12px;vertical-align:-1px;margin-right:5px;fill:none;stroke:currentColor;stroke-width:1.3">'+m.i+'</svg>'+_helpEsc(c)+'</button>';
     }).join('')+'</div>';
   var shown=filterCat?[filterCat]:cats;
   var body=shown.map(function(cat){
     var m=HELP_CAT_META[cat]||{i:'',p:'help'};
     var items=byCat[cat].map(function(a){
-      var steps=a.s.map(function(st){ return '<li style="margin:4px 0">'+_helpEsc(st)+'</li>'; }).join('');
+      var steps=a.s.map(function(st){ return '<li data-style="margin:4px 0">'+_helpEsc(st)+'</li>'; }).join('');
       var rel=byCat[cat].filter(function(x){ return x!==a; }).slice(0,2).map(function(x){
-        return '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="window._helpOpenArticle(\''+_helpSlug(x.q)+'\')">'+_helpEsc(x.q)+'</button>'; }).join('');
+        return '<button class="btn btn-ghost btn-sm" data-style="font-size:11px" data-arg-q="'+_helpSlug(x.q)+'" data-on-click="window._helpOpenArticle(this.dataset.argQ)">'+_helpEsc(x.q)+'</button>'; }).join('');
       var tour=HELP_ARTICLE_TOURS[a.q];
-      var actions='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'
-        +(tour?'<button class="btn btn-primary btn-sm" onclick="event.preventDefault();window.startTour(\''+tour+'\')">\u25b6 Show me how</button>':'')
-        +'<button class="btn btn-ghost btn-sm" onclick="event.preventDefault();if(window.showPage)window.showPage(\''+m.p+'\')">Open '+_helpEsc(cat.split(/[ ,&]/)[0])+' \u2192</button></div>';
-      var relBlock=rel?'<div style="margin-top:10px"><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:5px">Related</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+rel+'</div></div>':'';
-      return '<details class="help-art" id="art-'+_helpSlug(a.q)+'" data-text="'+_helpEsc((cat+' '+a.q+' '+a.s.join(' ')).toLowerCase())+'" style="border-top:1px solid var(--bd);padding:10px 0">'
-        +'<summary style="cursor:pointer;font-size:13.5px;color:var(--t1);font-weight:500;list-style:none">'+_helpEsc(a.q)+'</summary>'
-        +'<ol style="margin:9px 0 2px;padding-left:20px;color:var(--t2);font-size:12.7px;line-height:1.6">'+steps+'</ol>'+actions+relBlock+'</details>';
+      var actions='<div data-style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'
+        +(tour?'<button class="btn btn-primary btn-sm" data-arg-tour="'+tour+'" data-on-click="event.preventDefault();window.startTour(this.dataset.argTour)">\u25b6 Show me how</button>':'')
+        +'<button class="btn btn-ghost btn-sm" data-arg-p="'+m.p+'" data-on-click="event.preventDefault();if(window.showPage)window.showPage(this.dataset.argP)">Open '+_helpEsc(cat.split(/[ ,&]/)[0])+' \u2192</button></div>';
+      var relBlock=rel?'<div data-style="margin-top:10px"><div data-style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:5px">Related</div><div data-style="display:flex;flex-wrap:wrap;gap:6px">'+rel+'</div></div>':'';
+      return '<details class="help-art" id="art-'+_helpSlug(a.q)+'" data-text="'+_helpEsc((cat+' '+a.q+' '+a.s.join(' ')).toLowerCase())+'" data-style="border-top:1px solid var(--bd);padding:10px 0">'
+        +'<summary data-style="cursor:pointer;font-size:13.5px;color:var(--t1);font-weight:500;list-style:none">'+_helpEsc(a.q)+'</summary>'
+        +'<ol data-style="margin:9px 0 2px;padding-left:20px;color:var(--t2);font-size:12.7px;line-height:1.6">'+steps+'</ol>'+actions+relBlock+'</details>';
     }).join('');
-    return '<div class="help-cat" style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:6px 17px 12px;margin-bottom:14px">'
-      +'<div style="display:flex;align-items:center;gap:9px;padding:12px 0 4px"><span style="display:inline-flex;width:30px;height:30px;border-radius:8px;background:var(--acc-bg);align-items:center;justify-content:center"><svg viewBox="0 0 16 16" style="width:16px;height:16px;fill:none;stroke:var(--acc);stroke-width:1.3">'+m.i+'</svg></span>'
-      +'<span style="font-family:var(--font-display);font-size:18px;color:var(--t1)">'+_helpEsc(cat)+'</span></div>'+items+'</div>';
+    return '<div class="help-cat" data-style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:6px 17px 12px;margin-bottom:14px">'
+      +'<div data-style="display:flex;align-items:center;gap:9px;padding:12px 0 4px"><span data-style="display:inline-flex;width:30px;height:30px;border-radius:8px;background:var(--acc-bg);align-items:center;justify-content:center"><svg viewBox="0 0 16 16" data-style="width:16px;height:16px;fill:none;stroke:var(--acc);stroke-width:1.3">'+m.i+'</svg></span>'
+      +'<span data-style="font-family:var(--font-display);font-size:18px;color:var(--t1)">'+_helpEsc(cat)+'</span></div>'+items+'</div>';
   }).join('');
   root.innerHTML=chips+body;
 }
@@ -504,11 +503,11 @@ window._helpOpenArticle=function(slug){
 function wireContact(){
   var cel=document.getElementById('help-contact'); if(!cel || cel.getAttribute('data-wired')) return;
   cel.setAttribute('data-wired','1');
-  cel.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:16px 17px"><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:8px">Still stuck? Contact us</div>'
-    +'<input id="hc-subject" placeholder="Subject" style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:9px 11px;font-size:13px;margin-bottom:8px">'
-    +'<textarea id="hc-msg" placeholder="How can we help?" style="width:100%;box-sizing:border-box;min-height:90px;resize:vertical;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:9px 11px;font-size:13px"></textarea>'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span style="font-size:11.5px;color:var(--t3)">or email <a href="mailto:support@finflow.app" style="color:var(--acc)">support@finflow.app</a></span><button id="hc-send" class="btn btn-primary btn-sm">Send message</button></div>'
-    +'<div id="hc-status" style="font-size:12px;margin-top:6px"></div></div>';
+  cel.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:16px 17px"><div data-style="font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:8px">Still stuck? Contact us</div>'
+    +'<input id="hc-subject" placeholder="Subject" data-style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:9px 11px;font-size:13px;margin-bottom:8px">'
+    +'<textarea id="hc-msg" placeholder="How can we help?" data-style="width:100%;box-sizing:border-box;min-height:90px;resize:vertical;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:9px 11px;font-size:13px"></textarea>'
+    +'<div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span data-style="font-size:11.5px;color:var(--t3)">or email <a href="mailto:support@finflow.app" data-style="color:var(--acc)">support@finflow.app</a></span><button id="hc-send" class="btn btn-primary btn-sm">Send message</button></div>'
+    +'<div id="hc-status" data-style="font-size:12px;margin-top:6px"></div></div>';
   var btn=document.getElementById('hc-send');
   if(btn) btn.onclick=async function(){
     var subj=(document.getElementById('hc-subject')||{}).value||'';
@@ -559,9 +558,9 @@ window.openHelpPalette=function(){
   if(document.getElementById('help-palette')) return;
   var ov=document.createElement('div'); ov.id='help-palette';
   ov.style.cssText='position:fixed;inset:0;z-index:1500;background:rgba(8,6,4,.55);display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px';
-  ov.innerHTML='<div style="width:100%;max-width:560px;background:var(--bg1);border:1px solid var(--bd2);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden">'
-    +'<input id="hp-input" placeholder="Search help or jump to a page\u2026" autocomplete="off" style="width:100%;box-sizing:border-box;background:transparent;border:none;border-bottom:1px solid var(--bd);color:var(--t1);padding:15px 17px;font-size:15px;outline:none">'
-    +'<div id="hp-results" style="max-height:52vh;overflow:auto;padding:6px"></div></div>';
+  ov.innerHTML='<div data-style="width:100%;max-width:560px;background:var(--bg1);border:1px solid var(--bd2);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden">'
+    +'<input id="hp-input" placeholder="Search help or jump to a page\u2026" autocomplete="off" data-style="width:100%;box-sizing:border-box;background:transparent;border:none;border-bottom:1px solid var(--bd);color:var(--t1);padding:15px 17px;font-size:15px;outline:none">'
+    +'<div id="hp-results" data-style="max-height:52vh;overflow:auto;padding:6px"></div></div>';
   document.body.appendChild(ov);
   ov.onclick=function(e){ if(e.target===ov) close(); };
   var input=document.getElementById('hp-input'), results=document.getElementById('hp-results'), sel=0, items=[];
@@ -575,10 +574,10 @@ window.openHelpPalette=function(){
   }
   function paint(){
     results.innerHTML=items.map(function(it,k){
-      return '<div class="hp-row" data-k="'+k+'" style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;cursor:pointer;'+(k===sel?'background:var(--acc-bg)':'')+'">'
-        +'<span style="flex:1;font-size:13.5px;color:var(--t1)">'+_helpEsc(it.t)+(it.sub?' <span style=\"color:var(--t3);font-size:11.5px\">\u00b7 '+_helpEsc(it.sub)+'</span>':'')+'</span>'
-        +'<span style="font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);border:1px solid var(--bd);border-radius:5px;padding:2px 6px">'+it.tag+'</span></div>';
-    }).join('')||'<div style="padding:14px;color:var(--t3);font-size:13px">No matches.</div>';
+      return '<div class="hp-row" data-k="'+k+'" data-style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;cursor:pointer;'+(k===sel?'background:var(--acc-bg)':'')+'">'
+        +'<span data-style="flex:1;font-size:13.5px;color:var(--t1)">'+_helpEsc(it.t)+(it.sub?' <span data-style=\"color:var(--t3);font-size:11.5px\">\u00b7 '+_helpEsc(it.sub)+'</span>':'')+'</span>'
+        +'<span data-style="font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);border:1px solid var(--bd);border-radius:5px;padding:2px 6px">'+it.tag+'</span></div>';
+    }).join('')||'<div data-style="padding:14px;color:var(--t3);font-size:13px">No matches.</div>';
     [].forEach.call(results.querySelectorAll('.hp-row'),function(row){ row.onclick=function(){ var it=items[+row.getAttribute('data-k')]; if(it&&it.act) it.act(); }; });
   }
   function key(e){
@@ -683,12 +682,12 @@ window.ffInvoicePayLinkChoose = async function(invoiceId){
   if(connected.length===1){ return window.ffInvoicePaymentLink(invoiceId, connected[0][0]); }
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3200;display:flex;align-items:center;justify-content:center';
-  var rows=connected.map(function(pr){ return '<button data-p="'+pr[0]+'" class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start;margin:4px 0">'+pr[1]+' &#8599;</button>'; }).join('');
-  ov.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:12px;width:100%;max-width:320px;padding:20px">'
-    +'<div style="font-family:var(--font-display);font-style:italic;font-size:17px;color:var(--acc-light);margin-bottom:4px">Choose a processor</div>'
-    +'<div style="font-size:12px;color:var(--t2);margin-bottom:12px">You have more than one connected. Which should generate this payment link?</div>'
+  var rows=connected.map(function(pr){ return '<button data-p="'+pr[0]+'" class="btn btn-ghost btn-sm" data-style="width:100%;justify-content:flex-start;margin:4px 0">'+pr[1]+' &#8599;</button>'; }).join('');
+  ov.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:12px;width:100%;max-width:320px;padding:20px">'
+    +'<div data-style="font-family:var(--font-display);font-style:italic;font-size:17px;color:var(--acc-light);margin-bottom:4px">Choose a processor</div>'
+    +'<div data-style="font-size:12px;color:var(--t2);margin-bottom:12px">You have more than one connected. Which should generate this payment link?</div>'
     +rows
-    +'<div style="display:flex;justify-content:flex-end;margin-top:10px"><button id="pc-cancel" class="btn btn-ghost btn-sm">Cancel</button></div></div>';
+    +'<div data-style="display:flex;justify-content:flex-end;margin-top:10px"><button id="pc-cancel" class="btn btn-ghost btn-sm">Cancel</button></div></div>';
   document.body.appendChild(ov);
   var close=function(){ try{ov.remove();}catch(e){} };
   ov.querySelector('#pc-cancel').onclick=close;
@@ -708,17 +707,17 @@ window.renderPlaidLinked = async function(){
   }catch(e){ strip.innerHTML=''; return; }
   const items = (d && d.items) || [];
   if(!d.configured && !items.length){
-    strip.innerHTML = '<div style="font-size:11.5px;color:var(--t3);padding:6px 0 10px">One-click bank linking isn\'t available yet \u2014 use \u201c\u2b06 Import\u201d to add a statement from any bank.</div>';
+    strip.innerHTML = '<div data-style="font-size:11.5px;color:var(--t3);padding:6px 0 10px">One-click bank linking isn\'t available yet \u2014 use \u201c\u2b06 Import\u201d to add a statement from any bank.</div>';
     return;
   }
   if(!items.length){ strip.innerHTML=''; return; }
   strip.innerHTML = items.map(it => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
-      <span class="badge b-green" style="font-size:10px">Linked ✓</span>
-      <div style="flex:1;font-size:12.5px;color:var(--t1)">${(it.institution_name||'Bank').replace(/[<>&]/g,'')}</div>
-      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="ffBankSync()">↻ Sync</button>
-      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--red)" onclick="ffBankUnlink('${it.item_id}')">Unlink</button>
-    </div>`).join('') + `<div style="font-size:11px;color:var(--t3);margin:2px 0 10px">Linked via Plaid (${(d.env||'sandbox')}). Sync pulls new transactions into your books.</div>`;
+    <div data-style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
+      <span class="badge b-green" data-style="font-size:10px">Linked ✓</span>
+      <div data-style="flex:1;font-size:12.5px;color:var(--t1)">${(it.institution_name||'Bank').replace(/[<>&]/g,'')}</div>
+      <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 8px" data-on-click="ffBankSync()">↻ Sync</button>
+      <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 8px;color:var(--red)" data-arg-item-id="${it.item_id}" data-on-click="ffBankUnlink(this.dataset.argItemId)">Unlink</button>
+    </div>`).join('') + `<div data-style="font-size:11px;color:var(--t3);margin:2px 0 10px">Linked via Plaid (${(d.env||'sandbox')}). Sync pulls new transactions into your books.</div>`;
 };
 // F192/A4 — route "Link bank" by the active entity's COUNTRY to the provider that serves it, falling
 // back to whichever aggregator is actually configured, and finally to manual statement import (always
@@ -783,21 +782,21 @@ window.ffPersBankRender = async function(){
   const esc = v => String(v==null?'':v).replace(/[<>&"']/g, '');
   const plaid = (d.plaid && d.plaid.items) || [], belvo = (d.belvo && d.belvo.institutions) || [];
   const rows = plaid.map(it => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
-      <span class="badge b-green" style="font-size:10px">Linked ✓</span>
-      <div style="flex:1;font-size:12.5px;color:var(--t1)">${esc(it.institution_name||'Bank')}</div>
-      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--red)" onclick="ffPersBankUnlink('plaid','${esc(it.item_id)}')">Unlink</button>
+    <div data-style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
+      <span class="badge b-green" data-style="font-size:10px">Linked ✓</span>
+      <div data-style="flex:1;font-size:12.5px;color:var(--t1)">${esc(it.institution_name||'Bank')}</div>
+      <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 8px;color:var(--red)" data-arg-item-id="${esc(it.item_id)}" data-on-click="ffPersBankUnlink('plaid',this.dataset.argItemId)">Unlink</button>
     </div>`).concat(belvo.length ? [`
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
-      <span class="badge b-green" style="font-size:10px">Linked ✓</span>
-      <div style="flex:1;font-size:12.5px;color:var(--t1)">${belvo.map(esc).join(', ')}</div>
-      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--red)" onclick="ffPersBankUnlink('belvo')">Disconnect</button>
+    <div data-style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
+      <span class="badge b-green" data-style="font-size:10px">Linked ✓</span>
+      <div data-style="flex:1;font-size:12.5px;color:var(--t1)">${belvo.map(esc).join(', ')}</div>
+      <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 8px;color:var(--red)" data-on-click="ffPersBankUnlink('belvo')">Disconnect</button>
     </div>`] : []);
   const syncBtn = document.getElementById('pers-bank-sync-btn');
   if(syncBtn) syncBtn.style.display = rows.length ? '' : 'none';
   const lines = Number(d.lines) || 0;
-  box.innerHTML = (rows.length ? rows.join('') : '<div style="font-size:12px;color:var(--t3);padding:.25rem 0">No bank linked yet. Link one, or import a statement from any bank.</div>')
-    + (lines ? `<div style="font-size:11px;color:var(--t3);margin-top:4px">${lines} bank transaction${lines===1?'':'s'} in your personal feed — they appear in your transactions below.</div>` : '');
+  box.innerHTML = (rows.length ? rows.join('') : '<div data-style="font-size:12px;color:var(--t3);padding:.25rem 0">No bank linked yet. Link one, or import a statement from any bank.</div>')
+    + (lines ? `<div data-style="font-size:11px;color:var(--t3);margin-top:4px">${lines} bank transaction${lines===1?'':'s'} in your personal feed — they appear in your transactions below.</div>` : '');
 };
 window.ffPersBankCountry = async function(country){
   try{

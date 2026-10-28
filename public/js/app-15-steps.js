@@ -62,7 +62,7 @@ overlay.innerHTML = `
       </div>
       <div class="ob-field">
         <label class="ob-label" for="ob-address">Business address *</label>
-        <textarea class="ob-input" id="ob-address" style="min-height:48px;resize:vertical" placeholder="Street, City, Country"></textarea>
+        <textarea class="ob-input" id="ob-address" data-style="min-height:48px;resize:vertical" placeholder="Street, City, Country"></textarea>
       </div>
       <div class="ob-field">
         <label class="ob-label" for="ob-currency">Primary currency</label>
@@ -82,21 +82,21 @@ overlay.innerHTML = `
 
     <!-- STEP 2: Business type -->
     <div class="ob-step" id="ob-s2">
-      <div class="ob-label" style="margin-bottom:10px">What kind of business do you run?</div>
+      <div class="ob-label" data-style="margin-bottom:10px">What kind of business do you run?</div>
       <div class="ob-option-grid">
-        <div class="ob-option" onclick="selectBizType(this,'freelancer')">
+        <div class="ob-option" data-on-click="selectBizType(this,'freelancer')">
           <span class="ob-option-icon">💻</span>
           <div><div class="ob-option-label">Freelancer</div><div class="ob-option-desc">Solo & client work</div></div>
         </div>
-        <div class="ob-option" onclick="selectBizType(this,'small-biz')">
+        <div class="ob-option" data-on-click="selectBizType(this,'small-biz')">
           <span class="ob-option-icon">🏢</span>
           <div><div class="ob-option-label">Small business</div><div class="ob-option-desc">Team of 2–50</div></div>
         </div>
-        <div class="ob-option" onclick="selectBizType(this,'startup')">
+        <div class="ob-option" data-on-click="selectBizType(this,'startup')">
           <span class="ob-option-icon">🚀</span>
           <div><div class="ob-option-label">Startup</div><div class="ob-option-desc">Scaling fast</div></div>
         </div>
-        <div class="ob-option" onclick="selectBizType(this,'ecommerce')">
+        <div class="ob-option" data-on-click="selectBizType(this,'ecommerce')">
           <span class="ob-option-icon">🛒</span>
           <div><div class="ob-option-label">E-commerce</div><div class="ob-option-desc">Products & inventory</div></div>
         </div>
@@ -105,41 +105,41 @@ overlay.innerHTML = `
 
     <!-- STEP 3: Connect data -->
     <div class="ob-step" id="ob-s3">
-      <div class="ob-label" style="margin-bottom:10px">Connect your accounts to unlock live data</div>
+      <div class="ob-label" data-style="margin-bottom:10px">Connect your accounts to unlock live data</div>
       <div class="ob-checklist">
-        <div class="ob-check-item" style="cursor:pointer" onclick="obConnectBank(this)">
+        <div class="ob-check-item" data-style="cursor:pointer" data-on-click="obConnectBank(this)">
           <div class="ob-ck-icon" id="ob-ck-bank">🏦</div>
-          <div style="flex:1"><div style="font-weight:500">Bank account</div><div style="font-size:11px;color:var(--t3)">Plaid · 12,000+ institutions</div></div>
+          <div data-style="flex:1"><div data-style="font-weight:500">Bank account</div><div data-style="font-size:11px;color:var(--t3)">Plaid · 12,000+ institutions</div></div>
           <span class="badge b-amber" id="ob-bank-badge">Connect</span>
         </div>
-        <div class="ob-check-item" style="cursor:pointer" onclick="obConnectStripe(this)">
+        <div class="ob-check-item" data-style="cursor:pointer" data-on-click="obConnectStripe(this)">
           <div class="ob-ck-icon" id="ob-ck-stripe">💳</div>
-          <div style="flex:1"><div style="font-weight:500">Stripe payments</div><div style="font-size:11px;color:var(--t3)">Sync revenue & payouts</div></div>
+          <div data-style="flex:1"><div data-style="font-weight:500">Stripe payments</div><div data-style="font-size:11px;color:var(--t3)">Sync revenue & payouts</div></div>
           <span class="badge b-amber" id="ob-stripe-badge">Connect</span>
         </div>
-        <div class="ob-check-item" style="cursor:pointer" onclick="obConnectPayroll(this)">
+        <div class="ob-check-item" data-style="cursor:pointer" data-on-click="obConnectPayroll(this)">
           <div class="ob-ck-icon" id="ob-ck-payroll">👥</div>
-          <div style="flex:1"><div style="font-weight:500">Payroll provider</div><div style="font-size:11px;color:var(--t3)">Gusto, ADP, Rippling & more</div></div>
+          <div data-style="flex:1"><div data-style="font-weight:500">Payroll provider</div><div data-style="font-size:11px;color:var(--t3)">Gusto, ADP, Rippling & more</div></div>
           <span class="badge b-amber" id="ob-payroll-badge">Connect</span>
         </div>
       </div>
-      <div style="font-size:11.5px;color:var(--t3);margin-top:.85rem">You can always connect these later from <strong style="color:var(--t2)">Connections</strong>.</div>
+      <div data-style="font-size:11.5px;color:var(--t3);margin-top:.85rem">You can always connect these later from <strong data-style="color:var(--t2)">Connections</strong>.</div>
     </div>
 
     <!-- STEP 4: All done -->
     <div class="ob-step" id="ob-s4">
       <div class="ob-success">
         <div class="ob-success-ring">✓</div>
-        <div style="font-size:16px;font-family:var(--font-display);font-style:italic;color:var(--acc-light);margin-bottom:6px" id="ob-done-title">You're all set!</div>
-        <div style="font-size:12.5px;color:var(--t2);line-height:1.6" id="ob-done-sub">Your workspace is ready. Add your first entity, create an invoice, or record an expense to get started.</div>
+        <div data-style="font-size:16px;font-family:var(--font-display);font-style:italic;color:var(--acc-light);margin-bottom:6px" id="ob-done-title">You're all set!</div>
+        <div data-style="font-size:12.5px;color:var(--t2);line-height:1.6" id="ob-done-sub">Your workspace is ready. Add your first entity, create an invoice, or record an expense to get started.</div>
       </div>
     </div>
 
   </div>
   <div class="ob-footer">
-    <span class="ob-skip" onclick="skipOnboarding()">Skip for now</span>
+    <span class="ob-skip" data-on-click="skipOnboarding()">Skip for now</span>
     <span class="ob-progress" id="ob-progress">Step 1 of 4</span>
-    <button class="btn btn-primary" id="ob-next-btn" onclick="obNext()">Continue →</button>
+    <button class="btn btn-primary" id="ob-next-btn" data-on-click="obNext()">Continue →</button>
   </div>
 </div>`;
 

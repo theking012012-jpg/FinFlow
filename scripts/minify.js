@@ -37,6 +37,7 @@ const TARGETS = [
   'finflow-api.js',
   // FA-P1: the pages' own scripts (they were inline <script> blocks; under the strict CSP every script is a file).
   ...fs.readdirSync(path.join(PUB, 'js')).filter(f => f.endsWith('.js')).map(f => 'js/' + f),
+  'ff-csp.js', '_gen/ff-handlers.js',   // FA-P1: the handler runtime + registry
 ];
 
 let terser = null;

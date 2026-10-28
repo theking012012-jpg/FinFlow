@@ -42,12 +42,12 @@
   // instance is byte-identical to the pre-Phase-2b module.
   function makeLI(p) {
     var ROW = ''
-      + '<tr class="' + p + '-li-row" style="border-bottom:1px solid var(--bd,#2a2318)">'
-      +   '<td style="padding:4px 6px 4px 0"><input class="finput ' + p + '-li-desc" list="ff-items-dl" autocomplete="off" placeholder="Item or service" aria-label="Item or service" style="font-size:13px;padding:6px 8px"></td>'
-      +   '<td style="padding:4px 6px"><input class="finput ' + p + '-li-qty" type="number" min="0" step="any" placeholder="1" style="font-size:13px;padding:6px 8px;text-align:center"></td>'
-      +   '<td style="padding:4px 6px"><input class="finput ' + p + '-li-rate" type="number" min="0" step="any" placeholder="0.00" style="font-size:13px;padding:6px 8px;text-align:right"></td>'
-      +   '<td class="' + p + '-li-line" style="padding:4px 6px;text-align:right;color:var(--t2,#b9ad93);font-size:13px;white-space:nowrap">—</td>'
-      +   '<td style="padding:4px 0 4px 6px;text-align:center"><button type="button" class="' + p + '-li-del" title="Remove line" style="background:none;border:none;color:var(--t3,#7a6f57);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px">×</button></td>'
+      + '<tr class="' + p + '-li-row" data-style="border-bottom:1px solid var(--bd,#2a2318)">'
+      +   '<td data-style="padding:4px 6px 4px 0"><input class="finput ' + p + '-li-desc" list="ff-items-dl" autocomplete="off" placeholder="Item or service" aria-label="Item or service" data-style="font-size:13px;padding:6px 8px"></td>'
+      +   '<td data-style="padding:4px 6px"><input class="finput ' + p + '-li-qty" type="number" min="0" step="any" placeholder="1" data-style="font-size:13px;padding:6px 8px;text-align:center"></td>'
+      +   '<td data-style="padding:4px 6px"><input class="finput ' + p + '-li-rate" type="number" min="0" step="any" placeholder="0.00" data-style="font-size:13px;padding:6px 8px;text-align:right"></td>'
+      +   '<td class="' + p + '-li-line" data-style="padding:4px 6px;text-align:right;color:var(--t2,#b9ad93);font-size:13px;white-space:nowrap">—</td>'
+      +   '<td data-style="padding:4px 0 4px 6px;text-align:center"><button type="button" class="' + p + '-li-del" title="Remove line" data-style="background:none;border:none;color:var(--t3,#7a6f57);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px">×</button></td>'
       + '</tr>';
 
     var reDesc = new RegExp(p + '-li-(desc|qty|rate)');

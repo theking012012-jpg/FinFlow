@@ -95,10 +95,10 @@
 
     // Wire any logout buttons that use onclick="doLogout()"
     // (the topbar profile menu likely has one)
-    document.querySelectorAll('[onclick*="logout"],[onclick*="Logout"],[onclick*="signOut"]').forEach(el => {
-      const existing = el.getAttribute('onclick');
+    document.querySelectorAll('[data-on-click*="logout"],[data-on-click*="Logout"],[data-on-click*="signOut"]').forEach(el => {
+      const existing = el.getAttribute('data-on-click');
       if (!existing.includes('doLogout')) return;
-      el.setAttribute('onclick', 'doLogout()');
+      el.setAttribute('data-on-click', 'doLogout()');
     });
 
     // ── EXPENSE EDIT ───────────────────────────────────────────────
@@ -112,7 +112,7 @@
       if (!modal) return;
       const title = modal.querySelector('.modal-title');
       if (title) title.textContent = edit ? 'Edit expense' : 'Add expense';
-      const saveBtn = modal.querySelector('button[onclick*="saveExpense"]');
+      const saveBtn = modal.querySelector('button[data-on-click*="saveExpense"]');
       if (saveBtn) saveBtn.textContent = edit ? 'Save changes' : 'Add expense';
       const eid = document.getElementById('expense-edit-id');
       if (eid && !edit) eid.value = '';
@@ -292,7 +292,7 @@
 
       const title = modal.querySelector('.modal-title');
       if (title) title.textContent = 'Edit Holding';
-      const saveBtn = modal.querySelector('button[onclick*="saveHolding"]');
+      const saveBtn = modal.querySelector('button[data-on-click*="saveHolding"]');
       if (saveBtn) saveBtn.textContent = 'Save changes';
 
       if (typeof openModal === 'function') openModal('holding-modal');

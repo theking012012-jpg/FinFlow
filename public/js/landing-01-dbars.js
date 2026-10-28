@@ -8,7 +8,7 @@ if(dbars){
   const rev=[68,74,72,81,85,79,88,92,84,95,96,102];
   const exp=[42,45,44,48,50,47,52,55,51,58,57,62];
   const mx=Math.max(...rev);
-  dbars.innerHTML=rev.map((r,i)=>`<div class="d-bar-group"><div class="d-bar-r" data-h="${Math.round(r/mx*74)}" style="background:var(--acc);opacity:.8"></div><div class="d-bar-e" data-h="${Math.round(exp[i]/mx*74)}" style="background:var(--bg3);border:1px solid var(--bd)"></div></div>`).join('');
+  dbars.innerHTML=rev.map((r,i)=>`<div class="d-bar-group"><div class="d-bar-r" data-h="${Math.round(r/mx*74)}" data-style="background:var(--acc);opacity:.8"></div><div class="d-bar-e" data-h="${Math.round(exp[i]/mx*74)}" data-style="background:var(--bg3);border:1px solid var(--bd)"></div></div>`).join('');
   setTimeout(()=>dbars.querySelectorAll('[data-h]').forEach(b=>b.style.height=b.dataset.h+'px'),500);
 }
 const obs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible');});},{threshold:.12});

@@ -40,11 +40,11 @@
       box.innerHTML = ev.slice(0, 25).map(function (x) {
         var when = x.at ? new Date(x.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
         var det = x.detail ? ' · ' + _esc(_REASON[x.detail] || x.detail) : '';
-        return '<div class="sec-act-row" style="display:flex;flex-wrap:wrap;gap:4px 10px;padding:5px 0;border-bottom:1px solid var(--bd)">'
-          + '<span style="min-width:150px;font-weight:600;color:' + (_WARN[x.action] ? 'var(--amber)' : 'var(--t1)') + '">' + _esc(x.label) + det + '</span>'
-          + '<span style="color:var(--t3)">' + _esc(when) + '</span>'
+        return '<div class="sec-act-row" data-style="display:flex;flex-wrap:wrap;gap:4px 10px;padding:5px 0;border-bottom:1px solid var(--bd)">'
+          + '<span data-style="min-width:150px;font-weight:600;color:' + (_WARN[x.action] ? 'var(--amber)' : 'var(--t1)') + '">' + _esc(x.label) + det + '</span>'
+          + '<span data-style="color:var(--t3)">' + _esc(when) + '</span>'
           + '<span>' + _esc(x.device || '') + '</span>'
-          + '<span style="font-family:var(--font-mono);color:var(--t3)">' + _esc(x.ip || '') + '</span></div>';
+          + '<span data-style="font-family:var(--font-mono);color:var(--t3)">' + _esc(x.ip || '') + '</span></div>';
       }).join('');
     } catch (e) { box.textContent = 'Could not load security activity.'; }
   };

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="/ff-csp.js"></script><script src="/_gen/ff-handlers.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Favicons (files live in /public; match the app shell in index.html) -->
@@ -34,185 +35,7 @@
   <title>FinFlow — Financial intelligence for modern business</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=Jost:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0806;--bg1:#111009;--bg2:#181410;--bg3:#201a12;
-  --bd:#2a2218;--bd2:#3a3020;
-  --t1:#f0e6d0;--t2:#9a8a6e;--t3:#9a8a78;
-  --acc:#c8a44a;--acc2:#9e7a2a;--acc-light:#e4c97a;--acc-glow:rgba(200,164,74,.15);
-  --green:#6aaa6a;--red:#b86050;--purple:#9e8fbf;
-  --font:'Jost',sans-serif;--font-d:'Cormorant Garamond',Georgia,serif;--font-mono:'JetBrains Mono',monospace;
-}
-html{scroll-behavior:smooth}
-body{font-family:var(--font);background:var(--bg);color:var(--t1);font-size:15px;line-height:1.6;overflow-x:hidden}
-nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:0 5vw;height:64px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid transparent;transition:all .4s}
-nav.scrolled{background:rgba(10,8,6,.92);border-color:var(--bd);backdrop-filter:blur(12px)}
-.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none}
-.nav-logo-mark{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center}
-.nav-logo-mark svg{width:16px;height:16px;stroke:#0a0806;fill:none;stroke-width:1.8;stroke-linecap:round}
-.nav-logo-text{font-family:var(--font-d);font-style:italic;font-size:20px;font-weight:500;color:var(--acc-light);letter-spacing:.04em}
-.nav-links{display:flex;align-items:center;gap:2rem}
-.nav-links a{text-decoration:none;color:var(--t2);font-size:13.5px;transition:color .2s}
-.nav-links a:hover{color:var(--t1)}
-.nav-ctas{display:flex;align-items:center;gap:10px}
-.btn-ghost-nav{padding:7px 18px;border:1px solid var(--bd2);border-radius:6px;color:var(--t2);font-size:13px;font-family:var(--font);cursor:pointer;background:none;transition:all .2s;text-decoration:none;display:inline-block}
-.btn-ghost-nav:hover{border-color:var(--acc);color:var(--acc)}
-.btn-primary-nav{padding:7px 20px;border-radius:6px;background:var(--acc);color:#0a0806;font-size:13px;font-weight:600;font-family:var(--font);cursor:pointer;border:none;transition:all .2s;text-decoration:none;display:inline-block}
-.btn-primary-nav:hover{background:var(--acc-light);transform:translateY(-1px)}
-.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 5vw 80px;position:relative;overflow:hidden}
-.hero-grain{position:absolute;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:0}
-.hero-glow{position:absolute;top:20%;left:50%;transform:translateX(-50%);width:700px;height:400px;background:radial-gradient(ellipse,rgba(200,164,74,.07) 0%,transparent 70%);pointer-events:none;z-index:0}
-.hero-grid{position:absolute;inset:0;background-image:linear-gradient(var(--bd) 1px,transparent 1px),linear-gradient(90deg,var(--bd) 1px,transparent 1px);background-size:60px 60px;opacity:.22;pointer-events:none;z-index:0;mask-image:radial-gradient(ellipse 80% 60% at 50% 40%,black,transparent)}
-.hero-content{position:relative;z-index:1;max-width:860px}
-.hero-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px;border:1px solid var(--bd2);border-radius:20px;font-size:12px;color:var(--t2);margin-bottom:2rem;background:var(--bg1);letter-spacing:.04em}
-.hero-badge-dot{width:6px;height:6px;border-radius:50%;background:var(--acc);animation:pulseDot 2s ease infinite}
-@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.5}}
-h1.hero-h1{font-family:var(--font-d);font-size:clamp(48px,7vw,86px);font-weight:400;font-style:italic;line-height:1.05;color:var(--t1);margin-bottom:1.5rem;letter-spacing:-.01em}
-h1.hero-h1 em{color:var(--acc-light);font-style:italic}
-.hero-sub{font-size:clamp(15px,2vw,18px);color:var(--t2);max-width:540px;margin:0 auto 2.5rem;line-height:1.7;font-weight:300}
-.hero-ctas{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:1.5rem}
-.btn-hero-p{padding:14px 32px;background:var(--acc);color:#0a0806;font-size:14px;font-weight:600;font-family:var(--font);border:none;border-radius:8px;cursor:pointer;transition:all .2s}
-.btn-hero-p:hover{background:var(--acc-light);transform:translateY(-2px);box-shadow:0 8px 32px var(--acc-glow)}
-.btn-hero-g{padding:14px 28px;border:1px solid var(--bd2);color:var(--t2);font-size:14px;font-family:var(--font);border-radius:8px;cursor:pointer;background:none;transition:all .2s}
-.btn-hero-g:hover{border-color:var(--acc);color:var(--acc)}
-.hero-note{font-size:12px;color:#9a8a78;letter-spacing:.04em}
-.hero-dashboard{position:relative;z-index:1;width:100%;max-width:960px;margin:4rem auto 0}
-.d-frame{border:1px solid var(--bd2);border-radius:14px;overflow:hidden;box-shadow:0 40px 120px rgba(0,0,0,.7);background:var(--bg1);transform:perspective(1200px) rotateX(4deg);transition:transform .6s}
-.d-frame:hover{transform:perspective(1200px) rotateX(0deg)}
-.d-bar{height:36px;background:var(--bg2);border-bottom:1px solid var(--bd);display:flex;align-items:center;padding:0 14px;gap:7px}
-.d-dot{width:10px;height:10px;border-radius:50%}
-.d-url{flex:1;height:20px;background:var(--bg3);border-radius:4px;margin:0 12px;display:flex;align-items:center;padding:0 10px}
-.d-url span{font-size:11px;color:#9a8a78;font-family:var(--font-mono)}
-.d-body{display:grid;grid-template-columns:180px 1fr;min-height:340px}
-.d-sidebar{background:var(--bg2);border-right:1px solid var(--bd);padding:12px 0}
-.d-nav{display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:11.5px;color:#9a8a78}
-.d-nav.on{color:var(--acc);background:rgba(200,164,74,.06);border-left:2px solid var(--acc)}
-.d-nav-dot{width:12px;height:12px;border-radius:3px;background:currentColor;opacity:.35;flex-shrink:0}
-.d-main{padding:16px;display:flex;flex-direction:column;gap:12px}
-.d-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.d-mc{background:var(--bg2);border:1px solid var(--bd);border-radius:6px;padding:10px 12px}
-.d-mc-lbl{font-size:9px;color:#9a8a78;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
-.d-mc-val{font-size:20px;font-family:var(--font-d);font-style:italic;color:var(--t1);font-weight:300}
-.d-mc-chg{font-size:10px;color:var(--green);margin-top:2px}
-.d-chart{background:var(--bg2);border:1px solid var(--bd);border-radius:6px;padding:12px;flex:1}
-.d-chart-title{font-size:11px;color:var(--t2);margin-bottom:8px}
-.d-bars{display:flex;align-items:flex-end;gap:3px;height:80px}
-.d-bar-group{flex:1;display:flex;flex-direction:column;gap:2px;align-items:center}
-.d-bar-r,.d-bar-e{width:100%;border-radius:2px 2px 0 0;min-height:3px;transition:height .6s ease}
-.d-ai{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(200,164,74,.08);border:1px solid rgba(200,164,74,.2);border-radius:20px;font-size:10px;color:var(--acc);margin-top:8px}
-.logos{padding:48px 5vw;border-top:1px solid var(--bd);border-bottom:1px solid var(--bd);display:flex;flex-direction:column;align-items:center;gap:1.5rem}
-.logos-lbl{font-size:12px;color:#9a8a78;letter-spacing:.12em;text-transform:uppercase}
-.logos-row{display:flex;align-items:center;gap:3rem;flex-wrap:wrap;justify-content:center}
-.logo-pill{font-size:14px;font-weight:500;color:#9a8a78;letter-spacing:.04em;font-family:var(--font-d);font-style:italic}
-section{padding:100px 5vw}
-.sec-wrap{max-width:1200px;margin:0 auto}
-.sec-label{font-size:11px;color:var(--acc);letter-spacing:.16em;text-transform:uppercase;font-weight:500;margin-bottom:1rem}
-.sec-h2{font-family:var(--font-d);font-size:clamp(36px,5vw,58px);font-weight:400;font-style:italic;line-height:1.1;color:var(--t1);margin-bottom:1.25rem}
-.sec-h2 em{color:var(--acc-light)}
-.sec-sub{font-size:16px;color:var(--t2);max-width:520px;line-height:1.75;font-weight:300}
-.feat-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:12px;overflow:hidden;margin-top:4rem}
-.feat-card{background:var(--bg1);padding:2.5rem;transition:background .2s}
-.feat-card:hover{background:var(--bg2)}
-.feat-icon{width:44px;height:44px;border-radius:10px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;margin-bottom:1.25rem}
-.feat-icon svg{width:20px;height:20px;stroke:var(--acc);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.feat-h3{font-family:var(--font-d);font-size:22px;font-style:italic;font-weight:500;color:var(--t1);margin-bottom:.6rem}
-.feat-p{font-size:13.5px;color:var(--t2);line-height:1.7;font-weight:300}
-.feat-tag{display:inline-block;margin-top:.85rem;font-size:11px;padding:3px 10px;border-radius:10px;background:rgba(200,164,74,.08);color:var(--acc);border:1px solid rgba(200,164,74,.2)}
-.ai-sec{background:var(--bg1);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)}
-.ai-inner{display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center;max-width:1200px;margin:0 auto;padding:100px 5vw}
-.ai-chat{background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;overflow:hidden}
-.ai-chat-hdr{padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t2)}
-.ai-dot{width:7px;height:7px;border-radius:50%;background:var(--acc);animation:pulseDot 2s ease infinite}
-.ai-msgs{padding:16px;display:flex;flex-direction:column;gap:10px}
-.ai-msg{font-size:12.5px;line-height:1.55;padding:10px 13px;border-radius:10px;max-width:88%}
-.ai-user{background:rgba(200,164,74,.1);border:1px solid rgba(200,164,74,.2);color:var(--t1);align-self:flex-end;border-radius:10px 10px 3px 10px}
-.ai-bot{background:var(--bg3);border:1px solid var(--bd);color:var(--t1);align-self:flex-start;border-radius:10px 10px 10px 3px}
-.t-dot{width:5px;height:5px;border-radius:50%;background:var(--acc);display:inline-block;margin:0 2px;animation:tb .9s ease infinite}
-.t-dot:nth-child(2){animation-delay:.15s}
-.t-dot:nth-child(3){animation-delay:.3s}
-@keyframes tb{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
-.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
-.stat-card{background:var(--bg2);padding:2.5rem 2rem;text-align:center}
-.stat-val{font-family:var(--font-d);font-size:52px;font-weight:300;font-style:italic;color:var(--acc-light);line-height:1}
-.stat-lbl{font-size:12.5px;color:var(--t2);margin-top:.5rem;font-weight:300}
-.p-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:4rem;max-width:1240px;margin-left:auto;margin-right:auto}
-.p-card{background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:2rem;position:relative;transition:border-color .2s}
-.p-card:hover{border-color:var(--bd2)}
-.p-card.hot{border-color:var(--acc);background:linear-gradient(160deg,rgba(200,164,74,.04),var(--bg1))}
-.p-badge{position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:var(--acc);color:#0a0806;font-size:10px;font-weight:700;padding:3px 14px;border-radius:0 0 8px 8px;letter-spacing:.06em;white-space:nowrap}
-.p-tier{font-size:11px;font-weight:600;color:#9a8a78;text-transform:uppercase;letter-spacing:.14em;margin-bottom:1rem}
-.p-amt{font-family:var(--font-d);font-size:52px;font-weight:300;font-style:italic;color:var(--t1);line-height:1;margin-bottom:.25rem}
-.p-amt sup{font-size:18px;vertical-align:super;font-style:normal;font-family:var(--font);font-weight:400;color:var(--t2)}
-.p-period{font-size:12px;color:#9a8a78;margin-bottom:1.5rem}
-.p-cta{width:100%;padding:11px;border-radius:7px;font-size:13px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all .2s;margin-bottom:1.5rem}
-.p-cta-g{background:none;border:1px solid var(--bd2);color:var(--t2)}
-.p-cta-g:hover{border-color:var(--acc);color:var(--acc)}
-.p-cta-p{background:var(--acc);border:none;color:#0a0806}
-.p-cta-p:hover{background:var(--acc-light)}
-.p-feats{display:flex;flex-direction:column;gap:8px}
-.p-feat{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--t2)}
-.p-check{color:var(--green);flex-shrink:0;margin-top:1px}
-.p-no{color:#9a8a78}
-.tests{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:3rem}
-.test{background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:1.75rem}
-.test-q{font-size:14px;color:var(--t1);line-height:1.7;font-weight:300;margin-bottom:1.25rem;font-style:italic;font-family:var(--font-d)}
-.test-auth{display:flex;align-items:center;gap:10px}
-.test-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
-.test-name{font-size:12.5px;font-weight:500;color:var(--t1)}
-.test-role{font-size:11px;color:#9a8a78}
-.stars{color:var(--acc);font-size:12px;margin-bottom:.85rem;letter-spacing:2px}
-.comp-table{width:100%;border-collapse:collapse;margin-top:3rem}
-.plan-compare-wrap{margin-top:3rem;overflow-x:auto}
-.plan-compare-h{font-family:var(--font-d);font-weight:400;font-size:26px;color:var(--t1);margin-bottom:1rem}
-.plan-compare{width:100%;min-width:560px;border-collapse:collapse;font-size:13px}
-.plan-compare th{padding:12px 14px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9a8a78;border-bottom:1px solid var(--bd);text-align:center}
-.plan-compare td{padding:11px 14px;border-bottom:1px solid var(--bd);text-align:center;color:var(--t2)}
-.plan-compare td:first-child{text-align:left;color:var(--t1)}
-.plan-compare .hot{background:rgba(200,164,74,.07);color:var(--acc)}
-.incl-list{list-style:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 32px;margin-top:2.5rem;padding:0}
-.incl-list li{position:relative;padding-left:22px;font-size:14px;color:var(--t2);line-height:1.5}
-.incl-list li::before{content:"✓";position:absolute;left:0;color:var(--acc)}
-@media(max-width:640px){.incl-list{grid-template-columns:1fr}}
-.comp-table th{padding:14px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9a8a78;border-bottom:1px solid var(--bd);text-align:center;vertical-align:bottom}
-.comp-table th:first-child{text-align:left;width:28%}
-.comp-table th.ff{color:var(--acc);background:rgba(200,164,74,.1);border-top:3px solid var(--acc);border-left:1px solid rgba(200,164,74,.3);border-right:1px solid rgba(200,164,74,.3);font-size:13px;text-transform:none;letter-spacing:0}
-.comp-table td{padding:12px 16px;font-size:13px;border-bottom:1px solid var(--bd);text-align:center;color:var(--t2)}
-.comp-table td:first-child{text-align:left;color:var(--t1);font-weight:500}
-.comp-table td.ff{background:rgba(200,164,74,.06);color:var(--acc);font-weight:600;border-left:1px solid rgba(200,164,74,.2);border-right:1px solid rgba(200,164,74,.2)}
-.comp-table tr:last-child td{border-bottom:none}
-.cy{color:var(--green)}.cn{color:#9a8a78}.cp{color:var(--t2)}
-.cta-band{background:var(--bg1);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd);text-align:center;padding:100px 5vw}
-.cta-h2{font-family:var(--font-d);font-size:clamp(40px,5vw,64px);font-weight:400;font-style:italic;color:var(--t1);margin-bottom:1rem}
-.cta-h2 em{color:var(--acc-light)}
-.cta-sub{font-size:16px;color:var(--t2);margin-bottom:2.5rem;font-weight:300}
-footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
-.f-grid{display:grid;grid-template-columns:2fr repeat(2,1fr);gap:3rem;margin-bottom:3rem}
-.f-brand{font-size:13px;color:#9a8a78;line-height:1.7;margin-top:.75rem;max-width:240px;font-weight:300}
-.f-col-title{font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.85rem}
-.f-links{display:flex;flex-direction:column;gap:.4rem}
-.f-links a{font-size:13px;color:#9a8a78;text-decoration:none;transition:color .2s}
-.f-links a:hover{color:var(--t1)}
-.f-bottom{display:flex;align-items:center;justify-content:space-between;padding-top:2rem;border-top:1px solid var(--bd);font-size:12px;color:#9a8a78}
-.reveal{opacity:0;transform:translateY(28px);transition:opacity .7s ease,transform .7s ease}
-.reveal.visible{opacity:1;transform:translateY(0)}
-.d1{transition-delay:.1s}.d2{transition-delay:.2s}.d3{transition-delay:.3s}
-.ai-cap{display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;margin-bottom:10px}
-.ai-cap-icon{width:32px;height:32px;border-radius:8px;background:rgba(200,164,74,.1);border:1px solid rgba(200,164,74,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.ai-cap-icon svg{width:14px;height:14px;stroke:var(--acc);fill:none;stroke-width:1.5;stroke-linecap:round}
-.ai-cap-title{font-size:12.5px;font-weight:500;color:var(--t1);margin-bottom:3px}
-.ai-cap-sub{font-size:12px;color:var(--t2)}
-@media(max-width:900px){
-  .nav-links{display:none}
-  .feat-grid,.ai-inner,.tests{grid-template-columns:1fr}
-  .ai-inner{padding:60px 5vw}
-  .stats-grid{grid-template-columns:repeat(2,1fr)}
-  .p-grid,.f-grid{grid-template-columns:1fr}
-  .d-body{grid-template-columns:1fr}
-  .d-sidebar{display:none}
-  .d-metrics{grid-template-columns:repeat(2,1fr)}
-}
-</style>
+<link rel="stylesheet" href="/css/landing-01.css">
 </head>
 <body>
 
@@ -243,19 +66,19 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     <h1 class="hero-h1">Your business finances,<br><em>finally intelligent</em></h1>
     <p class="hero-sub">An accounting platform with an AI assistant that reads your own books — ask about your numbers in plain English.</p>
     <div class="hero-ctas">
-      <a href="/app?signup=1" class="btn-hero-p" style="text-decoration:none;display:inline-flex;align-items:center">Start 30-day free trial</a>
-      <button class="btn-hero-g" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">See how it works ↓</button>
+      <a href="/app?signup=1" class="btn-hero-p" data-style="text-decoration:none;display:inline-flex;align-items:center">Start 30-day free trial</a>
+      <button class="btn-hero-g" data-on-click="document.getElementById('features').scrollIntoView({behavior:'smooth'})">See how it works ↓</button>
     </div>
     <p class="hero-note">No credit card required &nbsp;·&nbsp; Full access &nbsp;·&nbsp; Cancel any time</p>
   </div>
   <div class="hero-dashboard reveal">
     <div class="d-frame">
       <div class="d-bar">
-        <div class="d-dot" style="background:#c46a5a"></div>
-        <div class="d-dot" style="background:#d4964a"></div>
-        <div class="d-dot" style="background:#7db87d"></div>
+        <div class="d-dot" data-style="background:#c46a5a"></div>
+        <div class="d-dot" data-style="background:#d4964a"></div>
+        <div class="d-dot" data-style="background:#7db87d"></div>
         <div class="d-url"><span>app.finflow.io/dashboard</span></div>
-        <div class="d-example" style="margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9a8a78">Example data</div>
+        <div class="d-example" data-style="margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9a8a78">Example data</div>
       </div>
       <div class="d-body">
         <div class="d-sidebar">
@@ -273,7 +96,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
             <div class="d-mc"><div class="d-mc-lbl">Revenue</div><div class="d-mc-val">$469K</div><div class="d-mc-chg">▲ 18% YoY</div></div>
             <div class="d-mc"><div class="d-mc-lbl">Net profit</div><div class="d-mc-val">$238K</div><div class="d-mc-chg">50.7% margin</div></div>
             <div class="d-mc"><div class="d-mc-lbl">MRR</div><div class="d-mc-val">$39.1K</div><div class="d-mc-chg">▲ 8.2% MoM</div></div>
-            <div class="d-mc"><div class="d-mc-lbl">Runway</div><div class="d-mc-val">14 mo</div><div class="d-mc-chg" style="color:var(--acc)">Healthy</div></div>
+            <div class="d-mc"><div class="d-mc-lbl">Runway</div><div class="d-mc-val">14 mo</div><div class="d-mc-chg" data-style="color:var(--acc)">Healthy</div></div>
           </div>
           <div class="d-chart">
             <div class="d-chart-title">Revenue vs Expenses — 12 months</div>
@@ -346,7 +169,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     <div>
       <div class="sec-label reveal">Ask anything</div>
       <h2 class="sec-h2 reveal d1">An AI that actually<br><em>knows your numbers</em></h2>
-      <p class="sec-sub reveal d2" style="margin-bottom:2rem">Claude has full context on your live books and gives specific, data-driven answers about your actual business — not generic financial advice.</p>
+      <p class="sec-sub reveal d2" data-style="margin-bottom:2rem">Claude has full context on your live books and gives specific, data-driven answers about your actual business — not generic financial advice.</p>
       <div class="reveal d3">
         <div class="ai-cap"><div class="ai-cap-icon"><svg viewBox="0 0 16 16"><path d="M3 12l3-4 3 3 3-5 3 2"/></svg></div><div><div class="ai-cap-title">Revenue forecasting</div><div class="ai-cap-sub">"Forecast Q3 if churn stays at 1.8% and we close 4 new enterprise deals"</div></div></div>
         <div class="ai-cap"><div class="ai-cap-icon"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M6 9.5c0 .83.67 1.5 2 1.5s2-.67 2-1.5"/></svg></div><div><div class="ai-cap-title">Salary decisions</div><div class="ai-cap-sub">"What should I pay myself given our cash position and 14-month runway?"</div></div></div>
@@ -355,20 +178,20 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     </div>
     <div class="reveal d2">
       <div class="ai-chat">
-        <div class="ai-chat-hdr"><div class="ai-dot"></div>FinFlow AI — powered by Claude<span style="margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9a8a78">Example conversation</span></div>
+        <div class="ai-chat-hdr"><div class="ai-dot"></div>FinFlow AI — powered by Claude<span data-style="margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9a8a78">Example conversation</span></div>
         <div class="ai-msgs">
           <div class="ai-msg ai-user">Why did expenses spike last month?</div>
           <div class="ai-msg ai-bot">March expenses hit $28,400 — up 34% from Feb. The breakdown:<br><br>• Travel: $4,200 (team offsite, approved Apr 2)<br>• AWS: $2,800 vs $1,100 avg (traffic surge Mar 18)<br>• Legal: $3,100 one-time (IP filing)<br><br>Stripping these out, core operating costs are flat at $18,300. No structural issue — March was just event-heavy.</div>
           <div class="ai-msg ai-user">Should I hire another developer?</div>
           <div class="ai-msg ai-bot" id="t-typing"><span class="t-dot"></span><span class="t-dot"></span><span class="t-dot"></span></div>
-          <div class="ai-msg ai-bot" id="t-answer" style="display:none">At $469K ARR with a 14-month runway and 50.7% margins, you can comfortably absorb a mid-level hire (~$95K). Your MRR grew 8.2% last month — if that holds, you'll be at $550K ARR by Q4. Hiring now positions you to capture that growth. I'd pull the trigger.</div>
+          <div class="ai-msg ai-bot" id="t-answer" data-style="display:none">At $469K ARR with a 14-month runway and 50.7% margins, you can comfortably absorb a mid-level hire (~$95K). Your MRR grew 8.2% last month — if that holds, you'll be at $550K ARR by Q4. Hiring now positions you to capture that growth. I'd pull the trigger.</div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<section id="included" style="background:var(--bg1);border-top:1px solid var(--bd)">
+<section id="included" data-style="background:var(--bg1);border-top:1px solid var(--bd)">
   <div class="sec-wrap">
     <div class="sec-label reveal">What's included</div>
     <h2 class="sec-h2 reveal d1">One place for the<br><em>whole of your money</em></h2>
@@ -390,21 +213,21 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
 </section>
 
 
-<section id="pricing" style="background:var(--bg1);border-top:1px solid var(--bd)">
+<section id="pricing" data-style="background:var(--bg1);border-top:1px solid var(--bd)">
   <div class="sec-wrap">
-    <div style="text-align:center;margin-bottom:1rem">
-      <div class="sec-label reveal" style="text-align:center">Pricing</div>
-      <h2 class="sec-h2 reveal d1" style="text-align:center">Simple. Honest.<br><em>No surprises.</em></h2>
-      <p class="sec-sub reveal d2" style="margin:0 auto;text-align:center">30-day free trial on every plan. No credit card required.</p>
-      <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:1.25rem">
-        <span style="font-size:13px;color:var(--t2)" id="lbl-mo">Monthly</span>
-        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
-          <input type="checkbox" id="landing-billing-toggle" aria-label="Toggle annual billing" style="opacity:0;width:0;height:0" onchange="toggleLandingBilling()">
-          <span style="position:absolute;inset:0;background:var(--bd2);border-radius:100px;transition:.3s" id="toggle-track"></span>
-          <span style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.3s" id="toggle-thumb"></span>
+    <div data-style="text-align:center;margin-bottom:1rem">
+      <div class="sec-label reveal" data-style="text-align:center">Pricing</div>
+      <h2 class="sec-h2 reveal d1" data-style="text-align:center">Simple. Honest.<br><em>No surprises.</em></h2>
+      <p class="sec-sub reveal d2" data-style="margin:0 auto;text-align:center">30-day free trial on every plan. No credit card required.</p>
+      <div data-style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:1.25rem">
+        <span data-style="font-size:13px;color:var(--t2)" id="lbl-mo">Monthly</span>
+        <label data-style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+          <input type="checkbox" id="landing-billing-toggle" aria-label="Toggle annual billing" data-style="opacity:0;width:0;height:0" data-on-change="toggleLandingBilling()">
+          <span data-style="position:absolute;inset:0;background:var(--bd2);border-radius:100px;transition:.3s" id="toggle-track"></span>
+          <span data-style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.3s" id="toggle-thumb"></span>
         </label>
-        <span style="font-size:13px;color:var(--t2)">Annual</span>
-        <span style="font-size:11px;font-weight:600;color:#27500A;background:#EAF3DE;padding:2px 8px;border-radius:100px">Save 20%</span>
+        <span data-style="font-size:13px;color:var(--t2)">Annual</span>
+        <span data-style="font-size:11px;font-weight:600;color:#27500A;background:#EAF3DE;padding:2px 8px;border-radius:100px">Save 20%</span>
       </div>
     </div>
     <div class="p-grid">
@@ -412,7 +235,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
         <div class="p-tier">Pro</div>
         <div class="p-amt"><sup>$</sup><span id="land-price-pro">79</span></div>
         <div class="p-period" id="land-period-pro">per month</div>
-        <a href="/app?signup=1&plan=pro" class="p-cta p-cta-g" style="text-decoration:none;display:block;text-align:center">Start free trial</a>
+        <a href="/app?signup=1&plan=pro" class="p-cta p-cta-g" data-style="text-decoration:none;display:block;text-align:center">Start free trial</a>
         <div class="p-feats">
 <!-- gen:plan:pro -->
           <div class="p-feat"><span class="p-check">✓</span>1 business</div>
@@ -427,10 +250,10 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
       </div>
       <div data-plan="business" class="p-card hot reveal d1">
         <div class="p-badge">MOST POPULAR</div>
-        <div class="p-tier" style="color:var(--acc);margin-top:.75rem">Business</div>
-        <div class="p-amt" style="color:var(--acc-light)"><sup style="color:var(--t2)">$</sup><span id="land-price-biz">249</span></div>
+        <div class="p-tier" data-style="color:var(--acc);margin-top:.75rem">Business</div>
+        <div class="p-amt" data-style="color:var(--acc-light)"><sup data-style="color:var(--t2)">$</sup><span id="land-price-biz">249</span></div>
         <div class="p-period" id="land-period-biz">per month</div>
-        <a href="/app?signup=1&plan=business" class="p-cta p-cta-p" style="text-decoration:none;display:block;text-align:center">Start free trial</a>
+        <a href="/app?signup=1&plan=business" class="p-cta p-cta-p" data-style="text-decoration:none;display:block;text-align:center">Start free trial</a>
         <div class="p-feats">
 <!-- gen:plan:business -->
           <div class="p-feat"><span class="p-check">✓</span>Up to 5 businesses, each with its own books</div>
@@ -449,7 +272,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
         <div class="p-tier">Scale</div>
         <div class="p-amt"><sup>$</sup><span id="land-price-scale">400</span></div>
         <div class="p-period" id="land-period-scale">per month</div>
-        <a href="/app?signup=1&plan=scale" class="p-cta p-cta-g" style="text-decoration:none;display:block;text-align:center">Start free trial</a>
+        <a href="/app?signup=1&plan=scale" class="p-cta p-cta-g" data-style="text-decoration:none;display:block;text-align:center">Start free trial</a>
         <div class="p-feats">
 <!-- gen:plan:scale -->
           <div class="p-feat"><span class="p-check">✓</span>Up to 10 businesses, each with its own books</div>
@@ -466,10 +289,10 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
         </div>
       </div>
       <div data-plan="enterprise" class="p-card reveal d3">
-        <div class="p-tier" style="color:var(--purple)">Enterprise</div>
-        <div class="p-amt" style="font-size:36px;padding-top:8px">Custom</div>
+        <div class="p-tier" data-style="color:var(--purple)">Enterprise</div>
+        <div class="p-amt" data-style="font-size:36px;padding-top:8px">Custom</div>
         <div class="p-period">More than 10 businesses, or single sign-on? Talk to us.</div>
-        <a href="mailto:hello@finflow.io?subject=Enterprise Inquiry" class="p-cta" style="background:none;border:1px solid #3a2a50;color:var(--purple);width:100%;padding:11px;border-radius:7px;font-size:13px;font-weight:600;font-family:var(--font);cursor:pointer;margin-bottom:1.5rem;text-decoration:none;display:block;text-align:center">Contact sales</a>
+        <a href="mailto:hello@finflow.io?subject=Enterprise Inquiry" class="p-cta" data-style="background:none;border:1px solid #3a2a50;color:var(--purple);width:100%;padding:11px;border-radius:7px;font-size:13px;font-weight:600;font-family:var(--font);cursor:pointer;margin-bottom:1.5rem;text-decoration:none;display:block;text-align:center">Contact sales</a>
         <div class="p-feats">
 <!-- gen:plan:enterprise -->
           <div class="p-feat"><span class="p-check">✓</span>Unlimited businesses, each with its own books</div>
@@ -492,7 +315,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     <div class="plan-compare-wrap reveal">
       <h3 class="plan-compare-h">Compare plans</h3>
       <table class="plan-compare" id="plan-compare">
-        <thead><tr><th scope="col" style="font-size:0">Feature</th><th scope="col">Pro</th><th scope="col" class="hot">Business</th><th scope="col">Scale</th></tr></thead>
+        <thead><tr><th scope="col" data-style="font-size:0">Feature</th><th scope="col">Pro</th><th scope="col" class="hot">Business</th><th scope="col">Scale</th></tr></thead>
         <tbody>
         <tr><td>Price, billed monthly</td><td>$79 / month</td><td class="hot">$249 / month</td><td>$400 / month</td></tr>
         <tr><td>Price, billed yearly (20% off)</td><td>$756 / year</td><td class="hot">$2,388 / year</td><td>$3,840 / year</td></tr>
@@ -524,20 +347,20 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
 <section class="cta-band">
   <h2 class="cta-h2 reveal">Ready to make your finances<br><em>work for you?</em></h2>
   <p class="cta-sub reveal d1">Start running your books with FinFlow today.</p>
-  <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap" class="reveal d2">
-    <a href="/app?signup=1" class="btn-hero-p" style="font-size:15px;padding:16px 36px;text-decoration:none;display:inline-flex;align-items:center">Start your free trial</a>
-    <a href="mailto:hello@finflow.io?subject=Demo Request" class="btn-hero-g" style="font-size:15px;padding:16px 28px;text-decoration:none;display:inline-flex;align-items:center">Book a demo</a>
+  <div data-style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap" class="reveal d2">
+    <a href="/app?signup=1" class="btn-hero-p" data-style="font-size:15px;padding:16px 36px;text-decoration:none;display:inline-flex;align-items:center">Start your free trial</a>
+    <a href="mailto:hello@finflow.io?subject=Demo Request" class="btn-hero-g" data-style="font-size:15px;padding:16px 28px;text-decoration:none;display:inline-flex;align-items:center">Book a demo</a>
   </div>
-  <p style="font-size:12px;color:#9a8a78;margin-top:1.5rem" class="reveal d3">30-day free trial &nbsp;·&nbsp; No credit card &nbsp;·&nbsp; Cancel any time</p>
+  <p data-style="font-size:12px;color:#9a8a78;margin-top:1.5rem" class="reveal d3">30-day free trial &nbsp;·&nbsp; No credit card &nbsp;·&nbsp; Cancel any time</p>
 </section>
 
 </main>
 <footer>
   <div class="f-grid">
     <div>
-      <div class="nav-logo" style="margin-bottom:.75rem">
-        <div class="nav-logo-mark" style="width:28px;height:28px;border-radius:7px"><svg viewBox="0 0 16 16" style="width:14px;height:14px"><polyline points="1,11 5,6 8,9 11,4 15,7"/><line x1="1" y1="14" x2="15" y2="14"/></svg></div>
-        <span class="nav-logo-text" style="font-size:18px">FinFlow</span>
+      <div class="nav-logo" data-style="margin-bottom:.75rem">
+        <div class="nav-logo-mark" data-style="width:28px;height:28px;border-radius:7px"><svg viewBox="0 0 16 16" data-style="width:14px;height:14px"><polyline points="1,11 5,6 8,9 11,4 15,7"/><line x1="1" y1="14" x2="15" y2="14"/></svg></div>
+        <span class="nav-logo-text" data-style="font-size:18px">FinFlow</span>
       </div>
       <p class="f-brand">Financial intelligence for modern business. Built with Claude AI, designed for founders who move fast.</p>
     </div>
@@ -552,7 +375,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
   </div>
   <div class="f-bottom">
     <span>&#169; 2026 FinFlow Inc. All rights reserved.</span>
-    <span>Powered by <span style="color:var(--acc);font-family:var(--font-d);font-style:italic">Claude</span> by Anthropic</span>
+    <span>Powered by <span data-style="color:var(--acc);font-family:var(--font-d);font-style:italic">Claude</span> by Anthropic</span>
   </div>
 </footer>
 

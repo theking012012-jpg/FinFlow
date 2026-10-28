@@ -15,10 +15,10 @@ run('M52 — edit a business expense from the Expenses page', async ({ w, d, ev,
   const rentRow = () => Array.from(d.querySelectorAll('#expense-list .tx-row')).find(r => /Rent/.test(r.textContent));
   const row = rentRow();
   A('Rent row rendered', !!row);
-  const editBtn = row && row.querySelector('button[onclick^="editExpense"]');
+  const editBtn = row && row.querySelector('button[data-on-click^="editExpense"]');
   eq('Rent row has an Edit button', editBtn ? 1 : 0, 1, 0);
   if (!editBtn) return;
-  ev(editBtn.getAttribute('onclick')); await settle(5, 40);
+  editBtn.click(); await settle(5, 40);
   const val = id => (d.getElementById(id) || {}).value;
   eq('modal opens populated (description, amount, date)', [val('bexp-desc'), val('bexp-amount'), val('bexp-date')], ['Rent', '500', '2026-07-01']);
   eq('modal is in edit mode', d.querySelector('#expense-modal .modal-title').textContent.trim(), 'Edit expense');

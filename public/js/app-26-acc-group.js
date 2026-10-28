@@ -13,14 +13,14 @@ const accGroup = document.querySelector('#nav-group-accountant .nav-group-inner'
 if (accGroup) {
   const myAccItem = document.createElement('div');
   myAccItem.className = 'nav-item nav-sub';
-  myAccItem.setAttribute('onclick', "showPage('my-accountant',this)");
+  myAccItem.setAttribute('data-on-click', "showPage('my-accountant',this)");
   myAccItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6" cy="4.5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg>My Accountant`;
   accGroup.appendChild(myAccItem);
 
   const findAccItem = document.createElement('div');
   findAccItem.className = 'nav-item nav-sub';
-  findAccItem.setAttribute('onclick', "showPage('find-accountant',this)");
-  findAccItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/><path d="M10 9l1.5 1.5L14 8" style="display:none"/></svg>Find Accountant<span class="badge b-green" style="margin-left:auto;font-size:9px">NEW</span>`;
+  findAccItem.setAttribute('data-on-click', "showPage('find-accountant',this)");
+  findAccItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/><path d="M10 9l1.5 1.5L14 8" data-style="display:none"/></svg>Find Accountant<span class="badge b-green" data-style="margin-left:auto;font-size:9px">NEW</span>`;
   accGroup.appendChild(findAccItem);
 }
 
@@ -29,56 +29,56 @@ const myAccPage = document.createElement('div');
 myAccPage.className = 'page';
 myAccPage.id = 'page-my-accountant';
 myAccPage.innerHTML = `
-<div style="max-width:720px;margin:0 auto;padding:1.5rem 0">
-  <div style="margin-bottom:1.5rem">
-    <div style="font-family:var(--font-display);font-size:24px;font-style:italic;color:var(--acc-light);margin-bottom:4px">My Accountant</div>
-    <div style="font-size:13px;color:var(--t2)">Manage your accountant's access to your books</div>
+<div data-style="max-width:720px;margin:0 auto;padding:1.5rem 0">
+  <div data-style="margin-bottom:1.5rem">
+    <div data-style="font-family:var(--font-display);font-size:24px;font-style:italic;color:var(--acc-light);margin-bottom:4px">My Accountant</div>
+    <div data-style="font-size:13px;color:var(--t2)">Manage your accountant's access to your books</div>
   </div>
 
   <!-- CURRENT ACCOUNTANT CARD -->
   <div id="my-acc-content">
-    <div style="text-align:center;padding:3rem 1rem;color:var(--t3)">
-      <div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:24px">👤</div>
-      <div style="font-size:14px;color:var(--t2);margin-bottom:8px">No accountant linked yet</div>
-      <div style="font-size:13px;color:var(--t3);margin-bottom:1.25rem">Browse verified FinFlow accountants and request access</div>
-      <button class="btn btn-primary" style="font-size:13px" onclick="showPage('find-accountant',null)">Find an accountant →</button>
+    <div data-style="text-align:center;padding:3rem 1rem;color:var(--t3)">
+      <div data-style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:24px">👤</div>
+      <div data-style="font-size:14px;color:var(--t2);margin-bottom:8px">No accountant linked yet</div>
+      <div data-style="font-size:13px;color:var(--t3);margin-bottom:1.25rem">Browse verified FinFlow accountants and request access</div>
+      <button class="btn btn-primary" data-style="font-size:13px" data-on-click="showPage('find-accountant',null)">Find an accountant →</button>
     </div>
   </div>
 
   <!-- PROPOSALS (shown when accountant linked and there are proposals) -->
-  <div id="acct-proposals" style="margin-top:1.5rem;display:none"></div>
+  <div id="acct-proposals" data-style="margin-top:1.5rem;display:none"></div>
 
   <!-- REQUESTS / TASKS (shown when accountant linked and there are tasks) -->
-  <div id="acct-tasks" style="margin-top:1.5rem;display:none"></div>
+  <div id="acct-tasks" data-style="margin-top:1.5rem;display:none"></div>
 
   <!-- CHAT PANEL (shown when accountant linked and active) -->
-  <div id="acct-chat-panel" style="margin-top:1.5rem;background:var(--bg2);border:1px solid var(--bd);border-radius:14px;overflow:hidden;display:none">
-    <div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px">
-      <span style="font-size:13px;font-weight:600;color:var(--t1)">Messages</span>
+  <div id="acct-chat-panel" data-style="margin-top:1.5rem;background:var(--bg2);border:1px solid var(--bd);border-radius:14px;overflow:hidden;display:none">
+    <div data-style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px">
+      <span data-style="font-size:13px;font-weight:600;color:var(--t1)">Messages</span>
     </div>
-    <div id="acct-chat-thread" style="height:280px;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
-      <div style="text-align:center;color:var(--t3);font-size:13px;padding:40px 0">No messages yet.</div>
+    <div id="acct-chat-thread" data-style="height:280px;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+      <div data-style="text-align:center;color:var(--t3);font-size:13px;padding:40px 0">No messages yet.</div>
     </div>
-    <div style="padding:10px 12px;border-top:1px solid var(--bd);display:flex;gap:8px;align-items:center">
-      <input type="file" id="acct-chat-file" style="display:none" onchange="sendAcctAttachment(this)">
-      <button class="btn btn-ghost btn-sm" title="Attach a file (max 5MB)" onclick="document.getElementById('acct-chat-file').click()" style="white-space:nowrap">📎</button>
+    <div data-style="padding:10px 12px;border-top:1px solid var(--bd);display:flex;gap:8px;align-items:center">
+      <input type="file" id="acct-chat-file" data-style="display:none" data-on-change="sendAcctAttachment(this)">
+      <button class="btn btn-ghost btn-sm" title="Attach a file (max 5MB)" data-on-click="document.getElementById('acct-chat-file').click()" data-style="white-space:nowrap">📎</button>
       <input id="acct-chat-input" class="finput" type="text" placeholder="Message your accountant…"
-        style="flex:1;margin:0;padding:9px 12px"
-        oninput="onAccountantTyping()"
-        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsgToAccountant();}">
-      <button class="btn btn-primary btn-sm" onclick="sendMsgToAccountant()" style="white-space:nowrap">Send →</button>
+        data-style="flex:1;margin:0;padding:9px 12px"
+        data-on-input="onAccountantTyping()"
+        data-on-keydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsgToAccountant();}">
+      <button class="btn btn-primary btn-sm" data-on-click="sendMsgToAccountant()" data-style="white-space:nowrap">Send →</button>
     </div>
   </div>
 
   <!-- ACCESS SETTINGS (shown when accountant linked) -->
-  <div id="my-acc-access" style="display:none;margin-top:1rem">
-    <div class="card" style="padding:1.25rem">
-      <div style="font-size:13px;font-weight:500;color:var(--t1);margin-bottom:1rem">Access permissions</div>
-      <div style="font-size:11.5px;color:var(--t3);margin:-6px 0 12px">Choose what your accountant can see and do — for each business and for your personal finances, independently. <strong style="color:var(--t2)">None</strong> = fully hidden. <strong style="color:var(--t2)">View</strong> = read only. <strong style="color:var(--t2)">Filing</strong> = read, post entries &amp; lock periods.</div>
-      <div id="acc-perm-matrix" style="display:flex;flex-direction:column;gap:8px"></div>
-      <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--bd);display:flex;gap:8px">
-        <button class="btn btn-ghost" style="font-size:12px" onclick="leaveReview(linkedAccountant&&linkedAccountant.id)">★ Leave a review</button>
-        <button class="btn btn-ghost" style="font-size:12px;color:var(--danger)" onclick="revokeAccountant()">Revoke access</button>
+  <div id="my-acc-access" data-style="display:none;margin-top:1rem">
+    <div class="card" data-style="padding:1.25rem">
+      <div data-style="font-size:13px;font-weight:500;color:var(--t1);margin-bottom:1rem">Access permissions</div>
+      <div data-style="font-size:11.5px;color:var(--t3);margin:-6px 0 12px">Choose what your accountant can see and do — for each business and for your personal finances, independently. <strong data-style="color:var(--t2)">None</strong> = fully hidden. <strong data-style="color:var(--t2)">View</strong> = read only. <strong data-style="color:var(--t2)">Filing</strong> = read, post entries &amp; lock periods.</div>
+      <div id="acc-perm-matrix" data-style="display:flex;flex-direction:column;gap:8px"></div>
+      <div data-style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--bd);display:flex;gap:8px">
+        <button class="btn btn-ghost" data-style="font-size:12px" data-on-click="leaveReview(linkedAccountant&&linkedAccountant.id)">★ Leave a review</button>
+        <button class="btn btn-ghost" data-style="font-size:12px;color:var(--danger)" data-on-click="revokeAccountant()">Revoke access</button>
       </div>
     </div>
   </div>
@@ -90,18 +90,18 @@ const findAccPage = document.createElement('div');
 findAccPage.className = 'page';
 findAccPage.id = 'page-find-accountant';
 findAccPage.innerHTML = `
-<div style="max-width:900px;margin:0 auto;padding:1.5rem 0">
-  <div style="margin-bottom:1.5rem;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+<div data-style="max-width:900px;margin:0 auto;padding:1.5rem 0">
+  <div data-style="margin-bottom:1.5rem;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
     <div>
-      <div style="font-family:var(--font-display);font-size:24px;font-style:italic;color:var(--acc-light);margin-bottom:4px">Find an Accountant</div>
-      <div style="font-size:13px;color:var(--t2)">All accountants are verified by the FinFlow team before listing</div>
+      <div data-style="font-family:var(--font-display);font-size:24px;font-style:italic;color:var(--acc-light);margin-bottom:4px">Find an Accountant</div>
+      <div data-style="font-size:13px;color:var(--t2)">All accountants are verified by the FinFlow team before listing</div>
     </div>
   </div>
 
   <!-- SEARCH & FILTERS -->
-  <div style="display:flex;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap">
-    <input id="acc-search" class="finput" placeholder="Search by name, firm, or speciality..." style="flex:1;min-width:200px;font-size:13px" oninput="filterAccountants()">
-    <select id="acc-filter-country" class="finput" style="width:160px;font-size:13px" onchange="filterAccountants()">
+  <div data-style="display:flex;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap">
+    <input id="acc-search" class="finput" placeholder="Search by name, firm, or speciality..." data-style="flex:1;min-width:200px;font-size:13px" data-on-input="filterAccountants()">
+    <select id="acc-filter-country" class="finput" data-style="width:160px;font-size:13px" data-on-change="filterAccountants()">
       <option value="">All countries</option>
       <option>Trinidad & Tobago</option>
       <option>United States</option>
@@ -110,7 +110,7 @@ findAccPage.innerHTML = `
       <option>Canada</option>
       <option>Other</option>
     </select>
-    <select id="acc-filter-spec" class="finput" style="width:160px;font-size:13px" onchange="filterAccountants()">
+    <select id="acc-filter-spec" class="finput" data-style="width:160px;font-size:13px" data-on-change="filterAccountants()">
       <option value="">All specialities</option>
       <option>Tax & Filing</option>
       <option>Bookkeeping</option>
@@ -121,8 +121,8 @@ findAccPage.innerHTML = `
   </div>
 
   <!-- ACCOUNTANT GRID -->
-  <div id="acc-directory-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
-    <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--t3);font-size:13px">Loading accountants...</div>
+  <div id="acc-directory-grid" data-style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+    <div data-style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--t3);font-size:13px">Loading accountants...</div>
   </div>
 </div>`;
 document.querySelector('.content')?.appendChild(findAccPage);
@@ -165,8 +165,8 @@ window.filterAccountants = function() {
 
   if (!filtered.length) {
     grid.innerHTML = directoryError
-      ? '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--t3);font-size:13px">Couldn\'t load the directory. <a style="color:var(--acc);cursor:pointer" onclick="loadDirectory()">Try again</a></div>'
-      : '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--t3);font-size:13px">' + (allAccountants.length ? 'No accountants match your search' : 'No accountants listed yet — check back soon') + '</div>';
+      ? '<div data-style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--t3);font-size:13px">Couldn\'t load the directory. <a data-style="color:var(--acc);cursor:pointer" data-on-click="loadDirectory()">Try again</a></div>'
+      : '<div data-style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--t3);font-size:13px">' + (allAccountants.length ? 'No accountants match your search' : 'No accountants listed yet — check back soon') + '</div>';
     return;
   }
 
@@ -181,39 +181,39 @@ window.filterAccountants = function() {
       : '☆☆☆☆☆';
     const starsColor = rating >= 4 ? '#c9a84c' : rating >= 3 ? '#c48a2a' : '#5a5540';
     return `
-    <div class="card" style="padding:1.25rem;cursor:pointer;transition:border-color .2s" onmouseenter="this.style.borderColor='var(--acc2)'" onmouseleave="this.style.borderColor='var(--bd)'">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div style="width:40px;height:40px;border-radius:10px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
-        <div style="min-width:0">
-          <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.first_name)} ${esc(a.last_name)}</div>
-          <div style="font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.firm || '')}</div>
+    <div class="card" data-style="padding:1.25rem;cursor:pointer;transition:border-color .2s" data-on-mouseenter="this.style.borderColor='var(--acc2)'" data-on-mouseleave="this.style.borderColor='var(--bd)'">
+      <div data-style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div data-style="width:40px;height:40px;border-radius:10px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
+        <div data-style="min-width:0">
+          <div data-style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.first_name)} ${esc(a.last_name)}</div>
+          <div data-style="font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.firm || '')}</div>
         </div>
         ${(() => { const v = a.verified_at ? new Date(a.verified_at) : null; const ok = v && !isNaN(v);   // D-E: the date FinFlow checked the credentials
           const short = ok ? v.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '';
           const long = ok ? v.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
-          return `<span data-verified-on="${esc(ok ? v.toISOString().slice(0, 10) : '')}" title="${esc(ok ? 'FinFlow checked this accountant\'s credentials on ' + long : 'Credentials checked by FinFlow')}" style="margin-left:auto;font-size:9px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:2px 6px;flex-shrink:0">✓ Verified${ok ? ' · checked ' + esc(short) : ''}</span>`; })()}
+          return `<span data-verified-on="${esc(ok ? v.toISOString().slice(0, 10) : '')}" title="${esc(ok ? 'FinFlow checked this accountant\'s credentials on ' + long : 'Credentials checked by FinFlow')}" data-style="margin-left:auto;font-size:9px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:2px 6px;flex-shrink:0">✓ Verified${ok ? ' · checked ' + esc(short) : ''}</span>`; })()}
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="color:${starsColor};font-size:13px;letter-spacing:1px">${stars}</span>
-        <span style="font-size:11px;color:var(--t3)">${rating > 0 ? rating.toFixed(1) + ' · ' + reviewCount + ' review' + (reviewCount !== 1 ? 's' : '') : 'No reviews yet'}</span>
+      <div data-style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span data-style="color:${starsColor};font-size:13px;letter-spacing:1px">${stars}</span>
+        <span data-style="font-size:11px;color:var(--t3)">${rating > 0 ? rating.toFixed(1) + ' · ' + reviewCount + ' review' + (reviewCount !== 1 ? 's' : '') : 'No reviews yet'}</span>
       </div>
-      ${a.preferred_partner ? `<div style="margin-bottom:6px"><span title="Named a Preferred Partner by FinFlow for consistently excellent client reviews" style="font-size:10px;font-weight:600;background:var(--acc-bg);color:var(--acc);border:1px solid var(--acc);border-radius:4px;padding:2px 7px">★ Preferred Partner</span></div>` : ''}
-      <div style="font-size:11px;color:var(--t3);margin-bottom:6px">📍 ${esc(a.country || 'N/A')} &nbsp;·&nbsp; ${esc(a.specialisation || 'General')}</div>
-      <div style="font-size:11px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px">
-        ${a.stripe_onboarded ? '<span style="background:rgba(74,156,109,0.1);color:#4a9c6d;border:1px solid rgba(74,156,109,0.25);border-radius:4px;padding:2px 7px;font-size:10px">🛡 FinFlow Protected</span>' : ''}
-        ${a.confirmed_credentials ? '<span style="background:rgba(74,156,109,0.12);color:#4a9c6d;border:1px solid rgba(74,156,109,0.35);border-radius:4px;padding:2px 7px;font-size:10px">✓ '+esc(a.confirmed_credentials)+' · verified by FinFlow</span>' : ''}
+      ${a.preferred_partner ? `<div data-style="margin-bottom:6px"><span title="Named a Preferred Partner by FinFlow for consistently excellent client reviews" data-style="font-size:10px;font-weight:600;background:var(--acc-bg);color:var(--acc);border:1px solid var(--acc);border-radius:4px;padding:2px 7px">★ Preferred Partner</span></div>` : ''}
+      <div data-style="font-size:11px;color:var(--t3);margin-bottom:6px">📍 ${esc(a.country || 'N/A')} &nbsp;·&nbsp; ${esc(a.specialisation || 'General')}</div>
+      <div data-style="font-size:11px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px">
+        ${a.stripe_onboarded ? '<span data-style="background:rgba(74,156,109,0.1);color:#4a9c6d;border:1px solid rgba(74,156,109,0.25);border-radius:4px;padding:2px 7px;font-size:10px">🛡 FinFlow Protected</span>' : ''}
+        ${a.confirmed_credentials ? '<span data-style="background:rgba(74,156,109,0.12);color:#4a9c6d;border:1px solid rgba(74,156,109,0.35);border-radius:4px;padding:2px 7px;font-size:10px">✓ '+esc(a.confirmed_credentials)+' · verified by FinFlow</span>' : ''}
       </div>
-      <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${a.bio ? esc(a.bio) : 'FinFlow professional accountant.'}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
-        ${a.hourly_rate ? `<span style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From ${_accRateSym(a)}${parseFloat(a.hourly_rate).toLocaleString('en-US',{maximumFractionDigits:0})}/hr</span>` : a.packages && a.packages.length ? '<span style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From '+_accRateSym(a)+(function(){try{var pkgs=typeof a.packages==="string"?JSON.parse(a.packages):a.packages;return Math.min.apply(null,pkgs.map(function(p){return p.price;})).toFixed(0);}catch(e){return "?";}})()+'</span>' : '<span style="font-size:12px;color:var(--t3,#5a5040)">Rates on request</span>'}
-        ${a.has_pricing ? '<span style="font-size:10px;background:rgba(200,164,74,0.08);color:var(--acc,#c8a44a);border:1px solid rgba(200,164,74,0.25);border-radius:4px;padding:2px 7px">💰 Transparent Pricing</span>' : ''}
+      <div data-style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${a.bio ? esc(a.bio) : 'FinFlow professional accountant.'}</div>
+      <div data-style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+        ${a.hourly_rate ? `<span data-style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From ${_accRateSym(a)}${parseFloat(a.hourly_rate).toLocaleString('en-US',{maximumFractionDigits:0})}/hr</span>` : a.packages && a.packages.length ? '<span data-style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From '+_accRateSym(a)+(function(){try{var pkgs=typeof a.packages==="string"?JSON.parse(a.packages):a.packages;return Math.min.apply(null,pkgs.map(function(p){return p.price;})).toFixed(0);}catch(e){return "?";}})()+'</span>' : '<span data-style="font-size:12px;color:var(--t3,#5a5040)">Rates on request</span>'}
+        ${a.has_pricing ? '<span data-style="font-size:10px;background:rgba(200,164,74,0.08);color:var(--acc,#c8a44a);border:1px solid rgba(200,164,74,0.25);border-radius:4px;padding:2px 7px">💰 Transparent Pricing</span>' : ''}
       </div>
-      <div style="display:flex;gap:8px">
+      <div data-style="display:flex;gap:8px">
         ${linkedAccountant && linkedAccountant.id === a.id
-          ? `<button class="btn btn-outline" style="flex:1;justify-content:center;font-size:12px;padding:7px;opacity:0.7;cursor:default" disabled>${linkedAccountant.status === 'pending' ? '⏳ Pending approval' : '✓ Linked'}</button>`
-          : `<button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" onclick="requestAccountant(${Number(a.id)}, this.dataset.name)">Request access</button>`
+          ? `<button class="btn btn-outline" data-style="flex:1;justify-content:center;font-size:12px;padding:7px;opacity:0.7;cursor:default" disabled>${linkedAccountant.status === 'pending' ? '⏳ Pending approval' : '✓ Linked'}</button>`
+          : `<button class="btn btn-primary" data-style="flex:1;justify-content:center;font-size:12px;padding:7px" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" data-arg-id="${Number(a.id)}" data-on-click="requestAccountant(Number(this.dataset.argId), this.dataset.name)">Request access</button>`
         }
-        <button class="btn btn-ghost" style="font-size:12px;padding:7px;color:var(--t3)" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" onclick="event.stopPropagation();reportAccountant(${Number(a.id)}, this.dataset.name)" title="Report">⚑</button>
+        <button class="btn btn-ghost" data-style="font-size:12px;padding:7px;color:var(--t3)" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" data-arg-id="${Number(a.id)}" data-on-click="event.stopPropagation();reportAccountant(Number(this.dataset.argId), this.dataset.name)" title="Report">⚑</button>
       </div>
     </div>`;
   }).join('');
@@ -248,32 +248,32 @@ function renderLinkedAccountant() {
 
   if (a.status === 'pending') {
     content.innerHTML = `
-      <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px;border-color:rgba(196,138,42,0.4)">
-        <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:500;color:var(--t1)">${esc(a.first_name)} ${esc(a.last_name)}</div>
-          <div style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
-          <div style="font-size:12px;color:var(--t3);margin-top:2px">${a.requested_by === 'client'
+      <div class="card" data-style="padding:1.25rem;display:flex;align-items:center;gap:14px;border-color:rgba(196,138,42,0.4)">
+        <div data-style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
+        <div data-style="flex:1;min-width:0">
+          <div data-style="font-size:14px;font-weight:500;color:var(--t1)">${esc(a.first_name)} ${esc(a.last_name)}</div>
+          <div data-style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
+          <div data-style="font-size:12px;color:var(--t3);margin-top:2px">${a.requested_by === 'client'
             ? 'Your request is awaiting approval from this accountant.'
             : 'You joined through this accountant\'s referral link. They can see your books only if you approve.'}</div>
         </div>
         ${a.requested_by === 'client'
-          ? '<span style="font-size:10px;background:rgba(196,138,42,0.12);color:var(--amber,#c8a44a);border:1px solid rgba(196,138,42,0.35);border-radius:4px;padding:3px 8px;flex-shrink:0">⏳ Pending</span>'
-          : `<div style="display:flex;gap:6px;flex-shrink:0"><button class="btn btn-gold btn-sm" onclick="respondReferralLink(${Number(a.id)}, true, this)">Approve access</button><button class="btn btn-sm" onclick="respondReferralLink(${Number(a.id)}, false, this)">Decline</button></div>`}
+          ? '<span data-style="font-size:10px;background:rgba(196,138,42,0.12);color:var(--amber,#c8a44a);border:1px solid rgba(196,138,42,0.35);border-radius:4px;padding:3px 8px;flex-shrink:0">⏳ Pending</span>'
+          : `<div data-style="display:flex;gap:6px;flex-shrink:0"><button class="btn btn-gold btn-sm" data-arg-id="${Number(a.id)}" data-on-click="respondReferralLink(Number(this.dataset.argId), true, this)">Approve access</button><button class="btn btn-sm" data-arg-id="${Number(a.id)}" data-on-click="respondReferralLink(Number(this.dataset.argId), false, this)">Decline</button></div>`}
       </div>`;
     if (access) access.style.display = 'none';
     return;
   }
 
   content.innerHTML = `
-    <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px">
-      <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:500;color:var(--t1)">${esc(a.first_name)} ${esc(a.last_name)}</div>
-        <div style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
-        <div style="font-size:12px;color:var(--t3);margin-top:2px">${esc(a.specialisation || '')} &nbsp;·&nbsp; ${esc(a.experience || '')}</div>
+    <div class="card" data-style="padding:1.25rem;display:flex;align-items:center;gap:14px">
+      <div data-style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
+      <div data-style="flex:1;min-width:0">
+        <div data-style="font-size:14px;font-weight:500;color:var(--t1)">${esc(a.first_name)} ${esc(a.last_name)}</div>
+        <div data-style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
+        <div data-style="font-size:12px;color:var(--t3);margin-top:2px">${esc(a.specialisation || '')} &nbsp;·&nbsp; ${esc(a.experience || '')}</div>
       </div>
-      <span style="font-size:10px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:3px 8px;flex-shrink:0">✓ Linked</span>
+      <span data-style="font-size:10px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:3px 8px;flex-shrink:0">✓ Linked</span>
     </div>`;
 
   if (access) access.style.display = 'block';
@@ -333,7 +333,7 @@ function renderAccountantMessages() {
   const el = document.getElementById('acct-chat-thread');
   if (!el) return;
   if (!_acctMsgs.length) {
-    el.innerHTML = '<div style="text-align:center;color:var(--t3);font-size:13px;padding:40px 0">No messages yet. Start the conversation below.</div>';
+    el.innerHTML = '<div data-style="text-align:center;color:var(--t3);font-size:13px;padding:40px 0">No messages yet. Start the conversation below.</div>';
     return;
   }
   // "Seen" on my last message the accountant has read (created_at <= their last_read).
@@ -343,12 +343,12 @@ function renderAccountantMessages() {
   el.innerHTML = _acctMsgs.map((m,i) => {
     const isMe = m.sender === 'client';
     const dateStr = new Date(m.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-    const seen = i === lastSeen ? ' · <span style="color:var(--acc)">✓ Seen</span>' : '';
-    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:5px;max-width:80%;background:${isMe?'rgba(0,0,0,.12)':'var(--bg2)'};border:1px solid ${isMe?'rgba(0,0,0,.15)':'var(--bd)'};border-radius:9px;padding:7px 11px;font-size:12.5px;color:${isMe?'#0e0b08':'var(--acc)'};text-decoration:none">📎 ${_acctEsc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
-    return `<div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px">
-      <div style="max-width:80%;background:${isMe?'var(--acc)':'var(--bg3)'};color:${isMe?'#0e0b08':'var(--t1)'};padding:9px 13px;border-radius:${isMe?'14px 14px 4px 14px':'14px 14px 14px 4px'};font-size:13.5px;line-height:1.5">${_acctEsc(m.content)}</div>
+    const seen = i === lastSeen ? ' · <span data-style="color:var(--acc)">✓ Seen</span>' : '';
+    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" data-style="display:inline-flex;align-items:center;gap:6px;margin-top:5px;max-width:80%;background:${isMe?'rgba(0,0,0,.12)':'var(--bg2)'};border:1px solid ${isMe?'rgba(0,0,0,.15)':'var(--bd)'};border-radius:9px;padding:7px 11px;font-size:12.5px;color:${isMe?'#0e0b08':'var(--acc)'};text-decoration:none">📎 ${_acctEsc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
+    return `<div data-style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px">
+      <div data-style="max-width:80%;background:${isMe?'var(--acc)':'var(--bg3)'};color:${isMe?'#0e0b08':'var(--t1)'};padding:9px 13px;border-radius:${isMe?'14px 14px 4px 14px':'14px 14px 14px 4px'};font-size:13.5px;line-height:1.5">${_acctEsc(m.content)}</div>
       ${att}
-      <div style="font-size:11px;color:var(--t3);padding:0 4px">${_acctEsc(m.sender_name)} · ${dateStr}${seen}</div>
+      <div data-style="font-size:11px;color:var(--t3);padding:0 4px">${_acctEsc(m.sender_name)} · ${dateStr}${seen}</div>
     </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
@@ -393,21 +393,21 @@ window.loadMyTasks = async function() {
     const row = t => {
       const done = t.status === 'done';
       const _dy = window.FinFlowDates._toYmd(t.due_date);
-      const due = t.due_date ? `<span style="font-size:11px;color:${(!done && _dy && _dy < _today) ? 'var(--red)' : 'var(--t3)'};margin-left:8px">due ${fmtDue(t.due_date)}</span>` : '';
+      const due = t.due_date ? `<span data-style="font-size:11px;color:${(!done && _dy && _dy < _today) ? 'var(--red)' : 'var(--t3)'};margin-left:8px">due ${fmtDue(t.due_date)}</span>` : '';
       const check = done
-        ? '<svg viewBox="0 0 16 16" style="width:18px;height:18px;flex-shrink:0"><circle cx="8" cy="8" r="8" fill="var(--acc)"/><path d="M4.5 8.2l2.2 2.2 4.8-4.8" fill="none" stroke="#16120d" stroke-width="1.6"/></svg>'
-        : '<svg viewBox="0 0 16 16" style="width:18px;height:18px;flex-shrink:0"><circle cx="8" cy="8" r="7.2" fill="none" stroke="var(--bd2)" stroke-width="1.4"/></svg>';
-      return `<div style="display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-top:1px solid var(--bd)">
-          <button onclick="toggleTask(${t.id},${done ? 'true' : 'false'},this)" title="${done?'Reopen':'Mark done'}" style="background:none;border:none;cursor:pointer;padding:0;line-height:0">${check}</button>
-          <div style="flex:1">
-            <div style="font-size:13.5px;color:${done?'var(--t2)':'var(--t1)'};${done?'text-decoration:line-through;text-decoration-color:var(--t3)':''}">${_acctEsc(t.title)}${due}</div>
-            ${t.detail?`<div style="font-size:12.3px;color:var(--t2);margin-top:3px;white-space:pre-wrap">${_acctEsc(t.detail)}</div>`:''}
+        ? '<svg viewBox="0 0 16 16" data-style="width:18px;height:18px;flex-shrink:0"><circle cx="8" cy="8" r="8" fill="var(--acc)"/><path d="M4.5 8.2l2.2 2.2 4.8-4.8" fill="none" stroke="#16120d" stroke-width="1.6"/></svg>'
+        : '<svg viewBox="0 0 16 16" data-style="width:18px;height:18px;flex-shrink:0"><circle cx="8" cy="8" r="7.2" fill="none" stroke="var(--bd2)" stroke-width="1.4"/></svg>';
+      return `<div data-style="display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-top:1px solid var(--bd)">
+          <button data-arg-id="${t.id}" data-arg-done="${done ? 'true' : 'false'}" data-on-click="toggleTask(Number(this.dataset.argId),this.dataset.argDone==='true',this)" title="${done?'Reopen':'Mark done'}" data-style="background:none;border:none;cursor:pointer;padding:0;line-height:0">${check}</button>
+          <div data-style="flex:1">
+            <div data-style="font-size:13.5px;color:${done?'var(--t2)':'var(--t1)'};${done?'text-decoration:line-through;text-decoration-color:var(--t3)':''}">${_acctEsc(t.title)}${due}</div>
+            ${t.detail?`<div data-style="font-size:12.3px;color:var(--t2);margin-top:3px;white-space:pre-wrap">${_acctEsc(t.detail)}</div>`:''}
           </div></div>`;
     };
     el.style.display='block';
-    el.innerHTML = `<div style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:6px 17px 14px">
-        <div style="display:flex;align-items:center;gap:9px;padding:13px 0 2px"><span style="font-family:var(--font-display);font-size:18px;color:var(--t1)">Requests from your accountant</span>${openN?`<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--amber-bg);color:var(--amber)">${openN} open</span>`:''}</div>
-        <div style="font-size:11.5px;color:var(--t3);margin-bottom:2px">Tick an item when it's done. You can attach a requested file in Messages above.</div>
+    el.innerHTML = `<div data-style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:6px 17px 14px">
+        <div data-style="display:flex;align-items:center;gap:9px;padding:13px 0 2px"><span data-style="font-family:var(--font-display);font-size:18px;color:var(--t1)">Requests from your accountant</span>${openN?`<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--amber-bg);color:var(--amber)">${openN} open</span>`:''}</div>
+        <div data-style="font-size:11.5px;color:var(--t3);margin-bottom:2px">Tick an item when it's done. You can attach a requested file in Messages above.</div>
         ${tasks.map(row).join('')}</div>`;
   } catch(e) { el.style.display='none'; }
 };
@@ -432,23 +432,23 @@ window.loadMyProposals = async function() {
     const billLabel = b => b==='monthly' ? '/mo' : (b==='hourly' ? '/hr' : '');
     const card = p => {
       const pending = p.status==='pending';
-      const badge = pending ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--amber-bg);color:var(--amber)">Awaiting your response</span>'
-        : p.status==='accepted' ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--green-bg);color:var(--green)">Accepted ✓</span>'
-        : p.status==='declined' ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--red-bg);color:var(--red)">Declined</span>'
-        : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--t3)">Withdrawn</span>';
-      const actions = pending ? `<div style="display:flex;gap:8px;margin-top:12px">
-          <button class="btn btn-primary btn-sm" onclick="respondProposal(${p.id},'accept',this)">Accept</button>
-          <button class="btn btn-ghost btn-sm" onclick="respondProposal(${p.id},'decline',this)">Decline</button></div>` : '';
-      return `<div style="border-top:1px solid var(--bd);padding:14px 0">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-size:14px;color:var(--t1);font-weight:500">${_acctEsc(p.title)}</span>${badge}</div>
-          ${p.scope ? `<div style="font-size:12.7px;color:var(--t2);margin-top:5px;white-space:pre-wrap">${_acctEsc(p.scope)}</div>` : ''}
-          <div style="font-size:13px;color:var(--acc-light);margin-top:7px;font-family:var(--font-mono)">${_fmtFee(p.fee_cents,p.currency)}<span style="color:var(--t3)">${billLabel(p.billing)}</span></div>
+      const badge = pending ? '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--amber-bg);color:var(--amber)">Awaiting your response</span>'
+        : p.status==='accepted' ? '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--green-bg);color:var(--green)">Accepted ✓</span>'
+        : p.status==='declined' ? '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--red-bg);color:var(--red)">Declined</span>'
+        : '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--t3)">Withdrawn</span>';
+      const actions = pending ? `<div data-style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary btn-sm" data-arg-id="${p.id}" data-on-click="respondProposal(Number(this.dataset.argId),'accept',this)">Accept</button>
+          <button class="btn btn-ghost btn-sm" data-arg-id="${p.id}" data-on-click="respondProposal(Number(this.dataset.argId),'decline',this)">Decline</button></div>` : '';
+      return `<div data-style="border-top:1px solid var(--bd);padding:14px 0">
+          <div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span data-style="font-size:14px;color:var(--t1);font-weight:500">${_acctEsc(p.title)}</span>${badge}</div>
+          ${p.scope ? `<div data-style="font-size:12.7px;color:var(--t2);margin-top:5px;white-space:pre-wrap">${_acctEsc(p.scope)}</div>` : ''}
+          <div data-style="font-size:13px;color:var(--acc-light);margin-top:7px;font-family:var(--font-mono)">${_fmtFee(p.fee_cents,p.currency)}<span data-style="color:var(--t3)">${billLabel(p.billing)}</span></div>
           ${actions}</div>`;
     };
     el.style.display='block';
-    el.innerHTML = `<div style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:6px 17px 14px">
-        <div style="display:flex;align-items:center;gap:9px;padding:13px 0 2px"><span style="font-family:var(--font-display);font-size:18px;color:var(--t1)">Engagement proposals</span></div>
-        <div style="font-size:11.5px;color:var(--t3);margin-bottom:4px">Service offers from your accountant. Accepting one starts the engagement.</div>
+    el.innerHTML = `<div data-style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:6px 17px 14px">
+        <div data-style="display:flex;align-items:center;gap:9px;padding:13px 0 2px"><span data-style="font-family:var(--font-display);font-size:18px;color:var(--t1)">Engagement proposals</span></div>
+        <div data-style="font-size:11.5px;color:var(--t3);margin-bottom:4px">Service offers from your accountant. Accepting one starts the engagement.</div>
         ${props.map(card).join('')}</div>`;
   } catch(e) { el.style.display='none'; }
 };
@@ -546,7 +546,7 @@ window.sendMsgToAccountant = async function() {
 
 // Unread badge on the "My Accountant" nav item (fed by my-accountant GET's `unread`).
 function setMyAccNavBadge(n) {
-  const nav = document.querySelector('.nav-item[onclick*="my-accountant"]');
+  const nav = document.querySelector('.nav-item[data-on-click*="my-accountant"]');
   if (!nav) return;
   let b = nav.querySelector('.nav-badge');
   if (n > 0) {
@@ -611,12 +611,12 @@ window.loadMyAccess = async function() {
       const rows = (d.accounts || []).map(a => {
         const label = a.isOwn ? 'Your own account' : (a.ownerName || a.ownerEmail || ('Account #' + a.accountOwnerId));
         const isCur = a.accountOwnerId === d.currentAccountId;
-        const cur = isCur ? ' <span style="color:var(--acc,#c9a84c)">· currently viewing</span>' : '';
+        const cur = isCur ? ' <span data-style="color:var(--acc,#c9a84c)">· currently viewing</span>' : '';
         // N36: switch accounts (own books ↔ accounts you were invited into).
-        const sw = isCur ? '' : `<button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:11px;padding:3px 8px" onclick="switchAccount(${Number(a.accountOwnerId)}, this)">Switch</button>`;
-        return `<div style="padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span>${E(label)}${cur}</span><span style="display:flex;align-items:center"><span style="color:var(--t3);font-size:11px;text-transform:capitalize">${E(a.role)}</span>${sw}</span></div>`;
+        const sw = isCur ? '' : `<button class="btn btn-ghost btn-sm" data-style="margin-left:8px;font-size:11px;padding:3px 8px" data-arg-account-owner-id="${Number(a.accountOwnerId)}" data-on-click="switchAccount(Number(this.dataset.argAccountOwnerId), this)">Switch</button>`;
+        return `<div data-style="padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span>${E(label)}${cur}</span><span data-style="display:flex;align-items:center"><span data-style="color:var(--t3);font-size:11px;text-transform:capitalize">${E(a.role)}</span>${sw}</span></div>`;
       });
-      list.innerHTML = rows.join('') || '<div style="color:var(--t3)">Just your own account.</div>';
+      list.innerHTML = rows.join('') || '<div data-style="color:var(--t3)">Just your own account.</div>';
     }
   } catch (e) { /* not logged in / no access — leave defaults */ }
 };
@@ -693,10 +693,10 @@ window.renderAccessMatrix = async function() {
   }
   const _esc = (typeof esc === 'function') ? esc : (t => String(t == null ? '' : t).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
   const opt = (v, cur) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + (v[0].toUpperCase() + v.slice(1)) + '</option>';
-  const sel = (id, cur, kind) => '<select data-perm-kind="' + kind + '" data-perm-id="' + id + '" onchange="saveAccessMatrix()" class="finput" style="width:118px;font-size:12px;padding:5px 8px">' + opt('none', cur) + opt('view', cur) + opt('filing', cur) + '</select>';
-  const rowHtml = (label, sub, control) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--bd);border-radius:8px"><div style="min-width:0"><div style="font-size:13px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div>' + (sub ? '<div style="font-size:11px;color:var(--t3)">' + sub + '</div>' : '') + '</div>' + control + '</div>';
+  const sel = (id, cur, kind) => '<select data-perm-kind="' + kind + '" data-perm-id="' + id + '" data-on-change="saveAccessMatrix()" class="finput" data-style="width:118px;font-size:12px;padding:5px 8px">' + opt('none', cur) + opt('view', cur) + opt('filing', cur) + '</select>';
+  const rowHtml = (label, sub, control) => '<div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--bd);border-radius:8px"><div data-style="min-width:0"><div data-style="font-size:13px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div>' + (sub ? '<div data-style="font-size:11px;color:var(--t3)">' + sub + '</div>' : '') + '</div>' + control + '</div>';
   let html = '';
-  if (!ents.length) html += '<div style="font-size:12px;color:var(--t3)">No businesses yet.</div>';
+  if (!ents.length) html += '<div data-style="font-size:12px;color:var(--t3)">No businesses yet.</div>';
   for (const e of ents) html += rowHtml(_esc(e.name), 'Business', sel(e.id, entLvl(e.id), 'entity'));
   html += rowHtml('Personal finances', 'Net worth, personal income &amp; accounts', sel('personal', perLvl(), 'personal'));
   wrap.innerHTML = html;
@@ -732,9 +732,9 @@ window.revokeAccountant = async function() {
   const content = document.getElementById('my-acc-content');
   const access = document.getElementById('my-acc-access');
   if (content) content.innerHTML = `
-    <div style="text-align:center;padding:3rem 1rem;color:var(--t3)">
-      <div style="font-size:14px;color:var(--t2);margin-bottom:8px">No accountant linked</div>
-      <button class="btn btn-primary" style="font-size:13px" onclick="showPage('find-accountant',null)">Find an accountant →</button>
+    <div data-style="text-align:center;padding:3rem 1rem;color:var(--t3)">
+      <div data-style="font-size:14px;color:var(--t2);margin-bottom:8px">No accountant linked</div>
+      <button class="btn btn-primary" data-style="font-size:13px" data-on-click="showPage('find-accountant',null)">Find an accountant →</button>
     </div>`;
   if (access) access.style.display = 'none';
   if(typeof notify==='function') notify('Accountant access revoked');
@@ -749,16 +749,16 @@ window._marketModal = function(opts){
     var done = false;
     var ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px';
-    var starsHtml = opts.rating ? '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--t2,#9a9278);margin-bottom:6px">Your rating</div><div id="mm-stars" style="display:flex;gap:6px;font-size:28px;line-height:1;cursor:pointer">'
-      + [1,2,3,4,5].map(function(n){return '<span data-v="'+n+'" style="color:var(--t3,#5a5040);transition:color .1s">★</span>';}).join('') + '</div></div>' : '';
-    var catHtml = (opts.categories && opts.categories.length) ? '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--t2,#9a9278);margin-bottom:6px">Category</div><select id="mm-cat" class="finput" style="width:100%">' + opts.categories.map(function(c){return '<option value="'+c.value+'">'+c.label+'</option>';}).join('') + '</select></div>' : '';
-    ov.innerHTML = '<div style="background:var(--bg1,#16120d);border:1px solid var(--bd2,#3a3828);border-radius:12px;width:100%;max-width:420px;padding:22px">'
-      + '<div style="font-family:var(--font-display,serif);font-style:italic;font-size:19px;color:var(--acc-light,#e4c97a);margin-bottom:4px">'+(opts.title||'')+'</div>'
-      + (opts.subtitle ? '<div style="font-size:12px;color:var(--t2,#9a9278);margin-bottom:14px">'+opts.subtitle+'</div>' : '')
+    var starsHtml = opts.rating ? '<div data-style="margin-bottom:14px"><div data-style="font-size:11px;color:var(--t2,#9a9278);margin-bottom:6px">Your rating</div><div id="mm-stars" data-style="display:flex;gap:6px;font-size:28px;line-height:1;cursor:pointer">'
+      + [1,2,3,4,5].map(function(n){return '<span data-v="'+n+'" data-style="color:var(--t3,#5a5040);transition:color .1s">★</span>';}).join('') + '</div></div>' : '';
+    var catHtml = (opts.categories && opts.categories.length) ? '<div data-style="margin-bottom:14px"><div data-style="font-size:11px;color:var(--t2,#9a9278);margin-bottom:6px">Category</div><select id="mm-cat" class="finput" data-style="width:100%">' + opts.categories.map(function(c){return '<option value="'+c.value+'">'+c.label+'</option>';}).join('') + '</select></div>' : '';
+    ov.innerHTML = '<div data-style="background:var(--bg1,#16120d);border:1px solid var(--bd2,#3a3828);border-radius:12px;width:100%;max-width:420px;padding:22px">'
+      + '<div data-style="font-family:var(--font-display,serif);font-style:italic;font-size:19px;color:var(--acc-light,#e4c97a);margin-bottom:4px">'+(opts.title||'')+'</div>'
+      + (opts.subtitle ? '<div data-style="font-size:12px;color:var(--t2,#9a9278);margin-bottom:14px">'+opts.subtitle+'</div>' : '')
       + starsHtml
       + catHtml
-      + '<textarea id="mm-text" class="finput" rows="4" placeholder="'+(opts.placeholder||'')+'" style="margin-bottom:14px;resize:vertical"></textarea>'
-      + '<div style="display:flex;gap:8px;justify-content:flex-end"><button id="mm-cancel" class="btn btn-ghost btn-sm">Cancel</button><button id="mm-ok" class="btn btn-primary btn-sm">'+(opts.okLabel||'Submit')+'</button></div></div>';
+      + '<textarea id="mm-text" class="finput" rows="4" placeholder="'+(opts.placeholder||'')+'" data-style="margin-bottom:14px;resize:vertical"></textarea>'
+      + '<div data-style="display:flex;gap:8px;justify-content:flex-end"><button id="mm-cancel" class="btn btn-ghost btn-sm">Cancel</button><button id="mm-ok" class="btn btn-primary btn-sm">'+(opts.okLabel||'Submit')+'</button></div></div>';
     document.body.appendChild(ov);
     var chosen = 0;
     if (opts.rating) {

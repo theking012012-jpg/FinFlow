@@ -100,24 +100,24 @@ function buildCurrencyMenu(search){
     });
 
   list.innerHTML = `
-    <div style="padding:6px 8px;border-bottom:1px solid var(--bd)">
-      <input class="finput" placeholder="Search currencies…" style="font-size:12px;padding:5px 8px"
-        value="${search}" oninput="buildCurrencyMenu(this.value)"
-        onclick="event.stopPropagation()" id="currency-search-input">
+    <div data-style="padding:6px 8px;border-bottom:1px solid var(--bd)">
+      <input class="finput" placeholder="Search currencies…" data-style="font-size:12px;padding:5px 8px"
+        value="${search}" data-on-input="buildCurrencyMenu(this.value)"
+        data-on-click="event.stopPropagation()" id="currency-search-input">
     </div>
-    <div style="max-height:240px;overflow-y:auto">
+    <div data-style="max-height:240px;overflow-y:auto">
     ${entries.map(([code,c])=>`
-      <div onclick="setCurrency('${code}')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;transition:background .1s;font-size:12.5px;
+      <div data-arg-code="${code}" data-on-click="setCurrency(this.dataset.argCode)" data-style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;transition:background .1s;font-size:12.5px;
         background:${activeCurrency===code?'var(--bg2)':''}"
-        onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background='${activeCurrency===code?'var(--bg2)':''}'"
+        data-on-mouseenter="this.style.background='var(--bg2)'" data-arg-hover-bg="${activeCurrency===code?'var(--bg2)':''}" data-on-mouseleave="this.style.background=this.dataset.argHoverBg"
       >
-        <span style="font-size:14px;width:20px;text-align:center;flex-shrink:0">${c.flag}</span>
-        <span style="font-weight:600;color:var(--t1);width:36px;flex-shrink:0">${code}</span>
-        <span style="color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name||'')}</span>
-        <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--t3);flex-shrink:0">${code==='USD'?'base':(typeof c.rate==='number'?'×'+c.rate.toFixed(2):'')}</span>
-        ${activeCurrency===code?'<span style="color:var(--acc);font-size:12px;flex-shrink:0">✓</span>':''}
+        <span data-style="font-size:14px;width:20px;text-align:center;flex-shrink:0">${c.flag}</span>
+        <span data-style="font-weight:600;color:var(--t1);width:36px;flex-shrink:0">${code}</span>
+        <span data-style="color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name||'')}</span>
+        <span data-style="font-family:var(--font-mono);font-size:10.5px;color:var(--t3);flex-shrink:0">${code==='USD'?'base':(typeof c.rate==='number'?'×'+c.rate.toFixed(2):'')}</span>
+        ${activeCurrency===code?'<span data-style="color:var(--acc);font-size:12px;flex-shrink:0">✓</span>':''}
       </div>`).join('')}
-    ${entries.length===0?'<div style="padding:12px;text-align:center;color:var(--t3);font-size:12px">No currencies found</div>':''}
+    ${entries.length===0?'<div data-style="padding:12px;text-align:center;color:var(--t3);font-size:12px">No currencies found</div>':''}
     </div>`;
 }
 
@@ -132,14 +132,14 @@ function filterCountries(q){
   dd.innerHTML = filtered.slice(0,30).map(country=>{
     const code = COUNTRY_CURRENCY[country];
     const cur  = CURRENCIES[code];
-    return `<div onclick="selectCountry('${country.replace(/'/g,"\\'")}','${code}')"
-      style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:12.5px;transition:background .1s"
-      onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background=''">
-      <span style="font-size:14px">${cur?.flag||'🌐'}</span>
-      <span style="flex:1;color:var(--t1)">${country}</span>
-      <span style="font-family:var(--font-mono);font-size:11px;color:var(--acc);font-weight:600">${code}</span>
+    return `<div data-arg-country="${esc(country)}" data-arg-code="${code}" data-on-click="selectCountry(this.dataset.argCountry,this.dataset.argCode)"
+      data-style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:12.5px;transition:background .1s"
+      data-on-mouseenter="this.style.background='var(--bg2)'" data-on-mouseleave="this.style.background=''">
+      <span data-style="font-size:14px">${cur?.flag||'🌐'}</span>
+      <span data-style="flex:1;color:var(--t1)">${country}</span>
+      <span data-style="font-family:var(--font-mono);font-size:11px;color:var(--acc);font-weight:600">${code}</span>
     </div>`;
-  }).join('') + (filtered.length===0?'<div style="padding:10px;color:var(--t3);font-size:12px;text-align:center">No matches</div>':'');
+  }).join('') + (filtered.length===0?'<div data-style="padding:10px;color:var(--t3);font-size:12px;text-align:center">No matches</div>':'');
 }
 
 function selectCountry(country, currencyCode){
@@ -169,11 +169,11 @@ function filterCurrencyOverride(q){
     .filter(([code,c])=>!q||code.toLowerCase().includes(q.toLowerCase())||c.name.toLowerCase().includes(q.toLowerCase()))
     .slice(0,20);
   dd.innerHTML = entries.map(([code,c])=>`
-    <div onclick="pickOverrideCurrency('${code}')"
-      style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;font-size:12px;transition:background .1s"
-      onmouseenter="this.style.background='var(--bg1)'" onmouseleave="this.style.background=''">
-      <span>${c.flag}</span><span style="font-weight:600;color:var(--t1)">${code}</span>
-      <span style="color:var(--t3);flex:1">${esc(c.name)}</span>
+    <div data-arg-code="${code}" data-on-click="pickOverrideCurrency(this.dataset.argCode)"
+      data-style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;font-size:12px;transition:background .1s"
+      data-on-mouseenter="this.style.background='var(--bg1)'" data-on-mouseleave="this.style.background=''">
+      <span>${c.flag}</span><span data-style="font-weight:600;color:var(--t1)">${code}</span>
+      <span data-style="color:var(--t3);flex:1">${esc(c.name)}</span>
     </div>`).join('');
 }
 
@@ -248,18 +248,18 @@ function renderBusinessSwitcher(){
 function buildBizMenu(){
   const list = document.getElementById('biz-list');
   list.innerHTML = businesses.map(b=>`
-    <div onclick="switchBusiness('${b.id}')" style="display:flex;align-items:center;gap:9px;padding:8px 10px;cursor:pointer;transition:background .1s;
+    <div data-arg-id="${b.id}" data-on-click="switchBusiness(this.dataset.argId)" data-style="display:flex;align-items:center;gap:9px;padding:8px 10px;cursor:pointer;transition:background .1s;
       background:${b.id===activeBizId?'var(--bg2)':''}"
-      onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background='${b.id===activeBizId?'var(--bg2)':''}'"
+      data-on-mouseenter="this.style.background='var(--bg2)'" data-arg-hover-bg="${b.id===activeBizId?'var(--bg2)':''}" data-on-mouseleave="this.style.background=this.dataset.argHoverBg"
     >
-      <div style="width:28px;height:28px;border-radius:8px;background:${b.color};opacity:.15;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;position:relative">
-        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:7">${esc(b.icon || String(b.name||'?').trim().charAt(0).toUpperCase() || '?')}</div>
+      <div data-style="width:28px;height:28px;border-radius:8px;background:${b.color};opacity:.15;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;position:relative">
+        <div data-style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:7">${esc(b.icon || String(b.name||'?').trim().charAt(0).toUpperCase() || '?')}</div>
       </div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12.5px;font-weight:${b.id===activeBizId?600:400};color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name)}</div>
-        <div style="font-size:11px;color:var(--t3)">${esc(b.industry)} · ${esc(b.currency)}</div>
+      <div data-style="flex:1;min-width:0">
+        <div data-style="font-size:12.5px;font-weight:${b.id===activeBizId?600:400};color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name)}</div>
+        <div data-style="font-size:11px;color:var(--t3)">${esc(b.industry)} · ${esc(b.currency)}</div>
       </div>
-      ${b.id===activeBizId?'<span style="color:var(--acc);font-size:14px;flex-shrink:0">✓</span>':''}
+      ${b.id===activeBizId?'<span data-style="color:var(--acc);font-size:14px;flex-shrink:0">✓</span>':''}
     </div>`).join('');
 }
 
@@ -578,9 +578,10 @@ function _entityCapReached(){
 // Accessible "Retry" control for the scoped three-state (loading / empty / failed)
 // data cards. Returns a REAL <button> — natively focusable and Enter/Space-activatable
 // — styled as an inline link, so the failure state doesn't add a new a11y gap.
-// `onclick` is a JS expression string invoked in global scope.
-window._ffRetryBtn = function(onclick, label){
-  return '<button type="button" class="ff-retry" onclick="'+onclick+'">'+(label||'Retry')+'</button>';
+// `fnName` is the name of the global function Retry calls (FA-P1: the button's handler is constant code — no code is
+// ever built from a string under the strict Content-Security-Policy).
+window._ffRetryBtn = function(fnName, label){
+  return '<button type="button" class="ff-retry" data-arg-fn="'+fnName+'" data-on-click="window[this.dataset.argFn]&&window[this.dataset.argFn]()">'+(label||'Retry')+'</button>';
 };
 
 function showLoginForm(){
@@ -742,8 +743,8 @@ function applyRole(role){
   const allowed = ROLES[role].nav;
   if(!allowed) return; // owner sees everything
   // Hide nav items not in allowed list
-  document.querySelectorAll('.nav-item[onclick*="showPage"],.nav-group-header').forEach(el=>{
-    const match = (el.getAttribute('onclick')||'').match(/showPage\('([^']+)'/);
+  document.querySelectorAll('.nav-item[data-on-click*="showPage"],.nav-group-header').forEach(el=>{
+    const match = (el.getAttribute('data-on-click')||'').match(/showPage\('([^']+)'/);
     if(!match) return;
     const page = match[1];
     el.style.display = allowed.some(a=>page.startsWith(a.split('-')[0]))||allowed.includes(page) ? '' : 'none';
@@ -765,7 +766,7 @@ function injectRoleBadge(role){
     background:rgba(0,0,0,.2);font-size:11px;color:${ROLES[role]?.color||'#888'};
     font-weight:500;cursor:pointer;margin-right:4px;
   `;
-  badge.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:${ROLES[role]?.color||'#888'}"></span>${ROLES[role]?.label||role} <span style="opacity:.5;font-size:10px">▾</span>`;
+  badge.innerHTML = `<span data-style="width:6px;height:6px;border-radius:50%;background:${ROLES[role]?.color||'#888'}"></span>${ROLES[role]?.label||role} <span data-style="opacity:.5;font-size:10px">▾</span>`;
   badge.title = 'Click to switch role';
   badge.onclick = () => {
     document.getElementById('login-screen').style.display = 'flex';
@@ -989,14 +990,14 @@ function openReconcileModal(){
   list.innerHTML = bankTxns.map((t,i)=>{
     const locked = t._reconId != null;
     return `
-    <label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--bd);cursor:${locked?'default':'pointer'};transition:background .1s${locked?';opacity:.75':''}" onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background=''">
-      <input type="checkbox" data-idx="${i}"${t._dbId!=null?` data-id="${t._dbId}"`:''} style="accent-color:var(--acc);flex-shrink:0"
-        ${locked?'checked disabled':''} onchange="updateReconSummary()">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;color:var(--t1);font-weight:500">${esc(t.desc||'')}</div>
-        <div style="font-size:11px;color:var(--t3)">${esc(t.cat||'')} · ${esc(t.date||'')}${locked?' · 🔒 reconciled':''}</div>
+    <label data-style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--bd);cursor:${locked?'default':'pointer'};transition:background .1s${locked?';opacity:.75':''}" data-on-mouseenter="this.style.background='var(--bg2)'" data-on-mouseleave="this.style.background=''">
+      <input type="checkbox" data-idx="${i}"${t._dbId!=null?` data-id="${t._dbId}"`:''} data-style="accent-color:var(--acc);flex-shrink:0"
+        ${locked?'checked disabled':''} data-on-change="updateReconSummary()">
+      <div data-style="flex:1;min-width:0">
+        <div data-style="font-size:13px;color:var(--t1);font-weight:500">${esc(t.desc||'')}</div>
+        <div data-style="font-size:11px;color:var(--t3)">${esc(t.cat||'')} · ${esc(t.date||'')}${locked?' · 🔒 reconciled':''}</div>
       </div>
-      <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;flex-shrink:0;color:${t.type==='credit'?'var(--green)':'var(--red)'}">
+      <span data-style="font-family:var(--font-mono);font-size:13px;font-weight:600;flex-shrink:0;color:${t.type==='credit'?'var(--green)':'var(--red)'}">
         ${t.type==='credit'?'+':'-'}${S(t.amount)}
       </span>
     </label>`; }).join('');
@@ -1111,15 +1112,15 @@ function openJournalEntryModal(){
 function renderJELines(){
   const container = document.getElementById('je-lines');
   container.innerHTML = window._jeLines.map((line,i)=>`
-    <div style="display:grid;grid-template-columns:1fr 90px 90px 28px;gap:6px;margin-bottom:5px" id="je-line-${i}">
-      <select class="finput" style="font-size:12px" onchange="jeLineChange(${i},'acct',this.value)" aria-label="Account">
+    <div data-style="display:grid;grid-template-columns:1fr 90px 90px 28px;gap:6px;margin-bottom:5px" id="je-line-${i}">
+      <select class="finput" data-style="font-size:12px" data-arg-i="${i}" data-on-change="jeLineChange(Number(this.dataset.argI),'acct',this.value)" aria-label="Account">
         ${_jeAccountOptions(line.acct)}
       </select>
-      <input class="finput" type="number" placeholder="0.00" style="font-size:12px" value="${line.dr||''}"
-        oninput="jeLineChange(${i},'dr',parseFloat(this.value)||0)" min="0">
-      <input class="finput" type="number" placeholder="0.00" style="font-size:12px" value="${line.cr||''}"
-        oninput="jeLineChange(${i},'cr',parseFloat(this.value)||0)" min="0">
-      <button class="btn btn-ghost btn-sm" style="padding:4px;font-size:16px;line-height:1" onclick="removeJELine(${i})" ${window._jeLines.length<=2?'disabled':''}>×</button>
+      <input class="finput" type="number" placeholder="0.00" data-style="font-size:12px" value="${line.dr||''}"
+        data-arg-i="${i}" data-on-input="jeLineChange(Number(this.dataset.argI),'dr',parseFloat(this.value)||0)" min="0">
+      <input class="finput" type="number" placeholder="0.00" data-style="font-size:12px" value="${line.cr||''}"
+        data-arg-i="${i}" data-on-input="jeLineChange(Number(this.dataset.argI),'cr',parseFloat(this.value)||0)" min="0">
+      <button class="btn btn-ghost btn-sm" data-style="padding:4px;font-size:16px;line-height:1" data-arg-i="${i}" data-on-click="removeJELine(Number(this.dataset.argI))" ${window._jeLines.length<=2?'disabled':''}>×</button>
     </div>`).join('');
 }
 
@@ -1212,31 +1213,31 @@ async function renderCOALive(){
     setEl('coa-assets', S(assets));
     setEl('coa-liabs',  S(liabs));
     setEl('coa-equity', S(assets - liabs));
-    if(!accounts.length){ l.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet.</div>'; return; }
+    if(!accounts.length){ l.innerHTML='<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet.</div>'; return; }
     const grouped={};
     accounts.forEach(a=>{(grouped[a.category]=grouped[a.category]||[]).push(a);});
-    const tag=a=>a.kind==='own'?'<span style="font-size:10px;color:var(--t3);margin-left:6px">yours</span>'
-      :a.kind==='older'?'<span style="font-size:10px;color:var(--t3);margin-left:6px">older journal account</span>'
-      :(!a.journal?'<span style="font-size:10px;color:var(--t3);margin-left:6px" title="'+esc(a.why||'')+'">from its documents</span>':'');
+    const tag=a=>a.kind==='own'?'<span data-style="font-size:10px;color:var(--t3);margin-left:6px">yours</span>'
+      :a.kind==='older'?'<span data-style="font-size:10px;color:var(--t3);margin-left:6px">older journal account</span>'
+      :(!a.journal?'<span data-style="font-size:10px;color:var(--t3);margin-left:6px" title="'+esc(a.why||'')+'">from its documents</span>':'');
     l.innerHTML=Object.entries(grouped).map(([type,accs])=>`
-      <div style="margin-bottom:1rem">
-        <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${esc(type)}</div>
+      <div data-style="margin-bottom:1rem">
+        <div data-style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${esc(type)}</div>
         ${accs.map(a=>`
-        <div class="coa-row" style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-          <span style="color:var(--t3);font-family:var(--font-mono)">${esc(a.code||'')}</span>
-          <span style="color:var(--t1)">${esc(a.name||'')}${tag(a)}</span>
-          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">${_fmtMoneyNative(a.balance||0)}</span>
-          <span style="color:var(--t3);text-align:right">${a.normal==='debit'?'Debit':'Credit'}</span>
+        <div class="coa-row" data-style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+          <span data-style="color:var(--t3);font-family:var(--font-mono)">${esc(a.code||'')}</span>
+          <span data-style="color:var(--t1)">${esc(a.name||'')}${tag(a)}</span>
+          <span data-style="font-family:var(--font-mono);text-align:right;color:var(--t1)">${_fmtMoneyNative(a.balance||0)}</span>
+          <span data-style="color:var(--t3);text-align:right">${a.normal==='debit'?'Debit':'Credit'}</span>
         </div>`).join('')}
       </div>`).join('');
   }catch(e){
-    l.innerHTML='<div style="padding:2rem;text-align:center;color:var(--t3)">Could not load the chart of accounts. Please refresh.</div>';
+    l.innerHTML='<div data-style="padding:2rem;text-align:center;color:var(--t3)">Could not load the chart of accounts. Please refresh.</div>';
   }
 }
 
 async function renderJournalsLive(){
   const l=document.getElementById('journals-list');if(!l)return;
-  l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
+  l.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
   try{
     const res=await fetch('/api/journals',{credentials:'include'});
     if(!res.ok)throw new Error();
@@ -1257,24 +1258,24 @@ async function renderJournalsLive(){
     const balEl = document.getElementById('jnl-balance-label');
     if(balEl) balEl.textContent = Math.abs(totalDebits-totalCredits)<0.01 ? 'Balanced' : 'Unbalanced';
 
-    if(!journals.length){l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No journal entries yet.</div>';return;}
+    if(!journals.length){l.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No journal entries yet.</div>';return;}
     l.innerHTML=journals.map(j=>`
-      <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
-        <span style="color:var(--t3)">${esc(j.date||'')}</span>
-        <span style="font-weight:500">${esc(j.notes||j.description||'')}</span>
-        <span style="color:var(--t3)">${esc(j.ref||'')}</span>
-        <span style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
-        <span style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
+      <div class="table-row" data-style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
+        <span data-style="color:var(--t3)">${esc(j.date||'')}</span>
+        <span data-style="font-weight:500">${esc(j.notes||j.description||'')}</span>
+        <span data-style="color:var(--t3)">${esc(j.ref||'')}</span>
+        <span data-style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
+        <span data-style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
         <span><span class="badge ${(j.status||'Draft')==='Posted'?'b-green':'b-amber'}">${esc(j.status||'Draft')}</span></span>
       </div>`).join('');
   }catch(e){
     const allEntries=[...journalEntries,...journalsData.map(j=>({...j,lines:null}))];
     l.innerHTML=allEntries.map(j=>`
-      <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
-        <span style="color:var(--t3)">${esc(j.date||'')}</span><span style="font-weight:500">${esc(j.notes||'')}</span>
-        <span style="color:var(--t3)">${esc(j.ref||'')}</span>
-        <span style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
-        <span style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
+      <div class="table-row" data-style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
+        <span data-style="color:var(--t3)">${esc(j.date||'')}</span><span data-style="font-weight:500">${esc(j.notes||'')}</span>
+        <span data-style="color:var(--t3)">${esc(j.ref||'')}</span>
+        <span data-style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
+        <span data-style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
         <span><span class="badge ${j.status==='Posted'?'b-green':'b-amber'}">${j.status}</span></span>
       </div>`).join('');
   }
@@ -1833,8 +1834,8 @@ function openModal(id){
   const panel = el.querySelector('.modal') || el;
   if(window.trapFocus){ if(_modalFocusCleanup) _modalFocusCleanup(); _modalFocusCleanup = window.trapFocus(panel); }
 }
-function emptyState(icon,title,desc,ctaLabel,ctaFn){
-  return`<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 16 16">${icon}</svg></div><h3>${title}</h3><p>${desc}</p>${ctaLabel?`<button class="btn btn-primary btn-sm" onclick="${ctaFn}">${ctaLabel}</button>`:''}</div>`;
+function emptyState(icon,title,desc,ctaLabel,ctaFn){   // ctaFn: the NAME of the global function the button calls (FA-P1)
+  return`<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 16 16">${icon}</svg></div><h3>${title}</h3><p>${desc}</p>${ctaLabel?`<button class="btn btn-primary btn-sm" data-arg-fn="${ctaFn}" data-on-click="window[this.dataset.argFn]()">${ctaLabel}</button>`:''}</div>`;
 }
 
 // ════════════════════════════════════════════
@@ -2632,8 +2633,8 @@ function updateCashflow(d=getPeriodData()){
   const _srcList = _srcTc.list.slice(0,4);
   const _maxSrc = _srcList.length ? _srcList[0].total : 1;
   document.getElementById('cf-sources').innerHTML = _srcList.length
-    ? _srcList.map((s,i)=>{const pct=_srcTc.total>0?Math.round(s.total/_srcTc.total*100):0;return`<div class="bar-row"><span class="bar-label">${esc(s.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${_src_colors[i]||'var(--green)'}"></div></div><span class="bar-val">${S(s.total)}</span></div>`;}).join('')
-    : '<div style="color:var(--t3);font-size:12px;padding:8px 0">No revenue data yet</div>';
+    ? _srcList.map((s,i)=>{const pct=_srcTc.total>0?Math.round(s.total/_srcTc.total*100):0;return`<div class="bar-row"><span class="bar-label">${esc(s.label)}</span><div class="bar-track"><div class="bar-fill" data-style="width:${pct}%;background:${_src_colors[i]||'var(--green)'}"></div></div><span class="bar-val">${S(s.total)}</span></div>`;}).join('')
+    : '<div data-style="color:var(--t3);font-size:12px;padding:8px 0">No revenue data yet</div>';
   // Change indicators. F57: these read d.rev/d.prevRev — ACCRUAL deltas. With the cells above
   // them now showing CASH, a delta computed on a different basis sitting under a cash figure is
   // a mislabelled number, so it is cleared rather than shown wrong. Restoring it needs a
@@ -2665,13 +2666,13 @@ function renderInvoices(){
     const statusLabel=inv.status==='partial'?`partial (${S(paid)} of ${S(total)})`:inv.status;
     return`<div class="table-row inv-cols">
       <span>${esc(inv.client)}</span>
-      <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
-      <span style="font-family:var(--font-mono);color:${paid>0?'var(--green)':'var(--t3)'}">${paidStr}</span>
-      <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
-      <span class="table-actions" style="display:flex;gap:4px;flex-wrap:wrap">
+      <span data-style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
+      <span data-style="font-family:var(--font-mono);color:${paid>0?'var(--green)':'var(--t3)'}">${paidStr}</span>
+      <span data-style="color:${esc(inv.color)}">${esc(inv.due)}</span>
+      <span class="table-actions" data-style="display:flex;gap:4px;flex-wrap:wrap">
         <span class="badge ${badgeCls[inv.status]||'b-amber'}">${esc(statusLabel)}</span>
-        ${inv.status!=='paid'?`<button class="btn btn-ghost btn-sm inv-remind-btn" style="font-size:10px;padding:3px 7px" data-idx="${Number(idx)}" data-id="${inv.id||''}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Record Payment</button>`:''}
-        ${inv.status==='overdue'?`<button class="btn btn-ghost btn-sm inv-remind-btn-r" style="font-size:10px;padding:3px 7px" data-idx="${Number(idx)}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Remind ↗</button>`:''}
+        ${inv.status!=='paid'?`<button class="btn btn-ghost btn-sm inv-remind-btn" data-style="font-size:10px;padding:3px 7px" data-idx="${Number(idx)}" data-id="${inv.id||''}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Record Payment</button>`:''}
+        ${inv.status==='overdue'?`<button class="btn btn-ghost btn-sm inv-remind-btn-r" data-style="font-size:10px;padding:3px 7px" data-idx="${Number(idx)}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Remind ↗</button>`:''}
       </span>
     </div>`;
   }).join('');
@@ -2743,11 +2744,11 @@ window.openSaveAllContacts=async function(kind){
   const ex=document.getElementById('ff-saveall'); if(ex) ex.remove();
   const o=document.createElement('div'); o.id='ff-saveall';
   o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem';
-  o.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-lg);padding:1.25rem;max-width:460px;width:100%;max-height:80vh;overflow:auto">'
-    +'<div style="font-size:15px;font-weight:600;margin-bottom:4px">Save '+rows.length+' name'+(rows.length===1?'':'s')+' as '+what+'s</div>'
-    +'<div style="font-size:12px;color:var(--t3);margin-bottom:10px">Untick any you do not want. A name that looks like one you already have starts unticked.</div>'
-    +rows.map(u=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--bd);font-size:13px;cursor:pointer"><input type="checkbox" data-name="${esc(u.name)}" ${u.similar_to?'':'checked'} style="margin-top:3px"><span><span style="color:var(--t1)">${esc(u.name)}</span>${u.similar_to?`<br><span style="font-size:11.5px;color:var(--amber)">Looks like your ${what} “${esc(u.similar_to)}” — tick only if it is a different one</span>`:''}</span></label>`).join('')
-    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn btn-ghost" id="ff-saveall-no" style="font-size:12px">Cancel</button><button class="btn btn-primary" id="ff-saveall-yes" style="font-size:12px">Save selected</button></div></div>';
+  o.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-lg);padding:1.25rem;max-width:460px;width:100%;max-height:80vh;overflow:auto">'
+    +'<div data-style="font-size:15px;font-weight:600;margin-bottom:4px">Save '+rows.length+' name'+(rows.length===1?'':'s')+' as '+what+'s</div>'
+    +'<div data-style="font-size:12px;color:var(--t3);margin-bottom:10px">Untick any you do not want. A name that looks like one you already have starts unticked.</div>'
+    +rows.map(u=>`<label data-style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--bd);font-size:13px;cursor:pointer"><input type="checkbox" data-name="${esc(u.name)}" ${u.similar_to?'':'checked'} data-style="margin-top:3px"><span><span data-style="color:var(--t1)">${esc(u.name)}</span>${u.similar_to?`<br><span data-style="font-size:11.5px;color:var(--amber)">Looks like your ${what} “${esc(u.similar_to)}” — tick only if it is a different one</span>`:''}</span></label>`).join('')
+    +'<div data-style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn btn-ghost" id="ff-saveall-no" data-style="font-size:12px">Cancel</button><button class="btn btn-primary" id="ff-saveall-yes" data-style="font-size:12px">Save selected</button></div></div>';
   document.body.appendChild(o);
   const close=()=>o.remove();
   o.addEventListener('click',e=>{ if(e.target===o) close(); });
@@ -2948,16 +2949,16 @@ function renderInventory(){
     const val=window._invItemValue(item);   // LA5
     const cogsVal=item.cogs!=null?S(item.cogs):'—';
     return`<div class="inv-item-row">
-      <span style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
+      <span data-style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
       <span>${esc(item.name)}</span>
-      <span style="color:${item.low?'var(--red)':'var(--t1)'}">${item.units} units${item.low?' ⚠':''}</span>
-      <div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${col}"></div></div>
-      <span style="color:${item.low?'var(--red)':'var(--t1)'};">${val==null?'—':S(val)}</span>
-      <span style="text-align:right;font-family:var(--font-mono);color:var(--t2)">${cogsVal}</span>
-      <span class="table-actions" style="display:flex;gap:4px">
-        <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="openStockInModal(${idx})">+ In</button>
-        <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="openStockOutModal(${idx})">- Out</button>
-        <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="restockItem(${idx})">Restock</button>
+      <span data-style="color:${item.low?'var(--red)':'var(--t1)'}">${item.units} units${item.low?' ⚠':''}</span>
+      <div class="stock-bar"><div class="stock-fill" data-style="width:${pct}%;background:${col}"></div></div>
+      <span data-style="color:${item.low?'var(--red)':'var(--t1)'};">${val==null?'—':S(val)}</span>
+      <span data-style="text-align:right;font-family:var(--font-mono);color:var(--t2)">${cogsVal}</span>
+      <span class="table-actions" data-style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-idx="${idx}" data-on-click="openStockInModal(Number(this.dataset.argIdx))">+ In</button>
+        <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-idx="${idx}" data-on-click="openStockOutModal(Number(this.dataset.argIdx))">- Out</button>
+        <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-idx="${idx}" data-on-click="restockItem(Number(this.dataset.argIdx))">Restock</button>
       </span>
     </div>`;
   }).join('');
@@ -3003,15 +3004,18 @@ function dedTotal(gross, deductions){
 function netFromDeductions(gross, deductions){
   return Math.round(((parseFloat(gross)||0) - dedTotal(gross, deductions))*100)/100;
 }
+// FA-P1: the row carries the NAME of its preview function (data-preview); its handlers are constant code that read it.
+function _dedPreview(el){ const r=el.closest('.ded-row'), n=r&&r.dataset.preview; if(n&&typeof window[n]==='function') window[n](); }
+function _dedRemove(el){ const r=el.closest('.ded-row'), n=r&&r.dataset.preview; if(r) r.remove(); if(n&&typeof window[n]==='function') window[n](); }
+window._dedPreview=_dedPreview; window._dedRemove=_dedRemove;
 function dedRowHTML(d, previewFn){
   d = d || {label:'',value:'',type:'percent'};
-  const pv = previewFn ? previewFn+'()' : '';
   const valAttr = (d.value!=null && d.value!=='') ? d.value : '';
-  return '<div class="ded-row" style="display:flex;gap:6px;align-items:center;margin-bottom:5px">'
-    + '<input class="finput ded-label" placeholder="Label (e.g. PAYE, NIS, CPP)" value="'+esc(d.label||'')+'" oninput="'+pv+'" style="flex:1;min-width:0">'
-    + '<input class="finput ded-value" type="number" step="0.01" min="0" placeholder="0" value="'+valAttr+'" oninput="'+pv+'" style="width:82px">'
-    + '<select class="finput ded-type" onchange="'+pv+'" style="width:74px"><option value="percent"'+(d.type==='fixed'?'':' selected')+'>%</option><option value="fixed"'+(d.type==='fixed'?' selected':'')+'>fixed</option></select>'
-    + '<button type="button" onclick="this.closest(\'.ded-row\').remove();'+pv+'" title="Remove deduction" style="border:none;background:none;color:var(--t3);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px">✕</button>'
+  return '<div class="ded-row" data-preview="'+esc(previewFn||'')+'" data-style="display:flex;gap:6px;align-items:center;margin-bottom:5px">'
+    + '<input class="finput ded-label" placeholder="Label (e.g. PAYE, NIS, CPP)" value="'+esc(d.label||'')+'" data-on-input="_dedPreview(this)" data-style="flex:1;min-width:0">'
+    + '<input class="finput ded-value" type="number" step="0.01" min="0" placeholder="0" value="'+valAttr+'" data-on-input="_dedPreview(this)" data-style="width:82px">'
+    + '<select class="finput ded-type" data-on-change="_dedPreview(this)" data-style="width:74px"><option value="percent"'+(d.type==='fixed'?'':' selected')+'>%</option><option value="fixed"'+(d.type==='fixed'?' selected':'')+'>fixed</option></select>'
+    + '<button type="button" data-on-click="_dedRemove(this)" title="Remove deduction" data-style="border:none;background:none;color:var(--t3);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px">✕</button>'
     + '</div>';
 }
 function setDedRows(containerId, previewFn, deductions){
@@ -3064,15 +3068,15 @@ function renderPayroll(){
     return`<div class="payroll-row">
       <div class="emp-info">
         <div class="emp-init ${e.avClass||'av-blue'}">${e.initials||getInitials(e.fname,e.lname)}</div>
-        <div><div class="emp-name">${esc(e.fname)} ${esc(e.lname)}${e.isOwner?` <span class="badge b-blue" style="font-size:9px">You</span>`:''}</div><div class="emp-role">${esc(e.type||'Full-time')}</div></div>
+        <div><div class="emp-name">${esc(e.fname)} ${esc(e.lname)}${e.isOwner?` <span class="badge b-blue" data-style="font-size:9px">You</span>`:''}</div><div class="emp-role">${esc(e.type||'Full-time')}</div></div>
       </div>
-      <span style="color:var(--t2);font-size:12px">${esc(e.role)}</span>
-      <span style="font-family:var(--font-mono);color:var(--t1)">${S(e.gross)}</span>
-      <span style="color:var(--red);font-family:var(--font-mono)">${tax>0?'-'+S(tax):'—'}</span>
-      <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${S(net)}</span>
+      <span data-style="color:var(--t2);font-size:12px">${esc(e.role)}</span>
+      <span data-style="font-family:var(--font-mono);color:var(--t1)">${S(e.gross)}</span>
+      <span data-style="color:var(--red);font-family:var(--font-mono)">${tax>0?'-'+S(tax):'—'}</span>
+      <span data-style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${S(net)}</span>
       ${e.isOwner
-        ?`<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
-        :`<button onclick="openEditEmployee(${e._dbId||e.id||0})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:4px;font-size:14px;line-height:1" title="Edit employee">✏</button>`}
+        ?`<button class="btn-icon" data-on-click="openOwnerModal()" title="Edit" data-style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
+        :`<button data-arg-id="${e._dbId||e.id||0}" data-on-click="openEditEmployee(Number(this.dataset.argId))" data-style="background:none;border:none;cursor:pointer;color:var(--t3);padding:4px;font-size:14px;line-height:1" title="Edit employee">✏</button>`}
     </div>`;
   }).join('');
 }
@@ -3116,13 +3120,13 @@ function updateOwnerEntitySummary(){
     const cur = window.CURRENCIES[e.currency] || {symbol:'$'};
     const netUSD = ep ? Math.round(_safeFX(ep.net, e.currency, 'USD')) : 0;
     const badge = ep
-      ? `<span style="color:var(--green);font-family:var(--font-mono);font-size:12px">${cur.symbol}${ep.net.toLocaleString()}/mo</span><span style="font-size:10px;color:var(--t3);margin-left:4px">(≈$${netUSD.toLocaleString()} USD)</span>`
-      : `<span style="color:var(--t3);font-size:11px">Not added</span>`;
-    return `<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px">
-      <span style="display:flex;align-items:center;gap:6px">
-        <span style="width:20px;height:20px;border-radius:4px;background:${e.color};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#0e0b08;flex-shrink:0">${esc(e.name.slice(0,2).toUpperCase())}</span>
-        <span style="color:var(--t2)">${esc(e.name)}</span>
-        <span style="font-size:9px;color:var(--t3)">${e.currency}</span>
+      ? `<span data-style="color:var(--green);font-family:var(--font-mono);font-size:12px">${cur.symbol}${ep.net.toLocaleString()}/mo</span><span data-style="font-size:10px;color:var(--t3);margin-left:4px">(≈$${netUSD.toLocaleString()} USD)</span>`
+      : `<span data-style="color:var(--t3);font-size:11px">Not added</span>`;
+    return `<div data-style="display:flex;align-items:center;justify-content:space-between;font-size:12px">
+      <span data-style="display:flex;align-items:center;gap:6px">
+        <span data-style="width:20px;height:20px;border-radius:4px;background:${e.color};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#0e0b08;flex-shrink:0">${esc(e.name.slice(0,2).toUpperCase())}</span>
+        <span data-style="color:var(--t2)">${esc(e.name)}</span>
+        <span data-style="font-size:9px;color:var(--t3)">${e.currency}</span>
       </span>
       ${badge}
     </div>`;
@@ -3145,10 +3149,10 @@ function renderOwnerModalTabs(){
   tabs.innerHTML = ENTITIES.map((e,i)=>{
     const ep = ownerPayrollByEntity[i];
     const active = i === activeOwnerEntityIdx;
-    return `<button onclick="switchOwnerEntityTab(${i})" style="flex:1;padding:5px 6px;border:none;border-radius:calc(var(--radius) - 1px);font-size:11.5px;font-family:var(--font);cursor:pointer;transition:all .15s;background:${active?'var(--bg1)':'transparent'};color:${active?'var(--t1)':'var(--t3)'};font-weight:${active?'500':'400'};display:flex;align-items:center;justify-content:center;gap:5px">
-      <span style="width:16px;height:16px;border-radius:3px;background:${e.color};display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#0e0b08;flex-shrink:0">${esc(e.name.slice(0,2).toUpperCase())}</span>
+    return `<button data-arg-i="${i}" data-on-click="switchOwnerEntityTab(Number(this.dataset.argI))" data-style="flex:1;padding:5px 6px;border:none;border-radius:calc(var(--radius) - 1px);font-size:11.5px;font-family:var(--font);cursor:pointer;transition:all .15s;background:${active?'var(--bg1)':'transparent'};color:${active?'var(--t1)':'var(--t3)'};font-weight:${active?'500':'400'};display:flex;align-items:center;justify-content:center;gap:5px">
+      <span data-style="width:16px;height:16px;border-radius:3px;background:${e.color};display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#0e0b08;flex-shrink:0">${esc(e.name.slice(0,2).toUpperCase())}</span>
       ${esc(e.name.split(' ')[0])}
-      ${ep ? '<span style="width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0"></span>' : ''}
+      ${ep ? '<span data-style="width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0"></span>' : ''}
     </button>`;
   }).join('');
 
@@ -3581,13 +3585,13 @@ function renderPersonal(){
   const _spFooter = document.getElementById('spending-footer-row');
   {
     if(spending.length === 0){
-      document.getElementById('spending-bars').innerHTML = '<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No spending recorded yet — add a transaction to get started.</div>';
+      document.getElementById('spending-bars').innerHTML = '<div data-style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No spending recorded yet — add a transaction to get started.</div>';
       if(_spFooter) _spFooter.style.display = 'none';
     } else {
       document.getElementById('spending-bars').innerHTML = spending.map(s=>`
         <div class="bar-row">
           <span class="bar-label">${s.label}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(s.amount/maxSpend*100)}%;background:${s.color}"></div></div>
+          <div class="bar-track"><div class="bar-fill" data-style="width:${Math.round(s.amount/maxSpend*100)}%;background:${s.color}"></div></div>
           <span class="bar-val">${SP(s.amount)}</span>
         </div>`).join('');
       if(_spFooter) _spFooter.style.display = '';
@@ -3597,7 +3601,7 @@ function renderPersonal(){
   // Goals (convert from USD)
   const goalColors = ['var(--green)','var(--acc)','var(--acc-light)','var(--amber)','var(--purple)','var(--teal)'];
   document.getElementById('goals-list').innerHTML = goals.length===0
-    ? '<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No goals yet — add one above</div>'
+    ? '<div data-style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No goals yet — add one above</div>'
     : goals.map((g,i)=>{
         const p = g.target>0 ? Math.min(100,Math.round(g.current/g.target*100)) : 100;
         const m = g.monthly>0&&g.current<g.target ? Math.ceil((g.target-g.current)/g.monthly) : null;
@@ -3605,12 +3609,12 @@ function renderPersonal(){
         return `<div class="goal">
           <div class="goal-header">
             <span class="goal-name">${esc(g.name)}</span>
-            <span style="display:flex;align-items:center;gap:6px">
+            <span data-style="display:flex;align-items:center;gap:6px">
               <span class="goal-val">${SP(g.current)}${g.target?' / '+SP(g.target):''}</span>
-              ${g._dbId?`<button onclick="deletePersGoal(${g._dbId})" title="Delete goal" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:0 1px;font-size:11px;line-height:1">✕</button>`:''}
+              ${g._dbId?`<button data-arg-db-id="${g._dbId}" data-on-click="deletePersGoal(Number(this.dataset.argDbId))" title="Delete goal" data-style="background:none;border:none;cursor:pointer;color:var(--t3);padding:0 1px;font-size:11px;line-height:1">✕</button>`:''}
             </span>
           </div>
-          <div class="goal-track"><div class="goal-fill bar-fill" style="width:${p}%;background:${g.color}"></div></div>
+          <div class="goal-track"><div class="goal-fill bar-fill" data-style="width:${p}%;background:${g.color}"></div></div>
           <div class="goal-sub">${p}%${m?' — ~'+m+' months remaining':' — goal reached!'}</div>
         </div>`;
       }).join('');
@@ -3702,9 +3706,9 @@ function persCatIconSvg(icon){
   };
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${P[icon]||P.dots}</svg>`;
 }
-function persPillHtml(c,active,onclick){
-  const style=active?` style="background:${c.color};border-color:${c.color};color:#0e0b08"`:'';
-  return `<button type="button" class="cat-pill${active?' active':''}"${style} onclick="${onclick}">${persCatIconSvg(c.icon)}${c.key}</button>`;
+function persPillHtml(c,active,fnName){   // fnName: the global function the pill calls with the category key (FA-P1)
+  const style=active?` data-style="background:${c.color};border-color:${c.color};color:#0e0b08"`:'';
+  return `<button type="button" class="cat-pill${active?' active':''}"${style} data-arg-fn="${fnName}" data-arg-key="${esc(c.key)}" data-on-click="window[this.dataset.argFn](this.dataset.argKey)">${persCatIconSvg(c.icon)}${c.key}</button>`;
 }
 
 // ── Inline quick-add — EXPENSE-FIRST (primary) ────────────────────────
@@ -3718,7 +3722,7 @@ function renderQAPills(){
   const el=document.getElementById('qa-cat-pills'); if(!el) return;
   const cats=PERS_CATS.filter(c=>c.type==='expense');
   if(!cats.some(c=>c.key===window._qaCat)) window._qaCat='Other';
-  el.innerHTML=cats.map(c=>persPillHtml(c,window._qaCat===c.key,`persQAsetCat('${c.key.replace(/'/g,"\\'")}')`)).join('');
+  el.innerHTML=cats.map(c=>persPillHtml(c,window._qaCat===c.key,'persQAsetCat')).join('');
 }
 async function persQuickAdd(){
   const amount=Number(document.getElementById('qa-amount')?.value);
@@ -3751,7 +3755,7 @@ function renderQAiPills(){
   const el=document.getElementById('qai-cat-pills'); if(!el) return;
   const cats=PERS_CATS.filter(c=>c.type==='income');
   if(!cats.some(c=>c.key===window._qaiCat)) window._qaiCat=cats[0].key;
-  el.innerHTML=cats.map(c=>persPillHtml(c,window._qaiCat===c.key,`persQAiSetCat('${c.key.replace(/'/g,"\\'")}')`)).join('');
+  el.innerHTML=cats.map(c=>persPillHtml(c,window._qaiCat===c.key,'persQAiSetCat')).join('');
 }
 async function persIncomeAdd(){
   const amount=Number(document.getElementById('qai-amount')?.value);
@@ -3784,7 +3788,7 @@ function renderTxmPills(){
   const type=window._txmType||'expense';
   const cats=PERS_CATS.filter(c=>c.type===type);
   if(!cats.some(c=>c.key===window._txmCat)) window._txmCat=cats[cats.length-1].key;
-  el.innerHTML=cats.map(c=>persPillHtml(c,window._txmCat===c.key,`txmSetCat('${c.key.replace(/'/g,"\\'")}')`)).join('');
+  el.innerHTML=cats.map(c=>persPillHtml(c,window._txmCat===c.key,'txmSetCat')).join('');
 }
 function openTransactionModal(type,editTx){
   const isEdit=!!(editTx&&editTx._dbId);
@@ -4068,7 +4072,7 @@ function _renderPersTxList(){
   const el=document.getElementById('pers-transactions');
   if(!el) return;
   if(txs.length===0){
-    el.innerHTML='<div class="empty-state" style="padding:1.5rem .75rem"><div style="font-size:12.5px;color:var(--t3);text-align:center">'+(filter==='all'?'No transactions yet — add one above ↑':'No '+filter+' transactions in this view')+'</div></div>';
+    el.innerHTML='<div class="empty-state" data-style="padding:1.5rem .75rem"><div data-style="font-size:12.5px;color:var(--t3);text-align:center">'+(filter==='all'?'No transactions yet — add one above ↑':'No '+filter+' transactions in this view')+'</div></div>';
     const balRow=document.getElementById('pers-tx-balance');
     if(balRow) balRow.style.display='none';
     return;
@@ -4084,16 +4088,16 @@ function _renderPersTxList(){
     // the meta line for disambiguation — so a mixed-currency list stays legible.
     const _nsym=(_curMap[_c]||{symbol:''}).symbol||'';
     const _native=_nsym+Math.round(Math.abs(t.amount)).toLocaleString();
-    const _conv=(_c!==persCurrency)?` <span style="color:var(--t3);font-size:10px;font-weight:400">≈ ${SPfromFull(t.amount,_c)}</span>`:'';
+    const _conv=(_c!==persCurrency)?` <span data-style="color:var(--t3);font-size:10px;font-weight:400">≈ ${SPfromFull(t.amount,_c)}</span>`:'';
     const _codeTag=(_c!==persCurrency)?` · ${esc(_c)}`:'';
-    return `<div class="tx-row pers-tx-row" style="align-items:center">
-      <div class="tx-left" style="flex:1;min-width:0">
-        <div class="tx-icon" style="background:${m.bg};color:${m.color}">${persCatIconSvg(m.icon)}</div>
-        <div style="min-width:0"><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}${_codeTag}</div></div>
+    return `<div class="tx-row pers-tx-row" data-style="align-items:center">
+      <div class="tx-left" data-style="flex:1;min-width:0">
+        <div class="tx-icon" data-style="background:${m.bg};color:${m.color}">${persCatIconSvg(m.icon)}</div>
+        <div data-style="min-width:0"><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}${_codeTag}</div></div>
       </div>
-      <div class="tx-amt ${t.type==='transfer'?'':((t.flow||t.type)==='income'?'up':'dn')}" style="margin-right:6px"${t.type==='transfer'?' title="A transfer — not counted as spending or income"':''}>${(t.flow||t.type)==='income'?'+':'-'}${_native}${_conv}</div>
-      ${t._dbId?`<button class="tx-act tx-edit" onclick="editPersTx(${t._dbId})" title="Edit transaction" aria-label="Edit transaction"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button>`:''}
-      ${t._dbId?`<button class="tx-act tx-del" onclick="deletePersonalTransaction(${t._dbId})" style="font-size:12px" title="Delete transaction" aria-label="Delete transaction">✕</button>`:''}
+      <div class="tx-amt ${t.type==='transfer'?'':((t.flow||t.type)==='income'?'up':'dn')}" data-style="margin-right:6px"${t.type==='transfer'?' title="A transfer — not counted as spending or income"':''}>${(t.flow||t.type)==='income'?'+':'-'}${_native}${_conv}</div>
+      ${t._dbId?`<button class="tx-act tx-edit" data-arg-db-id="${t._dbId}" data-on-click="editPersTx(Number(this.dataset.argDbId))" title="Edit transaction" aria-label="Edit transaction"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button>`:''}
+      ${t._dbId?`<button class="tx-act tx-del" data-arg-db-id="${t._dbId}" data-on-click="deletePersonalTransaction(Number(this.dataset.argDbId))" data-style="font-size:12px" title="Delete transaction" aria-label="Delete transaction">✕</button>`:''}
     </div>`;
   }).join('');
   const balRow=document.getElementById('pers-tx-balance');
@@ -4254,11 +4258,11 @@ async function renderPersHistory(){
   const el=document.getElementById('pers-history-list'); if(!el) return;
   try{
     const r=await fetch('/api/personal-history?limit=50',{credentials:'include'});
-    if(!r.ok){ el.innerHTML='<div style="font-size:12px;color:var(--red);padding:.25rem 0">Could not load your history — try again.</div>'; return; }
+    if(!r.ok){ el.innerHTML='<div data-style="font-size:12px;color:var(--red);padding:.25rem 0">Could not load your history — try again.</div>'; return; }
     const rows=await r.json();
-    if(!rows.length){ el.innerHTML='<div style="font-size:12px;color:var(--t3);padding:.25rem 0">No changes recorded yet.</div>'; return; }
-    el.innerHTML=rows.map(x=>`<div class="tx-row"><div class="tx-left"><div><div class="tx-name">${esc((_PH_ACT[x.action]||x.action)+' · '+(_PH_KIND[x.kind]||x.kind))}</div><div class="tx-cat">${esc(_phWhat(x))}${x.actor_type==='system'?' · automatic':''}</div></div></div><span class="tx-amt" style="color:var(--t3);font-size:11px">${esc(x.at?new Date(x.at).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'')}</span></div>`).join('');
-  }catch(e){ el.innerHTML='<div style="font-size:12px;color:var(--red);padding:.25rem 0">Could not load your history — check your connection.</div>'; }
+    if(!rows.length){ el.innerHTML='<div data-style="font-size:12px;color:var(--t3);padding:.25rem 0">No changes recorded yet.</div>'; return; }
+    el.innerHTML=rows.map(x=>`<div class="tx-row"><div class="tx-left"><div><div class="tx-name">${esc((_PH_ACT[x.action]||x.action)+' · '+(_PH_KIND[x.kind]||x.kind))}</div><div class="tx-cat">${esc(_phWhat(x))}${x.actor_type==='system'?' · automatic':''}</div></div></div><span class="tx-amt" data-style="color:var(--t3);font-size:11px">${esc(x.at?new Date(x.at).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'')}</span></div>`).join('');
+  }catch(e){ el.innerHTML='<div data-style="font-size:12px;color:var(--red);padding:.25rem 0">Could not load your history — check your connection.</div>'; }
 }
 window.renderPersHistory=renderPersHistory;
 
@@ -4302,20 +4306,20 @@ function renderPersAccounts(){
   const el=document.getElementById('pers-accounts-list');
   if(!el) return;
   const accts=window._persAccounts||[];
-  if(!accts.length){ el.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add an asset or liability to track your real net worth</div>'; return; }
+  if(!accts.length){ el.innerHTML='<div data-style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add an asset or liability to track your real net worth</div>'; return; }
   const assets=accts.filter(a=>a.kind==='asset');
   const liabs =accts.filter(a=>a.kind==='liability');
-  const row=(a)=>`<div class="bar-row" style="gap:8px">
-      <span class="bar-label" style="flex:1">${esc(a.name)} <span style="font-size:10px;color:var(--t3)">· ${esc(a.type)}</span></span>
-      <span class="bar-val" style="color:${a.kind==='asset'?'var(--green)':'var(--red)'}">${a.kind==='asset'?'':'-'}${SP(_acctUsd(a))}</span>
-      <button class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="openAccountModal('${a.kind}',${a._dbId})" title="Edit">✏</button>
-      <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--red);opacity:.7" onclick="deletePersAccount(${a._dbId})" title="Delete">✕</button>
+  const row=(a)=>`<div class="bar-row" data-style="gap:8px">
+      <span class="bar-label" data-style="flex:1">${esc(a.name)} <span data-style="font-size:10px;color:var(--t3)">· ${esc(a.type)}</span></span>
+      <span class="bar-val" data-style="color:${a.kind==='asset'?'var(--green)':'var(--red)'}">${a.kind==='asset'?'':'-'}${SP(_acctUsd(a))}</span>
+      <button class="btn btn-ghost btn-sm" data-style="padding:2px 6px" data-arg-kind="${a.kind}" data-arg-db-id="${a._dbId}" data-on-click="openAccountModal(this.dataset.argKind,Number(this.dataset.argDbId))" title="Edit">✏</button>
+      <button class="btn btn-ghost btn-sm" data-style="padding:2px 6px;color:var(--red);opacity:.7" data-arg-db-id="${a._dbId}" data-on-click="deletePersAccount(Number(this.dataset.argDbId))" title="Delete">✕</button>
     </div>`;
   let html='';
-  html+='<div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:2px 0 4px">Assets</div>';
-  html+= assets.length ? assets.map(row).join('') : '<div style="font-size:11.5px;color:var(--t3);padding:2px 0">None yet</div>';
-  html+='<div style="height:1px;background:var(--bd);margin:8px 0"></div><div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:2px 0 4px">Liabilities</div>';
-  html+= liabs.length ? liabs.map(row).join('') : '<div style="font-size:11.5px;color:var(--t3);padding:2px 0">None yet</div>';
+  html+='<div data-style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:2px 0 4px">Assets</div>';
+  html+= assets.length ? assets.map(row).join('') : '<div data-style="font-size:11.5px;color:var(--t3);padding:2px 0">None yet</div>';
+  html+='<div data-style="height:1px;background:var(--bd);margin:8px 0"></div><div data-style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:2px 0 4px">Liabilities</div>';
+  html+= liabs.length ? liabs.map(row).join('') : '<div data-style="font-size:11.5px;color:var(--t3);padding:2px 0">None yet</div>';
   el.innerHTML=html;
 }
 window.renderPersAccounts=renderPersAccounts;
@@ -4390,13 +4394,13 @@ function renderPersonalSections(){
   const inEl=document.getElementById('income-sources-list');
   if(inEl){
     if(totalInc===0){
-      inEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No income recorded — add payroll or income transactions</div>';
+      inEl.innerHTML='<div data-style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No income recorded — add payroll or income transactions</div>';
     }else{
       const rows=[];
       if(recurInc>0) rows.push({label:'Recurring income',amount:recurInc,color:'var(--acc)'});
       if(oneTimeInc>0) rows.push({label:'One-time income',amount:oneTimeInc,color:'var(--green)'});
-      inEl.innerHTML=rows.map(r=>`<div class="bar-row"><span class="bar-label">${r.label}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.amount/totalInc*100)}%;background:${r.color}"></div></div><span class="bar-val">${SP(r.amount)}</span></div>`).join('')
-        +'<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total income</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalInc)+'</span></div>';
+      inEl.innerHTML=rows.map(r=>`<div class="bar-row"><span class="bar-label">${r.label}</span><div class="bar-track"><div class="bar-fill" data-style="width:${Math.round(r.amount/totalInc*100)}%;background:${r.color}"></div></div><span class="bar-val">${SP(r.amount)}</span></div>`).join('')
+        +'<div data-style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span data-style="color:var(--t2)">Total income</span><span data-style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalInc)+'</span></div>';
     }
   }
 
@@ -4407,15 +4411,15 @@ function renderPersonalSections(){
   const bvEl=document.getElementById('budget-vs-actual-list');
   if(bvEl){
     if(totalExp===0&&budgetTarget===0){
-      bvEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Set a budget in Settings and add transactions to track</div>';
+      bvEl.innerHTML='<div data-style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Set a budget in Settings and add transactions to track</div>';
     }else{
       bvEl.innerHTML=`
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px"><span style="color:var(--t2)">Monthly budget</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--t1)">${SP(budgetTarget)}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:10px"><span style="color:var(--t2)">Actual spending</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--t1)">${SP(totalExp)}</span></div>
-        <div class="bar-track" style="margin-bottom:6px"><div class="bar-fill" style="width:${usedPct}%;background:${usedPct>90?'var(--red)':usedPct>70?'var(--amber)':'var(--green)'}"></div></div>
-        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-bottom:10px"><span>${usedPct}% used</span>${budgetTarget>0?`<span>${SP(budgetTarget)} limit</span>`:''}</div>
-        <div style="height:1px;background:var(--bd);margin-bottom:10px"></div>
-        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Variance</span><span style="font-family:var(--font-mono);font-weight:700;color:${variance>=0?'var(--green)':'var(--red)'}">${variance>=0?'+':''}${SP(variance)}</span></div>`;
+        <div data-style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px"><span data-style="color:var(--t2)">Monthly budget</span><span data-style="font-family:var(--font-mono);font-weight:600;color:var(--t1)">${SP(budgetTarget)}</span></div>
+        <div data-style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:10px"><span data-style="color:var(--t2)">Actual spending</span><span data-style="font-family:var(--font-mono);font-weight:600;color:var(--t1)">${SP(totalExp)}</span></div>
+        <div class="bar-track" data-style="margin-bottom:6px"><div class="bar-fill" data-style="width:${usedPct}%;background:${usedPct>90?'var(--red)':usedPct>70?'var(--amber)':'var(--green)'}"></div></div>
+        <div data-style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-bottom:10px"><span>${usedPct}% used</span>${budgetTarget>0?`<span>${SP(budgetTarget)} limit</span>`:''}</div>
+        <div data-style="height:1px;background:var(--bd);margin-bottom:10px"></div>
+        <div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t1);font-weight:500">Variance</span><span data-style="font-family:var(--font-mono);font-weight:700;color:${variance>=0?'var(--green)':'var(--red)'}">${variance>=0?'+':''}${SP(variance)}</span></div>`;
     }
   }
 
@@ -4431,17 +4435,17 @@ function renderPersonalSections(){
   if(nwSub) nwSub.textContent=SP(Math.abs(Math.round(netWorth)))+(netWorth<0?' deficit':' total');
   if(nwEl){
     if(_assetRows.length===0&&_liabRows.length===0&&_nwb.portfolio===0){
-      nwEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add assets & liabilities below to track net worth</div>';
+      nwEl.innerHTML='<div data-style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add assets & liabilities below to track net worth</div>';
     }else{
-      const _line=(label,val,color)=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">${esc(label)}</span><span style="color:${color};font-family:var(--font-mono)">${val<0?'-':''}${SP(Math.abs(val))}</span></div>`;
-      let _h='<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Assets</div>';
+      const _line=(label,val,color)=>`<div data-style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span data-style="color:var(--t2)">${esc(label)}</span><span data-style="color:${color};font-family:var(--font-mono)">${val<0?'-':''}${SP(Math.abs(val))}</span></div>`;
+      let _h='<div data-style="display:flex;flex-direction:column;gap:4px"><div data-style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Assets</div>';
       _assetRows.forEach(a=>{ _h+=_line(a.name,_acctUsd(a),'var(--green)'); });   // M13: per-row USD
       if(_nwb.portfolio>0) _h+=_line('Investment portfolio',_nwb.portfolio,'var(--green)');
-      if(_assetRows.length===0&&_nwb.portfolio===0) _h+='<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>';
-      _h+='<div style="height:1px;background:var(--bd);margin:6px 0"></div><div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Liabilities</div>';
+      if(_assetRows.length===0&&_nwb.portfolio===0) _h+='<div data-style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>';
+      _h+='<div data-style="height:1px;background:var(--bd);margin:6px 0"></div><div data-style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Liabilities</div>';
       if(_liabRows.length){ _liabRows.forEach(l=>{ _h+=_line(l.name,-_acctUsd(l),'var(--red)'); }); }
-      else _h+='<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>';
-      _h+='<div style="height:1px;background:var(--bd);margin:6px 0"></div><div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--t1);font-weight:600">Net worth</span><span style="font-family:var(--font-mono);font-weight:700;color:'+(netWorth>=0?'var(--acc)':'var(--red)')+'">'+(netWorth<0?'-':'')+SP(Math.abs(Math.round(netWorth)))+'</span></div></div>';
+      else _h+='<div data-style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>';
+      _h+='<div data-style="height:1px;background:var(--bd);margin:6px 0"></div><div data-style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span data-style="color:var(--t1);font-weight:600">Net worth</span><span data-style="font-family:var(--font-mono);font-weight:700;color:'+(netWorth>=0?'var(--acc)':'var(--red)')+'">'+(netWorth<0?'-':'')+SP(Math.abs(Math.round(netWorth)))+'</span></div></div>';
       nwEl.innerHTML=_h;
     }
   }
@@ -4454,16 +4458,16 @@ function renderPersonalSections(){
     persTransactions.filter(t=>t.type==='expense').forEach(t=>{rawCats[t.cat]=(rawCats[t.cat]||0)+_safeFX(t.amount,_txCurOf(t),'USD');});
     const catEntries=Object.entries(rawCats).sort((a,b)=>b[1]-a[1]);
     if(catEntries.length===0){
-      catEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No expenses recorded yet</div>';
+      catEl.innerHTML='<div data-style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No expenses recorded yet</div>';
     }else{
       const catMax=Math.max(...catEntries.map(e=>e[1]),1);
       catEl.innerHTML=catEntries.map(([label,amount])=>`
         <div class="bar-row">
           <span class="bar-label">${label}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(amount/catMax*100)}%;background:${CAT_COLORS_RAW[label]||'var(--t3)'}"></div></div>
+          <div class="bar-track"><div class="bar-fill" data-style="width:${Math.round(amount/catMax*100)}%;background:${CAT_COLORS_RAW[label]||'var(--t3)'}"></div></div>
           <span class="bar-val">${SP(amount)}</span>
         </div>`).join('')
-        +'<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalExp)+'</span></div>';
+        +'<div data-style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span data-style="color:var(--t2)">Total</span><span data-style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalExp)+'</span></div>';
     }
     if(typeof renderPersSpendDonut==='function') renderPersSpendDonut(catEntries);
   }
@@ -4479,7 +4483,7 @@ function renderPersonalSections(){
     const _oneTimeThisMonth=(window._allPersTxs||[]).filter(t=>t.type==='income'&&t.recurringProfileId==null&&String(t.date||'').slice(0,7)===_mKey).reduce((a,t)=>a+_safeFX(t.amount,_txCurOf(t),'USD'),0);
     const monthlyInc=_monthlyRecur+_oneTimeThisMonth;
     // FinFlow performs NO tax calculation (F8) — the flat-rate tax estimate was removed.
-    taxEl.innerHTML='<div style="font-size:12px;color:var(--t3);line-height:1.6;padding:.5rem 0">'+DED_DISCLAIMER_OUTPUT+'</div>';
+    taxEl.innerHTML='<div data-style="font-size:12px;color:var(--t3);line-height:1.6;padding:.5rem 0">'+DED_DISCLAIMER_OUTPUT+'</div>';
   }
 }
 
@@ -4556,21 +4560,21 @@ function renderInvestments(){
     const colors=['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a','#5a4e3a'];
     const bg=h.color||colors[i%colors.length];
     return`<div class="inv-holding-row">
-      <div class="inv-ticker-badge" style="background:${bg}22;color:${bg};border-color:${bg}44;font-size:9px">${esc(h.ticker.slice(0,4))}</div>
+      <div class="inv-ticker-badge" data-style="background:${bg}22;color:${bg};border-color:${bg}44;font-size:9px">${esc(h.ticker.slice(0,4))}</div>
       <div>
-        <div style="font-weight:500;font-size:12.5px">${esc(h.name)} <span class="badge b-blue" style="font-size:9px;padding:1px 5px">${esc(h.type)}</span>${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
-        <div style="font-size:11px;color:var(--t3)">${(val/totalValue*100).toFixed(1)}% of portfolio</div>
-        <div class="inv-alloc-bar"><div class="inv-alloc-fill" style="width:${(val/totalValue*100).toFixed(1)}%;background:${bg}"></div></div>
+        <div data-style="font-weight:500;font-size:12.5px">${esc(h.name)} <span class="badge b-blue" data-style="font-size:9px;padding:1px 5px">${esc(h.type)}</span>${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" data-style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" data-style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
+        <div data-style="font-size:11px;color:var(--t3)">${(val/totalValue*100).toFixed(1)}% of portfolio</div>
+        <div class="inv-alloc-bar"><div class="inv-alloc-fill" data-style="width:${(val/totalValue*100).toFixed(1)}%;background:${bg}"></div></div>
       </div>
-      <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'inherit'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">$${h.price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-      <div style="text-align:right;color:var(--t2)">${h.shares}</div>
-      <div style="text-align:right;font-family:var(--font-mono);font-weight:500">${S2(val)}</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${S2(cost)}</div>
-      <div style="text-align:right">
+      <div data-style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'inherit'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">$${h.price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div data-style="text-align:right;color:var(--t2)">${h.shares}</div>
+      <div data-style="text-align:right;font-family:var(--font-mono);font-weight:500">${S2(val)}</div>
+      <div data-style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${S2(cost)}</div>
+      <div data-style="text-align:right">
         <span class="inv-perf-chip ${pos?'inv-perf-up':'inv-perf-dn'}">${pos?'▲':'▼'} ${Math.abs(glPct)}%</span>
-        ${h.id!=null?`<div class="inv-row-actions" style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
-          <button class="btn btn-ghost" style="padding:1px 7px;font-size:10px" title="Edit holding" onclick="event.stopPropagation();editHolding(${h.id})">Edit</button>
-          <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" onclick="event.stopPropagation();deleteHolding(${h.id})">✕</button>
+        ${h.id!=null?`<div class="inv-row-actions" data-style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
+          <button class="btn btn-ghost" data-style="padding:1px 7px;font-size:10px" title="Edit holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();editHolding(Number(this.dataset.argId))">Edit</button>
+          <button class="btn btn-ghost" data-style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();deleteHolding(Number(this.dataset.argId))">✕</button>
         </div>`:''}
       </div>
     </div>`;
@@ -4630,10 +4634,10 @@ function buildInvDonut(hs,totalValue){
   // Legend
   const leg=document.getElementById('inv-legend');
   if(leg)leg.innerHTML=hs.map(h=>`
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-      <span style="width:8px;height:8px;border-radius:2px;background:${h.color};flex-shrink:0"></span>
-      <span style="font-size:11px;color:var(--t2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.ticker)}</span>
-      <span style="font-size:11px;font-weight:600;color:var(--t1);font-family:var(--font-mono)">${(h.price*h.shares/totalValue*100).toFixed(1)}%</span>
+    <div data-style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+      <span data-style="width:8px;height:8px;border-radius:2px;background:${h.color};flex-shrink:0"></span>
+      <span data-style="font-size:11px;color:var(--t2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.ticker)}</span>
+      <span data-style="font-size:11px;font-weight:600;color:var(--t1);font-family:var(--font-mono)">${(h.price*h.shares/totalValue*100).toFixed(1)}%</span>
     </div>`).join('');
 }
 
@@ -4765,7 +4769,7 @@ function openAddHoldingModal(scope){
   if(typeof window._ffHoldingHideSuggest==='function') window._ffHoldingHideSuggest();   // clear any stale symbol-picker results
   const _modal=document.getElementById('holding-modal');
   if(_modal){ const _t=_modal.querySelector('.modal-title'); if(_t) _t.textContent='Add holding';
-    const _b=_modal.querySelector('button[onclick*="saveHolding"]'); if(_b) _b.textContent='Add holding'; }
+    const _b=_modal.querySelector('button[data-on-click*="saveHolding"]'); if(_b) _b.textContent='Add holding'; }
   openModal('holding-modal');
 }
 function saveHolding(){
@@ -4801,18 +4805,18 @@ function openRebalanceModal(list, scope){
     const diff=(parseFloat(actPct)-tgt).toFixed(1);
     const over=parseFloat(diff)>0;
     return`<div class="inv-rebalance-row">
-      <span style="flex:1;font-weight:500">${type}</span>
-      <span style="color:var(--t2);width:60px;text-align:right">${actPct}%</span>
-      <span style="color:var(--t3);width:60px;text-align:right">→ ${tgt}%</span>
-      <span style="width:70px;text-align:right;color:${over?'var(--amber)':parseFloat(diff)<-2?'var(--red)':'var(--green)'}">
+      <span data-style="flex:1;font-weight:500">${type}</span>
+      <span data-style="color:var(--t2);width:60px;text-align:right">${actPct}%</span>
+      <span data-style="color:var(--t3);width:60px;text-align:right">→ ${tgt}%</span>
+      <span data-style="width:70px;text-align:right;color:${over?'var(--amber)':parseFloat(diff)<-2?'var(--red)':'var(--green)'}">
         ${parseFloat(diff)===0?'On target':over?'▲ +'+Math.abs(diff)+'%':'▼ '+Math.abs(diff)+'%'}
       </span>
     </div>`;
   }).join('');
   const rb=document.getElementById('rebalance-content');
-  if(rb)rb.innerHTML=`<div style="display:flex;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);margin-bottom:2px">
-    <span style="flex:1">Type</span><span style="width:60px;text-align:right">Current</span><span style="width:60px;text-align:right">Target</span><span style="width:70px;text-align:right">Variance</span>
-  </div>${html}<div style="margin-top:12px;font-size:11.5px;color:var(--t2);padding-top:8px;border-top:1px solid var(--bd)">Target allocation is a suggested default. Ask the AI to customise it for your risk profile.</div>`;
+  if(rb)rb.innerHTML=`<div data-style="display:flex;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);margin-bottom:2px">
+    <span data-style="flex:1">Type</span><span data-style="width:60px;text-align:right">Current</span><span data-style="width:60px;text-align:right">Target</span><span data-style="width:70px;text-align:right">Variance</span>
+  </div>${html}<div data-style="margin-top:12px;font-size:11.5px;color:var(--t2);padding-top:8px;border-top:1px solid var(--bd)">Target allocation is a suggested default. Ask the AI to customise it for your risk profile.</div>`;
   openModal('rebalance-modal');
 }
 
@@ -4990,27 +4994,27 @@ function renderCustomers(filter='', _fromUnsaved){
   document.getElementById('cust-active').textContent=customers.filter(c=>c.billed_recently).length;   // FA-M12d: billed in the last 12 months (server book), not the CRM status field
   document.getElementById('cust-revenue').textContent=S(customers.reduce((a,c)=>a+Number(c.revenue),0)+unsaved.reduce((a,u)=>a+Number(u.revenue),0));
   // Batch 9 (D3): one click saves them all — with a preview that holds back look-alikes of saved customers.
-  const unsavedHead=unsaved.length?`<div class="ff-saveall-head" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;margin:4px 0;background:var(--bg2);border-radius:var(--radius)"><div><div style="font-weight:500;color:var(--t1)">${unsaved.length} name${unsaved.length===1?'':'s'} from invoices not saved as customers</div><div style="font-size:11.5px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" onclick="openSaveAllContacts('customer')">Save all…</button></div>`:'';   // a header, not a contact row
-  const unsavedHtml=unsavedHead+unsavedShown.map(({u,i})=>`<div class="cust-row" onclick="openCustomerModalFromUnsaved(${i})">
+  const unsavedHead=unsaved.length?`<div class="ff-saveall-head" data-style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;margin:4px 0;background:var(--bg2);border-radius:var(--radius)"><div><div data-style="font-weight:500;color:var(--t1)">${unsaved.length} name${unsaved.length===1?'':'s'} from invoices not saved as customers</div><div data-style="font-size:11.5px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" data-on-click="openSaveAllContacts('customer')">Save all…</button></div>`:'';   // a header, not a contact row
+  const unsavedHtml=unsavedHead+unsavedShown.map(({u,i})=>`<div class="cust-row" data-arg-i="${i}" data-on-click="openCustomerModalFromUnsaved(Number(this.dataset.argI))">
       <div class="cust-avatar av-amber">${esc(getInitials(String(u.name||'').split(/\s+/)[0]||'',String(u.name||'').split(/\s+/)[1]||''))}</div>
       <div><div class="cust-name">${esc(u.name)}</div><div class="cust-email">${u.invoices} invoice${u.invoices===1?'':'s'} · not saved as a customer yet</div></div>
-      <span style="font-size:12px;color:var(--t2)">—</span>
-      <span style="font-family:var(--font-mono);font-weight:600">${esc(S(u.revenue))}</span>
+      <span data-style="font-size:12px;color:var(--t2)">—</span>
+      <span data-style="font-family:var(--font-mono);font-weight:600">${esc(S(u.revenue))}</span>
       <span><span class="badge b-amber">Not saved</span></span>
-      <span class="table-actions"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openCustomerModalFromUnsaved(${i})">Save</button></span>
+      <span class="table-actions"><button class="btn btn-ghost btn-sm" data-arg-i="${i}" data-on-click="event.stopPropagation();openCustomerModalFromUnsaved(Number(this.dataset.argI))">Save</button></span>
     </div>`).join('');
-  if(!filtered.length && !unsavedShown.length){document.getElementById('customers-list').innerHTML=`<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg></div><h3>No customers found</h3><p>Try a different search term, or add your first customer to get started.</p><button class="btn btn-primary btn-sm" onclick="openCustomerModal()">+ Add customer</button></div>`;return;}
+  if(!filtered.length && !unsavedShown.length){document.getElementById('customers-list').innerHTML=`<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg></div><h3>No customers found</h3><p>Try a different search term, or add your first customer to get started.</p><button class="btn btn-primary btn-sm" data-on-click="openCustomerModal()">+ Add customer</button></div>`;return;}
   document.getElementById('customers-list').innerHTML=filtered.map(c=>{
     const av=AVATAR_COLORS[(parseInt(c.id)||0)%AVATAR_COLORS.length];
     const ini=(c.fname||c.lname)?getInitials(c.fname,c.lname):getInitials(String(c.company||'').split(' ')[0]||'',String(c.company||'').split(' ')[1]||'');   // batch 9: a company-only customer
     const badge={active:'b-green',inactive:'b-purple',prospect:'b-amber'}[c.status]||'b-blue';
-    return`<div class="cust-row" onclick="openCustomerModal(${Number(c.id)})">
+    return`<div class="cust-row" data-arg-id="${Number(c.id)}" data-on-click="openCustomerModal(Number(this.dataset.argId))">
       <div class="cust-avatar ${esc(av)}">${esc(ini)}</div>
       <div><div class="cust-name">${(c.fname||c.lname)?esc(c.fname)+' '+esc(c.lname):esc(c.company||'—')}</div><div class="cust-email">${esc(c.email)}</div></div>
-      <span style="font-size:12px;color:var(--t2)">${esc(c.company||'—')}</span>
-      <span style="font-family:var(--font-mono);font-weight:600">${esc(S(c.revenue))}</span>
+      <span data-style="font-size:12px;color:var(--t2)">${esc(c.company||'—')}</span>
+      <span data-style="font-family:var(--font-mono);font-weight:600">${esc(S(c.revenue))}</span>
       <span><span class="badge ${esc(badge)}">${esc(c.status)}</span></span>
-      <span class="table-actions"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openCustomerPortal(${Number(c.id)})" title="A private link where this customer sees their invoices and pays online">Portal</button><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openCustomerModal(${Number(c.id)})">Edit</button></span>
+      <span class="table-actions"><button class="btn btn-ghost btn-sm" data-arg-id="${Number(c.id)}" data-on-click="event.stopPropagation();openCustomerPortal(Number(this.dataset.argId))" title="A private link where this customer sees their invoices and pays online">Portal</button><button class="btn btn-ghost btn-sm" data-arg-id="${Number(c.id)}" data-on-click="event.stopPropagation();openCustomerModal(Number(this.dataset.argId))">Edit</button></span>
     </div>`;
   }).join('')+unsavedHtml;
 }
@@ -5146,18 +5150,18 @@ function _ffShowTrialExpired(message){
     + 'background:rgba(14,11,8,.92);backdrop-filter:blur(3px);font-family:Jost,system-ui,sans-serif;padding:24px';
   const safe = String(message || 'Your free trial has ended.').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   g.innerHTML =
-     '<div style="max-width:420px;width:100%;background:var(--bg1,#16120d);border:1px solid var(--bd,rgba(201,168,76,.25));'
+     '<div data-style="max-width:420px;width:100%;background:var(--bg1,#16120d);border:1px solid var(--bd,rgba(201,168,76,.25));'
    + 'border-radius:12px;padding:28px;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.45)">'
-   + '<div style="font-size:32px;margin-bottom:10px">&#9889;</div>'
-   + '<div id="ff-trial-gate-title" style="font-size:19px;font-weight:600;color:var(--t1,#f2e8d5);margin-bottom:8px">'
+   + '<div data-style="font-size:32px;margin-bottom:10px">&#9889;</div>'
+   + '<div id="ff-trial-gate-title" data-style="font-size:19px;font-weight:600;color:var(--t1,#f2e8d5);margin-bottom:8px">'
    + 'Your free trial has ended</div>'
-   + '<div style="font-size:13px;color:var(--t2,#9e8e73);line-height:1.55;margin-bottom:20px">' + safe
+   + '<div data-style="font-size:13px;color:var(--t2,#9e8e73);line-height:1.55;margin-bottom:20px">' + safe
    + '<br><br>You can still <strong>view</strong> your books — making changes needs an upgrade. Your data is safe.</div>'
-   + '<button id="ff-trial-upgrade" class="btn btn-primary" style="width:100%;padding:11px;font-size:14px;font-weight:600">'
+   + '<button id="ff-trial-upgrade" class="btn btn-primary" data-style="width:100%;padding:11px;font-size:14px;font-weight:600">'
    + 'Upgrade to make changes &#8599;</button>'
-   + '<button id="ff-trial-dismiss" class="btn btn-ghost" style="width:100%;padding:9px;font-size:13px;margin-top:8px">Keep viewing (read-only)</button>'
-   + '<div style="margin-top:14px;font-size:11px;color:var(--t3,#6b5c42)">'
-   + 'Questions? <a href="mailto:support@finflow.app" style="color:var(--acc,#c9a84c)">support@finflow.app</a></div>'
+   + '<button id="ff-trial-dismiss" class="btn btn-ghost" data-style="width:100%;padding:9px;font-size:13px;margin-top:8px">Keep viewing (read-only)</button>'
+   + '<div data-style="margin-top:14px;font-size:11px;color:var(--t3,#6b5c42)">'
+   + 'Questions? <a href="mailto:support@finflow.app" data-style="color:var(--acc,#c9a84c)">support@finflow.app</a></div>'
    + '</div>';
   document.body.appendChild(g);
   // F132: DISMISSABLE now. Reads work post-expiry, so dismissing lands on the user's real (read-only)
@@ -5938,12 +5942,12 @@ function renderBanking(){
   const al=document.getElementById('bank-accounts-list');
   const _asOf = v => { if(!v) return ''; const d=new Date(v); return isNaN(d) ? '' : 'as of '+d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); };
   if(al)al.innerHTML=bankAccounts.map(a=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(a.bank||'Bank')}${a.mask?' · ****'+esc(a.mask):''}${a.subtype?' · '+esc(a.subtype):''}</div></div>
+    <div data-style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
+      <div data-style="display:flex;align-items:center;gap:10px">
+        <div data-style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
+        <div><div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(a.bank||'Bank')}${a.mask?' · ****'+esc(a.mask):''}${a.subtype?' · '+esc(a.subtype):''}</div></div>
       </div>
-      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${a.current!=null?_m2(a.current,a.currency):'—'}</div><div style="font-size:10px;color:var(--t3)">${a.available!=null&&a.available!==a.current?_m2(a.available,a.currency)+' available · ':''}${esc(_asOf(a.as_of))}</div></div>
+      <div data-style="text-align:right"><div data-style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${a.current!=null?_m2(a.current,a.currency):'—'}</div><div data-style="font-size:10px;color:var(--t3)">${a.available!=null&&a.available!==a.current?_m2(a.available,a.currency)+' available · ':''}${esc(_asOf(a.as_of))}</div></div>
     </div>`).join('');
   // V2: ONE honest comparison — the books hold a single cash account per business (bank lines do not record a per-account
   // ledger yet), so the bank total in the BUSINESS's currency is set against the cash in the books, with the difference and
@@ -5966,8 +5970,8 @@ function renderBanking(){
     if(_byCur[_cur]!=null){
       if(bc && bc.tracked){
         const diff=Math.round((_byCur[_cur]-bc.cash)*100)/100;
-        h='Bank ('+esc(_cur)+'): <strong>'+_m2(_byCur[_cur],_cur)+'</strong> · Cash in your books: <strong>'+_m2(bc.cash,_cur)+'</strong> · Difference: <strong style="color:'+(Math.abs(diff)<0.005?'var(--green)':'var(--amber)')+'">'+_m2(diff,_cur)+'</strong>'
-          +(Math.abs(diff)<0.005?' ✓':' — <a href="#" onclick="showPage(\'bank-rec\');return false">reconcile it in Bank Rec</a>');
+        h='Bank ('+esc(_cur)+'): <strong>'+_m2(_byCur[_cur],_cur)+'</strong> · Cash in your books: <strong>'+_m2(bc.cash,_cur)+'</strong> · Difference: <strong data-style="color:'+(Math.abs(diff)<0.005?'var(--green)':'var(--amber)')+'">'+_m2(diff,_cur)+'</strong>'
+          +(Math.abs(diff)<0.005?' ✓':' — <a href="#" data-on-click="showPage(\'bank-rec\');return false">reconcile it in Bank Rec</a>');
       } else if(bc) h='Cash is not tracked in your books yet for this business, so there is no bank-vs-books difference to show.';
       else if(window._bankBooksCash===undefined) h='Bank ('+esc(_cur)+'): <strong>'+_m2(_byCur[_cur],_cur)+'</strong> · checking your books…';
     }
@@ -5978,10 +5982,10 @@ function renderBanking(){
   if(tl)tl.innerHTML=bankTxns.map(t=>`
     <div class="tx-row">
       <div class="tx-left">
-        <div class="tx-icon" style="background:${t.type==='credit'?'var(--green-bg)':'var(--red-bg)'};color:${t.type==='credit'?'var(--green)':'var(--red)'}"><svg viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="${t.type==='credit'?'4,9 8,13 12,9':'4,7 8,3 12,7'}"/></svg></div>
+        <div class="tx-icon" data-style="background:${t.type==='credit'?'var(--green-bg)':'var(--red-bg)'};color:${t.type==='credit'?'var(--green)':'var(--red)'}"><svg viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="${t.type==='credit'?'4,9 8,13 12,9':'4,7 8,3 12,7'}"/></svg></div>
         <div><div class="tx-name">${esc(t.desc||'')}</div><div class="tx-cat">${esc(t.cat||'')} · ${esc(t.date||'')}</div></div>
       </div>
-      <span class="tx-amt" style="color:${t.type==='credit'?'var(--green)':'var(--red)'}">${t.type==='credit'?'+':''}${S(t.amount)}</span>
+      <span class="tx-amt" data-style="color:${t.type==='credit'?'var(--green)':'var(--red)'}">${t.type==='credit'?'+':''}${S(t.amount)}</span>
     </div>`).join('');
 }
 // LR25 (decision 2026-10-21): "+ Add Account" was a toast-only stub. A business adds a bank in one of two real ways —
@@ -5992,16 +5996,16 @@ function openAddAccountModal(){
     m=document.createElement('div');
     m.id='bank-add-account-modal';
     m.className='modal-overlay hidden';
-    m.innerHTML=`<div class="modal" style="max-width:380px">
+    m.innerHTML=`<div class="modal" data-style="max-width:380px">
       <div class="modal-header">
         <div><div class="modal-title">Add a bank account</div><div class="modal-sub">For this business</div></div>
-        <button class="modal-close" onclick="closeModal('bank-add-account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+        <button class="modal-close" data-on-click="closeModal('bank-add-account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
       </div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <button class="btn btn-primary" onclick="closeModal('bank-add-account-modal');window.ffBankLinkFromPage&&window.ffBankLinkFromPage()">🔗 Link a bank</button>
-        <div style="font-size:11.5px;color:var(--t3);margin:-4px 2px 4px">Connect securely so transactions sync automatically (where your bank is supported).</div>
-        <button class="btn btn-ghost" onclick="closeModal('bank-add-account-modal');window.ffImportStatement&&window.ffImportStatement()">⬆ Import a statement</button>
-        <div style="font-size:11.5px;color:var(--t3);margin:-4px 2px 0">Upload an OFX, QFX or CSV statement downloaded from any bank.</div>
+      <div data-style="display:flex;flex-direction:column;gap:10px">
+        <button class="btn btn-primary" data-on-click="closeModal('bank-add-account-modal');window.ffBankLinkFromPage&&window.ffBankLinkFromPage()">🔗 Link a bank</button>
+        <div data-style="font-size:11.5px;color:var(--t3);margin:-4px 2px 4px">Connect securely so transactions sync automatically (where your bank is supported).</div>
+        <button class="btn btn-ghost" data-on-click="closeModal('bank-add-account-modal');window.ffImportStatement&&window.ffImportStatement()">⬆ Import a statement</button>
+        <div data-style="font-size:11.5px;color:var(--t3);margin:-4px 2px 0">Upload an OFX, QFX or CSV statement downloaded from any bank.</div>
       </div>
     </div>`;
     document.body.appendChild(m);
@@ -6016,10 +6020,10 @@ function openAddTxnModal(){
     m=document.createElement('div');
     m.id='bank-add-modal';
     m.className='modal-overlay hidden';
-    m.innerHTML=`<div class="modal" style="max-width:400px">
+    m.innerHTML=`<div class="modal" data-style="max-width:400px">
       <div class="modal-header">
         <div><div class="modal-title">Add bank line</div><div class="modal-sub">A line from this business's bank statement</div></div>
-        <button class="modal-close" onclick="closeModal('bank-add-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+        <button class="modal-close" data-on-click="closeModal('bank-add-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
       </div>
       <div class="field-group">
         <div class="field-wrap"><label class="field-label" for="bank-add-date">Date *</label><input class="finput" id="bank-add-date" type="date"></div>
@@ -6033,8 +6037,8 @@ function openAddTxnModal(){
         <div class="field-wrap"><label class="field-label" for="bank-add-cat">Category</label><input class="finput" id="bank-add-cat" maxlength="60" placeholder="Uncategorized"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeModal('bank-add-modal')">Cancel</button>
-        <button class="btn btn-primary" id="bank-add-save" onclick="submitBankLine(this)">Add line</button>
+        <button class="btn btn-ghost" data-on-click="closeModal('bank-add-modal')">Cancel</button>
+        <button class="btn btn-primary" id="bank-add-save" data-on-click="submitBankLine(this)">Add line</button>
       </div>
     </div>`;
     document.body.appendChild(m);
@@ -6083,15 +6087,15 @@ const projectsData=[]; // populated from API by finflow-api-wiring-extra.js
 function renderProjects(){
   const l=document.getElementById('projects-list');if(!l)return;
   l.innerHTML=projectsData.map(p=>`
-    <div style="padding:10px 0;border-bottom:1px solid var(--bd)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(p.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(p.client)} · ${p.hours}h logged</div></div>
-        <div style="display:flex;align-items:center;gap:12px">
-          <div style="text-align:right"><div style="font-size:11px;color:var(--t3)">Billed / Budget</div><div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${_fmtMoneyNative(p.billed)} / ${_fmtMoneyNative(p.budget)}</div></div>
+    <div data-style="padding:10px 0;border-bottom:1px solid var(--bd)">
+      <div data-style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div><div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(p.name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(p.client)} · ${p.hours}h logged</div></div>
+        <div data-style="display:flex;align-items:center;gap:12px">
+          <div data-style="text-align:right"><div data-style="font-size:11px;color:var(--t3)">Billed / Budget</div><div data-style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${_fmtMoneyNative(p.billed)} / ${_fmtMoneyNative(p.budget)}</div></div>
           <span class="badge ${p.status==='Completed'?'b-green':'b-blue'}">${p.status}</span>
         </div>
       </div>
-      <div class="bar-track" style="height:4px"><div class="bar-fill" style="width:${p.progress}%;background:${p.status==='Completed'?'var(--green)':'var(--acc)'}"></div></div>
+      <div class="bar-track" data-style="height:4px"><div class="bar-fill" data-style="width:${p.progress}%;background:${p.status==='Completed'?'var(--green)':'var(--acc)'}"></div></div>
     </div>`).join('');
 }
 function openNewProjectModal(){notify('New project modal');}
@@ -6103,13 +6107,13 @@ const timesheetData=[]; // populated from API by finflow-api-wiring-extra.js
 function renderTimesheet(){
   const l=document.getElementById('timesheet-list');if(!l)return;
   l.innerHTML=timesheetData.map(t=>`
-    <div class="table-row" style="grid-template-columns:1fr 100px 80px 70px 70px 70px">
-      <span style="font-weight:500">${esc(t.employee)}</span>
-      <span style="color:var(--t2)">${esc(t.project)}</span>
-      <span style="color:var(--t3)">${esc(t.date)}</span>
-      <span style="font-family:var(--font-mono)">${t.hours} hrs</span>
-      <span style="font-family:var(--font-mono);color:${t.billable>0?'var(--green)':'var(--t3)'}">${t.billable} hrs</span>
-      <span style="font-family:var(--font-mono)">$${t.rate}/hr</span>
+    <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 70px 70px 70px">
+      <span data-style="font-weight:500">${esc(t.employee)}</span>
+      <span data-style="color:var(--t2)">${esc(t.project)}</span>
+      <span data-style="color:var(--t3)">${esc(t.date)}</span>
+      <span data-style="font-family:var(--font-mono)">${t.hours} hrs</span>
+      <span data-style="font-family:var(--font-mono);color:${t.billable>0?'var(--green)':'var(--t3)'}">${t.billable} hrs</span>
+      <span data-style="font-family:var(--font-mono)">$${t.rate}/hr</span>
     </div>`).join('');
 }
 function openLogTimeModal(){notify('Log time entry');}
@@ -6121,12 +6125,12 @@ const journalsData=[]; // populated from API by renderJournalsLive()
 function renderJournals(){
   const l=document.getElementById('journals-list');if(!l)return;
   l.innerHTML=journalsData.map(j=>`
-    <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
-      <span style="color:var(--t3)">${esc(j.date||'')}</span>
-      <span style="font-weight:500">${esc(j.notes||'')}</span>
-      <span style="color:var(--t3)">${esc(j.ref||'')}</span>
-      <span style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
-      <span style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
+    <div class="table-row" data-style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
+      <span data-style="color:var(--t3)">${esc(j.date||'')}</span>
+      <span data-style="font-weight:500">${esc(j.notes||'')}</span>
+      <span data-style="color:var(--t3)">${esc(j.ref||'')}</span>
+      <span data-style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
+      <span data-style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
       <span><span class="badge ${j.status==='Posted'?'b-green':'b-amber'}">${j.status}</span></span>
     </div>`).join('');
 }
@@ -6140,18 +6144,18 @@ const coaData=[]; // populated by API wiring; no hardcoded demo data
 function renderCOA(){
   const l=document.getElementById('coa-list');if(!l)return;
   if(!coaData.length){
-    l.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet. Click "+ New account" to add your chart of accounts.</div>';
+    l.innerHTML='<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet. Click "+ New account" to add your chart of accounts.</div>';
     return;
   }
   l.innerHTML=coaData.map(section=>`
-    <div style="margin-bottom:1rem">
-      <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${section.type}</div>
+    <div data-style="margin-bottom:1rem">
+      <div data-style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${section.type}</div>
       ${section.accounts.map(a=>`
-        <div style="display:grid;grid-template-columns:60px 1fr 80px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-          <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
-          <span style="color:var(--t1)">${esc(a.name)}</span>
-          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${(a.balance||0).toLocaleString()}</span>
-          <span style="color:var(--t3);text-align:right">${a.nature}</span>
+        <div data-style="display:grid;grid-template-columns:60px 1fr 80px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+          <span data-style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
+          <span data-style="color:var(--t1)">${esc(a.name)}</span>
+          <span data-style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${(a.balance||0).toLocaleString()}</span>
+          <span data-style="color:var(--t3);text-align:right">${a.nature}</span>
         </div>`).join('')}
     </div>`).join('');
 }
@@ -6161,10 +6165,10 @@ function openNewAccountModal(){
     m=document.createElement('div');
     m.id='coa-new-modal';
     m.className='modal-overlay hidden';
-    m.innerHTML=`<div class="modal" style="max-width:380px">
+    m.innerHTML=`<div class="modal" data-style="max-width:380px">
       <div class="modal-header">
         <div><div class="modal-title">New account</div><div class="modal-sub">Add a chart-of-accounts entry</div></div>
-        <button class="modal-close" onclick="document.getElementById('coa-new-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+        <button class="modal-close" data-on-click="document.getElementById('coa-new-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
       </div>
       <div class="field-group">
         <div class="field-wrap"><label class="field-label">Code *</label><input class="finput" id="coa-code" placeholder="e.g. 6950" maxlength="20"></div>
@@ -6181,10 +6185,10 @@ function openNewAccountModal(){
           </select>
         </div>
       </div>
-      <div style="font-size:11.5px;color:var(--t3);line-height:1.5;margin:-2px 0 6px">The account starts at zero. To give it an opening balance, post a journal to it (Manual Journals) — so the figure is in your books, not just on this page.</div>
+      <div data-style="font-size:11.5px;color:var(--t3);line-height:1.5;margin:-2px 0 6px">The account starts at zero. To give it an opening balance, post a journal to it (Manual Journals) — so the figure is in your books, not just on this page.</div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="document.getElementById('coa-new-modal').classList.add('hidden')">Cancel</button>
-        <button class="btn btn-primary" onclick="saveNewAccount()">Add account</button>
+        <button class="btn btn-ghost" data-on-click="document.getElementById('coa-new-modal').classList.add('hidden')">Cancel</button>
+        <button class="btn btn-primary" data-on-click="saveNewAccount()">Add account</button>
       </div>
     </div>`;
     document.body.appendChild(m);
@@ -6243,10 +6247,10 @@ async function renderLockHistory(){
     if(!auditRes.ok){l.innerHTML='';return;}
     const {rows}=await auditRes.json();
     l.innerHTML=rows.length?rows.map(h=>`
-      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-        <div><span style="font-weight:500;color:var(--t1)">${esc(h.action)}</span></div>
-        <div style="text-align:right;color:var(--t3)">${new Date(h.created_at).toLocaleDateString()}</div>
-      </div>`).join(''):'<div style="padding:1rem;color:var(--t3);font-size:13px">No lock history yet</div>';
+      <div data-style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+        <div><span data-style="font-weight:500;color:var(--t1)">${esc(h.action)}</span></div>
+        <div data-style="text-align:right;color:var(--t3)">${new Date(h.created_at).toLocaleDateString()}</div>
+      </div>`).join(''):'<div data-style="padding:1rem;color:var(--t3);font-size:13px">No lock history yet</div>';
   } catch(e){l.innerHTML='';}
 }
 // Rule 10: a lock date is a CALENDAR date — format the 'YYYY-MM-DD' string's own parts, never via a Date
@@ -6322,21 +6326,21 @@ async function renderReports(){
   const mc1=document.querySelector('#page-reports .mc-val');
   if(mc1)mc1.textContent=(reportsData.length+taxReportsData.length);
   l.innerHTML=reportsData.map(r=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:18px">${r.icon}</span>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(r.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(r.desc)}</div></div>
+    <div data-style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)">
+      <div data-style="display:flex;align-items:center;gap:10px">
+        <span data-style="font-size:18px">${r.icon}</span>
+        <div><div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(r.name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(r.desc)}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="generateReport('${esc(r.name)}')">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" data-arg-name="${esc(r.name)}" data-on-click="generateReport(this.dataset.argName)">Generate ↗</button>
     </div>`).join('');
   const t=document.getElementById('tax-reports-list');if(!t)return;
   t.innerHTML=taxReportsData.map(r=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:18px">${r.icon}</span>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(r.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(r.desc)}</div></div>
+    <div data-style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)">
+      <div data-style="display:flex;align-items:center;gap:10px">
+        <span data-style="font-size:18px">${r.icon}</span>
+        <div><div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(r.name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(r.desc)}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="generateReport('${esc(r.name)}')">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" data-arg-name="${esc(r.name)}" data-on-click="generateReport(this.dataset.argName)">Generate ↗</button>
     </div>`).join('');
 }
 
@@ -6357,7 +6361,7 @@ function _fmtBytes(n){ n=parseFloat(n); if(!Number.isFinite(n)||n<0) return ''; 
 window._fmtBytes=_fmtBytes;
 async function renderDocuments(){
   const l=document.getElementById('documents-list');if(!l)return;
-  l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
+  l.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
   try{
     const res=await fetch('/api/documents',{credentials:'include'});
     if(!res.ok)throw new Error();
@@ -6365,17 +6369,17 @@ async function renderDocuments(){
   }catch(e){_docsCache=[];}
   window._docsCache=_docsCache;   // LR13: the cards (finflow-api-wiring-medium.js) read window._docsCache — a script `let` is not on window
   const filtered=docsFilter==='all'?_docsCache:_docsCache.filter(d=>d.type===docsFilter);
-  if(!filtered.length){l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No documents yet. Click Upload to add your first file.</div>';return;}
+  if(!filtered.length){l.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No documents yet. Click Upload to add your first file.</div>';return;}
   l.innerHTML=filtered.map(d=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div style="width:32px;height:32px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:14px">${(d.name||'').endsWith('.pdf')?'📄':'📊'}</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(d.name||'')}</div><div style="font-size:11px;color:var(--t3)">${esc(_fmtBytes(d.size))} · ${d.uploaded_at?d.uploaded_at.slice(0,10):''} · ${d.type||''}</div></div>
+    <div data-style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
+      <div data-style="display:flex;align-items:center;gap:10px">
+        <div data-style="width:32px;height:32px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:14px">${(d.name||'').endsWith('.pdf')?'📄':'📊'}</div>
+        <div><div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(d.name||'')}</div><div data-style="font-size:11px;color:var(--t3)">${esc(_fmtBytes(d.size))} · ${d.uploaded_at?d.uploaded_at.slice(0,10):''} · ${d.type||''}</div></div>
       </div>
-      <div style="display:flex;gap:6px">
+      <div data-style="display:flex;gap:6px">
         <span class="badge b-blue">${d.type||'file'}</span>
-        <button class="btn btn-ghost btn-sm" onclick="downloadDoc(${d.id})" title="Download">↓</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteDoc(${d.id})" title="Delete">✕</button>
+        <button class="btn btn-ghost btn-sm" data-arg-id="${d.id}" data-on-click="downloadDoc(Number(this.dataset.argId))" title="Download">↓</button>
+        <button class="btn btn-ghost btn-sm" data-style="color:var(--red)" data-arg-id="${d.id}" data-on-click="deleteDoc(Number(this.dataset.argId))" title="Delete">✕</button>
       </div>
     </div>`).join('');
 }
@@ -6392,15 +6396,15 @@ function openUploadModal(){
     m=document.createElement('div');
     m.id='doc-upload-modal';
     m.className='modal-overlay';
-    m.innerHTML=`<div class="modal" style="width:420px">
-      <div class="modal-header"><span class="modal-title">Upload Document</span><button class="modal-close" onclick="closeModal('doc-upload-modal')">✕</button></div>
-      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+    m.innerHTML=`<div class="modal" data-style="width:420px">
+      <div class="modal-header"><span class="modal-title">Upload Document</span><button class="modal-close" data-on-click="closeModal('doc-upload-modal')">✕</button></div>
+      <div class="modal-body" data-style="display:flex;flex-direction:column;gap:12px">
         <div><label class="field-label">File (max 5 MB)</label><input type="file" id="doc-file-input" class="finput" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv,.docx,.txt"></div>
         <div><label class="field-label">Document type</label>
           <select id="doc-type-input" class="finput"><option>invoice</option><option>receipt</option><option>contract</option><option>quote</option><option>report</option><option>other</option></select></div>
         <div><label class="field-label">Notes (optional)</label><input id="doc-notes-input" class="finput" placeholder="e.g. Linked to INV-0042"></div>
       </div>
-      <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('doc-upload-modal')">Cancel</button><button class="btn btn-primary" onclick="uploadDocument()">Upload</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" data-on-click="closeModal('doc-upload-modal')">Cancel</button><button class="btn btn-primary" data-on-click="uploadDocument()">Upload</button></div>
     </div>`;
     document.body.appendChild(m);
   }
@@ -6460,17 +6464,17 @@ async function _ffSaveAutoEmails(body){
 window._ffRenderAutoEmails = async function(){
   const el = document.getElementById('email-templates-list'); if (!el) return;
   const d = window._ffAutoEmails || await _ffLoadAutoEmails();
-  if (!d) { el.innerHTML = '<div style="padding:9px 0;font-size:12px;color:var(--t3)">Choose a business to set up its automatic emails.</div>'; return; }
+  if (!d) { el.innerHTML = '<div data-style="padding:9px 0;font-size:12px;color:var(--t3)">Choose a business to set up its automatic emails.</div>'; return; }
   const s = d.settings || {};
-  el.innerHTML = (d.email_configured ? '' : '<div style="padding:8px 0;font-size:11.5px;color:var(--amber)">Email sending is not set up on this server yet — these will send once it is.</div>')
+  el.innerHTML = (d.email_configured ? '' : '<div data-style="padding:8px 0;font-size:11.5px;color:var(--amber)">Email sending is not set up on this server yet — these will send once it is.</div>')
     + Object.keys(_AE_LABELS).map(k => {
       const [name, when] = _AE_LABELS[k], st = s[k] || {}, dayKey = k === 'reminder' ? 'days_after_due' : k === 'overdue' ? 'days_overdue' : null;
-      return '<div style="padding:9px 0;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px">'
-        + '<div style="min-width:0"><div style="font-size:13px;font-weight:500;color:var(--t1)">' + esc(name) + '</div><div style="font-size:11px;color:var(--t3)">'
-        + (st.on ? 'On' : 'Off') + ' · ' + (dayKey ? '<input class="finput" type="number" min="1" max="90" step="1" value="' + Number(st[dayKey] || 0) + '" aria-label="' + esc(name) + ' — days" style="width:58px;padding:2px 6px;font-size:11px;display:inline-block" onchange="_ffSetAutoEmail(\'' + k + '\', null, this.value)"> ' : '') + esc(when) + '</div></div>'
-        + '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">'
-        + '<label class="toggle" title="' + (st.on ? 'Turn off' : 'Turn on') + '"><input type="checkbox" data-ae="' + k + '"' + (st.on ? ' checked' : '') + ' onchange="_ffSetAutoEmail(\'' + k + '\', this.checked)" aria-label="' + esc(name) + ' on or off"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>'
-        + '<button class="btn btn-ghost btn-sm" onclick="openEmailTemplateEditor(\'' + k + '\')">Edit</button></div></div>';
+      return '<div data-style="padding:9px 0;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px">'
+        + '<div data-style="min-width:0"><div data-style="font-size:13px;font-weight:500;color:var(--t1)">' + esc(name) + '</div><div data-style="font-size:11px;color:var(--t3)">'
+        + (st.on ? 'On' : 'Off') + ' · ' + (dayKey ? '<input class="finput" type="number" min="1" max="90" step="1" value="' + Number(st[dayKey] || 0) + '" aria-label="' + esc(name) + ' — days" data-style="width:58px;padding:2px 6px;font-size:11px;display:inline-block" data-arg-k="' + k + '" data-on-change="_ffSetAutoEmail(this.dataset.argK, null, this.value)"> ' : '') + esc(when) + '</div></div>'
+        + '<div data-style="display:flex;gap:6px;align-items:center;flex-shrink:0">'
+        + '<label class="toggle" title="' + (st.on ? 'Turn off' : 'Turn on') + '"><input type="checkbox" data-ae="' + k + '"' + (st.on ? ' checked' : '') + ' data-arg-k="' + k + '" data-on-change="_ffSetAutoEmail(this.dataset.argK, this.checked)" aria-label="' + esc(name) + ' on or off"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>'
+        + '<button class="btn btn-ghost btn-sm" data-arg-k="' + k + '" data-on-click="openEmailTemplateEditor(this.dataset.argK)">Edit</button></div></div>';
     }).join('');
 };
 window._ffSetAutoEmail = async function(kind, on, days){
@@ -6493,16 +6497,16 @@ window.openEmailTemplateEditor = async function(kind){
   const overlay = document.createElement('div');
   overlay.id = 'email-tmpl-editor';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px)';
-  const chips = (d.allowed[kind] || []).map(p => '<code title="' + esc((d.placeholders || {})[p] || '') + '" style="font-size:11px;background:var(--bg2);padding:1px 5px;border-radius:4px">{{' + p + '}}</code>').join(' ');
-  overlay.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Edit ' + esc(name) + '" style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:560px;box-shadow:var(--shadow-lg);overflow:hidden">'
-    + '<div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:500;color:var(--t1)">Edit — ' + esc(name) + '</div>'
-    + '<button onclick="document.getElementById(\'email-tmpl-editor\').remove()" class="btn btn-ghost btn-sm">✕ Close</button></div>'
-    + '<div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">'
+  const chips = (d.allowed[kind] || []).map(p => '<code title="' + esc((d.placeholders || {})[p] || '') + '" data-style="font-size:11px;background:var(--bg2);padding:1px 5px;border-radius:4px">{{' + p + '}}</code>').join(' ');
+  overlay.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Edit ' + esc(name) + '" data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:560px;box-shadow:var(--shadow-lg);overflow:hidden">'
+    + '<div data-style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between"><div data-style="font-size:14px;font-weight:500;color:var(--t1)">Edit — ' + esc(name) + '</div>'
+    + '<button data-on-click="document.getElementById(\'email-tmpl-editor\').remove()" class="btn btn-ghost btn-sm">✕ Close</button></div>'
+    + '<div data-style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">'
     + '<div class="field-wrap"><label class="field-label" for="ae-subject">Subject line</label><input class="finput" id="ae-subject" maxlength="200" value="' + esc(t.subject) + '"></div>'
-    + '<div class="field-wrap"><label class="field-label" for="ae-body">Message</label><textarea class="finput" id="ae-body" rows="8" maxlength="5000" style="resize:vertical;line-height:1.6">' + esc(t.body) + '</textarea></div>'
-    + '<div style="font-size:11px;color:var(--t3);line-height:1.8">This email can fill: ' + chips + '</div>'
-    + '<div style="display:flex;gap:8px"><button class="btn btn-primary" style="flex:1;justify-content:center" onclick="_ffSaveEmailTemplate(\'' + kind + '\')">Save</button>'
-    + '<button class="btn btn-ghost" onclick="_ffTestEmailTemplate(\'' + kind + '\')">Send a test to me</button></div></div></div>';
+    + '<div class="field-wrap"><label class="field-label" for="ae-body">Message</label><textarea class="finput" id="ae-body" rows="8" maxlength="5000" data-style="resize:vertical;line-height:1.6">' + esc(t.body) + '</textarea></div>'
+    + '<div data-style="font-size:11px;color:var(--t3);line-height:1.8">This email can fill: ' + chips + '</div>'
+    + '<div data-style="display:flex;gap:8px"><button class="btn btn-primary" data-style="flex:1;justify-content:center" data-arg-kind="' + kind + '" data-on-click="_ffSaveEmailTemplate(this.dataset.argKind)">Save</button>'
+    + '<button class="btn btn-ghost" data-arg-kind="' + kind + '" data-on-click="_ffTestEmailTemplate(this.dataset.argKind)">Send a test to me</button></div></div></div>';
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 };
@@ -6532,15 +6536,15 @@ function renderTemplates(){
   const il=document.getElementById('inv-templates-list');
   const _ds = window.FinFlowDocStyle ? window.FinFlowDocStyle(((window.ENTITIES||[]).find(e=>e&&e.active)||{}).doc_style) : { template:'classic' };
   if(il)il.innerHTML=invTemplatesData.map(t=>`
-    <div style="padding:10px 0;border-bottom:1px solid var(--bd)">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <div style="min-width:0">
-          <div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(t.name)} ${t.id===_ds.template?'<span class="badge b-green" style="font-size:9px">In use</span>':''}</div>
-          <div style="font-size:11px;color:var(--t3)">${esc(t.preview)}</div>
+    <div data-style="padding:10px 0;border-bottom:1px solid var(--bd)">
+      <div data-style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div data-style="min-width:0">
+          <div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(t.name)} ${t.id===_ds.template?'<span class="badge b-green" data-style="font-size:9px">In use</span>':''}</div>
+          <div data-style="font-size:11px;color:var(--t3)">${esc(t.preview)}</div>
         </div>
-        <div style="display:flex;gap:5px;flex-shrink:0">
-          <button class="btn btn-ghost btn-sm" onclick="openTemplatePreview('${t.id}')">Preview</button>
-          ${t.id===_ds.template ? '<button class="btn btn-primary btn-sm" onclick="openTemplateEditor(\''+t.id+'\')">Customise</button>' : '<button class="btn btn-ghost btn-sm" onclick="useDocDesign(\''+t.id+'\')">Use this design</button>'}
+        <div data-style="display:flex;gap:5px;flex-shrink:0">
+          <button class="btn btn-ghost btn-sm" data-arg-id="${t.id}" data-on-click="openTemplatePreview(this.dataset.argId)">Preview</button>
+          ${t.id===_ds.template ? '<button class="btn btn-primary btn-sm" data-arg-id="'+t.id+'" data-on-click="openTemplateEditor(this.dataset.argId)">Customise</button>' : '<button class="btn btn-ghost btn-sm" data-arg-id="'+t.id+'" data-on-click="useDocDesign(this.dataset.argId)">Use this design</button>'}
         </div>
       </div>
     </div>`).join('');
@@ -6573,17 +6577,17 @@ function _ffDocOverlay(title, inner){
   const old = document.getElementById('tmpl-preview-overlay'); if (old) old.remove();
   const o = document.createElement('div'); o.id = 'tmpl-preview-overlay';
   o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px';
-  o.innerHTML = '<div role="dialog" aria-modal="true" aria-label="'+esc(title)+'" style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:820px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">'
-    + '<div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:500;color:var(--t1)">'+esc(title)+'</div>'
-    + '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'tmpl-preview-overlay\').remove()">✕ Close</button></div>' + inner + '</div>';
+  o.innerHTML = '<div role="dialog" aria-modal="true" aria-label="'+esc(title)+'" data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:820px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">'
+    + '<div data-style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between"><div data-style="font-size:14px;font-weight:500;color:var(--t1)">'+esc(title)+'</div>'
+    + '<button class="btn btn-ghost btn-sm" data-on-click="document.getElementById(\'tmpl-preview-overlay\').remove()">✕ Close</button></div>' + inner + '</div>';
   document.body.appendChild(o);
   o.addEventListener('click', e => { if (e.target === o) o.remove(); });
   return o;
 }
 window.openTemplatePreview = function(id){
   const t = invTemplatesData.find(x=>x.id===id) || invTemplatesData[0];
-  const o = _ffDocOverlay('Preview — ' + t.name, '<iframe id="tmpl-preview-frame" title="Document preview" style="flex:1;min-height:70vh;border:0;background:#e8e8e8"></iframe>');
-  const f = o.querySelector('iframe'); if (f) f.srcdoc = window.buildDocumentHTML(_ffSampleDoc('invoice'), 'invoice', { template: id });
+  const o = _ffDocOverlay('Preview — ' + t.name, '<iframe id="tmpl-preview-frame" title="Document preview" data-style="flex:1;min-height:70vh;border:0;background:#e8e8e8"></iframe>');
+  const f = o.querySelector('iframe'); if (f) window.ffFrameWrite(f, window.buildDocumentHTML(_ffSampleDoc('invoice'), 'invoice', { template: id }));
 };
 async function _ffSaveDocStyle(patch){
   const ent = (window.ENTITIES||[]).find(e=>e&&e.active); if (!ent || ent._dbId == null) { notify('Choose a business first', true); return false; }
@@ -6604,20 +6608,20 @@ window.openTemplateEditor = function(id){
   const ent = (window.ENTITIES||[]).find(e=>e&&e.active) || {};
   const cur = window.FinFlowDocStyle ? window.FinFlowDocStyle(ent.doc_style) : { template:'classic', accent:'#c9a84c', poweredBy:true };
   window._ffDocDraft = { template: invTemplatesData.some(x=>x.id===id) ? id : cur.template, accent: cur.accent, powered_by: cur.poweredBy };
-  const sw = ['#c9a84c','#1f6feb','#1a7f4b','#c0392b','#6f42c1','#222222'].map(c=>'<button type="button" aria-label="Colour '+c+'" onclick="setTemplateColor(\''+c+'\')" style="width:26px;height:26px;border-radius:6px;border:2px solid transparent;background:'+c+';cursor:pointer"></button>').join('');
-  const inner = '<div style="display:grid;grid-template-columns:260px 1fr;flex:1;min-height:0">'
-    + '<div style="padding:1rem 1.25rem;border-right:1px solid var(--bd);display:flex;flex-direction:column;gap:14px;overflow:auto">'
-    + '<div><div class="field-label">Accent colour</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">'+sw+'</div><input class="finput" id="tmpl-accent" value="'+esc(cur.accent)+'" aria-label="Accent colour, hex" oninput="setTemplateColor(this.value)"></div>'
-    + '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--t2)"><input type="checkbox" id="tmpl-poweredby"'+(cur.poweredBy?' checked':'')+' onchange="setTemplatePoweredBy(this.checked)"> Show "Powered by FinFlow"</label>'
-    + '<div><div class="field-label">Logo (your business logo, on every document)</div><input type="file" id="tmpl-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="finput" onchange="handleLogoUpload(this)"><button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="removeLogo()">Remove logo</button></div>'
-    + '<button class="btn btn-primary" style="justify-content:center" onclick="saveTemplateSettings()">Save</button>'
-    + '</div><iframe id="tmpl-edit-preview" title="Live preview" style="width:100%;min-height:70vh;border:0;background:#e8e8e8"></iframe></div>';
+  const sw = ['#c9a84c','#1f6feb','#1a7f4b','#c0392b','#6f42c1','#222222'].map(c=>'<button type="button" aria-label="Colour '+c+'" data-arg-c="'+c+'" data-on-click="setTemplateColor(this.dataset.argC)" data-style="width:26px;height:26px;border-radius:6px;border:2px solid transparent;background:'+c+';cursor:pointer"></button>').join('');
+  const inner = '<div data-style="display:grid;grid-template-columns:260px 1fr;flex:1;min-height:0">'
+    + '<div data-style="padding:1rem 1.25rem;border-right:1px solid var(--bd);display:flex;flex-direction:column;gap:14px;overflow:auto">'
+    + '<div><div class="field-label">Accent colour</div><div data-style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">'+sw+'</div><input class="finput" id="tmpl-accent" value="'+esc(cur.accent)+'" aria-label="Accent colour, hex" data-on-input="setTemplateColor(this.value)"></div>'
+    + '<label data-style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--t2)"><input type="checkbox" id="tmpl-poweredby"'+(cur.poweredBy?' checked':'')+' data-on-change="setTemplatePoweredBy(this.checked)"> Show "Powered by FinFlow"</label>'
+    + '<div><div class="field-label">Logo (your business logo, on every document)</div><input type="file" id="tmpl-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="finput" data-on-change="handleLogoUpload(this)"><button class="btn btn-ghost btn-sm" data-style="margin-top:6px" data-on-click="removeLogo()">Remove logo</button></div>'
+    + '<button class="btn btn-primary" data-style="justify-content:center" data-on-click="saveTemplateSettings()">Save</button>'
+    + '</div><iframe id="tmpl-edit-preview" title="Live preview" data-style="width:100%;min-height:70vh;border:0;background:#e8e8e8"></iframe></div>';
   _ffDocOverlay('Customise — ' + ((invTemplatesData.find(x=>x.id===window._ffDocDraft.template)||{}).name || 'Design'), inner);
   refreshEditorPreview();
 };
 function refreshEditorPreview(){
   const f = document.getElementById('tmpl-edit-preview'); if (!f || !window._ffDocDraft) return;
-  f.srcdoc = window.buildDocumentHTML(_ffSampleDoc('invoice'), 'invoice', window._ffDocDraft);
+  window.ffFrameWrite(f, window.buildDocumentHTML(_ffSampleDoc('invoice'), 'invoice', window._ffDocDraft));
 }
 window.setTemplateColor = function(color){
   if(!/^#[0-9a-fA-F]{6}$/.test(String(color))) return;
@@ -6688,7 +6692,7 @@ function buildRiver(d){
   // "<path> attribute d: Expected number, ..." spam in the console.
   const _num = v => (typeof v === 'number' && isFinite(v));
   if (!d || ![d.rev,d.exp,d.profit,d.sal,d.rent,d.sw,d.mkt].every(_num)) {
-    wrap.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">No cash flow data yet — add invoices and expenses to see the river chart.</div>';
+    wrap.innerHTML = '<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">No cash flow data yet — add invoices and expenses to see the river chart.</div>';
     return;
   }
   const dark=darkMode;
@@ -6697,7 +6701,7 @@ function buildRiver(d){
   const sal=d.sal||0, rent=d.rent||0, sw=d.sw||0, mkt=d.mkt||0;
   // If revenue is zero, ratio math below would divide by zero → NaN. Skip.
   if (rev <= 0 || exp <= 0) {
-    wrap.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Add revenue and expenses to see the cash-flow river.</div>';
+    wrap.innerHTML = '<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Add revenue and expenses to see the cash-flow river.</div>';
     return;
   }
   const other=Math.max(0, exp-sal-rent-sw-mkt);
@@ -6768,10 +6772,10 @@ function buildRiver(d){
       fill="${color}" opacity="${opacity}" class="river-flow"/>`;
   }
 
-  // Build SVG
-  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
+  // Build SVG (FA-P1: its keyframes are a constructed stylesheet — no <style> in markup under the strict CSP)
+  if (window.ffAdoptCss) window.ffAdoptCss('ff-ptcl', '@keyframes ff-ptcl{0%,5%{opacity:0;offset-distance:0%}15%,80%{opacity:.7}95%,100%{opacity:0;offset-distance:100%}}');
+  let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" data-style="overflow:visible">
   <defs>
-    <style>@keyframes ff-ptcl{0%,5%{opacity:0;offset-distance:0%}15%,80%{opacity:.7}95%,100%{opacity:0;offset-distance:100%}}</style>
     <linearGradient id="rg-rev" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="${C.rev}" stop-opacity="0.9"/>
       <stop offset="100%" stop-color="${C.rev}" stop-opacity="0.5"/>
@@ -6824,7 +6828,7 @@ function buildRiver(d){
   const expMidY=expBlock.top+expH/2;
   function flowParticle(x1,y1,x2,y2,color,delay,dur=2.8){
     const mx=(x1+x2)/2;
-    return `<circle r="2" fill="${color}" style="offset-path:path('M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}');offset-distance:0%;animation:ff-ptcl ${dur}s ${delay}s infinite linear"></circle>`;
+    return `<circle r="2" fill="${color}" data-style="offset-path:path('M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}');offset-distance:0%;animation:ff-ptcl ${dur}s ${delay}s infinite linear"></circle>`;
   }
 
   // Particles on revenue → mid
@@ -6846,12 +6850,12 @@ function buildRiver(d){
   });
 
   // Labels — left
-  svg+=`<text x="${col[0]-20}" y="${profitBlock.top+revH/2+4}" text-anchor="end" class="river-node-value" style="font-size:15px;fill:${C.rev}">${S(rev)}</text>
+  svg+=`<text x="${col[0]-20}" y="${profitBlock.top+revH/2+4}" text-anchor="end" class="river-node-value" data-style="font-size:15px;fill:${C.rev}">${S(rev)}</text>
   <text x="${col[0]-20}" y="${profitBlock.top+revH/2-14}" text-anchor="end" class="river-node-label">Revenue</text>`;
 
   // Label — profit right side
-  svg+=`<text x="${col[3]+4}" y="${profitBlock.top+profitH/2+4}" text-anchor="start" class="river-node-value" style="font-size:13px;fill:${C.profit}">${S(profit)}</text>
-  <text x="${col[3]+4}" y="${profitBlock.top+profitH/2-12}" text-anchor="start" class="river-node-label" style="fill:${C.profit}">Net profit</text>`;
+  svg+=`<text x="${col[3]+4}" y="${profitBlock.top+profitH/2+4}" text-anchor="start" class="river-node-value" data-style="font-size:13px;fill:${C.profit}">${S(profit)}</text>
+  <text x="${col[3]+4}" y="${profitBlock.top+profitH/2-12}" text-anchor="start" class="river-node-label" data-style="fill:${C.profit}">Net profit</text>`;
 
   // Labels — destinations
   dests.forEach((dest,i)=>{
@@ -6973,66 +6977,31 @@ document.addEventListener('mouseleave',()=>{
 (function injectGapClosers(){
 
 // ── 1. MOBILE RESPONSIVE CSS ─────────────────────────────────────────────
-const mobileCSS = document.createElement('style');
-mobileCSS.textContent = `
-@media (max-width: 700px) {
-  /* Mobile fix: removed the sidebar display:none rule — it overrode the off-canvas drawer and made
-     the hamburger appear dead. The drawer opens via .sidebar.open (openSidebar in index.html). */
-  .topbar-right #themeBtn { display: none; }
-  #currency-picker-wrap { display: none; }
-  #pMonth,#pQ,#pY { display: none; }
-  #month-nav { display: none !important; }
-  .metrics-grid { grid-template-columns: 1fr 1fr !important; gap: 7px; }
-  .metrics-grid-3 { grid-template-columns: 1fr 1fr !important; gap: 7px; }
-  .two-col { grid-template-columns: 1fr !important; }
-  .mc-val { font-size: 26px !important; }
-  .mc { padding: .65rem .8rem; }
-  .canvas-wrap { height: 140px !important; }
-  #river-card { display: none !important; }
-  .page-title { font-size: 14px; }
-  .period-label { display: none; }
-  .field-group { grid-template-columns: 1fr !important; }
-  /* Mobile fix: removed the injected mobile-bottom-nav display:flex bar + its mob-nav-item styling —
-     it was a SECOND bottom nav duplicating index.html's canonical mob-bottom-nav. The injected bar
-     is no longer appended (appendChild commented below). */
-  .mobile-fab {
-    position: fixed; bottom: 72px; right: 16px; width: 48px; height: 48px;
-    border-radius: 50%; background: var(--acc); color: #0e0b08; border: none;
-    font-size: 24px; display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 4px 20px var(--acc-glow); cursor: pointer; z-index: 501;
-    transition: transform .15s cubic-bezier(.34,1.6,.64,1), box-shadow .15s;
-  }
-  .mobile-fab:active { transform: scale(.93); }
-}
-@media (min-width: 701px) {
-  #mobile-bottom-nav { display: none !important; }
-  .mobile-fab { display: none !important; }
-}
-`;
-document.head.appendChild(mobileCSS);
+// FA-P1: this CSS is public/css/app-mobile.css, linked at the end of index.html's <head> — where this script used to
+// append it (no <style> elements under the strict Content-Security-Policy).
 
 // ── INJECT BOTTOM NAV ────────────────────────────────────────────────────
 const bottomNav = document.createElement('nav');
 bottomNav.id = 'mobile-bottom-nav';
 bottomNav.style.display = 'none';
 bottomNav.innerHTML = `
-  <button class="mob-nav-item active" id="mob-dashboard" onclick="showPage('dashboard',null);setMobActive('mob-dashboard')">
+  <button class="mob-nav-item active" id="mob-dashboard" data-on-click="showPage('dashboard',null);setMobActive('mob-dashboard')">
     <svg viewBox="0 0 16 16"><rect x="1" y="1" width="6.5" height="6.5" rx="1.2"/><rect x="8.5" y="1" width="6.5" height="6.5" rx="1.2"/><rect x="1" y="8.5" width="6.5" height="6.5" rx="1.2"/><rect x="8.5" y="8.5" width="6.5" height="6.5" rx="1.2"/></svg>
     Home
   </button>
-  <button class="mob-nav-item" id="mob-invoices" onclick="showPage('invoices',null);setMobActive('mob-invoices')">
+  <button class="mob-nav-item" id="mob-invoices" data-on-click="showPage('invoices',null);setMobActive('mob-invoices')">
     <svg viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="9" y2="11"/></svg>
     Invoices
   </button>
-  <button class="mob-nav-item" id="mob-expenses" onclick="showPage('expenses',null);setMobActive('mob-expenses')">
+  <button class="mob-nav-item" id="mob-expenses" data-on-click="showPage('expenses',null);setMobActive('mob-expenses')">
     <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M6 9.5c0 .83.67 1.5 2 1.5s2-.67 2-1.5S9 8 8 8s-2-.67-2-1.5S7 5 8 5s2 .67 2 1.5"/></svg>
     Expenses
   </button>
-  <button class="mob-nav-item" id="mob-personal" onclick="showPage('personal',null);setMobActive('mob-personal')">
+  <button class="mob-nav-item" id="mob-personal" data-on-click="showPage('personal',null);setMobActive('mob-personal')">
     <svg viewBox="0 0 16 16"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>
     Personal
   </button>
-  <button class="mob-nav-item" id="mob-ai" onclick="showPage('ai',null);setMobActive('mob-ai')">
+  <button class="mob-nav-item" id="mob-ai" data-on-click="showPage('ai',null);setMobActive('mob-ai')">
     <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/></svg>
     AI
   </button>

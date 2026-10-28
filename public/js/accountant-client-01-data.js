@@ -75,7 +75,7 @@ window._canEditActive = function() {
 };
 window._refreshEditAffordances = function() {
   window._acctCanEdit = window._canEditActive();
-  document.querySelectorAll('[onclick="toggleJournalForm()"]').forEach(b => { b.style.display = window._acctCanEdit ? '' : 'none'; });
+  document.querySelectorAll('[data-on-click="toggleJournalForm()"]').forEach(b => { b.style.display = window._acctCanEdit ? '' : 'none'; });
 };
 
 async function loadData() {
@@ -83,7 +83,7 @@ async function loadData() {
     if (!(await fetchBooks())) return;
     document.getElementById('sb-client-meta').textContent = (_data.allInvoices?.length||0) + ' invoices · ' + (_data.allExpenses?.length||0) + ' expenses';
     if (_data.accessLevel) {
-      document.getElementById('sb-access-badge').innerHTML = `<i class="ti ti-shield-check" style="font-size:11px"></i> ${esc(_data.accessLevel)} access`;
+      document.getElementById('sb-access-badge').innerHTML = `<i class="ti ti-shield-check" data-style="font-size:11px"></i> ${esc(_data.accessLevel)} access`;
     }
     // 'filing' = run the books (post journals + lock periods); 'view' = review only. The server
     // enforces this with a 403 either way; hiding the edit affordances just avoids showing a button
@@ -102,13 +102,13 @@ async function refreshData() { await loadData(); }
 function buildEntityTabs() {
   const list = document.getElementById('entity-list');
   const entities = _data.entities || [];
-  list.innerHTML = `<div class="entity-item active" data-entity="all" onclick="switchEntity('all',this)"><div class="entity-dot" style="background:var(--gold)"></div>All entities</div>`;
+  list.innerHTML = `<div class="entity-item active" data-entity="all" data-on-click="switchEntity('all',this)"><div class="entity-dot" data-style="background:var(--gold)"></div>All entities</div>`;
   entities.forEach((e, i) => {
     const color = BAR_COLORS[i % BAR_COLORS.length];
-    list.innerHTML += `<div class="entity-item" data-entity="${parseInt(e.id)||0}" onclick="switchEntity('${parseInt(e.id)||0}',this)"><div class="entity-dot" style="background:${color}"></div>${esc(e.name)}</div>`;
+    list.innerHTML += `<div class="entity-item" data-entity="${parseInt(e.id)||0}" data-arg-id="${parseInt(e.id)||0}" data-on-click="switchEntity(this.dataset.argId,this)"><div class="entity-dot" data-style="background:${color}"></div>${esc(e.name)}</div>`;
   });
   if (_data.personalAccess && _data.personalAccess !== 'none' && _data.personal) {
-    list.innerHTML += `<div class="entity-item" data-entity="__personal" onclick="openPersonalPanel()"><div class="entity-dot" style="background:#9b6bcc"></div>Personal finances <span style="margin-left:auto;font-size:10px;color:var(--text3)">${esc(_data.personalAccess)}</span></div>`;
+    list.innerHTML += `<div class="entity-item" data-entity="__personal" data-on-click="openPersonalPanel()"><div class="entity-dot" data-style="background:#9b6bcc"></div>Personal finances <span data-style="margin-left:auto;font-size:10px;color:var(--text3)">${esc(_data.personalAccess)}</span></div>`;
   }
   document.getElementById('topbar-entity-name').textContent = 'All entities';
 }
@@ -120,35 +120,35 @@ window.openPersonalPanel = function() {
   const pd = _data && _data.personal;
   if (!pd) return;
   const fmt = v => Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-  const accts = (pd.accounts||[]).map(a => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">${esc(a.name||a.kind||'—')} <span style="font-size:10px;color:var(--text3)">${esc(a.kind||'')}</span></span><span style="font-family:var(--mono,monospace);color:var(--text1)">${fmt(a.value)}</span></div>`).join('') || '<div style="color:var(--text3);font-size:12px">No accounts</div>';
+  const accts = (pd.accounts||[]).map(a => `<div data-style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span data-style="color:var(--text2)">${esc(a.name||a.kind||'—')} <span data-style="font-size:10px;color:var(--text3)">${esc(a.kind||'')}</span></span><span data-style="font-family:var(--mono,monospace);color:var(--text1)">${fmt(a.value)}</span></div>`).join('') || '<div data-style="color:var(--text3);font-size:12px">No accounts</div>';
   // C6: income / spending for the year to date (server, per currency — never mixed into one number).
   const _cur = Object.keys(pd.incomeByCurrency||{}).concat(Object.keys(pd.expenseByCurrency||{})).filter((c,i,a)=>a.indexOf(c)===i);
   const _yd = (by) => _cur.length ? _cur.map(c => esc(c) + ' ' + fmt((by||{})[c]||0)).join('<br>') : fmt(0);
   const _win = pd.window ? ' (' + esc(pd.window.from) + ' → ' + esc(pd.window.to) + ')' : '';
   const _allTx = (pd.transactions||[]).length;
-  const txns = (pd.transactions||[]).slice(0,25).map(t => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">${esc(t.description||t.category||'—')} <span style="font-size:10px;color:var(--text3)">${esc(t.tx_date||'')}</span></span><span style="font-family:var(--mono,monospace);color:${t.tx_type==='income'?'#4a9c6d':'var(--text1)'}">${t.tx_type==='income'?'+':'−'}${fmt(t.amount)}</span></div>`).join('') || '<div style="color:var(--text3);font-size:12px">No transactions</div>';
+  const txns = (pd.transactions||[]).slice(0,25).map(t => `<div data-style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span data-style="color:var(--text2)">${esc(t.description||t.category||'—')} <span data-style="font-size:10px;color:var(--text3)">${esc(t.tx_date||'')}</span></span><span data-style="font-family:var(--mono,monospace);color:${t.tx_type==='income'?'#4a9c6d':'var(--text1)'}">${t.tx_type==='income'?'+':'−'}${fmt(t.amount)}</span></div>`).join('') || '<div data-style="color:var(--text3);font-size:12px">No transactions</div>';
   let ov = document.getElementById('personal-overlay');
   if (ov) ov.remove();
   ov = document.createElement('div');
   ov.id = 'personal-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `<div style="background:var(--bg1,#14110c);border:1px solid var(--border,#2a2419);border-radius:14px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:22px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div><div style="font-size:16px;color:var(--text1,#f2e8d5);font-weight:600">Personal finances</div>
-      <div style="font-size:11px;color:var(--text3)">${esc(_data.personalAccess)} access · read-only</div></div>
-      <button onclick="document.getElementById('personal-overlay').remove()" style="background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:5px 10px;cursor:pointer">Close</button>
+  ov.innerHTML = `<div data-style="background:var(--bg1,#14110c);border:1px solid var(--border,#2a2419);border-radius:14px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:22px">
+    <div data-style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div><div data-style="font-size:16px;color:var(--text1,#f2e8d5);font-weight:600">Personal finances</div>
+      <div data-style="font-size:11px;color:var(--text3)">${esc(_data.personalAccess)} access · read-only</div></div>
+      <button data-on-click="document.getElementById('personal-overlay').remove()" data-style="background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:5px 10px;cursor:pointer">Close</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      <div style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Net worth</div><div style="font-size:20px;font-weight:600;color:var(--gold,#c9a84c);font-family:var(--mono,monospace)">${fmt(pd.netWorth)}</div></div>
-      <div style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Portfolio</div><div style="font-size:20px;font-weight:600;color:var(--text1);font-family:var(--mono,monospace)">${fmt(pd.portfolio)}</div></div>
-      <div style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Assets</div><div style="font-size:16px;color:#4a9c6d;font-family:var(--mono,monospace)">${fmt(pd.assets)}</div></div>
-      <div style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Liabilities</div><div style="font-size:16px;color:#c05a5a;font-family:var(--mono,monospace)">${fmt(pd.liabilities)}</div></div>
-      <div id="pp-income" style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Income, year to date${_win}</div><div style="font-size:16px;color:#4a9c6d;font-family:var(--mono,monospace)">${_yd(pd.incomeByCurrency)}</div></div>
-      <div id="pp-expense" style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Spending, year to date</div><div style="font-size:16px;color:#c05a5a;font-family:var(--mono,monospace)">${_yd(pd.expenseByCurrency)}</div></div>
+    <div data-style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div data-style="border:1px solid var(--border);border-radius:10px;padding:12px"><div data-style="font-size:11px;color:var(--text3)">Net worth</div><div data-style="font-size:20px;font-weight:600;color:var(--gold,#c9a84c);font-family:var(--mono,monospace)">${fmt(pd.netWorth)}</div></div>
+      <div data-style="border:1px solid var(--border);border-radius:10px;padding:12px"><div data-style="font-size:11px;color:var(--text3)">Portfolio</div><div data-style="font-size:20px;font-weight:600;color:var(--text1);font-family:var(--mono,monospace)">${fmt(pd.portfolio)}</div></div>
+      <div data-style="border:1px solid var(--border);border-radius:10px;padding:12px"><div data-style="font-size:11px;color:var(--text3)">Assets</div><div data-style="font-size:16px;color:#4a9c6d;font-family:var(--mono,monospace)">${fmt(pd.assets)}</div></div>
+      <div data-style="border:1px solid var(--border);border-radius:10px;padding:12px"><div data-style="font-size:11px;color:var(--text3)">Liabilities</div><div data-style="font-size:16px;color:#c05a5a;font-family:var(--mono,monospace)">${fmt(pd.liabilities)}</div></div>
+      <div id="pp-income" data-style="border:1px solid var(--border);border-radius:10px;padding:12px"><div data-style="font-size:11px;color:var(--text3)">Income, year to date${_win}</div><div data-style="font-size:16px;color:#4a9c6d;font-family:var(--mono,monospace)">${_yd(pd.incomeByCurrency)}</div></div>
+      <div id="pp-expense" data-style="border:1px solid var(--border);border-radius:10px;padding:12px"><div data-style="font-size:11px;color:var(--text3)">Spending, year to date</div><div data-style="font-size:16px;color:#c05a5a;font-family:var(--mono,monospace)">${_yd(pd.expenseByCurrency)}</div></div>
     </div>
-    <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px">Assets &amp; liabilities</div>${accts}
-    <div style="font-size:12px;color:var(--text2);font-weight:600;margin:16px 0 6px">Recent personal transactions${_allTx > 25 ? ' <span style="font-weight:400;color:var(--text3)">(latest 25 of ' + _allTx + ')</span>' : ''}</div>${txns}
+    <div data-style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px">Assets &amp; liabilities</div>${accts}
+    <div data-style="font-size:12px;color:var(--text2);font-weight:600;margin:16px 0 6px">Recent personal transactions${_allTx > 25 ? ' <span data-style="font-weight:400;color:var(--text3)">(latest 25 of ' + _allTx + ')</span>' : ''}</div>${txns}
   </div>`;
   document.body.appendChild(ov);
 };
@@ -300,7 +300,7 @@ function renderDashboard(invoices, expenses) {
       <td>${fmtDate(inv.due_date)}</td>
       <td class="amount income">${fmt(inv.amount)}</td>
       <td><span class="badge ${inv.status==='paid'?'badge-green':inv.status==='overdue'?'badge-red':'badge-amber'}">${inv.status}</span></td>
-      <td><button class="flag-btn" onclick="flagTxn('invoice','${esc(inv.client||'')}')">⚑</button></td>
+      <td><button class="flag-btn" data-arg-client="${esc(inv.client||'')}" data-on-click="flagTxn('invoice',this.dataset.argClient)">⚑</button></td>
     </tr>`).join('') || `<tr><td colspan="5" class="empty">No invoices for this period</td></tr>`;
 
   // Category bars
@@ -311,7 +311,7 @@ function renderDashboard(invoices, expenses) {
   document.getElementById('dash-categories').innerHTML = sorted.length ? sorted.slice(0,6).map(([c,a],i)=>`
     <div class="cat-row">
       <div class="cat-meta"><span class="cat-label">${esc(c)}</span><span class="cat-amount">${fmt(a)}</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:${(a/maxC*100).toFixed(1)}%;background:${BAR_COLORS[i%BAR_COLORS.length]}"></div></div>
+      <div class="bar-track"><div class="bar-fill" data-style="width:${(a/maxC*100).toFixed(1)}%;background:${BAR_COLORS[i%BAR_COLORS.length]}"></div></div>
     </div>`).join('') : '<div class="empty">No expenses</div>';
 
   // Recent expenses (5)
@@ -322,15 +322,15 @@ function renderDashboard(invoices, expenses) {
       <td>${esc(e.category||'—')}</td>
       <td class="amount expense">${fmt(e.amount)}</td>
       <td>${(f=>f===1?'<span class="badge badge-green">✓ Full</span>':f===0.5?'<span class="badge badge-amber">½</span>':'—')(window.FinFlowDates.deductibleFactor(e.deductible))}</td>
-      <td><button class="flag-btn" onclick="flagTxn('expense','${esc(e.description||'')}')">⚑</button></td>
+      <td><button class="flag-btn" data-arg-description="${esc(e.description||'')}" data-on-click="flagTxn('expense',this.dataset.argDescription)">⚑</button></td>
     </tr>`).join('') || `<tr><td colspan="5" class="empty">No expenses for this period</td></tr>`;
 
   // P&L summary
   document.getElementById('dash-pl').innerHTML = `
-    <div class="pl-row"><span class="pl-label">Gross Revenue</span><span style="color:var(--green)">${fmt(revenue)}</span></div>
-    <div class="pl-row"><span class="pl-label">Total Expenses</span><span style="color:var(--red)">${fmt(totalExp)}</span></div>
-    <div class="pl-row"><span>Net Profit</span><span class="pl-total ${profit>=0?'gold':''}" style="color:${profit>=0?'var(--gold)':'var(--red)'}">${fmt(profit)}</span></div>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px">Profit margin · ${revenue?(profit/revenue*100).toFixed(1):0}%</div>`;
+    <div class="pl-row"><span class="pl-label">Gross Revenue</span><span data-style="color:var(--green)">${fmt(revenue)}</span></div>
+    <div class="pl-row"><span class="pl-label">Total Expenses</span><span data-style="color:var(--red)">${fmt(totalExp)}</span></div>
+    <div class="pl-row"><span>Net Profit</span><span class="pl-total ${profit>=0?'gold':''}" data-style="color:${profit>=0?'var(--gold)':'var(--red)'}">${fmt(profit)}</span></div>
+    <div data-style="font-size:11px;color:var(--text3);margin-top:8px">Profit margin · ${revenue?(profit/revenue*100).toFixed(1):0}%</div>`;
 }
 
 // ── L10: the portal's AR figures are the OWNER's canonical ones ───────────────────────────────
@@ -374,7 +374,7 @@ function renderInvoicesPage(invoices) {
       <td>${fmtDate(inv.due_date)}</td>
       <td class="amount income">${fmt(inv.amount)}</td>
       <td><span class="badge ${inv.status==='paid'?'badge-green':inv.status==='overdue'?'badge-red':'badge-amber'}">${inv.status}</span></td>
-      <td><button class="flag-btn" onclick="flagTxn('invoice','${esc(inv.client||'')}')">⚑</button></td>
+      <td><button class="flag-btn" data-arg-client="${esc(inv.client||'')}" data-on-click="flagTxn('invoice',this.dataset.argClient)">⚑</button></td>
     </tr>`).join('') || `<tr><td colspan="5" class="empty">No invoices for this period</td></tr>`;
 }
 
@@ -401,7 +401,7 @@ function renderExpensesPage(expenses) {
       <td>${fmtDate(e.expense_date)}</td>
       <td class="amount expense">${fmt(e.amount)}</td>
       <td>${(f=>f===1?'<span class="badge badge-green">✓ Full</span>':f===0.5?'<span class="badge badge-amber">½ deductible</span>':'—')(window.FinFlowDates.deductibleFactor(e.deductible))}</td>
-      <td><button class="flag-btn" onclick="flagTxn('expense','${esc(e.description||'')}')">⚑</button></td>
+      <td><button class="flag-btn" data-arg-description="${esc(e.description||'')}" data-on-click="flagTxn('expense',this.dataset.argDescription)">⚑</button></td>
     </tr>`).join('') || `<tr><td colspan="6" class="empty">No expenses for this period</td></tr>`;
 }
 
@@ -419,16 +419,16 @@ function renderPnL(invoices, expenses) {
   const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
   const maxC = sorted[0]?.[1]||1;
   document.getElementById('pnl-statement').innerHTML = `
-    <div class="pl-row"><span class="pl-label">Revenue</span><span style="color:var(--green)">${fmt(revenue)}</span></div>
-    <div class="pl-row"><span class="pl-label">Cost of Goods Sold</span><span style="color:var(--red)">− ${fmt(cogs)}</span></div>
+    <div class="pl-row"><span class="pl-label">Revenue</span><span data-style="color:var(--green)">${fmt(revenue)}</span></div>
+    <div class="pl-row"><span class="pl-label">Cost of Goods Sold</span><span data-style="color:var(--red)">− ${fmt(cogs)}</span></div>
     <div class="pl-row"><span class="pl-label">Gross Profit</span><span>${fmt(grossProfit)}</span></div>
-    <div class="pl-row"><span class="pl-label">Operating Expenses</span><span style="color:var(--red)">− ${fmt(opex)}</span></div>
-    <div class="pl-row"><span>Net Profit</span><span class="pl-total" style="color:${profit>=0?'var(--gold)':'var(--red)'}">${fmt(profit)}</span></div>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px">Profit margin · ${revenue?(profit/revenue*100).toFixed(1):0}%</div>`;
+    <div class="pl-row"><span class="pl-label">Operating Expenses</span><span data-style="color:var(--red)">− ${fmt(opex)}</span></div>
+    <div class="pl-row"><span>Net Profit</span><span class="pl-total" data-style="color:${profit>=0?'var(--gold)':'var(--red)'}">${fmt(profit)}</span></div>
+    <div data-style="font-size:11px;color:var(--text3);margin-top:8px">Profit margin · ${revenue?(profit/revenue*100).toFixed(1):0}%</div>`;
   document.getElementById('pnl-categories').innerHTML = sorted.map(([c,a],i)=>`
     <div class="cat-row">
       <div class="cat-meta"><span class="cat-label">${esc(c)}</span><span class="cat-amount">${fmt(a)}</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:${(a/maxC*100).toFixed(1)}%;background:${BAR_COLORS[i%BAR_COLORS.length]}"></div></div>
+      <div class="bar-track"><div class="bar-fill" data-style="width:${(a/maxC*100).toFixed(1)}%;background:${BAR_COLORS[i%BAR_COLORS.length]}"></div></div>
     </div>`).join('') || '<div class="empty">No expenses</div>';
 }
 
@@ -446,9 +446,9 @@ function renderBalanceSheet() {
     liabilities: [{ label: 'Accounts Payable', amount: bs.accountsPayable }],
     equity: [{ label: 'Receivables less payables', amount: bs.equity }],
   };
-  const rows = (arr, color) => (arr || []).map(l => `<div class="bs-row"><span class="bs-label">${esc(l.label)}</span><span style="color:${color}">${fmt(l.amount)}</span></div>`).join('');
+  const rows = (arr, color) => (arr || []).map(l => `<div class="bs-row"><span class="bs-label">${esc(l.label)}</span><span data-style="color:${color}">${fmt(l.amount)}</span></div>`).join('');
   const put = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-  put('bs-assets-lines', (bs.cashTracked === false ? '<div class="bs-row"><span class="bs-label">Cash &amp; Equivalents</span><span style="color:var(--text3)">Not tracked</span></div>' : '') + rows(lines.assets, 'var(--green)'));
+  put('bs-assets-lines', (bs.cashTracked === false ? '<div class="bs-row"><span class="bs-label">Cash &amp; Equivalents</span><span data-style="color:var(--text3)">Not tracked</span></div>' : '') + rows(lines.assets, 'var(--green)'));
   put('bs-liab-lines', rows(lines.liabilities, 'var(--red)'));
   put('bs-equity-lines', rows(lines.equity, 'var(--text2)'));
   set('bs-assets-label', bs.totalAssetsExcludesCash ? 'Total Assets (excl. untracked cash)' : 'Total Assets');
@@ -472,10 +472,10 @@ function renderCashFlow(invoices, expenses) {
   const netOp = Math.round((cashIn - cashOut)*100)/100;
   const el = document.getElementById('cf-operating');
   if (el) el.innerHTML = `
-    <div class="pl-row"><span class="pl-label">Cash receipts (paid invoices + receipts)</span><span style="color:var(--green)">${fmt(cashIn)}</span></div>
-    <div class="pl-row"><span class="pl-label">Cash payments (expenses + bill payments)</span><span style="color:var(--red)">− ${fmt(cashOut)}</span></div>
-    <div class="pl-row"><span class="pl-label">A/R outstanding (not yet cash)</span><span style="color:var(--amber)">${fmt(ar)}</span></div>
-    <div class="pl-row"><span class="pl-label" style="font-weight:500">Net operating cash flow</span><span style="color:${netOp>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(netOp)}</span></div>`;
+    <div class="pl-row"><span class="pl-label">Cash receipts (paid invoices + receipts)</span><span data-style="color:var(--green)">${fmt(cashIn)}</span></div>
+    <div class="pl-row"><span class="pl-label">Cash payments (expenses + bill payments)</span><span data-style="color:var(--red)">− ${fmt(cashOut)}</span></div>
+    <div class="pl-row"><span class="pl-label">A/R outstanding (not yet cash)</span><span data-style="color:var(--amber)">${fmt(ar)}</span></div>
+    <div class="pl-row"><span class="pl-label" data-style="font-weight:500">Net operating cash flow</span><span data-style="color:${netOp>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(netOp)}</span></div>`;
   set('cf-net', fmt(netOp));
   const labels = {year:'Year to date',quarter:'Current quarter',month:'Current month',all:'All time'};   // FIX-2: the year counts what is dated up to today
   set('cf-subtitle', labels[_period] || _period);
@@ -505,7 +505,7 @@ function renderPayroll() {
       <td>${esc(p.role||'—')}</td>
       <td>${esc(p.emp_type||'Full-time')}</td>
       <td class="amount">${fmt(gross)}</td>
-      <td style="color:var(--text3)">${fmt(ded)}</td>
+      <td data-style="color:var(--text3)">${fmt(ded)}</td>
       <td class="amount income">${fmt(net)}</td>
     </tr>`;}).join('');
   document.getElementById('payroll-summary').style.display='flex';
@@ -521,11 +521,11 @@ function renderCustomers() {
     customers.map(c=>{
       const initials = (c.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
       return `<div class="customer-row">
-        <div style="display:flex;align-items:center;gap:12px">
+        <div data-style="display:flex;align-items:center;gap:12px">
           <div class="customer-avatar">${esc(initials)}</div>
           <div>
-            <div style="font-size:13px;color:var(--text)">${esc(c.name||'—')}</div>
-            <div style="font-size:11px;color:var(--text3)">${esc(c.email||c.company||'')}</div>
+            <div data-style="font-size:13px;color:var(--text)">${esc(c.name||'—')}</div>
+            <div data-style="font-size:11px;color:var(--text3)">${esc(c.email||c.company||'')}</div>
           </div>
         </div>
         <div class="amount income">${fmt(c.revenue||0)}</div>
@@ -537,12 +537,12 @@ function renderJournals() {
   const journals = _data?.allJournals || [];
   const el = document.getElementById('journals-list');
   el.innerHTML = journals.length ? journals.map(j=>`
-    <div style="padding:12px;background:var(--card2);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="font-size:13px;color:var(--text);font-weight:400">${esc(j.description||'Journal Entry')}</span>
-        <span style="font-size:11px;color:var(--text3)">${fmtDate(j.date)}</span>
+    <div data-style="padding:12px;background:var(--card2);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+      <div data-style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span data-style="font-size:13px;color:var(--text);font-weight:400">${esc(j.description||'Journal Entry')}</span>
+        <span data-style="font-size:11px;color:var(--text3)">${fmtDate(j.date)}</span>
       </div>
-      ${j.posted_by?`<div style="font-size:11px;color:var(--amber)">Posted by ${esc(j.posted_by.replace('accountant:','Accountant #'))}</div>`:''}
+      ${j.posted_by?`<div data-style="font-size:11px;color:var(--amber)">Posted by ${esc(j.posted_by.replace('accountant:','Accountant #'))}</div>`:''}
     </div>`).join('') : '<div class="empty">No journal entries yet. Use the button above to post one.</div>';
 
   // Period locking
@@ -554,8 +554,8 @@ function renderJournals() {
   }
   document.getElementById('periods-list').innerHTML = periods.map(p=>`
     <div class="period-row">
-      <span style="color:var(--text2)">${p}</span>
-      ${window._acctCanEdit ? `<button class="lock-btn" onclick="lockPeriod('${p}',this)">🔓 Lock Period</button>` : `<span style="font-size:11px;color:var(--text3)">View-only</span>`}
+      <span data-style="color:var(--text2)">${p}</span>
+      ${window._acctCanEdit ? `<button class="lock-btn" data-arg-p="${p}" data-on-click="lockPeriod(this.dataset.argP,this)">🔓 Lock Period</button>` : `<span data-style="font-size:11px;color:var(--text3)">View-only</span>`}
     </div>`).join('');
 }
 
@@ -589,15 +589,15 @@ function renderTax(invoices, expenses) {
   const warnBanner = document.getElementById('tax-rate-warning');
   if (warnBanner) warnBanner.style.display = hasEstimate ? 'none' : 'flex';
   const linesHtml = hasLines
-    ? taxLines.map(l=>{ const suffix = l.type==='fixed' ? ' (fixed)' : l.type==='revenue' ? ` (${parseFloat(l.value)||0}% of revenue)` : ` (${parseFloat(l.value)||0}% of taxable)`; return `<div class="pl-row"><span class="pl-label">${escH(l.label||'Tax')}${suffix}</span><span style="color:var(--red);font-weight:500">${fmt(lineAmt(l))}</span></div>`; }).join('')
-        + `<div class="pl-row" style="font-weight:600"><span class="pl-label">Total estimated tax</span><span style="color:var(--red)">${fmt(liability)}</span></div>`
-    : (rate ? `<div class="pl-row"><span class="pl-label">Tax rate (${rate}%)</span><span style="color:var(--red);font-weight:500">${fmt(liability)}</span></div>` : '<div style="font-size:11px;color:var(--text3);padding:8px 0">Client has not set up tax lines in their settings.</div>');
+    ? taxLines.map(l=>{ const suffix = l.type==='fixed' ? ' (fixed)' : l.type==='revenue' ? ` (${parseFloat(l.value)||0}% of revenue)` : ` (${parseFloat(l.value)||0}% of taxable)`; return `<div class="pl-row"><span class="pl-label">${escH(l.label||'Tax')}${suffix}</span><span data-style="color:var(--red);font-weight:500">${fmt(lineAmt(l))}</span></div>`; }).join('')
+        + `<div class="pl-row" data-style="font-weight:600"><span class="pl-label">Total estimated tax</span><span data-style="color:var(--red)">${fmt(liability)}</span></div>`
+    : (rate ? `<div class="pl-row"><span class="pl-label">Tax rate (${rate}%)</span><span data-style="color:var(--red);font-weight:500">${fmt(liability)}</span></div>` : '<div data-style="font-size:11px;color:var(--text3);padding:8px 0">Client has not set up tax lines in their settings.</div>');
   document.getElementById('tax-breakdown').innerHTML = `
     <div class="card-hdr"><div class="card-title">Tax Calculation Breakdown</div></div>
     <div class="pl-row"><span class="pl-label">Gross Revenue</span><span>${fmt(revenue)}</span></div>
-    <div class="pl-row"><span class="pl-label">Fully deductible expenses</span><span style="color:var(--green)">− ${fmt(dedFull)}</span></div>
-    <div class="pl-row"><span class="pl-label">50% deductible expenses</span><span style="color:var(--green)">− ${fmt(dedHalf)}</span></div>
-    <div class="pl-row"><span class="pl-label">Taxable Income</span><span style="color:var(--amber);font-weight:500">${fmt(taxable)}</span></div>
+    <div class="pl-row"><span class="pl-label">Fully deductible expenses</span><span data-style="color:var(--green)">− ${fmt(dedFull)}</span></div>
+    <div class="pl-row"><span class="pl-label">50% deductible expenses</span><span data-style="color:var(--green)">− ${fmt(dedHalf)}</span></div>
+    <div class="pl-row"><span class="pl-label">Taxable Income</span><span data-style="color:var(--amber);font-weight:500">${fmt(taxable)}</span></div>
     ${linesHtml}`;
 }
 
@@ -672,7 +672,7 @@ function addJournalLine() {
     <select class="jnl-input jnl-acct">${_jnlAcctOptions()}</select>
     <input type="number" class="jnl-input" placeholder="0.00">
     <input type="number" class="jnl-input" placeholder="0.00">
-    <button class="jnl-remove" onclick="removeJournalLine(this)">×</button>`;
+    <button class="jnl-remove" data-on-click="removeJournalLine(this)">×</button>`;
   lines.appendChild(row);
 }
 
@@ -800,7 +800,7 @@ function showSection(name, el) {
   if (el) el.classList.add('active');
   else {
     document.querySelectorAll('.nav-item').forEach(n=>{
-      if (n.getAttribute('onclick')?.includes("'"+name+"'")) n.classList.add('active');
+      if (n.getAttribute('data-on-click')?.includes("'"+name+"'")) n.classList.add('active');
     });
   }
   if (name === 'messages') loadMessages();
@@ -815,25 +815,25 @@ async function loadTasks() {
   el.innerHTML = '<div class="loading">Loading…</div>';
   try {
     const r = await fetch(`/api/accountants/clients/${_userId}/tasks`, {credentials:'include'});
-    if (!r.ok) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load requests.</div>'; return; }
+    if (!r.ok) { el.innerHTML = '<div class="empty" data-style="margin:auto;padding:20px">Could not load requests.</div>'; return; }
     const tasks = (await r.json()).tasks || [];
-    if (!tasks.length) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">No requests yet — add your first above.</div>'; return; }
+    if (!tasks.length) { el.innerHTML = '<div class="empty" data-style="margin:auto;padding:20px">No requests yet — add your first above.</div>'; return; }
     // L18 (Rule 10): show the calendar date's own parts — new Date(d) showed the previous day west of UTC.
     const due = d => { const y = _ymdOf(d); if (!y) return ''; const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      return `<span style="font-size:11px;color:var(--text3);margin-left:8px">due ${+y.slice(8,10)} ${MN[+y.slice(5,7)-1]}</span>`; };
+      return `<span data-style="font-size:11px;color:var(--text3);margin-left:8px">due ${+y.slice(8,10)} ${MN[+y.slice(5,7)-1]}</span>`; };
     el.innerHTML = tasks.map(t => {
       const done = t.status === 'done';
-      const tag = done ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,156,109,.15);color:#4a9c6d">Done</span>'
-        : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(212,150,74,.15);color:var(--amber,#d4964a)">Open</span>';
-      return `<div style="border-bottom:1px solid var(--border);padding:12px 0;display:flex;align-items:flex-start;gap:10px">
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:13.5px;color:var(--text1);${done?'text-decoration:line-through;color:var(--text3)':''}">${esc(t.title)}</span>${tag}${due(t.due_date)}</div>
-            ${t.detail?`<div style="font-size:12.3px;color:var(--text2);margin-top:3px;white-space:pre-wrap">${esc(t.detail)}</div>`:''}
+      const tag = done ? '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,156,109,.15);color:#4a9c6d">Done</span>'
+        : '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(212,150,74,.15);color:var(--amber,#d4964a)">Open</span>';
+      return `<div data-style="border-bottom:1px solid var(--border);padding:12px 0;display:flex;align-items:flex-start;gap:10px">
+          <div data-style="flex:1">
+            <div data-style="display:flex;align-items:center;gap:8px"><span data-style="font-size:13.5px;color:var(--text1);${done?'text-decoration:line-through;color:var(--text3)':''}">${esc(t.title)}</span>${tag}${due(t.due_date)}</div>
+            ${t.detail?`<div data-style="font-size:12.3px;color:var(--text2);margin-top:3px;white-space:pre-wrap">${esc(t.detail)}</div>`:''}
           </div>
-          <button class="topbar-btn" onclick="deleteTask(${t.id},this)" title="Remove"><i class="ti ti-trash"></i></button>
+          <button class="topbar-btn" data-arg-id="${t.id}" data-on-click="deleteTask(Number(this.dataset.argId),this)" title="Remove"><i class="ti ti-trash"></i></button>
         </div>`;
     }).join('');
-  } catch(e) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load requests.</div>'; }
+  } catch(e) { el.innerHTML = '<div class="empty" data-style="margin:auto;padding:20px">Could not load requests.</div>'; }
 }
 async function createTask(btn) {
   const title = (document.getElementById('task-title').value||'').trim();
@@ -864,22 +864,22 @@ async function loadProposals() {
   el.innerHTML = '<div class="loading">Loading…</div>';
   try {
     const r = await fetch(`/api/accountants/clients/${_userId}/proposals`, {credentials:'include'});
-    if (!r.ok) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load proposals.</div>'; return; }
+    if (!r.ok) { el.innerHTML = '<div class="empty" data-style="margin:auto;padding:20px">Could not load proposals.</div>'; return; }
     const props = (await r.json()).proposals || [];
-    if (!props.length) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">No proposals yet — send your first above.</div>'; return; }
+    if (!props.length) { el.innerHTML = '<div class="empty" data-style="margin:auto;padding:20px">No proposals yet — send your first above.</div>'; return; }
     const bill = b => b==='monthly'?'/mo':(b==='hourly'?'/hr':'');
-    const tag = s => s==='pending'?'<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(212,150,74,.15);color:var(--amber,#d4964a)">Pending</span>'
-      : s==='accepted'?'<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,156,109,.15);color:#4a9c6d">Accepted</span>'
-      : s==='declined'?'<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(200,90,74,.15);color:#c85a4a">Declined</span>'
-      : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.06);color:var(--text3)">Withdrawn</span>';
-    el.innerHTML = props.map(p => `<div style="border-bottom:1px solid var(--border);padding:12px 0">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-size:14px;color:var(--text1);font-weight:500">${esc(p.title)}</span>${tag(p.status)}</div>
-        ${p.scope?`<div style="font-size:12.5px;color:var(--text2);margin-top:4px;white-space:pre-wrap">${esc(p.scope)}</div>`:''}
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
-          <span style="font-size:13px;color:var(--gold);font-family:var(--mono,monospace)">${_propFee(p.fee_cents,p.currency)}<span style="color:var(--text3)">${bill(p.billing)}</span></span>
-          ${p.status==='pending'?`<button class="topbar-btn" onclick="withdrawProposal(${p.id},this)">Withdraw</button>`:''}
+    const tag = s => s==='pending'?'<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(212,150,74,.15);color:var(--amber,#d4964a)">Pending</span>'
+      : s==='accepted'?'<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,156,109,.15);color:#4a9c6d">Accepted</span>'
+      : s==='declined'?'<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(200,90,74,.15);color:#c85a4a">Declined</span>'
+      : '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.06);color:var(--text3)">Withdrawn</span>';
+    el.innerHTML = props.map(p => `<div data-style="border-bottom:1px solid var(--border);padding:12px 0">
+        <div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span data-style="font-size:14px;color:var(--text1);font-weight:500">${esc(p.title)}</span>${tag(p.status)}</div>
+        ${p.scope?`<div data-style="font-size:12.5px;color:var(--text2);margin-top:4px;white-space:pre-wrap">${esc(p.scope)}</div>`:''}
+        <div data-style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+          <span data-style="font-size:13px;color:var(--gold);font-family:var(--mono,monospace)">${_propFee(p.fee_cents,p.currency)}<span data-style="color:var(--text3)">${bill(p.billing)}</span></span>
+          ${p.status==='pending'?`<button class="topbar-btn" data-arg-id="${p.id}" data-on-click="withdrawProposal(Number(this.dataset.argId),this)">Withdraw</button>`:''}
         </div></div>`).join('');
-  } catch(e) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load proposals.</div>'; }
+  } catch(e) { el.innerHTML = '<div class="empty" data-style="margin:auto;padding:20px">Could not load proposals.</div>'; }
 }
 async function sendProposal(btn) {
   const title = (document.getElementById('prop-title').value||'').trim();
@@ -937,7 +937,7 @@ async function sendTaxReminder() {
 // ── AI INSIGHTS ────────────────────────────────────────────────────────────
 async function generateInsights() {
   const el = document.getElementById('ai-results');
-  el.innerHTML = '<div class="loading"><i class="ti ti-loader" style="display:inline-block;animation:spin 1s linear infinite;margin-right:8px"></i>Analysing books with Claude…</div>';
+  el.innerHTML = '<div class="loading"><i class="ti ti-loader" data-style="display:inline-block;animation:spin 1s linear infinite;margin-right:8px"></i>Analysing books with Claude…</div>';
   try {
     const res = await fetch(`/api/accountants/clients/${_userId}/ai-insights`, {
       method:'POST', credentials:'include',
@@ -962,7 +962,7 @@ function renderChecklist() {
   if (!el) return;
   el.innerHTML = CHECKLIST_ITEMS.map((item, i) => `
     <div class="checklist-item${_checklistState[i] ? ' done' : ''}" id="ci-${i}">
-      <input type="checkbox" id="chk-${i}" ${_checklistState[i] ? 'checked' : ''} onchange="toggleCheck(${i},this)">
+      <input type="checkbox" id="chk-${i}" ${_checklistState[i] ? 'checked' : ''} data-arg-i="${i}" data-on-change="toggleCheck(Number(this.dataset.argI),this)">
       <label for="chk-${i}">${esc(item)}</label>
     </div>`).join('');
 }
@@ -996,7 +996,7 @@ let _typingSentAt = 0, _typingHideTimer = null;
 function renderMessages() {
   const el = document.getElementById('messages-thread');
   if (!el) return;
-  if (!_msgs.length) { el.innerHTML = '<div class="empty" style="margin:auto">No messages yet. Start the conversation.</div>'; return; }
+  if (!_msgs.length) { el.innerHTML = '<div class="empty" data-style="margin:auto">No messages yet. Start the conversation.</div>'; return; }
   // "Seen" tick: the last accountant message the CLIENT has read (created_at <= their last_read).
   const readTs = _otherLastRead ? new Date(_otherLastRead).getTime() : 0;
   let lastSeenIdx = -1;
@@ -1004,7 +1004,7 @@ function renderMessages() {
   el.innerHTML = _msgs.map((m, i) => {
     const body = esc(m.content != null ? m.content : m.message);
     const seen = i === lastSeenIdx ? '<span class="seen">✓ Seen</span>' : '';
-    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:5px;background:rgba(0,0,0,.15);border-radius:8px;padding:6px 10px;font-size:12px;color:inherit;text-decoration:none">📎 ${esc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
+    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" data-style="display:inline-flex;align-items:center;gap:6px;margin-top:5px;background:rgba(0,0,0,.15);border-radius:8px;padding:6px 10px;font-size:12px;color:inherit;text-decoration:none">📎 ${esc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
     return `<div class="msg-bubble msg-${esc(m.sender)}${m._sending ? ' sending' : ''}">
         <div>${body}</div>
         ${att}
@@ -1035,7 +1035,7 @@ async function loadMessages() {
   if (!el) return;
   try {
     const r = await fetch(`/api/accountants/clients/${_userId}/messages`, {credentials:'include'});
-    if (!r.ok) { el.innerHTML = '<div class="empty" style="margin:auto">Could not load messages.</div>'; return; }
+    if (!r.ok) { el.innerHTML = '<div class="empty" data-style="margin:auto">Could not load messages.</div>'; return; }
     const data = await r.json();
     _msgs = data.messages || [];
     _otherLastRead = data.otherLastRead || null;
@@ -1043,7 +1043,7 @@ async function loadMessages() {
     clearMsgNavBadge();
     openMsgStream();
     if (!_msgPoll) _msgPoll = setInterval(refreshMessages, 20000);  // backstop if SSE ever drops
-  } catch(e) { el.innerHTML = '<div class="empty" style="margin:auto">Could not load messages.</div>'; }
+  } catch(e) { el.innerHTML = '<div class="empty" data-style="margin:auto">Could not load messages.</div>'; }
 }
 
 // Light re-fetch used by the poll fallback (no stream reconnect churn).
@@ -1131,7 +1131,7 @@ async function updateMsgNavBadge() {
   } catch(e) {}
 }
 function setMsgNavBadge(n) {
-  const nav = document.querySelector('.nav-item[onclick*="messages"]');
+  const nav = document.querySelector('.nav-item[data-on-click*="messages"]');
   if (!nav) return;
   let b = nav.querySelector('.nav-badge');
   if (n > 0) { if (!b) { b = document.createElement('span'); b.className = 'nav-badge'; nav.appendChild(b); } b.textContent = n; }

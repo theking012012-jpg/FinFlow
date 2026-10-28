@@ -307,18 +307,18 @@
         const settled = String(inv.status || '').toLowerCase() === 'paid' && !(parseFloat(inv.amount_paid) > 0) ? amt : Math.min(amt, parseFloat(inv.amount_paid) || 0);
         const credit = Math.min(settled, parseFloat(inv.credit_applied) || 0), paid = settled - credit;   // FA-M6b: a credit is not money received
         const left = Math.max(0, amt - settled);
-        if (!(paid > 0.005)) return (credit > 0.005 ? '<span class="inv-paid-lbl" style="color:var(--t3)">Credited </span><span style="font-family:var(--font-mono)">' + esc(S(credit)) + '</span>' + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '') : '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="color:var(--t3)">—</span>');
-        return '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="font-family:var(--font-mono);color:var(--green)">' + esc(S(paid)) + '</span>'
-          + (credit > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">+ ' + esc(S(credit)) + ' credited</span>' : '')
-          + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '');
+        if (!(paid > 0.005)) return (credit > 0.005 ? '<span class="inv-paid-lbl" data-style="color:var(--t3)">Credited </span><span data-style="font-family:var(--font-mono)">' + esc(S(credit)) + '</span>' + (left > 0.005 ? '<br><span data-style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '') : '<span class="inv-paid-lbl" data-style="color:var(--t3)">Paid </span><span data-style="color:var(--t3)">—</span>');
+        return '<span class="inv-paid-lbl" data-style="color:var(--t3)">Paid </span><span data-style="font-family:var(--font-mono);color:var(--green)">' + esc(S(paid)) + '</span>'
+          + (credit > 0.005 ? '<br><span data-style="font-size:11px;color:var(--t3)">+ ' + esc(S(credit)) + ' credited</span>' : '')
+          + (left > 0.005 ? '<br><span data-style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '');
       };
       window._invShowMore = function () { window._invRenderLimit += 200; if (typeof window.renderInvoices === 'function') window.renderInvoices(); };
       el.innerHTML = _shownInv.map((inv, idx) => `
         <div class="table-row inv-cols">
-          <span>${esc(inv.client)}${inv.number ? `<br><span class="inv-number" style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(inv.number)}</span>` : ''}</span>
-          <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
+          <span>${esc(inv.client)}${inv.number ? `<br><span class="inv-number" data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(inv.number)}</span>` : ''}</span>
+          <span data-style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
           <span class="inv-paid">${_invPaidCell(inv)}</span>
-          <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
+          <span data-style="color:${esc(inv.color)}">${esc(inv.due)}</span>
           <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
           <span class="table-actions">
             ${inv.status?.toLowerCase() === 'overdue'
@@ -327,18 +327,18 @@
                    data-client="${esc(inv.client)}"
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
-            <button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>
-            <button class="btn btn-ghost btn-sm" onclick="editInvoice(${idx})">Edit</button>
+            <button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="viewInvoice(Number(this.dataset.argIdx))">View</button>
+            <button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="editInvoice(Number(this.dataset.argIdx))">Edit</button>
             ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
-              ? `<button class="btn btn-ghost btn-sm" onclick="openRecordPaymentModal(window.userInvoices[${idx}])">Record Payment</button>`
-                + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" onclick="ffInvoicePayLinkChoose(window.userInvoices[${idx}]._dbId)">Pay link ↗</button>`
+              ? `<button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="openRecordPaymentModal(window.userInvoices[Number(this.dataset.argIdx)])">Record Payment</button>`
+                + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" data-arg-idx="${idx}" data-on-click="ffInvoicePayLinkChoose(window.userInvoices[Number(this.dataset.argIdx)]._dbId)">Pay link ↗</button>`
               : ''}
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
-              onclick="deleteInvoice(${idx})">✕</button>
+            <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7"
+              data-arg-idx="${idx}" data-on-click="deleteInvoice(Number(this.dataset.argIdx))">✕</button>
           </span>
         </div>`).join('')
         + (_allInv.length > _shownInv.length
-            ? `<div class="table-row" style="justify-content:center;padding:10px"><button class="btn btn-ghost btn-sm" onclick="window._invShowMore()">Show more — ${_allInv.length - _shownInv.length} of ${_allInv.length} hidden</button></div>`
+            ? `<div class="table-row" data-style="justify-content:center;padding:10px"><button class="btn btn-ghost btn-sm" data-on-click="window._invShowMore()">Show more — ${_allInv.length - _shownInv.length} of ${_allInv.length} hidden</button></div>`
             : '');
     };
 
@@ -463,18 +463,18 @@
       const el = document.getElementById('expense-list');
       if (!el) return;
       el.innerHTML = (window.bizExpenses||[]).slice(0, 20).map((e, idx) => `
-        <div class="tx-row" style="display:flex;align-items:center;justify-content:space-between">
-          <div style="flex:1">
+        <div class="tx-row" data-style="display:flex;align-items:center;justify-content:space-between">
+          <div data-style="flex:1">
             <div class="tx-name">${esc(e.desc)}</div>
             <div class="tx-cat">${esc(e.cat)} · ${esc(e.date)}${(() => { const f = window.FinFlowDates.deductibleFactor(e.ded);   // M15
               return f === 1 ? ' · 100% deductible' : f === 0.5 ? ' · 50% deductible' : ''; })()}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div data-style="display:flex;align-items:center;gap:8px">
             <div class="tx-amt dn">-${S(e.amount)}</div>
-            ${e._dbId ? `<button class="btn btn-ghost btn-sm" style="padding:2px 6px" title="Edit"
-              onclick="editExpense(${idx})">✏</button>` : ''}
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:2px 6px"
-              onclick="deleteExpense(${idx})">✕</button>
+            ${e._dbId ? `<button class="btn btn-ghost btn-sm" data-style="padding:2px 6px" title="Edit"
+              data-arg-idx="${idx}" data-on-click="editExpense(Number(this.dataset.argIdx))">✏</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7;padding:2px 6px"
+              data-arg-idx="${idx}" data-on-click="deleteExpense(Number(this.dataset.argIdx))">✕</button>
           </div>
         </div>`).join('');
     };
@@ -687,17 +687,17 @@
         const col = pct < 10 ? 'var(--red)' : pct < 20 ? 'var(--amber)' : 'var(--green)';
         const val = window._invItemValue(item);   // LA5: FIFO value of what is left — the card's figure, per item
         return `<div class="inv-item-row">
-          <span style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
+          <span data-style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
           <span>${esc(item.name)}</span>
-          <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${item.units} units${item.low ? ' ⚠' : ''}</span>
-          <div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${col}"></div></div>
-          <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${val == null ? '—' : S(val)}</span>
+          <span data-style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${item.units} units${item.low ? ' ⚠' : ''}</span>
+          <div class="stock-bar"><div class="stock-fill" data-style="width:${pct}%;background:${col}"></div></div>
+          <span data-style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${val == null ? '—' : S(val)}</span>
           <span class="table-actions">
-            ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openStockInModal(${idx})" title="Record a purchase (adds a FIFO cost layer)">+ In</button><button class="btn btn-ghost btn-sm" onclick="openStockOutModal(${idx})" title="Record a sale (its receipt or invoice is made with it) or a write-off">− Out</button>` : ''}
-            <button class="btn btn-ghost btn-sm" onclick="restockItem(${idx})">Restock</button>
-            ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openEditInvModal(${item._dbId})">Edit</button>` : ''}
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
-              onclick="deleteInventoryItem(${idx})">✕</button>
+            ${item._dbId ? `<button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="openStockInModal(Number(this.dataset.argIdx))" title="Record a purchase (adds a FIFO cost layer)">+ In</button><button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="openStockOutModal(Number(this.dataset.argIdx))" title="Record a sale (its receipt or invoice is made with it) or a write-off">− Out</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="restockItem(Number(this.dataset.argIdx))">Restock</button>
+            ${item._dbId ? `<button class="btn btn-ghost btn-sm" data-arg-db-id="${item._dbId}" data-on-click="openEditInvModal(Number(this.dataset.argDbId))">Edit</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7"
+              data-arg-idx="${idx}" data-on-click="deleteInventoryItem(Number(this.dataset.argIdx))">✕</button>
           </span>
         </div>`;
       }).join('');
@@ -772,22 +772,22 @@
         return `<div class="payroll-row">
           <div class="emp-info">
             <div class="emp-init ${e.avClass||'av-blue'}">${initials}</div>
-            <div><div class="emp-name">${fn(e.fname)} ${fn(e.lname)}${e.isOwner ? ' <span class="badge b-blue" style="font-size:9px">You</span>' : ''}</div><div class="emp-role">${fn(e.type||'Full-time')}</div></div>
+            <div><div class="emp-name">${fn(e.fname)} ${fn(e.lname)}${e.isOwner ? ' <span class="badge b-blue" data-style="font-size:9px">You</span>' : ''}</div><div class="emp-role">${fn(e.type||'Full-time')}</div></div>
           </div>
-          <span style="color:var(--t2);font-size:12px">${fn(e.role||'')}</span>
+          <span data-style="color:var(--t2);font-size:12px">${fn(e.role||'')}</span>
           <!-- PL#9 root fix: this override is the RUNTIME renderPayroll (it shadows the app-main
                copy the earlier 2a70564 fix patched, so that fix never rendered). Gross was missing
                a color token and inherited a near-black default — invisible on the dark table while
                its Net sibling (which sets color) stayed legible. Themed via --t1 (legible in BOTH
                light and dark), matching Net. -->
-          <span style="font-family:var(--font-mono);color:var(--t1)">${sm(e.gross)}</span>
-          <span style="color:var(--red);font-family:var(--font-mono)">${tax > 0 ? '-' + sm(tax) : '—'}</span>
-          <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
+          <span data-style="font-family:var(--font-mono);color:var(--t1)">${sm(e.gross)}</span>
+          <span data-style="color:var(--red);font-family:var(--font-mono)">${tax > 0 ? '-' + sm(tax) : '—'}</span>
+          <span data-style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
           ${e.isOwner
-            ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
-            : `<span style="display:inline-flex;gap:2px;align-items:center">
-                 <button class="btn-icon" onclick="openEditEmployee(${e._dbId||e.id||0})" title="Edit employee" style="border:none;background:none;color:var(--t3);cursor:pointer;padding:4px"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>
-                 <button class="btn-icon" onclick="deleteEmployee(${e._dbId||e.id||0})" title="Remove employee" style="border:none;background:none;color:var(--red);cursor:pointer;padding:4px;opacity:.75"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11M6 4V2.5h4V4M5 4l.7 9.5h4.6L15 4z" transform="scale(0.9) translate(1,0)"/></svg></button>
+            ? `<button class="btn-icon" data-on-click="openOwnerModal()" title="Edit" data-style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
+            : `<span data-style="display:inline-flex;gap:2px;align-items:center">
+                 <button class="btn-icon" data-arg-id="${e._dbId||e.id||0}" data-on-click="openEditEmployee(Number(this.dataset.argId))" title="Edit employee" data-style="border:none;background:none;color:var(--t3);cursor:pointer;padding:4px"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>
+                 <button class="btn-icon" data-arg-id="${e._dbId||e.id||0}" data-on-click="deleteEmployee(Number(this.dataset.argId))" title="Remove employee" data-style="border:none;background:none;color:var(--red);cursor:pointer;padding:4px;opacity:.75"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11M6 4V2.5h4V4M5 4l.7 9.5h4.6L15 4z" transform="scale(0.9) translate(1,0)"/></svg></button>
                </span>`}
         </div>`;
       }).join('');
@@ -942,15 +942,15 @@
     loadItemsFromDB();
 
     function renderItemRow(i) {
-      return `<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
-        <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
+      return `<div class="table-row" data-style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
+        <span data-style="font-weight:500">${esc(i.name)}<br><span data-style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
         <span><span class="badge ${i.type === 'Service' ? 'b-blue' : 'b-purple'}">${esc(i.type)}</span></span>
-        <span style="font-family:var(--font-mono)">${(window._nativeSymbol ? window._nativeSymbol() : '$') + (parseFloat(i.price) || 0).toLocaleString('en-US', { minimumFractionDigits: (parseFloat(i.price) || 0) % 1 ? 2 : 0, maximumFractionDigits: 2 })}<span style="font-size:10px;color:var(--t3)">/${esc(i.unit || '')}</span></span>
-        <span style="color:var(--t2)">${i.stock != null ? i.stock + ' units' : '—'}</span>
+        <span data-style="font-family:var(--font-mono)">${(window._nativeSymbol ? window._nativeSymbol() : '$') + (parseFloat(i.price) || 0).toLocaleString('en-US', { minimumFractionDigits: (parseFloat(i.price) || 0) % 1 ? 2 : 0, maximumFractionDigits: 2 })}<span data-style="font-size:10px;color:var(--t3)">/${esc(i.unit || '')}</span></span>
+        <span data-style="color:var(--t2)">${i.stock != null ? i.stock + ' units' : '—'}</span>
         <span><span class="badge ${i.status === 'Active' ? 'b-green' : i.status === 'Low Stock' ? 'b-amber' : 'b-red'}">${esc(i.status || '')}</span></span>
         <div class="table-actions">
-          <button class="btn btn-ghost btn-sm" onclick="openEditItemModal(${i._dbId})">Edit</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteItem(${i._dbId})">✕</button>
+          <button class="btn btn-ghost btn-sm" data-arg-db-id="${i._dbId}" data-on-click="openEditItemModal(Number(this.dataset.argDbId))">Edit</button>
+          <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-db-id="${i._dbId}" data-on-click="deleteItem(Number(this.dataset.argDbId))">✕</button>
         </div>
       </div>`;
     }
@@ -966,13 +966,13 @@
           stock: parseFloat(iv.units) || 0, status: 'Active', low: !!iv.low }));   // G5: low stock is shown, never a status
     }
     function renderStockItemRow(i) {
-      return `<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
-        <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
+      return `<div class="table-row" data-style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
+        <span data-style="font-weight:500">${esc(i.name)}<br><span data-style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
         <span><span class="badge b-amber">Stock item</span></span>
-        <span style="color:var(--t3)" title="Stock is valued on Inventory; add it as an item to set a sale price">—</span>
-        <span style="color:var(--t2)">${i.stock} units</span>
+        <span data-style="color:var(--t3)" title="Stock is valued on Inventory; add it as an item to set a sale price">—</span>
+        <span data-style="color:var(--t2)">${i.stock} units</span>
         <span><span class="badge ${i.status === 'Active' ? 'b-green' : 'b-amber'}">${esc(i.status)}</span>${i.low ? ' <span class="badge b-amber" title="At or below its reorder level">Low</span>' : ''}</span>
-        <div class="table-actions"><button class="btn btn-ghost btn-sm" onclick="showPage('inventory')">Inventory</button></div>
+        <div class="table-actions"><button class="btn btn-ghost btn-sm" data-on-click="showPage('inventory')">Inventory</button></div>
       </div>`;
     }
 
@@ -985,7 +985,7 @@
       // If DB data hasn't been fetched yet, kick off a load and show a loading state
       if (!_itemsFetched) {
         loadItemsFromDB(); // async — will call renderItems() again when data arrives
-        list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">Loading…</div>';
+        list.innerHTML = '<div data-style="padding:2rem;text-align:center;color:var(--t3)">Loading…</div>';
         return;
       }
 
@@ -1008,7 +1008,7 @@
       const filtered = all.filter(i => filter === 'all' || (i._stock ? filter === 'product' : (i.type || '').toLowerCase() === filter));
       list.innerHTML = filtered.length
         ? filtered.map(i => i._stock ? renderStockItemRow(i) : renderItemRow(i)).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
     };
 
     window.filterItems = function (f) { window.renderItems(f); };
@@ -1023,7 +1023,7 @@
       );
       list.innerHTML = filtered.length
         ? filtered.map(i => i._stock ? renderStockItemRow(i) : renderItemRow(i)).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
     };
 
     let _itemModalMode = 'new';
@@ -1275,7 +1275,7 @@
       } else if (state === 'error') {
         ['budget-total', 'budget-spent', 'budget-remaining', 'budget-variance'].forEach(id => set(id, '—'));
         if (sub) {
-          sub.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window._loadBudgetFromDB&&window._loadBudgetFromDB()') : 'Retry');
+          sub.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('_loadBudgetFromDB') : 'Retry');
           sub.className = 'mc-change dn';
         }
       }
@@ -1364,9 +1364,9 @@
       return String(Math.round(v * 100) / 100);
     };
     const _btRowHtml = (cat, annual) => `
-          <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat||'')}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
-          <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${esc(_btShow(annual))}" style="flex:1;font-size:12.5px;padding:5px 8px">
-          <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>`;
+          <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat||'')}" data-style="flex:1.4;font-size:12.5px;padding:5px 8px">
+          <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${esc(_btShow(annual))}" data-style="flex:1;font-size:12.5px;padding:5px 8px">
+          <button class="btn btn-ghost btn-sm" data-on-click="this.closest('._bt-row').remove()" title="Remove" data-style="color:var(--red);opacity:.7;padding:0 6px">✕</button>`;
     const _btAnnualAttr = annual => (annual === '' || annual == null || !Number.isFinite(Number(annual)) ? '' : String(Number(annual)));
 
     function _renderBudgetTargetRows(targets) {
@@ -1374,11 +1374,11 @@
       if (!rowsEl) return;
       const entries = Object.entries(targets);
       if (!entries.length) {
-        rowsEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--t3);font-size:12.5px">No categories yet — add one below</div>';
+        rowsEl.innerHTML = '<div data-style="padding:14px;text-align:center;color:var(--t3);font-size:12.5px">No categories yet — add one below</div>';
         return;
       }
       rowsEl.innerHTML = entries.map(([cat, val]) => `
-        <div class="_bt-row" data-bt-annual="${esc(_btAnnualAttr(val))}" style="display:flex;align-items:center;gap:8px">${_btRowHtml(cat, val)}
+        <div class="_bt-row" data-bt-annual="${esc(_btAnnualAttr(val))}" data-style="display:flex;align-items:center;gap:8px">${_btRowHtml(cat, val)}
         </div>`).join('');
     }
 
@@ -1434,24 +1434,24 @@
         existing.id = '_budget-targets-modal';
         existing.className = 'modal-overlay hidden';
         existing.innerHTML = `
-          <div class="modal" style="max-width:460px">
+          <div class="modal" data-style="max-width:460px">
             <div class="modal-header">
               <div><div class="modal-title">Budget targets</div><div class="modal-sub">Set <span id="_bt-period-label">annual</span> targets per expense category</div></div>
-              <button class="modal-close" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+              <button class="modal-close" data-on-click="document.getElementById('_budget-targets-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
             </div>
-            <div style="display:flex;gap:6px;margin:4px 0 10px">
-              <button class="btn btn-ghost btn-sm _bt-period" data-period="annual" style="font-weight:600">Annual</button>
+            <div data-style="display:flex;gap:6px;margin:4px 0 10px">
+              <button class="btn btn-ghost btn-sm _bt-period" data-period="annual" data-style="font-weight:600">Annual</button>
               <button class="btn btn-ghost btn-sm _bt-period" data-period="monthly">Monthly</button>
             </div>
-            <div id="_budget-target-rows" style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;padding:4px 0"></div>
-            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--bd)">
-              <span style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">Quick add:</span>
+            <div id="_budget-target-rows" data-style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;padding:4px 0"></div>
+            <div data-style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--bd)">
+              <span data-style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">Quick add:</span>
               <span id="_bt-suggested"></span>
-              <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--acc)" onclick="window._addBudgetTargetRow('', '')">+ Add custom</button>
+              <button class="btn btn-ghost btn-sm" data-style="margin-left:auto;color:var(--acc)" data-on-click="window._addBudgetTargetRow('', '')">+ Add custom</button>
             </div>
-            <div class="modal-footer" style="margin-top:14px">
-              <button class="btn btn-ghost" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')">Cancel</button>
-              <button class="btn btn-primary" onclick="window._saveBudgetTargets()">Save targets</button>
+            <div class="modal-footer" data-style="margin-top:14px">
+              <button class="btn btn-ghost" data-on-click="document.getElementById('_budget-targets-modal').classList.add('hidden')">Cancel</button>
+              <button class="btn btn-primary" data-on-click="window._saveBudgetTargets()">Save targets</button>
             </div>
           </div>`;
         document.body.appendChild(existing);
@@ -1464,7 +1464,7 @@
 
         // Wire suggested category chips
         document.getElementById('_bt-suggested').innerHTML = SUGGESTED_CATS.map(cat =>
-          `<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:2px 7px;border:1px solid var(--bd)" onclick="window._addBudgetTargetRow('${esc(cat)}','')">${esc(cat)}</button>`
+          `<button class="btn btn-ghost btn-sm" data-style="font-size:10.5px;padding:2px 7px;border:1px solid var(--bd)" data-arg-cat="${esc(cat)}" data-on-click="window._addBudgetTargetRow(this.dataset.argCat,'')">${esc(cat)}</button>`
         ).join(' ');
       }
 

@@ -69,7 +69,7 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  document.querySelector(`[onclick="showPage('${name}')"]`).classList.add('active');
+  document.querySelector(`[data-on-click="showPage('${name}')"]`).classList.add('active');
 
   const loaders = {
     traffic: loadTraffic,
@@ -105,20 +105,20 @@ async function loadSupport() {
       const badgeC = open ? 'background:var(--amber-bg);color:var(--amber)' : 'background:var(--green-bg);color:var(--green)';
       const actorC = t.actor === 'accountant' ? 'background:var(--purple-bg,#140f20);color:var(--purple,#9e8fbf)' : 'background:var(--bg3);color:var(--t2)';
       const when = t.created_at ? new Date(t.created_at).toLocaleString() : '';
-      const resp = t.response ? '<div style="margin-top:8px;padding:8px 10px;background:var(--bg2);border-left:2px solid var(--acc);border-radius:5px;font-size:12.5px;color:var(--t2);white-space:pre-wrap">'+esc(t.response)+'</div>' : '';
-      return '<div style="background:var(--bg1,#16120d);border:1px solid var(--bd,#2e2619);border-radius:12px;padding:14px 16px">'
-        + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:14px;color:var(--t1);font-weight:500">'+esc(t.subject)+'</span>'
-        + '<span style="font-size:10px;padding:2px 8px;border-radius:10px;'+badgeC+'">'+(open?'Open':'Resolved')+'</span>'
-        + '<span style="font-size:10px;padding:2px 8px;border-radius:10px;'+actorC+'">'+esc(t.actor)+'</span>'
-        + '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--t3)">'+esc(t.category)+'</span>'
-        + '<span style="margin-left:auto;font-size:11px;color:var(--t3)">#'+t.id+' · '+esc(when)+'</span></div>'
-        + '<div style="margin-top:8px;font-size:13px;color:var(--t2);white-space:pre-wrap">'+esc(t.message)+'</div>'
-        + (t.email ? '<div style="margin-top:6px;font-size:11.5px;color:var(--t3)">From: '+esc(t.email)+'</div>' : '')
+      const resp = t.response ? '<div data-style="margin-top:8px;padding:8px 10px;background:var(--bg2);border-left:2px solid var(--acc);border-radius:5px;font-size:12.5px;color:var(--t2);white-space:pre-wrap">'+esc(t.response)+'</div>' : '';
+      return '<div data-style="background:var(--bg1,#16120d);border:1px solid var(--bd,#2e2619);border-radius:12px;padding:14px 16px">'
+        + '<div data-style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span data-style="font-size:14px;color:var(--t1);font-weight:500">'+esc(t.subject)+'</span>'
+        + '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;'+badgeC+'">'+(open?'Open':'Resolved')+'</span>'
+        + '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;'+actorC+'">'+esc(t.actor)+'</span>'
+        + '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--t3)">'+esc(t.category)+'</span>'
+        + '<span data-style="margin-left:auto;font-size:11px;color:var(--t3)">#'+t.id+' · '+esc(when)+'</span></div>'
+        + '<div data-style="margin-top:8px;font-size:13px;color:var(--t2);white-space:pre-wrap">'+esc(t.message)+'</div>'
+        + (t.email ? '<div data-style="margin-top:6px;font-size:11.5px;color:var(--t3)">From: '+esc(t.email)+'</div>' : '')
         + resp
-        + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
-        + '<input id="sup-reply-'+t.id+'" placeholder="Write a reply (emails the sender if configured)…" style="flex:1;min-width:200px;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:8px 10px;font-size:12.5px">'
-        + '<button class="btn-sm" onclick="replySupport('+t.id+')">Send reply</button>'
-        + (open ? '<button class="btn-sm" onclick="resolveSupport('+t.id+',true)">Mark resolved</button>' : '<button class="btn-sm" onclick="resolveSupport('+t.id+',false)">Reopen</button>')
+        + '<div data-style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+        + '<input id="sup-reply-'+t.id+'" placeholder="Write a reply (emails the sender if configured)…" data-style="flex:1;min-width:200px;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:8px 10px;font-size:12.5px">'
+        + '<button class="btn-sm" data-arg-id="'+t.id+'" data-on-click="replySupport(Number(this.dataset.argId))">Send reply</button>'
+        + (open ? '<button class="btn-sm" data-arg-id="'+t.id+'" data-on-click="resolveSupport(Number(this.dataset.argId),true)">Mark resolved</button>' : '<button class="btn-sm" data-arg-id="'+t.id+'" data-on-click="resolveSupport(Number(this.dataset.argId),false)">Reopen</button>')
         + '</div></div>';
     }).join('');
   } catch (e) {
@@ -190,9 +190,9 @@ async function loadTraffic() {
           const loc = [r.city, r.region, r.country].filter(Boolean).join(', ') || '—';
           const when = r.last_seen ? new Date(r.last_seen).toLocaleString() : '—';
           const acct = r.account_name
-            ? `<span class="primary">${esc(r.account_name)}</span>${r.account_email?`<div style="font-size:11px;color:var(--t3)">${esc(r.account_email)}</div>`:''}`
-            : (r.account_email ? esc(r.account_email) : '<span style="color:var(--t3)">Guest</span>');
-          return `<tr><td>${esc(when)}</td><td>${acct}</td><td>${esc(loc)}</td><td class="primary">${esc(r.path || '/')}</td><td>${parseInt(r.views || 1).toLocaleString()}</td><td style="color:var(--t3);font-variant-numeric:tabular-nums">${esc(r.ip_address || '—')}</td></tr>`;
+            ? `<span class="primary">${esc(r.account_name)}</span>${r.account_email?`<div data-style="font-size:11px;color:var(--t3)">${esc(r.account_email)}</div>`:''}`
+            : (r.account_email ? esc(r.account_email) : '<span data-style="color:var(--t3)">Guest</span>');
+          return `<tr><td>${esc(when)}</td><td>${acct}</td><td>${esc(loc)}</td><td class="primary">${esc(r.path || '/')}</td><td>${parseInt(r.views || 1).toLocaleString()}</td><td data-style="color:var(--t3);font-variant-numeric:tabular-nums">${esc(r.ip_address || '—')}</td></tr>`;
         }).join('')
       : '<tr><td colspan="6" class="empty">No visitors recorded yet</td></tr>';
 
@@ -312,10 +312,10 @@ async function loadPending() {
         <td>${esc(a.firm || '—')}</td>
         <td>${esc(a.country || '—')}</td>
         <td><span class="badge b-amber">${esc(a.verification_method || '—')}</span></td>
-        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.credentials || a.memberships || '—')}</td>
+        <td data-style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.credentials || a.memberships || '—')}</td>
         <td>${new Date(a.created_at).toLocaleDateString()}</td>
         <td>
-          <button class="action-btn approve" onclick="openReviewById(${a.id})">Review</button>
+          <button class="action-btn approve" data-arg-id="${a.id}" data-on-click="openReviewById(Number(this.dataset.argId))">Review</button>
         </td>
       </tr>`).join('');
   } catch(e) { console.error('Pending error', e); }
@@ -330,8 +330,8 @@ async function loadAccountants(search='', status='') {
     const res = await fetch(`/api/admin/accountants?${params}`, { credentials: 'include' });
     _allAccountants = await res.json();
     document.getElementById('accountants-tbody').innerHTML = _allAccountants.length ? _allAccountants.map(a => `
-      <tr onclick="openAccountant(${a.id})" style="cursor:pointer">
-        <td><div class="primary">${esc(a.first_name)} ${esc(a.last_name)}</div><div style="font-size:11px;color:var(--t3)">${esc(a.email)}</div></td>
+      <tr data-arg-id="${a.id}" data-on-click="openAccountant(Number(this.dataset.argId))" data-style="cursor:pointer">
+        <td><div class="primary">${esc(a.first_name)} ${esc(a.last_name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(a.email)}</div></td>
         <td>${esc(a.firm || '—')}</td>
         <td>${esc(a.country || '—')}</td>
         <td>${a.client_count || 0}</td>
@@ -339,10 +339,10 @@ async function loadAccountants(search='', status='') {
         <td><span class="badge ${a.status==='verified'?'b-green':a.status==='pending'?'b-amber':a.status==='suspended'?'b-red':'b-purple'}">${a.status}</span></td>
         <td><span class="badge ${a.stripe_onboarded?'b-green':'b-amber'}">${a.stripe_onboarded?'Connected':'Not set'}</span></td>
         <td>
-          ${a.status==='verified' ? `<button class="action-btn suspend" onclick="event.stopPropagation();verifyAction(${a.id},'suspend')">Suspend</button>` : ''}
-          ${a.status==='suspended' ? `<button class="action-btn approve" onclick="event.stopPropagation();verifyAction(${a.id},'reinstate')">Reinstate</button>` : ''}
-          ${a.status==='pending' ? `<button class="action-btn approve" onclick="event.stopPropagation();verifyAction(${a.id},'approve')">Approve</button><button class="action-btn reject" onclick="event.stopPropagation();verifyAction(${a.id},'reject')">Reject</button>` : ''}
-          <button class="action-btn gold" onclick="event.stopPropagation();togglePreferred(${a.id},${a.avg_rating < 4.5})">${a.avg_rating >= 4.5 ? '★ Remove PP' : '☆ Set PP'}</button>
+          ${a.status==='verified' ? `<button class="action-btn suspend" data-arg-id="${a.id}" data-on-click="event.stopPropagation();verifyAction(Number(this.dataset.argId),'suspend')">Suspend</button>` : ''}
+          ${a.status==='suspended' ? `<button class="action-btn approve" data-arg-id="${a.id}" data-on-click="event.stopPropagation();verifyAction(Number(this.dataset.argId),'reinstate')">Reinstate</button>` : ''}
+          ${a.status==='pending' ? `<button class="action-btn approve" data-arg-id="${a.id}" data-on-click="event.stopPropagation();verifyAction(Number(this.dataset.argId),'approve')">Approve</button><button class="action-btn reject" data-arg-id="${a.id}" data-on-click="event.stopPropagation();verifyAction(Number(this.dataset.argId),'reject')">Reject</button>` : ''}
+          <button class="action-btn gold" data-arg-id="${a.id}" data-arg-avg-rating="${a.avg_rating < 4.5}" data-on-click="event.stopPropagation();togglePreferred(Number(this.dataset.argId),(this.dataset.argAvgRating==='true'))">${a.avg_rating >= 4.5 ? '★ Remove PP' : '☆ Set PP'}</button>
         </td>
       </tr>`).join('')
     : '<tr><td colspan="8" class="empty">No accountants found</td></tr>';
@@ -425,16 +425,16 @@ async function loadReviewDocuments(id) {
     const res = await fetch(`/api/admin/accountants/${id}/documents`, { credentials: 'include' });
     const docs = await res.json();
     if (!Array.isArray(docs) || !docs.length) {
-      el.innerHTML = '<span style="color:var(--red)">⚠ No document uploaded</span>';
+      el.innerHTML = '<span data-style="color:var(--red)">⚠ No document uploaded</span>';
       return;
     }
     el.innerHTML = docs.map(d => {
       const kb = d.size_bytes ? Math.round(d.size_bytes / 1024) + ' KB' : '';
       const url = `/api/admin/accountants/${id}/documents/${d.id}/download`;
-      return `<a href="${url}" target="_blank" rel="noopener" style="color:var(--acc);text-decoration:none">📄 ${esc(d.file_name || 'document')}</a> <span style="color:var(--t3);font-size:11px">${esc(kb)}</span>`;
+      return `<a href="${url}" target="_blank" rel="noopener" data-style="color:var(--acc);text-decoration:none">📄 ${esc(d.file_name || 'document')}</a> <span data-style="color:var(--t3);font-size:11px">${esc(kb)}</span>`;
     }).join('<br>');
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--t3)">Could not load document</span>';
+    el.innerHTML = '<span data-style="color:var(--t3)">Could not load document</span>';
   }
 }
 
@@ -464,20 +464,20 @@ async function loadReports() {
       const stFg = isOpen ? '#e0a93a' : '#8a8268';
       return `
       <tr>
-        <td><div class="primary">${esc(r.first_name)} ${esc(r.last_name)}</div><div style="font-size:11px;color:var(--t3)">${esc(r.firm || '')}</div></td>
-        <td>${esc(r.reporter_name || '—')}<div style="font-size:11px;color:var(--t3)">${esc(r.reporter_email || '')}</div></td>
-        <td style="text-transform:capitalize">${esc(r.category || 'other')}</td>
-        <td style="max-width:240px">${esc(r.reason)}</td>
-        <td><span style="font-size:11px;padding:2px 8px;border-radius:9px;background:${stBg};color:${stFg};text-transform:capitalize">${esc(st)}</span></td>
-        <td>${new Date(r.created_at).toLocaleDateString()}${r.respond_by ? `<div style="font-size:11px;color:${r.overdue ? '#e05a4a' : 'var(--t3)'}">${r.acknowledged_at ? 'Acknowledged ' + new Date(r.acknowledged_at).toLocaleDateString() : (r.overdue ? 'OVERDUE — acknowledge by ' : 'Acknowledge by ') + new Date(r.respond_by).toLocaleString()}</div>` : ''}${r.accountant_notified_at ? `<div style="font-size:11px;color:var(--t3)">Accountant told ${new Date(r.accountant_notified_at).toLocaleDateString()}</div>` : ''}</td>
+        <td><div class="primary">${esc(r.first_name)} ${esc(r.last_name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(r.firm || '')}</div></td>
+        <td>${esc(r.reporter_name || '—')}<div data-style="font-size:11px;color:var(--t3)">${esc(r.reporter_email || '')}</div></td>
+        <td data-style="text-transform:capitalize">${esc(r.category || 'other')}</td>
+        <td data-style="max-width:240px">${esc(r.reason)}</td>
+        <td><span data-style="font-size:11px;padding:2px 8px;border-radius:9px;background:${stBg};color:${stFg};text-transform:capitalize">${esc(st)}</span></td>
+        <td>${new Date(r.created_at).toLocaleDateString()}${r.respond_by ? `<div data-style="font-size:11px;color:${r.overdue ? '#e05a4a' : 'var(--t3)'}">${r.acknowledged_at ? 'Acknowledged ' + new Date(r.acknowledged_at).toLocaleDateString() : (r.overdue ? 'OVERDUE — acknowledge by ' : 'Acknowledge by ') + new Date(r.respond_by).toLocaleString()}</div>` : ''}${r.accountant_notified_at ? `<div data-style="font-size:11px;color:var(--t3)">Accountant told ${new Date(r.accountant_notified_at).toLocaleDateString()}</div>` : ''}</td>
         <td>
           ${isOpen
-            ? `${r.acknowledged_at ? '' : `<button class="action-btn approve" onclick="ackReport(${r.id})">Acknowledge</button>`}
-          ${r.accountant_notified_at ? '' : `<button class="action-btn" onclick="notifyAccountantReport(${r.id})">Tell accountant</button>`}
-          <button class="action-btn suspend" onclick="verifyAction(${r.accountant_id},'suspend')">Suspend</button>
-          <button class="action-btn approve" onclick="resolveReport(${r.id})">Resolve</button>
-          <button class="action-btn" onclick="dismissReport(${r.id})">Dismiss</button>`
-            : `<span style="font-size:11px;color:var(--t3)">${esc(r.resolved_by || 'admin')}${r.resolved_at ? ' · ' + new Date(r.resolved_at).toLocaleDateString() : ''}</span>`}
+            ? `${r.acknowledged_at ? '' : `<button class="action-btn approve" data-arg-id="${r.id}" data-on-click="ackReport(Number(this.dataset.argId))">Acknowledge</button>`}
+          ${r.accountant_notified_at ? '' : `<button class="action-btn" data-arg-id="${r.id}" data-on-click="notifyAccountantReport(Number(this.dataset.argId))">Tell accountant</button>`}
+          <button class="action-btn suspend" data-arg-accountant-id="${r.accountant_id}" data-on-click="verifyAction(Number(this.dataset.argAccountantId),'suspend')">Suspend</button>
+          <button class="action-btn approve" data-arg-id="${r.id}" data-on-click="resolveReport(Number(this.dataset.argId))">Resolve</button>
+          <button class="action-btn" data-arg-id="${r.id}" data-on-click="dismissReport(Number(this.dataset.argId))">Dismiss</button>`
+            : `<span data-style="font-size:11px;color:var(--t3)">${esc(r.resolved_by || 'admin')}${r.resolved_at ? ' · ' + new Date(r.resolved_at).toLocaleDateString() : ''}</span>`}
         </td>
       </tr>`; }).join('')
     : '<tr><td colspan="7" class="empty">No reports filed</td></tr>';
@@ -523,22 +523,22 @@ function renderUsers(data, search='') {
   const q = (search||'').toLowerCase();
   const filtered = q ? data.filter(u => (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q)) : data;
   document.getElementById('users-tbody').innerHTML = filtered.length ? filtered.map(u => `
-    <tr onclick="openUser(${u.id})" style="cursor:pointer">
+    <tr data-arg-id="${u.id}" data-on-click="openUser(Number(this.dataset.argId))" data-style="cursor:pointer">
       <td class="primary">${esc(u.name || '—')}</td>
       <td>${esc(u.email || '—')}</td>
       <td>
-        <select class="filter-select" id="plan-sel-${u.id}" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="event.stopPropagation()">
+        <select class="filter-select" id="plan-sel-${u.id}" data-style="font-size:11px;padding:3px 8px;margin-right:4px" data-on-click="event.stopPropagation()">
           <option value="trial" ${(u.plan||'trial')==='trial'?'selected':''}>Trial</option>
           <option value="pro" ${u.plan==='pro'?'selected':''}>Pro</option>
           <option value="business" ${u.plan==='business'?'selected':''}>Business</option>
           <option value="scale" ${u.plan==='scale'?'selected':''}>Scale</option>
         </select>
-        <button class="action-btn" onclick="event.stopPropagation();setPlan(${u.id})">Save</button>
+        <button class="action-btn" data-arg-id="${u.id}" data-on-click="event.stopPropagation();setPlan(Number(this.dataset.argId))">Save</button>
       </td>
       <td>${u.accountant_first ? `${esc(u.accountant_first)} ${esc(u.accountant_last)}` : '—'}</td>
       <td>${new Date(u.created_at).toLocaleDateString()}</td>
       <td><span class="badge ${u.suspended==='true'?'b-red':'b-green'}">${u.suspended==='true'?'Suspended':'Active'}</span></td>
-      <td><button class="action-btn ${u.suspended==='true'?'approve':'suspend'}" onclick="event.stopPropagation();suspendUser(${u.id},${u.suspended!=='true'})">${u.suspended==='true'?'Reinstate':'Suspend'}</button></td>
+      <td><button class="action-btn ${u.suspended==='true'?'approve':'suspend'}" data-arg-id="${u.id}" data-arg-suspended="${u.suspended!=='true'}" data-on-click="event.stopPropagation();suspendUser(Number(this.dataset.argId),(this.dataset.argSuspended==='true'))">${u.suspended==='true'?'Reinstate':'Suspend'}</button></td>
     </tr>`).join('')
   : '<tr><td colspan="7" class="empty">No users found</td></tr>';
 }
@@ -586,7 +586,7 @@ async function loadEarnings() {
     document.getElementById('earnings-tbody').innerHTML = records.length ? records.map(e => `
       <tr>
         <td>${e.status === 'pending' && !e.payout_id ? `<input type="checkbox" class="earn-check" value="${e.id}" aria-label="Select to mark paid by hand">` : ''}</td>
-        <td class="primary">${esc(e.first_name)} ${esc(e.last_name)}<div style="font-size:11px;color:var(--t3)">${esc(e.firm||'')}</div></td>
+        <td class="primary">${esc(e.first_name)} ${esc(e.last_name)}<div data-style="font-size:11px;color:var(--t3)">${esc(e.firm||'')}</div></td>
         <td><span class="badge ${e.type==='referral'?'b-gold':'b-green'}">${e.type==='referral'?'Referral':'Commission'}</span></td>
         <td>${esc(e.description||'—')}</td>
         <td class="gold">$${(e.amount_cents/100).toFixed(2)}</td>
@@ -597,11 +597,11 @@ async function loadEarnings() {
     const ym = v => FinFlowDates.calendarLabel(v, { month: 'short', year: 'numeric' }) || '—';   // FA-L3f: the shared calendar-label writer
     document.getElementById('payouts-tbody').innerHTML = (payouts || []).length ? payouts.map(p => `
       <tr>
-        <td class="primary">${esc(p.first_name)} ${esc(p.last_name)}<div style="font-size:11px;color:var(--t3)">${esc(p.firm||'')}</div></td>
+        <td class="primary">${esc(p.first_name)} ${esc(p.last_name)}<div data-style="font-size:11px;color:var(--t3)">${esc(p.firm||'')}</div></td>
         <td>${ym(p.period_month)}</td>
         <td class="gold">$${(p.amount_cents/100).toFixed(2)}</td>
         <td><span class="badge ${p.status==='sent'?'b-green':p.status==='failed'?'b-red':'b-amber'}">${p.status === 'claimed' ? 'sending' : esc(p.status)}</span></td>
-        <td style="font-size:12px">${p.status === 'sent' ? esc(p.stripe_transfer_id || '') : esc(p.last_error || '—')}</td>
+        <td data-style="font-size:12px">${p.status === 'sent' ? esc(p.stripe_transfer_id || '') : esc(p.last_error || '—')}</td>
         <td>${Number(p.attempts) || 0}</td>
       </tr>`).join('')
     : '<tr><td colspan="6" class="empty">No referral payouts yet</td></tr>';
@@ -646,12 +646,12 @@ function addOpexRow(label, monthly) {
   row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
   row.innerHTML =
     '<input class="opex-label" type="text" placeholder="e.g. Supabase" maxlength="60" '
-      + 'style="flex:1;background:var(--bg2,#1a1a1a);border:1px solid var(--bd);color:var(--t1);padding:6px 8px;border-radius:6px;font-size:12px">'
-    + '<span style="color:var(--t3);font-size:12px">$</span>'
+      + 'data-style="flex:1;background:var(--bg2,#1a1a1a);border:1px solid var(--bd);color:var(--t1);padding:6px 8px;border-radius:6px;font-size:12px">'
+    + '<span data-style="color:var(--t3);font-size:12px">$</span>'
     + '<input class="opex-amt" type="number" min="0" step="0.01" placeholder="0.00" '
-      + 'style="width:90px;background:var(--bg2,#1a1a1a);border:1px solid var(--bd);color:var(--t1);padding:6px 8px;border-radius:6px;font-size:12px;text-align:right">'
+      + 'data-style="width:90px;background:var(--bg2,#1a1a1a);border:1px solid var(--bd);color:var(--t1);padding:6px 8px;border-radius:6px;font-size:12px;text-align:right">'
     + '<button type="button" class="opex-del" title="Remove" '
-      + 'style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px">×</button>';
+      + 'data-style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px">×</button>';
   row.querySelector('.opex-label').value = label || '';
   row.querySelector('.opex-amt').value = (monthly != null && monthly !== '') ? monthly : '';
   row.querySelector('.opex-del').onclick = () => row.remove();
@@ -761,7 +761,7 @@ function renderLogRows(data) {
     <tr>
       <td class="primary">${esc(l.action.replace(/_/g,' '))}</td>
       <td>${esc(l.target_type||'—')} ${l.target_id ? '#'+l.target_id : ''}</td>
-      <td style="max-width:300px;word-break:break-word">${esc(l.notes||'—')}</td>
+      <td data-style="max-width:300px;word-break:break-word">${esc(l.notes||'—')}</td>
       <td>${new Date(l.created_at).toLocaleString()}</td>
     </tr>`).join('')
   : '<tr><td colspan="4" class="empty">No entries</td></tr>';
@@ -867,9 +867,9 @@ async function openAccountant(id) {
     const clientRows = (a.clients||[]).map(c => `
       <div class="client-list-row">
         <span>${esc(c.name||'—')}</span>
-        <span style="color:var(--t3)">${esc(c.email||'')}</span>
-        <span class="badge ${c.status==='active'?'b-green':'b-amber'}" style="margin-left:8px">${esc(c.status)}</span>
-      </div>`).join('') || '<div class="client-list-row" style="color:var(--t3)">No clients</div>';
+        <span data-style="color:var(--t3)">${esc(c.email||'')}</span>
+        <span class="badge ${c.status==='active'?'b-green':'b-amber'}" data-style="margin-left:8px">${esc(c.status)}</span>
+      </div>`).join('') || '<div class="client-list-row" data-style="color:var(--t3)">No clients</div>';
     document.getElementById('am-details').innerHTML = `
       <div class="detail-row"><span class="detail-label">Email</span><span class="detail-val">${esc(a.email)}</span></div>
       <div class="detail-row"><span class="detail-label">Status</span><span class="detail-val"><span class="badge ${a.status==='verified'?'b-green':a.status==='pending'?'b-amber':'b-red'}">${esc(a.status)}</span></span></div>
@@ -901,13 +901,13 @@ async function loadFlags() {
     const data = await res.json();
     document.getElementById('flags-tbody').innerHTML = data.length ? data.map(f => `
       <tr>
-        <td class="primary">${esc(((f.first_name||'')+' '+(f.last_name||'')).trim()||'—')}<div style="font-size:11px;color:var(--t3)">${esc(f.firm||'')}</div></td>
-        <td>${esc(f.client_name||'—')}<div style="font-size:11px;color:var(--t3)">${esc(f.client_email||'')}</div></td>
-        <td><span class="badge b-amber" style="text-transform:capitalize">${esc(f.txn_type||'—')}</span>${f.txn_ref?`<div style="font-size:11px;color:var(--t3);word-break:break-word">${esc(f.txn_ref)}</div>`:''}</td>
-        <td style="min-width:240px;max-width:380px;white-space:normal;overflow-wrap:anywhere">${esc(f.note||'—')}</td>
+        <td class="primary">${esc(((f.first_name||'')+' '+(f.last_name||'')).trim()||'—')}<div data-style="font-size:11px;color:var(--t3)">${esc(f.firm||'')}</div></td>
+        <td>${esc(f.client_name||'—')}<div data-style="font-size:11px;color:var(--t3)">${esc(f.client_email||'')}</div></td>
+        <td><span class="badge b-amber" data-style="text-transform:capitalize">${esc(f.txn_type||'—')}</span>${f.txn_ref?`<div data-style="font-size:11px;color:var(--t3);word-break:break-word">${esc(f.txn_ref)}</div>`:''}</td>
+        <td data-style="min-width:240px;max-width:380px;white-space:normal;overflow-wrap:anywhere">${esc(f.note||'—')}</td>
         <td>${new Date(f.created_at).toLocaleDateString()}</td>
-        <td><span class="badge ${f.status==='resolved'?'b-green':'b-amber'}" style="text-transform:capitalize">${esc(f.status||'open')}</span></td>
-        <td>${f.status!=='resolved'?`<button class="action-btn approve" onclick="resolveFlag(${f.id},this)">Resolve</button>`:`<span style="font-size:11px;color:var(--t3)">${esc(f.resolved_by||'admin')}${f.resolved_at?' · '+new Date(f.resolved_at).toLocaleDateString():''}</span>`}</td>
+        <td><span class="badge ${f.status==='resolved'?'b-green':'b-amber'}" data-style="text-transform:capitalize">${esc(f.status||'open')}</span></td>
+        <td>${f.status!=='resolved'?`<button class="action-btn approve" data-arg-id="${f.id}" data-on-click="resolveFlag(Number(this.dataset.argId),this)">Resolve</button>`:`<span data-style="font-size:11px;color:var(--t3)">${esc(f.resolved_by||'admin')}${f.resolved_at?' · '+new Date(f.resolved_at).toLocaleDateString():''}</span>`}</td>
       </tr>`).join('')
     : '<tr><td colspan="7" class="empty">No flagged transactions</td></tr>';
   } catch(e) { console.error('Flags error',e); }

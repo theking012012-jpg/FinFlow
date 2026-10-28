@@ -24,26 +24,26 @@
     setText('rem-out', money(s.ar_outstanding!=null ? s.ar_outstanding : (s.total_outstanding||0), cur));   // L35: canonical netted AR
     var b=document.getElementById('badge-reminders'); if(b){ if((s.overdue||0)>0){ b.textContent=s.overdue; b.style.display=''; } else { b.style.display='none'; } }
     byId={}; items.forEach(function(it){ byId[it.invoice_id]=it; });
-    if(!items.length){ box.innerHTML='<div style="padding:28px 8px;text-align:center;color:var(--t2)">No invoices need chasing right now — everything is paid or not yet due.</div>'; return; }
+    if(!items.length){ box.innerHTML='<div data-style="padding:28px 8px;text-align:center;color:var(--t2)">No invoices need chasing right now — everything is paid or not yet due.</div>'; return; }
     var html='';
     items.forEach(function(it){
       var sev=SEV[it.severity]||SEV.upcoming;
-      var risk=it.predicted_late?'<span style="font-size:10px;color:#9e7d1e;margin-left:6px">· predicted late</span>':'';
-      html+='<div style="border-bottom:1px solid var(--bd,rgba(120,120,120,.14));padding:11px 2px">'
-        + '<div style="display:flex;align-items:center;gap:12px">'
-        +   '<span style="flex:0 0 auto;font-size:10px;font-weight:600;padding:2px 8px;border-radius:9px;background:'+sev.bg+';color:'+sev.fg+'">'+esc(sevLabel(it))+'</span>'
-        +   '<div style="flex:1 1 auto;min-width:0"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(it.customer_name||it.client)+risk+'</div>'
-        +     '<div style="font-size:11.5px;color:var(--t2)">Invoice due '+esc(it.due_date)+(it.has_email?' · '+esc(it.email):' · <span style="color:#c94a4a">no email on file</span>')+'</div></div>'
-        +   '<div style="flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;min-width:90px">'+money(it.amount_outstanding,cur)+'</div>'
-        +   '<button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="ffRemToggle('+Number(it.invoice_id)+')">Review &amp; send</button>'
+      var risk=it.predicted_late?'<span data-style="font-size:10px;color:#9e7d1e;margin-left:6px">· predicted late</span>':'';
+      html+='<div data-style="border-bottom:1px solid var(--bd,rgba(120,120,120,.14));padding:11px 2px">'
+        + '<div data-style="display:flex;align-items:center;gap:12px">'
+        +   '<span data-style="flex:0 0 auto;font-size:10px;font-weight:600;padding:2px 8px;border-radius:9px;background:'+sev.bg+';color:'+sev.fg+'">'+esc(sevLabel(it))+'</span>'
+        +   '<div data-style="flex:1 1 auto;min-width:0"><div data-style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(it.customer_name||it.client)+risk+'</div>'
+        +     '<div data-style="font-size:11.5px;color:var(--t2)">Invoice due '+esc(it.due_date)+(it.has_email?' · '+esc(it.email):' · <span data-style="color:#c94a4a">no email on file</span>')+'</div></div>'
+        +   '<div data-style="flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;min-width:90px">'+money(it.amount_outstanding,cur)+'</div>'
+        +   '<button class="btn btn-ghost btn-sm" data-style="flex:0 0 auto" data-arg-invoice-id="'+Number(it.invoice_id)+'" data-on-click="ffRemToggle(Number(this.dataset.argInvoiceId))">Review &amp; send</button>'
         + '</div>'
-        + '<div id="rem-draft-'+Number(it.invoice_id)+'" style="display:none;margin:10px 0 2px;padding:10px;background:rgba(120,120,120,.06);border-radius:8px">'
-        +   '<input id="rem-subj-'+Number(it.invoice_id)+'" value="'+esc(it.draft.subject)+'" style="width:100%;box-sizing:border-box;margin-bottom:7px;padding:7px 9px;border:1px solid var(--bd,rgba(120,120,120,.25));border-radius:6px;background:var(--bg,transparent);color:inherit;font-size:12.5px">'
-        +   '<textarea id="rem-body-'+Number(it.invoice_id)+'" rows="7" style="width:100%;box-sizing:border-box;padding:8px 9px;border:1px solid var(--bd,rgba(120,120,120,.25));border-radius:6px;background:var(--bg,transparent);color:inherit;font-size:12.5px;line-height:1.5;resize:vertical">'+esc(it.draft.body)+'</textarea>'
-        +   '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
-        +     '<button class="btn btn-ghost btn-sm" onclick="ffRemAi('+Number(it.invoice_id)+',this)">Improve with AI</button>'
-        +     '<button class="btn btn-sm" style="background:var(--amber,#c9a84c);color:#1a140a;border:none" onclick="ffRemSend('+Number(it.invoice_id)+',this)"'+(it.has_email?'':' disabled title="Add a customer email first"')+'>Send reminder</button>'
-        +     '<span id="rem-status-'+Number(it.invoice_id)+'" style="font-size:11.5px;color:var(--t2)"></span>'
+        + '<div id="rem-draft-'+Number(it.invoice_id)+'" data-style="display:none;margin:10px 0 2px;padding:10px;background:rgba(120,120,120,.06);border-radius:8px">'
+        +   '<input id="rem-subj-'+Number(it.invoice_id)+'" value="'+esc(it.draft.subject)+'" data-style="width:100%;box-sizing:border-box;margin-bottom:7px;padding:7px 9px;border:1px solid var(--bd,rgba(120,120,120,.25));border-radius:6px;background:var(--bg,transparent);color:inherit;font-size:12.5px">'
+        +   '<textarea id="rem-body-'+Number(it.invoice_id)+'" rows="7" data-style="width:100%;box-sizing:border-box;padding:8px 9px;border:1px solid var(--bd,rgba(120,120,120,.25));border-radius:6px;background:var(--bg,transparent);color:inherit;font-size:12.5px;line-height:1.5;resize:vertical">'+esc(it.draft.body)+'</textarea>'
+        +   '<div data-style="display:flex;align-items:center;gap:8px;margin-top:8px">'
+        +     '<button class="btn btn-ghost btn-sm" data-arg-invoice-id="'+Number(it.invoice_id)+'" data-on-click="ffRemAi(Number(this.dataset.argInvoiceId),this)">Improve with AI</button>'
+        +     '<button class="btn btn-sm" data-style="background:var(--amber,#c9a84c);color:#1a140a;border:none" data-arg-invoice-id="'+Number(it.invoice_id)+'" data-on-click="ffRemSend(Number(this.dataset.argInvoiceId),this)"'+(it.has_email?'':' disabled title="Add a customer email first"')+'>Send reminder</button>'
+        +     '<span id="rem-status-'+Number(it.invoice_id)+'" data-style="font-size:11.5px;color:var(--t2)"></span>'
         +   '</div>'
         + '</div></div>';
     });
@@ -56,9 +56,9 @@
     try{
       var eid=activeEntityId();
       var res=await fetch('/api/payment-reminders'+(eid?'?entity_id='+encodeURIComponent(eid):''),{credentials:'same-origin',headers:{'Content-Type':'application/json'}});
-      if(!res.ok){ box.innerHTML='<div style="padding:20px 8px;color:var(--t2)">Couldn’t load reminders (error '+res.status+'). Try Refresh.</div>'; loading=false; return; }
+      if(!res.ok){ box.innerHTML='<div data-style="padding:20px 8px;color:var(--t2)">Couldn’t load reminders (error '+res.status+'). Try Refresh.</div>'; loading=false; return; }
       render(await res.json());
-    }catch(e){ box.innerHTML='<div style="padding:20px 8px;color:var(--t2)">Couldn’t load reminders. Check your connection and try Refresh.</div>'; }
+    }catch(e){ box.innerHTML='<div data-style="padding:20px 8px;color:var(--t2)">Couldn’t load reminders. Check your connection and try Refresh.</div>'; }
     loading=false;
   };
 

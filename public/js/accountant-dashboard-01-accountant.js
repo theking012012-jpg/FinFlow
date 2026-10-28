@@ -27,15 +27,15 @@ window.acctHelp = function(){
   var esc2=function(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
   var ov=document.createElement('div'); ov.id='acct-help-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto';
-  var how=HOW.map(function(h){ return '<details style="border-top:1px solid #2e2619;padding:9px 0"><summary style="cursor:pointer;font-size:13.5px;color:#f2e8d5;font-weight:500">'+esc2(h[0])+'</summary><div style="font-size:12.5px;color:#9e8e73;margin-top:6px;line-height:1.6">'+esc2(h[1])+'</div></details>'; }).join('');
-  ov.innerHTML='<div style="max-width:560px;width:100%;background:#171208;border:1px solid #2e2619;border-radius:14px;padding:20px 22px">'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#e4c97a">Help & support</div><button id="ah-x" aria-label="Close" style="background:none;border:none;color:#9e8e73;font-size:18px;cursor:pointer">&#10005;</button></div>'
-    +'<div style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin:8px 0 0">Working in the portal</div>'+how
-    +'<div style="border-top:1px solid #2e2619;margin-top:16px;padding-top:14px"><div style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin-bottom:8px">Contact FinFlow</div>'
-    +'<input id="ah-subject" placeholder="Subject" style="width:100%;box-sizing:border-box;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px;margin-bottom:8px">'
-    +'<textarea id="ah-msg" placeholder="How can we help?" style="width:100%;box-sizing:border-box;min-height:80px;resize:vertical;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px"></textarea>'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span style="font-size:11.5px;color:#6a5c44">or email <a href="mailto:support@finflow.app" style="color:#c9a84c">support@finflow.app</a></span><button id="ah-send" style="background:#c9a84c;color:#16120d;border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Send</button></div>'
-    +'<div id="ah-status" style="font-size:12px;margin-top:6px"></div></div></div>';
+  var how=HOW.map(function(h){ return '<details data-style="border-top:1px solid #2e2619;padding:9px 0"><summary data-style="cursor:pointer;font-size:13.5px;color:#f2e8d5;font-weight:500">'+esc2(h[0])+'</summary><div data-style="font-size:12.5px;color:#9e8e73;margin-top:6px;line-height:1.6">'+esc2(h[1])+'</div></details>'; }).join('');
+  ov.innerHTML='<div data-style="max-width:560px;width:100%;background:#171208;border:1px solid #2e2619;border-radius:14px;padding:20px 22px">'
+    +'<div data-style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div data-style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#e4c97a">Help & support</div><button id="ah-x" aria-label="Close" data-style="background:none;border:none;color:#9e8e73;font-size:18px;cursor:pointer">&#10005;</button></div>'
+    +'<div data-style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin:8px 0 0">Working in the portal</div>'+how
+    +'<div data-style="border-top:1px solid #2e2619;margin-top:16px;padding-top:14px"><div data-style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin-bottom:8px">Contact FinFlow</div>'
+    +'<input id="ah-subject" placeholder="Subject" data-style="width:100%;box-sizing:border-box;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px;margin-bottom:8px">'
+    +'<textarea id="ah-msg" placeholder="How can we help?" data-style="width:100%;box-sizing:border-box;min-height:80px;resize:vertical;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px"></textarea>'
+    +'<div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span data-style="font-size:11.5px;color:#6a5c44">or email <a href="mailto:support@finflow.app" data-style="color:#c9a84c">support@finflow.app</a></span><button id="ah-send" data-style="background:#c9a84c;color:#16120d;border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Send</button></div>'
+    +'<div id="ah-status" data-style="font-size:12px;margin-top:6px"></div></div></div>';
   document.body.appendChild(ov);
   var close=function(){ try{ov.remove();}catch(e){} };
   document.getElementById('ah-x').onclick=close;
@@ -64,9 +64,9 @@ function confirmModal(message, opts){
     var done = false;
     var ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px';
-    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--border2);border-radius:16px;padding:24px;width:400px;max-width:90vw">'
-      + '<p style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:20px">' + esc(message) + '</p>'
-      + '<div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-outline" id="cm-no">Cancel</button>'
+    ov.innerHTML = '<div data-style="background:var(--card);border:1px solid var(--border2);border-radius:16px;padding:24px;width:400px;max-width:90vw">'
+      + '<p data-style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:20px">' + esc(message) + '</p>'
+      + '<div data-style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-outline" id="cm-no">Cancel</button>'
       + '<button class="btn ' + (opts.danger ? 'btn-danger' : 'btn-gold') + '" id="cm-yes">' + esc(opts.okLabel || 'Confirm') + '</button></div></div>';
     document.body.appendChild(ov);
     var close = function(v){ if(done) return; done = true; try{ov.remove();}catch(e){} resolve(v); };
@@ -110,29 +110,29 @@ async function loadRollup() {
     const d = await res.json();
     const t = d.totals || {};
     const chips = [];
-    if (t.unreadMessages) chips.push(`<span style="color:var(--gold)">${t.unreadMessages} unread</span>`);
+    if (t.unreadMessages) chips.push(`<span data-style="color:var(--gold)">${t.unreadMessages} unread</span>`);
     if (t.pendingProposals) chips.push(`${t.pendingProposals} proposal${t.pendingProposals>1?'s':''} pending`);
-    if (t.overdueTasks) chips.push(`<span style="color:var(--red,#c0392b)">${t.overdueTasks} overdue request${t.overdueTasks>1?'s':''}</span>`);
+    if (t.overdueTasks) chips.push(`<span data-style="color:var(--red,#c0392b)">${t.overdueTasks} overdue request${t.overdueTasks>1?'s':''}</span>`);
     else if (t.openTasks) chips.push(`${t.openTasks} open request${t.openTasks>1?'s':''}`);
     const overdueDl = (d.deadlines||[]).filter(x=>x.overdue).length;
-    if (overdueDl) chips.push(`<span style="color:var(--red,#c0392b)">${overdueDl} overdue deadline${overdueDl>1?'s':''}</span>`);
+    if (overdueDl) chips.push(`<span data-style="color:var(--red,#c0392b)">${overdueDl} overdue deadline${overdueDl>1?'s':''}</span>`);
 
     const clients = d.clients || [];
     if (!clients.length && !overdueDl) { section.style.display = 'none'; return; }
     const badge = document.getElementById('attention-badge');
     if (badge) badge.textContent = clients.length ? (clients.length + (clients.length>1?' clients':' client')) : '';
-    const pill = (txt, danger) => `<span style="font-size:11px;padding:2px 9px;border-radius:100px;background:${danger?'rgba(192,57,43,0.12)':'rgba(201,168,76,0.1)'};color:${danger?'var(--red,#c0392b)':'var(--gold)'};border:1px solid ${danger?'rgba(192,57,43,0.3)':'var(--gold-dim)'}">${txt}</span>`;
+    const pill = (txt, danger) => `<span data-style="font-size:11px;padding:2px 9px;border-radius:100px;background:${danger?'rgba(192,57,43,0.12)':'rgba(201,168,76,0.1)'};color:${danger?'var(--red,#c0392b)':'var(--gold)'};border:1px solid ${danger?'rgba(192,57,43,0.3)':'var(--gold-dim)'}">${txt}</span>`;
     list.innerHTML = clients.map(cl => {
       const bits = [];
       if (cl.unread) bits.push(pill(cl.unread + ' unread', false));
       if (cl.pendingProposals) bits.push(pill(cl.pendingProposals + ' proposal' + (cl.pendingProposals>1?'s':''), false));
       if (cl.overdueTasks) bits.push(pill(cl.overdueTasks + ' overdue', true));
       else if (cl.openTasks) bits.push(pill(cl.openTasks + ' open', false));
-      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card,#161310);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:13.5px;color:var(--text1)">${esc(cl.name)}</span>${bits.join(' ')}</div>
-          <button class="btn btn-outline btn-sm" onclick="viewBooks(${cl.user_id},'${esc(String(cl.name).replace(/'/g,''))}')">Open →</button>
+      return `<div data-style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card,#161310);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+          <div data-style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span data-style="font-size:13.5px;color:var(--text1)">${esc(cl.name)}</span>${bits.join(' ')}</div>
+          <button class="btn btn-outline btn-sm" data-arg-user-id="${cl.user_id}" data-arg-name="${esc(cl.name)}" data-on-click="viewBooks(Number(this.dataset.argUserId),this.dataset.argName)">Open →</button>
         </div>`;
-    }).join('') || `<div style="font-size:13px;color:var(--text3);padding:4px 2px">${overdueDl} overdue filing deadline${overdueDl>1?'s':''} — see Deadlines.</div>`;
+    }).join('') || `<div data-style="font-size:13px;color:var(--text3);padding:4px 2px">${overdueDl} overdue filing deadline${overdueDl>1?'s':''} — see Deadlines.</div>`;
     section.style.display = 'block';
   } catch (e) { section.style.display = 'none'; }
 }
@@ -160,17 +160,17 @@ async function loadPendingRequests() {
       const date    = r.requested_at ? new Date(r.requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
       const plan    = r.client_plan || 'trial';
       return `
-        <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--card);border:1px solid rgba(196,138,42,0.35);border-radius:10px;">
-          <div style="width:36px;height:36px;border-radius:50%;background:rgba(196,138,42,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">👤</div>
-          <div style="flex:1;">
-            <div style="font-size:13px;color:var(--text);font-weight:500;">${esc(name)}</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:2px;">${esc(r.client_email)} · <span class="badge badge-gold">${esc(plan)}</span> · Requested ${esc(date)}</div>
+        <div data-style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--card);border:1px solid rgba(196,138,42,0.35);border-radius:10px;">
+          <div data-style="width:36px;height:36px;border-radius:50%;background:rgba(196,138,42,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">👤</div>
+          <div data-style="flex:1;">
+            <div data-style="font-size:13px;color:var(--text);font-weight:500;">${esc(name)}</div>
+            <div data-style="font-size:12px;color:var(--text3);margin-top:2px;">${esc(r.client_email)} · <span class="badge badge-gold">${esc(plan)}</span> · Requested ${esc(date)}</div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div data-style="display:flex;gap:8px;align-items:center;">
             ${r.requested_by === 'client'
-              ? `<button class="btn btn-gold btn-sm" onclick="approveRequest(${r.user_id}, this)">Approve</button>`
-              : `<span style="font-size:11px;color:var(--text3);">Referral — awaiting client approval</span>`}
-            <button class="btn btn-danger btn-sm" onclick="declineRequest(${r.user_id}, this)">Decline</button>
+              ? `<button class="btn btn-gold btn-sm" data-arg-user-id="${r.user_id}" data-on-click="approveRequest(Number(this.dataset.argUserId), this)">Approve</button>`
+              : `<span data-style="font-size:11px;color:var(--text3);">Referral — awaiting client approval</span>`}
+            <button class="btn btn-danger btn-sm" data-arg-user-id="${r.user_id}" data-on-click="declineRequest(Number(this.dataset.argUserId), this)">Decline</button>
           </div>
         </div>`;
     }).join('');
@@ -316,27 +316,27 @@ function renderClients() {
     const lastExp = c.last_expense ? new Date(c.last_expense) : null;
     const dates = [lastLogin, lastInv, lastExp].filter(Boolean);
     const ref = dates.length ? new Date(Math.max(...dates)) : null;
-    if (!ref) return `<span style="font-size:11px;color:var(--text3)">Never active</span>`;
+    if (!ref) return `<span data-style="font-size:11px;color:var(--text3)">Never active</span>`;
     const days = Math.floor((now - ref) / 86400000);
-    if (days <= 1)  return `<span style="font-size:11px;color:var(--green)">&#9679; Active today</span>`;
-    if (days <= 7)  return `<span style="font-size:11px;color:var(--green)">&#9679; ${days}d ago</span>`;
-    if (days <= 30) return `<span style="font-size:11px;color:var(--amber)">&#9679; ${days}d ago</span>`;
-    return `<span style="font-size:11px;color:var(--red)">&#9679; ${days}d ago &mdash; ghost?</span>`;
+    if (days <= 1)  return `<span data-style="font-size:11px;color:var(--green)">&#9679; Active today</span>`;
+    if (days <= 7)  return `<span data-style="font-size:11px;color:var(--green)">&#9679; ${days}d ago</span>`;
+    if (days <= 30) return `<span data-style="font-size:11px;color:var(--amber)">&#9679; ${days}d ago</span>`;
+    return `<span data-style="font-size:11px;color:var(--red)">&#9679; ${days}d ago &mdash; ghost?</span>`;
   }
 
   const rows = clients.length === 0
-    ? '<tr class="loading-row"><td colspan="8">No clients yet. <a style="color:var(--gold);cursor:pointer" onclick="showPage(\'invite\')">Invite your first client &rarr;</a></td></tr>'
+    ? '<tr class="loading-row"><td colspan="8">No clients yet. <a data-style="color:var(--gold);cursor:pointer" data-on-click="showPage(\'invite\')">Invite your first client &rarr;</a></td></tr>'
     : clients.map(c => `
       <tr>
         <td class="primary">${esc(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
-        <td style="font-size:12px;color:var(--text3)">${esc(c.client_email) || '&mdash;'}</td>
+        <td data-style="font-size:12px;color:var(--text3)">${esc(c.client_email) || '&mdash;'}</td>
         <td><span class="badge badge-gold">${esc(c.client_plan || 'trial')}</span></td>
         <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Pending' : c.status === 'invited' ? 'Invited' : 'Pending'}</span></td>
         <td>${activityBadge(c)}</td>
         <td>${c.referral_month ?? 0}/${c.referral_months_total ?? 0} months</td>
         <td>${c.status === 'pending'
-          ? `<button class="btn btn-gold btn-sm" onclick="activateClient(${c.id})">Approve</button> <button class="btn btn-outline btn-sm" style="color:var(--red,#c0392b);border-color:var(--red,#c0392b)" onclick="rejectClient(${c.id})">Reject</button>`
-          : `<button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${esc(((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,''))}')">View books</button>`
+          ? `<button class="btn btn-gold btn-sm" data-arg-id="${c.id}" data-on-click="activateClient(Number(this.dataset.argId))">Approve</button> <button class="btn btn-outline btn-sm" data-style="color:var(--red,#c0392b);border-color:var(--red,#c0392b)" data-arg-id="${c.id}" data-on-click="rejectClient(Number(this.dataset.argId))">Reject</button>`
+          : `<button class="btn btn-outline btn-sm" data-arg-id="${c.id}" data-arg-client="${esc((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'')}" data-on-click="viewBooks(Number(this.dataset.argId),this.dataset.argClient)">View books</button>`
         }</td>
       </tr>`).join('');
 
@@ -350,7 +350,7 @@ function renderClients() {
       <td><span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-amber'}">${c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Pending' : c.status === 'invited' ? 'Invited' : 'Pending'}</span></td>
       <td>${activityBadge(c)}</td>
       <td>${c.activated_at ? new Date(c.activated_at).toLocaleDateString() : '&mdash;'}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${esc(((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,''))}')">View books</button></td>
+      <td><button class="btn btn-outline btn-sm" data-arg-id="${c.id}" data-arg-client="${esc((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'')}" data-on-click="viewBooks(Number(this.dataset.argId),this.dataset.argClient)">View books</button></td>
     </tr>`).join('') || '<tr class="loading-row"><td colspan="6">No clients yet.</td></tr>';
   document.getElementById('dashboard-clients-tbody').innerHTML = dashRows;
 }
@@ -475,11 +475,11 @@ function renderDeadlines() {
   };
 
   document.getElementById('dashboard-deadlines').innerHTML = ordered.length === 0
-    ? '<div style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No deadlines. <a style="color:var(--gold);cursor:pointer" onclick="openDeadlineModal()">Add one →</a></div>'
+    ? '<div data-style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No deadlines. <a data-style="color:var(--gold);cursor:pointer" data-on-click="openDeadlineModal()">Add one →</a></div>'
     : ordered.slice(0, 5).map(row).join('');
 
   document.getElementById('all-deadlines').innerHTML = ordered.length === 0
-    ? '<div style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No deadlines yet.</div>'
+    ? '<div data-style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No deadlines yet.</div>'
     : ordered.map(row).join('');
 }
 
@@ -563,7 +563,7 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  document.querySelector(`[onclick="showPage('${name}')"]`)?.classList.add('active');
+  document.querySelector(`[data-on-click="showPage('${name}')"]`)?.classList.add('active');
   closeSidebar(); // collapse the mobile overlay after choosing a page
 }
 

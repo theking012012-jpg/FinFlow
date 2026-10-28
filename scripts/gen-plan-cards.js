@@ -30,7 +30,7 @@ function render(src) {
     if (!re.test(s)) throw new Error('landing.html: missing price span ' + PRICE_ID[id]);
     s = s.replace(re, '$1' + Plans.PLANS[id].monthly + '$2');
   }
-  const head = '<tr><th scope="col" style="font-size:0">Feature</th>' + Plans.PAID.map(id => '<th scope="col"' + (id === 'business' ? ' class="hot"' : '') + '>' + esc(Plans.PLANS[id].name) + '</th>').join('') + '</tr>';
+  const head = '<tr><th scope="col" data-style="font-size:0">Feature</th>' + Plans.PAID.map(id => '<th scope="col"' + (id === 'business' ? ' class="hot"' : '') + '>' + esc(Plans.PLANS[id].name) + '</th>').join('') + '</tr>';
   const rows = Plans.comparisonRows().map(([label, vals]) =>
     '        <tr><td>' + esc(label) + '</td>' + vals.map((v, k) => '<td' + (Plans.PAID[k] === 'business' ? ' class="hot"' : '') + '>' + esc(v) + '</td>').join('') + '</tr>').join('\n');
   const table =

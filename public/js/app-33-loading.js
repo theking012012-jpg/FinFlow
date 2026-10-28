@@ -17,31 +17,31 @@
     var ref=document.getElementById('api-ref'); if(!ref) return;
     var base=(window.location && window.location.origin ? window.location.origin : '') + '/api/v1';
     ref.innerHTML =
-      '<p style="margin:0 0 8px"><strong>Base URL</strong> &nbsp;<code>'+esc(base)+'</code></p>'
-      + '<p style="margin:0 0 8px"><strong>Auth</strong> &nbsp;send your key on every request: <code>Authorization: Bearer ffk_live_…</code> &nbsp;(or <code>X-API-Key: …</code>)</p>'
-      + '<p style="margin:0 0 4px"><strong>Read-only endpoints</strong></p>'
-      + '<ul style="margin:0 0 8px;padding-left:18px">'
+      '<p data-style="margin:0 0 8px"><strong>Base URL</strong> &nbsp;<code>'+esc(base)+'</code></p>'
+      + '<p data-style="margin:0 0 8px"><strong>Auth</strong> &nbsp;send your key on every request: <code>Authorization: Bearer ffk_live_…</code> &nbsp;(or <code>X-API-Key: …</code>)</p>'
+      + '<p data-style="margin:0 0 4px"><strong>Read-only endpoints</strong></p>'
+      + '<ul data-style="margin:0 0 8px;padding-left:18px">'
       + '<li><code>GET /me</code> — verify the key and see its scope</li>'
-      + '<li><code>GET /invoices</code> — your invoices &nbsp;<span style="opacity:.8">(<code>?limit=</code> ≤200, <code>?since=</code> ISO date for polling)</span></li>'
-      + '<li><code>GET /expenses</code> — your expenses &nbsp;<span style="opacity:.8">(same <code>limit</code>/<code>since</code>)</span></li>'
+      + '<li><code>GET /invoices</code> — your invoices &nbsp;<span data-style="opacity:.8">(<code>?limit=</code> ≤200, <code>?since=</code> ISO date for polling)</span></li>'
+      + '<li><code>GET /expenses</code> — your expenses &nbsp;<span data-style="opacity:.8">(same <code>limit</code>/<code>since</code>)</span></li>'
       + '<li><code>GET /customers</code> — your customers</li>'
       + '<li><code>GET /reports/summary</code> — revenue, expenses, net profit, outstanding</li>'
       + '</ul>'
-      + '<p style="margin:0 0 8px">Responses are JSON: <code>{ "object":"list", "count":N, "data":[…] }</code>. An entity-scoped key returns only that entity’s rows; an all-entities key returns everything you own.</p>'
-      + '<p style="margin:0"><strong>Zapier</strong> — create a key above, then in Zapier add an <em>API Request</em> / <em>Webhooks</em> action (or a custom app) with the Base URL and the <code>Authorization</code> header. For a "new invoice" trigger, poll <code>GET /invoices?since=</code> and advance the <code>since</code> timestamp. Write actions (create invoice/expense) are coming next.</p>';
+      + '<p data-style="margin:0 0 8px">Responses are JSON: <code>{ "object":"list", "count":N, "data":[…] }</code>. An entity-scoped key returns only that entity’s rows; an all-entities key returns everything you own.</p>'
+      + '<p data-style="margin:0"><strong>Zapier</strong> — create a key above, then in Zapier add an <em>API Request</em> / <em>Webhooks</em> action (or a custom app) with the Base URL and the <code>Authorization</code> header. For a "new invoice" trigger, poll <code>GET /invoices?since=</code> and advance the <code>since</code> timestamp. Write actions (create invoice/expense) are coming next.</p>';
   }
 
   function render(keys){
     var box=document.getElementById('apikey-list'); if(!box) return;
-    if(!keys.length){ box.innerHTML='<div style="color:var(--t2);padding:10px 2px">No keys yet. Create one above to start using the API.</div>'; return; }
-    var rows='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--t2);font-size:11px"><th style="padding:5px 6px">Name</th><th style="padding:5px 6px">Key</th><th style="padding:5px 6px">Scope</th><th style="padding:5px 6px">Last used</th><th></th></tr></thead><tbody>';
+    if(!keys.length){ box.innerHTML='<div data-style="color:var(--t2);padding:10px 2px">No keys yet. Create one above to start using the API.</div>'; return; }
+    var rows='<table data-style="width:100%;border-collapse:collapse"><thead><tr data-style="text-align:left;color:var(--t2);font-size:11px"><th data-style="padding:5px 6px">Name</th><th data-style="padding:5px 6px">Key</th><th data-style="padding:5px 6px">Scope</th><th data-style="padding:5px 6px">Last used</th><th></th></tr></thead><tbody>';
     keys.forEach(function(k){
-      rows+='<tr style="border-top:1px solid var(--bd,rgba(120,120,120,.12))">'
-        +'<td style="padding:6px">'+esc(k.name||'Key')+'</td>'
-        +'<td style="padding:6px"><code style="font-size:11px">'+esc(k.display||'••••')+'</code></td>'
-        +'<td style="padding:6px">'+(k.entity_id?('Entity '+esc(k.entity_id)):'All')+'</td>'
-        +'<td style="padding:6px;color:var(--t2)">'+esc(fmtDate(k.last_used_at))+'</td>'
-        +'<td style="padding:6px;text-align:right"><button class="btn btn-ghost btn-sm" style="color:#c94a4a" onclick="ffRevokeApiKey('+Number(k.id)+',this)">Revoke</button></td></tr>';
+      rows+='<tr data-style="border-top:1px solid var(--bd,rgba(120,120,120,.12))">'
+        +'<td data-style="padding:6px">'+esc(k.name||'Key')+'</td>'
+        +'<td data-style="padding:6px"><code data-style="font-size:11px">'+esc(k.display||'••••')+'</code></td>'
+        +'<td data-style="padding:6px">'+(k.entity_id?('Entity '+esc(k.entity_id)):'All')+'</td>'
+        +'<td data-style="padding:6px;color:var(--t2)">'+esc(fmtDate(k.last_used_at))+'</td>'
+        +'<td data-style="padding:6px;text-align:right"><button class="btn btn-ghost btn-sm" data-style="color:#c94a4a" data-arg-id="'+Number(k.id)+'" data-on-click="ffRevokeApiKey(Number(this.dataset.argId),this)">Revoke</button></td></tr>';
     });
     rows+='</tbody></table>';
     box.innerHTML=rows;
@@ -52,9 +52,9 @@
     if(loading) return; loading=true; box.textContent='Loading…'; fillScope(); renderRef();
     try{
       var res=await fetch('/api/api-keys',{credentials:'same-origin',headers:{'Content-Type':'application/json'}});
-      if(!res.ok){ box.innerHTML='<div style="color:var(--t2);padding:10px 2px">Couldn’t load keys (error '+res.status+').</div>'; loading=false; return; }
+      if(!res.ok){ box.innerHTML='<div data-style="color:var(--t2);padding:10px 2px">Couldn’t load keys (error '+res.status+').</div>'; loading=false; return; }
       render(await res.json());
-    }catch(e){ box.innerHTML='<div style="color:var(--t2);padding:10px 2px">Couldn’t load keys.</div>'; }
+    }catch(e){ box.innerHTML='<div data-style="color:var(--t2);padding:10px 2px">Couldn’t load keys.</div>'; }
     loading=false;
   };
 

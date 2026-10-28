@@ -19,15 +19,15 @@ run('M41 — payroll run history: withholdings owed and Remit', async ({ w, d, e
   const row1 = runRow();
   const txt1 = row1 ? row1.textContent.replace(/\s+/g, ' ') : '';
   eq('paid run shows the withholdings owed', (txt1.match(/Withholdings owed: (\$[0-9,.]+)/) || [])[1] || null, '$200', null);
-  const btn = row1 && row1.querySelector('button[onclick^="openRemitWithholdings"]');
+  const btn = row1 && row1.querySelector('button[data-on-click^="openRemitWithholdings"]');
   eq('paid run offers Remit', btn ? 1 : 0, 1, 0);
   if (!btn) return;
-  ev(btn.getAttribute('onclick')); await settle(5, 40);
+  btn.click(); await settle(5, 40);
   eq('Remit modal opens, dated the business today', (d.getElementById('rw-date') || {}).value, '2026-07-25');
   await ev(`saveRemitWithholdings()`); await settle(30, 60);
   const txt2 = (runRow() || {}).textContent ? runRow().textContent.replace(/\s+/g, ' ') : '';
   eq('row now reads remitted', /Withholdings \$200 remitted/.test(txt2), true, false);
-  eq('Remit is no longer offered', runRow().querySelector('button[onclick^="openRemitWithholdings"]') ? 1 : 0, 0);
+  eq('Remit is no longer offered', runRow().querySelector('button[data-on-click^="openRemitWithholdings"]') ? 1 : 0, 0);
   const bs = (await http.request('POST', '/api/reports/balance-sheet', {})).json || {};
   eq('balance sheet: payroll liabilities settled; cash −2,000 from payroll', [Math.round(bs.payrollLiabilities * 100) / 100], [0]);
 });

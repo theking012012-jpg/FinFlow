@@ -45,7 +45,8 @@
     var gate = document.createElement('div');
     gate.id = 'ff-auth-gate';
     gate.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0e0b08;font-family:Jost,system-ui,sans-serif';
-    gate.innerHTML = '<style>#ff-box{width:100%;max-width:380px;padding:2rem 2.25rem;background:#16120d;border:1px solid #3d3222;border-radius:14px}.ff-t{font-size:22px;font-family:"Cormorant Garamond",serif;font-style:italic;color:#e4c97a;margin-bottom:4px}.ff-s{font-size:13px;color:#7d7060;margin-bottom:1.5rem}.ff-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:#0e0b08;border-radius:8px;padding:4px}.ff-tab{flex:1;padding:6px;border:none;border-radius:5px;font-size:12.5px;cursor:pointer;color:#7d7060;background:transparent}.ff-tab.on{background:#1c1712;color:#f2e8d5}.ff-err{font-size:12px;color:#c46a5a;background:#1e0d0a;border:1px solid #3d1a14;border-radius:6px;padding:8px;margin-bottom:1rem;display:none}.ff-lbl{font-size:11.5px;color:#9e8e73;display:block;margin-bottom:5px}.ff-inp{width:100%;padding:9px 11px;border:1px solid #3d3222;border-radius:6px;background:#1c1712;color:#f2e8d5;font-size:13px;outline:none;margin-bottom:.9rem;box-sizing:border-box;font-family:Jost,system-ui}.ff-btn{width:100%;padding:10px;border:none;border-radius:6px;background:#c9a84c;color:#0e0b08;font-size:13.5px;font-weight:600;cursor:pointer}.ff-btn:disabled{opacity:.5}.ff-hint{font-size:11.5px;color:#7d7060;text-align:center;margin-top:1rem}.ff-hint span{color:#c9a84c;cursor:pointer}</style><div id="ff-box"><div class="ff-t">FinFlow</div><div class="ff-s">Sign in to your workspace</div><div class="ff-tabs"><button class="ff-tab on" id="fft-li" onclick="ffTab(\'login\')">Sign in</button><button class="ff-tab" id="fft-re" onclick="ffTab(\'register\')">Create account</button></div><div id="ff-err" class="ff-err"></div><div id="ff-li"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-le" type="email" placeholder="you@example.com"><label class="ff-lbl">Password</label><input class="ff-inp" id="ff-lp" type="password" placeholder="••••••••"><div id="ff-mfa-group" style="display:none"><label class="ff-lbl">Authenticator code</label><input class="ff-inp" id="ff-lm" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code"></div><button class="ff-btn" id="ff-lb" onclick="ffLogin()">Sign in &rarr;</button><div class="ff-hint" style="margin-top:.75rem"><span onclick="ffTab(\'forgot\')">Forgot password?</span></div><div class="ff-hint">No account? <span onclick="ffTab(\'register\')">Create one</span></div></div><div id="ff-re" style="display:none"><label class="ff-lbl">Name</label><input class="ff-inp" id="ff-rn" type="text" placeholder="Your name"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-re2" type="email" placeholder="you@example.com"><label class="ff-lbl">Password (min 8 characters)</label><input class="ff-inp" id="ff-rp" type="password" placeholder="Choose a password"><button class="ff-btn" id="ff-rb" onclick="ffRegister()">Create account &rarr;</button><div class="ff-hint">Have one? <span onclick="ffTab(\'login\')">Sign in</span></div></div><div id="ff-fp" style="display:none"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-fe" type="email" placeholder="you@example.com"><button class="ff-btn" id="ff-fb" onclick="ffForgot()">Send reset link &rarr;</button><div class="ff-hint"><span onclick="ffTab(\'login\')">&larr; Back to sign in</span></div></div></div>';
+    if (window.ffAdoptCss) window.ffAdoptCss('ff-auth-gate', '#ff-box{width:100%;max-width:380px;padding:2rem 2.25rem;background:#16120d;border:1px solid #3d3222;border-radius:14px}.ff-t{font-size:22px;font-family:"Cormorant Garamond",serif;font-style:italic;color:#e4c97a;margin-bottom:4px}.ff-s{font-size:13px;color:#7d7060;margin-bottom:1.5rem}.ff-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:#0e0b08;border-radius:8px;padding:4px}.ff-tab{flex:1;padding:6px;border:none;border-radius:5px;font-size:12.5px;cursor:pointer;color:#7d7060;background:transparent}.ff-tab.on{background:#1c1712;color:#f2e8d5}.ff-err{font-size:12px;color:#c46a5a;background:#1e0d0a;border:1px solid #3d1a14;border-radius:6px;padding:8px;margin-bottom:1rem;display:none}.ff-lbl{font-size:11.5px;color:#9e8e73;display:block;margin-bottom:5px}.ff-inp{width:100%;padding:9px 11px;border:1px solid #3d3222;border-radius:6px;background:#1c1712;color:#f2e8d5;font-size:13px;outline:none;margin-bottom:.9rem;box-sizing:border-box;font-family:Jost,system-ui}.ff-btn{width:100%;padding:10px;border:none;border-radius:6px;background:#c9a84c;color:#0e0b08;font-size:13.5px;font-weight:600;cursor:pointer}.ff-btn:disabled{opacity:.5}.ff-hint{font-size:11.5px;color:#7d7060;text-align:center;margin-top:1rem}.ff-hint span{color:#c9a84c;cursor:pointer}');   // FA-P1: no <style> in markup under the strict CSP
+    gate.innerHTML = '<div id="ff-box"><div class="ff-t">FinFlow</div><div class="ff-s">Sign in to your workspace</div><div class="ff-tabs"><button class="ff-tab on" id="fft-li" data-on-click="ffTab(\'login\')">Sign in</button><button class="ff-tab" id="fft-re" data-on-click="ffTab(\'register\')">Create account</button></div><div id="ff-err" class="ff-err"></div><div id="ff-li"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-le" type="email" placeholder="you@example.com"><label class="ff-lbl">Password</label><input class="ff-inp" id="ff-lp" type="password" placeholder="••••••••"><div id="ff-mfa-group" data-style="display:none"><label class="ff-lbl">Authenticator code</label><input class="ff-inp" id="ff-lm" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code"></div><button class="ff-btn" id="ff-lb" data-on-click="ffLogin()">Sign in &rarr;</button><div class="ff-hint" data-style="margin-top:.75rem"><span data-on-click="ffTab(\'forgot\')">Forgot password?</span></div><div class="ff-hint">No account? <span data-on-click="ffTab(\'register\')">Create one</span></div></div><div id="ff-re" data-style="display:none"><label class="ff-lbl">Name</label><input class="ff-inp" id="ff-rn" type="text" placeholder="Your name"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-re2" type="email" placeholder="you@example.com"><label class="ff-lbl">Password (min 8 characters)</label><input class="ff-inp" id="ff-rp" type="password" placeholder="Choose a password"><button class="ff-btn" id="ff-rb" data-on-click="ffRegister()">Create account &rarr;</button><div class="ff-hint">Have one? <span data-on-click="ffTab(\'login\')">Sign in</span></div></div><div id="ff-fp" data-style="display:none"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-fe" type="email" placeholder="you@example.com"><button class="ff-btn" id="ff-fb" data-on-click="ffForgot()">Send reset link &rarr;</button><div class="ff-hint"><span data-on-click="ffTab(\'login\')">&larr; Back to sign in</span></div></div></div>';
     document.body.appendChild(gate);
     // C26: "Start free trial" (landing → /app?signup=1) and the accountant referral link (/join, /register →
     // /app?signup=1&ref=CODE) open on Create account. This gate covers the older #login-screen, whose
@@ -116,7 +117,7 @@
       await api('POST','/api/auth/forgot-password',{email:e});
       ffErr('');
       var fp=document.getElementById('ff-fp');
-      if(fp) fp.innerHTML='<div class="ff-hint" style="color:#7fbf7f;line-height:1.5">If an account exists for that email, a reset link is on its way — check your inbox.</div><div class="ff-hint"><span onclick="ffTab(\'login\')">&larr; Back to sign in</span></div>';
+      if(fp) fp.innerHTML='<div class="ff-hint" data-style="color:#7fbf7f;line-height:1.5">If an account exists for that email, a reset link is on its way — check your inbox.</div><div class="ff-hint"><span data-on-click="ffTab(\'login\')">&larr; Back to sign in</span></div>';
     } catch(err) {
       ffErr(err.message||'Could not send reset link. Please try again.'); ffBusy('ff-fb',false);
     }
@@ -979,18 +980,18 @@
         const settled = String(inv.status || '').toLowerCase() === 'paid' && !(parseFloat(inv.amount_paid) > 0) ? amt : Math.min(amt, parseFloat(inv.amount_paid) || 0);
         const credit = Math.min(settled, parseFloat(inv.credit_applied) || 0), paid = settled - credit;   // FA-M6b: a credit is not money received
         const left = Math.max(0, amt - settled);
-        if (!(paid > 0.005)) return (credit > 0.005 ? '<span class="inv-paid-lbl" style="color:var(--t3)">Credited </span><span style="font-family:var(--font-mono)">' + esc(S(credit)) + '</span>' + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '') : '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="color:var(--t3)">—</span>');
-        return '<span class="inv-paid-lbl" style="color:var(--t3)">Paid </span><span style="font-family:var(--font-mono);color:var(--green)">' + esc(S(paid)) + '</span>'
-          + (credit > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">+ ' + esc(S(credit)) + ' credited</span>' : '')
-          + (left > 0.005 ? '<br><span style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '');
+        if (!(paid > 0.005)) return (credit > 0.005 ? '<span class="inv-paid-lbl" data-style="color:var(--t3)">Credited </span><span data-style="font-family:var(--font-mono)">' + esc(S(credit)) + '</span>' + (left > 0.005 ? '<br><span data-style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '') : '<span class="inv-paid-lbl" data-style="color:var(--t3)">Paid </span><span data-style="color:var(--t3)">—</span>');
+        return '<span class="inv-paid-lbl" data-style="color:var(--t3)">Paid </span><span data-style="font-family:var(--font-mono);color:var(--green)">' + esc(S(paid)) + '</span>'
+          + (credit > 0.005 ? '<br><span data-style="font-size:11px;color:var(--t3)">+ ' + esc(S(credit)) + ' credited</span>' : '')
+          + (left > 0.005 ? '<br><span data-style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : '');
       };
       window._invShowMore = function () { window._invRenderLimit += 200; if (typeof window.renderInvoices === 'function') window.renderInvoices(); };
       el.innerHTML = _shownInv.map((inv, idx) => `
         <div class="table-row inv-cols">
-          <span>${esc(inv.client)}${inv.number ? `<br><span class="inv-number" style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(inv.number)}</span>` : ''}</span>
-          <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
+          <span>${esc(inv.client)}${inv.number ? `<br><span class="inv-number" data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(inv.number)}</span>` : ''}</span>
+          <span data-style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
           <span class="inv-paid">${_invPaidCell(inv)}</span>
-          <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
+          <span data-style="color:${esc(inv.color)}">${esc(inv.due)}</span>
           <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
           <span class="table-actions">
             ${inv.status?.toLowerCase() === 'overdue'
@@ -999,18 +1000,18 @@
                    data-client="${esc(inv.client)}"
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
-            <button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>
-            <button class="btn btn-ghost btn-sm" onclick="editInvoice(${idx})">Edit</button>
+            <button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="viewInvoice(Number(this.dataset.argIdx))">View</button>
+            <button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="editInvoice(Number(this.dataset.argIdx))">Edit</button>
             ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
-              ? `<button class="btn btn-ghost btn-sm" onclick="openRecordPaymentModal(window.userInvoices[${idx}])">Record Payment</button>`
-                + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" onclick="ffInvoicePayLinkChoose(window.userInvoices[${idx}]._dbId)">Pay link ↗</button>`
+              ? `<button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="openRecordPaymentModal(window.userInvoices[Number(this.dataset.argIdx)])">Record Payment</button>`
+                + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" data-arg-idx="${idx}" data-on-click="ffInvoicePayLinkChoose(window.userInvoices[Number(this.dataset.argIdx)]._dbId)">Pay link ↗</button>`
               : ''}
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
-              onclick="deleteInvoice(${idx})">✕</button>
+            <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7"
+              data-arg-idx="${idx}" data-on-click="deleteInvoice(Number(this.dataset.argIdx))">✕</button>
           </span>
         </div>`).join('')
         + (_allInv.length > _shownInv.length
-            ? `<div class="table-row" style="justify-content:center;padding:10px"><button class="btn btn-ghost btn-sm" onclick="window._invShowMore()">Show more — ${_allInv.length - _shownInv.length} of ${_allInv.length} hidden</button></div>`
+            ? `<div class="table-row" data-style="justify-content:center;padding:10px"><button class="btn btn-ghost btn-sm" data-on-click="window._invShowMore()">Show more — ${_allInv.length - _shownInv.length} of ${_allInv.length} hidden</button></div>`
             : '');
     };
 
@@ -1135,18 +1136,18 @@
       const el = document.getElementById('expense-list');
       if (!el) return;
       el.innerHTML = (window.bizExpenses||[]).slice(0, 20).map((e, idx) => `
-        <div class="tx-row" style="display:flex;align-items:center;justify-content:space-between">
-          <div style="flex:1">
+        <div class="tx-row" data-style="display:flex;align-items:center;justify-content:space-between">
+          <div data-style="flex:1">
             <div class="tx-name">${esc(e.desc)}</div>
             <div class="tx-cat">${esc(e.cat)} · ${esc(e.date)}${(() => { const f = window.FinFlowDates.deductibleFactor(e.ded);   // M15
               return f === 1 ? ' · 100% deductible' : f === 0.5 ? ' · 50% deductible' : ''; })()}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div data-style="display:flex;align-items:center;gap:8px">
             <div class="tx-amt dn">-${S(e.amount)}</div>
-            ${e._dbId ? `<button class="btn btn-ghost btn-sm" style="padding:2px 6px" title="Edit"
-              onclick="editExpense(${idx})">✏</button>` : ''}
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:2px 6px"
-              onclick="deleteExpense(${idx})">✕</button>
+            ${e._dbId ? `<button class="btn btn-ghost btn-sm" data-style="padding:2px 6px" title="Edit"
+              data-arg-idx="${idx}" data-on-click="editExpense(Number(this.dataset.argIdx))">✏</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7;padding:2px 6px"
+              data-arg-idx="${idx}" data-on-click="deleteExpense(Number(this.dataset.argIdx))">✕</button>
           </div>
         </div>`).join('');
     };
@@ -1359,17 +1360,17 @@
         const col = pct < 10 ? 'var(--red)' : pct < 20 ? 'var(--amber)' : 'var(--green)';
         const val = window._invItemValue(item);   // LA5: FIFO value of what is left — the card's figure, per item
         return `<div class="inv-item-row">
-          <span style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
+          <span data-style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
           <span>${esc(item.name)}</span>
-          <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${item.units} units${item.low ? ' ⚠' : ''}</span>
-          <div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${col}"></div></div>
-          <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${val == null ? '—' : S(val)}</span>
+          <span data-style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${item.units} units${item.low ? ' ⚠' : ''}</span>
+          <div class="stock-bar"><div class="stock-fill" data-style="width:${pct}%;background:${col}"></div></div>
+          <span data-style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${val == null ? '—' : S(val)}</span>
           <span class="table-actions">
-            ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openStockInModal(${idx})" title="Record a purchase (adds a FIFO cost layer)">+ In</button><button class="btn btn-ghost btn-sm" onclick="openStockOutModal(${idx})" title="Record a sale (its receipt or invoice is made with it) or a write-off">− Out</button>` : ''}
-            <button class="btn btn-ghost btn-sm" onclick="restockItem(${idx})">Restock</button>
-            ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openEditInvModal(${item._dbId})">Edit</button>` : ''}
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
-              onclick="deleteInventoryItem(${idx})">✕</button>
+            ${item._dbId ? `<button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="openStockInModal(Number(this.dataset.argIdx))" title="Record a purchase (adds a FIFO cost layer)">+ In</button><button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="openStockOutModal(Number(this.dataset.argIdx))" title="Record a sale (its receipt or invoice is made with it) or a write-off">− Out</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="restockItem(Number(this.dataset.argIdx))">Restock</button>
+            ${item._dbId ? `<button class="btn btn-ghost btn-sm" data-arg-db-id="${item._dbId}" data-on-click="openEditInvModal(Number(this.dataset.argDbId))">Edit</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7"
+              data-arg-idx="${idx}" data-on-click="deleteInventoryItem(Number(this.dataset.argIdx))">✕</button>
           </span>
         </div>`;
       }).join('');
@@ -1444,22 +1445,22 @@
         return `<div class="payroll-row">
           <div class="emp-info">
             <div class="emp-init ${e.avClass||'av-blue'}">${initials}</div>
-            <div><div class="emp-name">${fn(e.fname)} ${fn(e.lname)}${e.isOwner ? ' <span class="badge b-blue" style="font-size:9px">You</span>' : ''}</div><div class="emp-role">${fn(e.type||'Full-time')}</div></div>
+            <div><div class="emp-name">${fn(e.fname)} ${fn(e.lname)}${e.isOwner ? ' <span class="badge b-blue" data-style="font-size:9px">You</span>' : ''}</div><div class="emp-role">${fn(e.type||'Full-time')}</div></div>
           </div>
-          <span style="color:var(--t2);font-size:12px">${fn(e.role||'')}</span>
+          <span data-style="color:var(--t2);font-size:12px">${fn(e.role||'')}</span>
           <!-- PL#9 root fix: this override is the RUNTIME renderPayroll (it shadows the app-main
                copy the earlier 2a70564 fix patched, so that fix never rendered). Gross was missing
                a color token and inherited a near-black default — invisible on the dark table while
                its Net sibling (which sets color) stayed legible. Themed via --t1 (legible in BOTH
                light and dark), matching Net. -->
-          <span style="font-family:var(--font-mono);color:var(--t1)">${sm(e.gross)}</span>
-          <span style="color:var(--red);font-family:var(--font-mono)">${tax > 0 ? '-' + sm(tax) : '—'}</span>
-          <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
+          <span data-style="font-family:var(--font-mono);color:var(--t1)">${sm(e.gross)}</span>
+          <span data-style="color:var(--red);font-family:var(--font-mono)">${tax > 0 ? '-' + sm(tax) : '—'}</span>
+          <span data-style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
           ${e.isOwner
-            ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
-            : `<span style="display:inline-flex;gap:2px;align-items:center">
-                 <button class="btn-icon" onclick="openEditEmployee(${e._dbId||e.id||0})" title="Edit employee" style="border:none;background:none;color:var(--t3);cursor:pointer;padding:4px"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>
-                 <button class="btn-icon" onclick="deleteEmployee(${e._dbId||e.id||0})" title="Remove employee" style="border:none;background:none;color:var(--red);cursor:pointer;padding:4px;opacity:.75"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11M6 4V2.5h4V4M5 4l.7 9.5h4.6L15 4z" transform="scale(0.9) translate(1,0)"/></svg></button>
+            ? `<button class="btn-icon" data-on-click="openOwnerModal()" title="Edit" data-style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
+            : `<span data-style="display:inline-flex;gap:2px;align-items:center">
+                 <button class="btn-icon" data-arg-id="${e._dbId||e.id||0}" data-on-click="openEditEmployee(Number(this.dataset.argId))" title="Edit employee" data-style="border:none;background:none;color:var(--t3);cursor:pointer;padding:4px"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>
+                 <button class="btn-icon" data-arg-id="${e._dbId||e.id||0}" data-on-click="deleteEmployee(Number(this.dataset.argId))" title="Remove employee" data-style="border:none;background:none;color:var(--red);cursor:pointer;padding:4px;opacity:.75"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11M6 4V2.5h4V4M5 4l.7 9.5h4.6L15 4z" transform="scale(0.9) translate(1,0)"/></svg></button>
                </span>`}
         </div>`;
       }).join('');
@@ -1614,15 +1615,15 @@
     loadItemsFromDB();
 
     function renderItemRow(i) {
-      return `<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
-        <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
+      return `<div class="table-row" data-style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
+        <span data-style="font-weight:500">${esc(i.name)}<br><span data-style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
         <span><span class="badge ${i.type === 'Service' ? 'b-blue' : 'b-purple'}">${esc(i.type)}</span></span>
-        <span style="font-family:var(--font-mono)">${(window._nativeSymbol ? window._nativeSymbol() : '$') + (parseFloat(i.price) || 0).toLocaleString('en-US', { minimumFractionDigits: (parseFloat(i.price) || 0) % 1 ? 2 : 0, maximumFractionDigits: 2 })}<span style="font-size:10px;color:var(--t3)">/${esc(i.unit || '')}</span></span>
-        <span style="color:var(--t2)">${i.stock != null ? i.stock + ' units' : '—'}</span>
+        <span data-style="font-family:var(--font-mono)">${(window._nativeSymbol ? window._nativeSymbol() : '$') + (parseFloat(i.price) || 0).toLocaleString('en-US', { minimumFractionDigits: (parseFloat(i.price) || 0) % 1 ? 2 : 0, maximumFractionDigits: 2 })}<span data-style="font-size:10px;color:var(--t3)">/${esc(i.unit || '')}</span></span>
+        <span data-style="color:var(--t2)">${i.stock != null ? i.stock + ' units' : '—'}</span>
         <span><span class="badge ${i.status === 'Active' ? 'b-green' : i.status === 'Low Stock' ? 'b-amber' : 'b-red'}">${esc(i.status || '')}</span></span>
         <div class="table-actions">
-          <button class="btn btn-ghost btn-sm" onclick="openEditItemModal(${i._dbId})">Edit</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteItem(${i._dbId})">✕</button>
+          <button class="btn btn-ghost btn-sm" data-arg-db-id="${i._dbId}" data-on-click="openEditItemModal(Number(this.dataset.argDbId))">Edit</button>
+          <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-db-id="${i._dbId}" data-on-click="deleteItem(Number(this.dataset.argDbId))">✕</button>
         </div>
       </div>`;
     }
@@ -1638,13 +1639,13 @@
           stock: parseFloat(iv.units) || 0, status: 'Active', low: !!iv.low }));   // G5: low stock is shown, never a status
     }
     function renderStockItemRow(i) {
-      return `<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
-        <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
+      return `<div class="table-row" data-style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
+        <span data-style="font-weight:500">${esc(i.name)}<br><span data-style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
         <span><span class="badge b-amber">Stock item</span></span>
-        <span style="color:var(--t3)" title="Stock is valued on Inventory; add it as an item to set a sale price">—</span>
-        <span style="color:var(--t2)">${i.stock} units</span>
+        <span data-style="color:var(--t3)" title="Stock is valued on Inventory; add it as an item to set a sale price">—</span>
+        <span data-style="color:var(--t2)">${i.stock} units</span>
         <span><span class="badge ${i.status === 'Active' ? 'b-green' : 'b-amber'}">${esc(i.status)}</span>${i.low ? ' <span class="badge b-amber" title="At or below its reorder level">Low</span>' : ''}</span>
-        <div class="table-actions"><button class="btn btn-ghost btn-sm" onclick="showPage('inventory')">Inventory</button></div>
+        <div class="table-actions"><button class="btn btn-ghost btn-sm" data-on-click="showPage('inventory')">Inventory</button></div>
       </div>`;
     }
 
@@ -1657,7 +1658,7 @@
       // If DB data hasn't been fetched yet, kick off a load and show a loading state
       if (!_itemsFetched) {
         loadItemsFromDB(); // async — will call renderItems() again when data arrives
-        list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">Loading…</div>';
+        list.innerHTML = '<div data-style="padding:2rem;text-align:center;color:var(--t3)">Loading…</div>';
         return;
       }
 
@@ -1680,7 +1681,7 @@
       const filtered = all.filter(i => filter === 'all' || (i._stock ? filter === 'product' : (i.type || '').toLowerCase() === filter));
       list.innerHTML = filtered.length
         ? filtered.map(i => i._stock ? renderStockItemRow(i) : renderItemRow(i)).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
     };
 
     window.filterItems = function (f) { window.renderItems(f); };
@@ -1695,7 +1696,7 @@
       );
       list.innerHTML = filtered.length
         ? filtered.map(i => i._stock ? renderStockItemRow(i) : renderItemRow(i)).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
     };
 
     let _itemModalMode = 'new';
@@ -1947,7 +1948,7 @@
       } else if (state === 'error') {
         ['budget-total', 'budget-spent', 'budget-remaining', 'budget-variance'].forEach(id => set(id, '—'));
         if (sub) {
-          sub.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window._loadBudgetFromDB&&window._loadBudgetFromDB()') : 'Retry');
+          sub.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('_loadBudgetFromDB') : 'Retry');
           sub.className = 'mc-change dn';
         }
       }
@@ -2036,9 +2037,9 @@
       return String(Math.round(v * 100) / 100);
     };
     const _btRowHtml = (cat, annual) => `
-          <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat||'')}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
-          <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${esc(_btShow(annual))}" style="flex:1;font-size:12.5px;padding:5px 8px">
-          <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>`;
+          <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat||'')}" data-style="flex:1.4;font-size:12.5px;padding:5px 8px">
+          <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${esc(_btShow(annual))}" data-style="flex:1;font-size:12.5px;padding:5px 8px">
+          <button class="btn btn-ghost btn-sm" data-on-click="this.closest('._bt-row').remove()" title="Remove" data-style="color:var(--red);opacity:.7;padding:0 6px">✕</button>`;
     const _btAnnualAttr = annual => (annual === '' || annual == null || !Number.isFinite(Number(annual)) ? '' : String(Number(annual)));
 
     function _renderBudgetTargetRows(targets) {
@@ -2046,11 +2047,11 @@
       if (!rowsEl) return;
       const entries = Object.entries(targets);
       if (!entries.length) {
-        rowsEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--t3);font-size:12.5px">No categories yet — add one below</div>';
+        rowsEl.innerHTML = '<div data-style="padding:14px;text-align:center;color:var(--t3);font-size:12.5px">No categories yet — add one below</div>';
         return;
       }
       rowsEl.innerHTML = entries.map(([cat, val]) => `
-        <div class="_bt-row" data-bt-annual="${esc(_btAnnualAttr(val))}" style="display:flex;align-items:center;gap:8px">${_btRowHtml(cat, val)}
+        <div class="_bt-row" data-bt-annual="${esc(_btAnnualAttr(val))}" data-style="display:flex;align-items:center;gap:8px">${_btRowHtml(cat, val)}
         </div>`).join('');
     }
 
@@ -2106,24 +2107,24 @@
         existing.id = '_budget-targets-modal';
         existing.className = 'modal-overlay hidden';
         existing.innerHTML = `
-          <div class="modal" style="max-width:460px">
+          <div class="modal" data-style="max-width:460px">
             <div class="modal-header">
               <div><div class="modal-title">Budget targets</div><div class="modal-sub">Set <span id="_bt-period-label">annual</span> targets per expense category</div></div>
-              <button class="modal-close" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+              <button class="modal-close" data-on-click="document.getElementById('_budget-targets-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
             </div>
-            <div style="display:flex;gap:6px;margin:4px 0 10px">
-              <button class="btn btn-ghost btn-sm _bt-period" data-period="annual" style="font-weight:600">Annual</button>
+            <div data-style="display:flex;gap:6px;margin:4px 0 10px">
+              <button class="btn btn-ghost btn-sm _bt-period" data-period="annual" data-style="font-weight:600">Annual</button>
               <button class="btn btn-ghost btn-sm _bt-period" data-period="monthly">Monthly</button>
             </div>
-            <div id="_budget-target-rows" style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;padding:4px 0"></div>
-            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--bd)">
-              <span style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">Quick add:</span>
+            <div id="_budget-target-rows" data-style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;padding:4px 0"></div>
+            <div data-style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--bd)">
+              <span data-style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">Quick add:</span>
               <span id="_bt-suggested"></span>
-              <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--acc)" onclick="window._addBudgetTargetRow('', '')">+ Add custom</button>
+              <button class="btn btn-ghost btn-sm" data-style="margin-left:auto;color:var(--acc)" data-on-click="window._addBudgetTargetRow('', '')">+ Add custom</button>
             </div>
-            <div class="modal-footer" style="margin-top:14px">
-              <button class="btn btn-ghost" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')">Cancel</button>
-              <button class="btn btn-primary" onclick="window._saveBudgetTargets()">Save targets</button>
+            <div class="modal-footer" data-style="margin-top:14px">
+              <button class="btn btn-ghost" data-on-click="document.getElementById('_budget-targets-modal').classList.add('hidden')">Cancel</button>
+              <button class="btn btn-primary" data-on-click="window._saveBudgetTargets()">Save targets</button>
             </div>
           </div>`;
         document.body.appendChild(existing);
@@ -2136,7 +2137,7 @@
 
         // Wire suggested category chips
         document.getElementById('_bt-suggested').innerHTML = SUGGESTED_CATS.map(cat =>
-          `<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:2px 7px;border:1px solid var(--bd)" onclick="window._addBudgetTargetRow('${esc(cat)}','')">${esc(cat)}</button>`
+          `<button class="btn btn-ghost btn-sm" data-style="font-size:10.5px;padding:2px 7px;border:1px solid var(--bd)" data-arg-cat="${esc(cat)}" data-on-click="window._addBudgetTargetRow(this.dataset.argCat,'')">${esc(cat)}</button>`
         ).join(' ');
       }
 
@@ -2295,10 +2296,10 @@
 
     // Wire any logout buttons that use onclick="doLogout()"
     // (the topbar profile menu likely has one)
-    document.querySelectorAll('[onclick*="logout"],[onclick*="Logout"],[onclick*="signOut"]').forEach(el => {
-      const existing = el.getAttribute('onclick');
+    document.querySelectorAll('[data-on-click*="logout"],[data-on-click*="Logout"],[data-on-click*="signOut"]').forEach(el => {
+      const existing = el.getAttribute('data-on-click');
       if (!existing.includes('doLogout')) return;
-      el.setAttribute('onclick', 'doLogout()');
+      el.setAttribute('data-on-click', 'doLogout()');
     });
 
     // ── EXPENSE EDIT ───────────────────────────────────────────────
@@ -2312,7 +2313,7 @@
       if (!modal) return;
       const title = modal.querySelector('.modal-title');
       if (title) title.textContent = edit ? 'Edit expense' : 'Add expense';
-      const saveBtn = modal.querySelector('button[onclick*="saveExpense"]');
+      const saveBtn = modal.querySelector('button[data-on-click*="saveExpense"]');
       if (saveBtn) saveBtn.textContent = edit ? 'Save changes' : 'Add expense';
       const eid = document.getElementById('expense-edit-id');
       if (eid && !edit) eid.value = '';
@@ -2492,7 +2493,7 @@
 
       const title = modal.querySelector('.modal-title');
       if (title) title.textContent = 'Edit Holding';
-      const saveBtn = modal.querySelector('button[onclick*="saveHolding"]');
+      const saveBtn = modal.querySelector('button[data-on-click*="saveHolding"]');
       if (saveBtn) saveBtn.textContent = 'Save changes';
 
       if (typeof openModal === 'function') openModal('holding-modal');
@@ -2632,17 +2633,17 @@ function renderAIPage(){
   const container = document.getElementById('ai-chat-messages');
   if(!container) return;
   if(!_aiHistory.length){
-    container.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--t3)">
-      <div style="font-size:32px;margin-bottom:12px">✦</div>
-      <div style="font-size:14px;font-weight:600;color:var(--t2);margin-bottom:8px">FinFlow AI</div>
-      <div style="font-size:13px">Ask me anything about your business — revenue, expenses, cash flow, forecasting, or financial strategy.</div>
+    container.innerHTML = `<div data-style="text-align:center;padding:40px 20px;color:var(--t3)">
+      <div data-style="font-size:32px;margin-bottom:12px">✦</div>
+      <div data-style="font-size:14px;font-weight:600;color:var(--t2);margin-bottom:8px">FinFlow AI</div>
+      <div data-style="font-size:13px">Ask me anything about your business — revenue, expenses, cash flow, forecasting, or financial strategy.</div>
     </div>`;
     return;
   }
   container.innerHTML = _aiHistory.map(m=>`
-    <div style="display:flex;flex-direction:${m.role==='user'?'row-reverse':'row'};gap:10px;margin-bottom:16px;align-items:flex-start">
-      <div style="width:30px;height:30px;border-radius:50%;background:${m.role==='user'?'var(--accent)':'var(--bg3)'};display:flex;align-items:center;justify-content:center;font-size:12px;color:${m.role==='user'?'#fff':'var(--t1)'};flex-shrink:0">${m.role==='user'?'U':'✦'}</div>
-      <div style="max-width:75%;background:${m.role==='user'?'var(--accent)':'var(--bg2)'};color:${m.role==='user'?'#fff':'var(--t1)'};border-radius:12px;padding:10px 14px;font-size:13px;line-height:1.5;white-space:pre-wrap">${escHTML(m.content)}</div>
+    <div data-style="display:flex;flex-direction:${m.role==='user'?'row-reverse':'row'};gap:10px;margin-bottom:16px;align-items:flex-start">
+      <div data-style="width:30px;height:30px;border-radius:50%;background:${m.role==='user'?'var(--accent)':'var(--bg3)'};display:flex;align-items:center;justify-content:center;font-size:12px;color:${m.role==='user'?'#fff':'var(--t1)'};flex-shrink:0">${m.role==='user'?'U':'✦'}</div>
+      <div data-style="max-width:75%;background:${m.role==='user'?'var(--accent)':'var(--bg2)'};color:${m.role==='user'?'#fff':'var(--t1)'};border-radius:12px;padding:10px 14px;font-size:13px;line-height:1.5;white-space:pre-wrap">${escHTML(m.content)}</div>
     </div>`).join('');
   container.scrollTop = container.scrollHeight;
 }
@@ -2663,7 +2664,7 @@ async function sendAIMessage(){
     const typing = document.createElement('div');
     typing.id = 'ai-typing';
     typing.style.cssText = 'display:flex;gap:10px;margin-bottom:16px;align-items:flex-start';
-    typing.innerHTML = `<div style="width:30px;height:30px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:12px">✦</div><div style="background:var(--bg2);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--t3)">Thinking…</div>`;
+    typing.innerHTML = `<div data-style="width:30px;height:30px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:12px">✦</div><div data-style="background:var(--bg2);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--t3)">Thinking…</div>`;
     container.appendChild(typing);
     container.scrollTop = container.scrollHeight;
   }
@@ -2797,15 +2798,15 @@ function clearAIChat(){
       const cls = { pending: 'b-amber', accepted: 'b-green', declined: 'b-red', converted: 'b-blue' };
       el.innerHTML = _quotesData.length
         ? _quotesData.map(q => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(q.client)}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(q.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(q.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(q.expiry_date,{year:true}):(q.expiry_date||''))||'—')}</span>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(q.client)}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(q.num || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(q.amount)}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(q.expiry_date,{year:true}):(q.expiry_date||''))||'—')}</span>
             <span><span class="badge ${cls[q.status] || 'b-amber'}">${esc(q.status)}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewQuote(${q.id})">View</button>${String(q.status || '').toLowerCase() === 'converted' ? '' : `<button class="btn btn-ghost btn-sm" title="Edit" onclick="editQuote(${q.id})">✎</button><button class="btn btn-ghost btn-sm" title="Create a draft invoice from this quote" onclick="convertQuote(${q.id})">→ Invoice</button>`}<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button></div>
+            <div data-style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" data-arg-id="${q.id}" data-on-click="viewQuote(Number(this.dataset.argId))">View</button>${String(q.status || '').toLowerCase() === 'converted' ? '' : `<button class="btn btn-ghost btn-sm" title="Edit" data-arg-id="${q.id}" data-on-click="editQuote(Number(this.dataset.argId))">✎</button><button class="btn btn-ghost btn-sm" title="Create a draft invoice from this quote" data-arg-id="${q.id}" data-on-click="convertQuote(Number(this.dataset.argId))">→ Invoice</button>`}<button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${q.id}" data-on-click="deleteQuote(Number(this.dataset.argId))">✕</button></div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
       const accepted = _quotesData.filter(q => q.status?.toLowerCase() === 'accepted').length;
       const pending  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').length;
       const openVal  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').reduce((s, q) => s + (q.amount || 0), 0);
@@ -2946,15 +2947,15 @@ function clearAIChat(){
       if (!el) return;
       el.innerHTML = _receiptsData.length
         ? _receiptsData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r.customer || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
-            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewReceipt(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteReceipt(${r.id})">✕</button></div>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(r.customer || '')}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(r.amount)}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
+            <span data-style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
+            <div data-style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" data-arg-id="${r.id}" data-on-click="viewReceipt(Number(this.dataset.argId))">View</button><button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${r.id}" data-on-click="deleteReceipt(Number(this.dataset.argId))">✕</button></div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No receipts yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No receipts yet</div>';
       // KPI cards: count · cash sales · card/stripe sales · refunds
       const _rcCash = _receiptsData.filter(r => /cash/i.test(r.method || '')).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _rcCard = _receiptsData.filter(r => /card|stripe/i.test(r.method || '')).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
@@ -3061,16 +3062,16 @@ function clearAIChat(){
         ? _paymentsRecvData.map(r => {
             const _prInv = _prInvById.get(r.invoice_id);
             return `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 90px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(_prInv?.client || '—')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.number || _prInv?.num || '—')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
-            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
-            <button class="btn btn-ghost btn-sm" style="justify-self:end" onclick="viewPaymentReceived(${r.id})">View</button>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 80px 70px 90px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(_prInv?.client || '—')}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.number || _prInv?.num || '—')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(r.amount)}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
+            <span data-style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
+            <button class="btn btn-ghost btn-sm" data-style="justify-self:end" data-arg-id="${r.id}" data-on-click="viewPaymentReceived(Number(this.dataset.argId))">View</button>
           </div>`;
           }).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments received yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No payments received yet</div>';
       // KPI cards: total received · outstanding · overdue · avg days to pay
       // Outstanding/overdue are derived from window._realInvoices (set by the dashboard wiring).
       // FA-M12c: avg days to pay = for each invoice PAID IN FULL, the days from its issue date to its last payment,
@@ -3202,18 +3203,18 @@ function clearAIChat(){
       const cls = { active: 'b-green', paused: 'b-amber' };
       el.innerHTML = _recurringInvData.length
         ? _recurringInvData.map(r => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
+          <div data-style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
             <div>
-              <div style="font-weight:500;font-size:13px">${esc(r.client)}</div>
-              <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
+              <div data-style="font-weight:500;font-size:13px">${esc(r.client)}</div>
+              <div data-style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
+            <div data-style="display:flex;align-items:center;gap:10px">
+              <span data-style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
               <span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status)}</span>
-              <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteRecurringInvoice(${r.id})">✕</button>
+              <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${r.id}" data-on-click="deleteRecurringInvoice(Number(this.dataset.argId))">✕</button>
             </div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No recurring invoice profiles yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No recurring invoice profiles yet</div>';
       // KPI cards: active count · monthly value · next run · YTD generated (M31: _recurringYtd)
       // YTD comes from invoices that the recurring scheduler created (server
       // tags them with notes "Auto-generated from recurring schedule").
@@ -3293,19 +3294,19 @@ function clearAIChat(){
       const u = _CREDIT_UI[kind], cls = { Open: 'b-amber', Applied: 'b-green', Void: 'b-red' };
       return rows.map(r => {
         const left = _creditLeft(r), applied = parseFloat(r.applied) || 0, isVoid = r.status === 'Void';
-        const actions = '<button class="btn btn-ghost btn-sm" onclick="' + u.view + '(' + r.id + ')">View</button>'
-          + (isVoid ? '' : '<button class="btn btn-ghost btn-sm" onclick="openApplyCredit(\'' + kind + '\', ' + r.id + ')">' + (left > 0.005 ? 'Apply' : 'Applied to') + '</button>')
-          + (isVoid ? '<button class="btn btn-ghost btn-sm" onclick="setCreditStatus(\'' + u.path + '\', ' + r.id + ', \'Open\')">Reopen</button>'
-            : (applied > 0.005 ? '' : '<button class="btn btn-ghost btn-sm" onclick="setCreditStatus(\'' + u.path + '\', ' + r.id + ', \'Void\')">Void</button>'))
-          + '<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" aria-label="Delete" onclick="' + u.del + '(' + r.id + ')">✕</button>';
+        const actions = '<button class="btn btn-ghost btn-sm" data-arg-fn="' + u.view + '" data-arg-id="' + r.id + '" data-on-click="window[this.dataset.argFn](Number(this.dataset.argId))">View</button>'
+          + (isVoid ? '' : '<button class="btn btn-ghost btn-sm" data-arg-kind="' + kind + '" data-arg-id="' + r.id + '" data-on-click="openApplyCredit(this.dataset.argKind, Number(this.dataset.argId))">' + (left > 0.005 ? 'Apply' : 'Applied to') + '</button>')
+          + (isVoid ? '<button class="btn btn-ghost btn-sm" data-arg-path="' + u.path + '" data-arg-id="' + r.id + '" data-on-click="setCreditStatus(this.dataset.argPath, Number(this.dataset.argId), \'Open\')">Reopen</button>'
+            : (applied > 0.005 ? '' : '<button class="btn btn-ghost btn-sm" data-arg-path="' + u.path + '" data-arg-id="' + r.id + '" data-on-click="setCreditStatus(this.dataset.argPath, Number(this.dataset.argId), \'Void\')">Void</button>'))
+          + '<button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" aria-label="Delete" data-arg-fn="' + u.del + '" data-arg-id="' + r.id + '" data-on-click="window[this.dataset.argFn](Number(this.dataset.argId))">✕</button>';
         return `
-          <div class="table-row" style="grid-template-columns:1fr 90px 90px 80px 70px 170px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r[u.party] || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}${applied > 0.005 && !isVoid ? '<br><span class="credit-left" style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : ''}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
+          <div class="table-row" data-style="grid-template-columns:1fr 90px 90px 80px 70px 170px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(r[u.party] || '')}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(r.amount)}${applied > 0.005 && !isVoid ? '<br><span class="credit-left" data-style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : ''}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
             <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">${actions}</div>
+            <div data-style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">${actions}</div>
           </div>`;
       }).join('');
     };
@@ -3334,21 +3335,21 @@ function clearAIChat(){
       const o = document.createElement('div'); o.id = 'apply-credit-overlay';
       o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px';
       const appRows = apps.map(a => { const d = docs.find(x => docId(x) === a.doc_id);
-        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)"><span>' + esc(d ? u.docNum(d) : (u.docWord + ' #' + a.doc_id)) + ' · ' + esc(window.FinFlowDates ? window.FinFlowDates.fmtLabel(a.applied_date, { year: true }) : a.applied_date) + '</span><span style="font-family:var(--font-mono)">' + esc(S(a.amount)) + '</span><button class="btn btn-ghost btn-sm" onclick="unapplyCredit(\'' + kind + '\', ' + id + ', ' + a.id + ')">Unapply</button></div>'; }).join('');
+        return '<div data-style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)"><span>' + esc(d ? u.docNum(d) : (u.docWord + ' #' + a.doc_id)) + ' · ' + esc(window.FinFlowDates ? window.FinFlowDates.fmtLabel(a.applied_date, { year: true }) : a.applied_date) + '</span><span data-style="font-family:var(--font-mono)">' + esc(S(a.amount)) + '</span><button class="btn btn-ghost btn-sm" data-arg-kind="' + kind + '" data-arg-id="' + id + '" data-arg-id-2="' + a.id + '" data-on-click="unapplyCredit(this.dataset.argKind, Number(this.dataset.argId), Number(this.dataset.argId2))">Unapply</button></div>'; }).join('');
       const docOpts = open.map(d => '<option value="' + docId(d) + '" data-owed="' + owed(d) + '">' + esc(u.docNum(d)) + ' — ' + esc(S(owed(d))) + ' owed</option>').join('');
       const today = window._entityToday ? window._entityToday() : new Date().toISOString().slice(0, 10);
       const form = left > 0.005
         ? (open.length
-          ? '<label class="form-label" for="apc-doc">Apply to</label><select id="apc-doc" class="form-input" onchange="_apcSuggest()">' + docOpts + '</select>'
-            + '<div style="display:flex;gap:8px;margin-top:8px"><div style="flex:1"><label class="form-label" for="apc-amount">Amount</label><input id="apc-amount" class="form-input" type="number" min="0.01" step="0.01"></div>'
-            + '<div style="flex:1"><label class="form-label" for="apc-date">Date</label><input id="apc-date" class="form-input" type="date" value="' + esc(today) + '"></div></div>'
-            + '<button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="submitApplyCredit(\'' + kind + '\', ' + id + ')">Apply credit</button>'
-          : '<div style="color:var(--t2);font-size:13px">' + esc(cr[u.party] || 'This ' + u.party) + ' has no open ' + u.docWord + 's to apply it to. The credit still lowers what they owe in total.</div>')
-        : '<div style="color:var(--t2);font-size:13px">All of this credit is applied.</div>';
-      o.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Apply ' + esc(u.word) + '" style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:460px;max-height:90vh;overflow:auto;padding:1rem 1.25rem">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:14px;font-weight:500">' + esc(u.word.charAt(0).toUpperCase() + u.word.slice(1)) + ' ' + esc(cr.num || '') + ' · ' + esc(cr[u.party] || '') + '</div><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'apply-credit-overlay\').remove()">✕ Close</button></div>'
-        + '<div style="font-size:13px;color:var(--t2);margin-bottom:10px">' + esc(S(cr.amount)) + ' credit · <strong class="apc-left">' + esc(S(left)) + ' left to apply</strong></div>'
-        + (appRows ? '<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-top:6px">Applied to</div>' + appRows + '<div style="height:10px"></div>' : '')
+          ? '<label class="form-label" for="apc-doc">Apply to</label><select id="apc-doc" class="form-input" data-on-change="_apcSuggest()">' + docOpts + '</select>'
+            + '<div data-style="display:flex;gap:8px;margin-top:8px"><div data-style="flex:1"><label class="form-label" for="apc-amount">Amount</label><input id="apc-amount" class="form-input" type="number" min="0.01" step="0.01"></div>'
+            + '<div data-style="flex:1"><label class="form-label" for="apc-date">Date</label><input id="apc-date" class="form-input" type="date" value="' + esc(today) + '"></div></div>'
+            + '<button class="btn btn-primary" data-style="margin-top:12px;width:100%" data-arg-kind="' + kind + '" data-arg-id="' + id + '" data-on-click="submitApplyCredit(this.dataset.argKind, Number(this.dataset.argId))">Apply credit</button>'
+          : '<div data-style="color:var(--t2);font-size:13px">' + esc(cr[u.party] || 'This ' + u.party) + ' has no open ' + u.docWord + 's to apply it to. The credit still lowers what they owe in total.</div>')
+        : '<div data-style="color:var(--t2);font-size:13px">All of this credit is applied.</div>';
+      o.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Apply ' + esc(u.word) + '" data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:460px;max-height:90vh;overflow:auto;padding:1rem 1.25rem">'
+        + '<div data-style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div data-style="font-size:14px;font-weight:500">' + esc(u.word.charAt(0).toUpperCase() + u.word.slice(1)) + ' ' + esc(cr.num || '') + ' · ' + esc(cr[u.party] || '') + '</div><button class="btn btn-ghost btn-sm" data-on-click="document.getElementById(\'apply-credit-overlay\').remove()">✕ Close</button></div>'
+        + '<div data-style="font-size:13px;color:var(--t2);margin-bottom:10px">' + esc(S(cr.amount)) + ' credit · <strong class="apc-left">' + esc(S(left)) + ' left to apply</strong></div>'
+        + (appRows ? '<div data-style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-top:6px">Applied to</div>' + appRows + '<div data-style="height:10px"></div>' : '')
         + form + '</div>';
       document.body.appendChild(o);
       o.addEventListener('click', e => { if (e.target === o) o.remove(); });
@@ -3407,7 +3408,7 @@ function clearAIChat(){
       if (!el) return;
       el.innerHTML = _creditNotesData.length
         ? _creditRowsHTML(_creditNotesData, 'credit_note')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No credit notes yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No credit notes yet</div>';
       // KPI cards (FA-M6b): issued (not void) · still to apply · applied to invoices · issued this month — money, each
       setKpiCards('page-credit-notes', _creditCards(_creditNotesData));
       window._refreshDashboardUI?.();
@@ -3515,37 +3516,37 @@ function clearAIChat(){
       if (!el) return;
       const unsaved = (unsavedList || _vendorsUnsavedNow()).map(u => ({ u, i: _vendorsUnsavedNow().indexOf(u) }));
       // Batch 9 (D3): one click saves them all — with a preview that holds back look-alikes of saved vendors.
-      const unsavedHead = unsaved.length ? `<div class="ff-saveall-head" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;margin:4px 0;border-radius:var(--radius);background:var(--bg2)"><div><div style="font-weight:500">${unsaved.length} vendor name${unsaved.length === 1 ? '' : 's'} from bills not saved as vendors</div><div style="font-size:11px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" onclick="openSaveAllContacts('vendor')">Save all…</button></div>` : '';
+      const unsavedHead = unsaved.length ? `<div class="ff-saveall-head" data-style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;margin:4px 0;border-radius:var(--radius);background:var(--bg2)"><div><div data-style="font-weight:500">${unsaved.length} vendor name${unsaved.length === 1 ? '' : 's'} from bills not saved as vendors</div><div data-style="font-size:11px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" data-on-click="openSaveAllContacts('vendor')">Save all…</button></div>` : '';
       const unsavedHtml = unsavedHead + unsaved.map(({ u, i }) => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
             <div>
-              <div style="font-weight:500">${esc(u.name)}</div>
-              <div style="font-size:11px;color:var(--t3)">${u.bills} bill${u.bills === 1 ? '' : 's'} · not saved as a vendor yet</div>
+              <div data-style="font-weight:500">${esc(u.name)}</div>
+              <div data-style="font-size:11px;color:var(--t3)">${u.bills} bill${u.bills === 1 ? '' : 's'} · not saved as a vendor yet</div>
             </div>
-            <span style="color:var(--t3)">—</span>
-            <span style="color:${u.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
+            <span data-style="color:var(--t3)">—</span>
+            <span data-style="color:${u.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
               ${u.owing > 0 ? S(u.owing) + ' owing' : '—'}
             </span>
-            <span style="color:var(--t2)">${S(u.ytd_paid || 0)} YTD</span>
+            <span data-style="color:var(--t2)">${S(u.ytd_paid || 0)} YTD</span>
             <span><span class="badge b-amber">Not saved</span></span>
-            <button class="btn btn-ghost btn-sm" onclick="openVendorModalFromUnsaved(${i})">Save</button>
+            <button class="btn btn-ghost btn-sm" data-arg-i="${i}" data-on-click="openVendorModalFromUnsaved(Number(this.dataset.argI))">Save</button>
           </div>`).join('');
       el.innerHTML = (list.length || unsaved.length)
         ? list.map(v => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
             <div>
-              <div style="font-weight:500">${esc(v.name)}</div>
-              <div style="font-size:11px;color:var(--t3)">${esc(v.contact || '—')}</div>
+              <div data-style="font-weight:500">${esc(v.name)}</div>
+              <div data-style="font-size:11px;color:var(--t3)">${esc(v.contact || '—')}</div>
             </div>
-            <span><span class="badge b-blue" style="font-size:10px">${esc(v.category || 'Other')}</span></span>
-            <span style="color:${v.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
+            <span><span class="badge b-blue" data-style="font-size:10px">${esc(v.category || 'Other')}</span></span>
+            <span data-style="color:${v.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
               ${v.owing > 0 ? S(v.owing) + ' owing' : '—'}
             </span>
-            <span style="color:var(--t2)">${S(v.ytd_paid || 0)} YTD</span>
+            <span data-style="color:var(--t2)">${S(v.ytd_paid || 0)} YTD</span>
             <span><span class="badge ${v.status === 'active' ? 'b-green' : 'b-red'}">${esc(v.status || 'active')}</span></span>
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendor(${v.id})">✕</button>
+            <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${v.id}" data-on-click="deleteVendor(Number(this.dataset.argId))">✕</button>
           </div>`).join('') + unsavedHtml
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendors yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No vendors yet</div>';
     }
 
     // F-C1: bills/vendors overdue = Σ balance of UNPAID bills past their due date (entity-local today).
@@ -3677,20 +3678,20 @@ function clearAIChat(){
       const cls = { unpaid: 'b-amber', due_soon: 'b-amber', overdue: 'b-red', paid: 'b-green' };
       el.innerHTML = _billsData.length
         ? _billsData.map(b => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 90px 80px 160px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(b.vendor)}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
-            <span style="color:${window._billDisplayStatus(b) === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'No due date')}</span>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 90px 80px 160px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(b.vendor)}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(b.amount)}</span>
+            <span data-style="color:${window._billDisplayStatus(b) === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'No due date')}</span>
             <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[window._billDisplayStatus(b)] || 'b-amber'}">${esc(window._billDisplayStatus(b))}</span></span>
-            <div style="display:flex;gap:4px">
-              <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
-              <button class="btn btn-ghost btn-sm" onclick="editBill(${b.id})">Edit</button>
-              ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
-              ${window.FinFlowDates.isInventoryBill(b) ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>`}
+            <div data-style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" data-arg-id="${b.id}" data-on-click="viewBill(Number(this.dataset.argId))">View</button>
+              <button class="btn btn-ghost btn-sm" data-arg-id="${b.id}" data-on-click="editBill(Number(this.dataset.argId))">Edit</button>
+              ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" data-arg-id="${b.id}" data-on-click="markBillPaid(Number(this.dataset.argId))">Pay</button>` : ''}
+              ${window.FinFlowDates.isInventoryBill(b) ? '' : `<button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${b.id}" data-on-click="deleteBill(Number(this.dataset.argId))">✕</button>`}
             </div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';
 
       // badge
       // M25: the badge counts bills PAST DUE with a balance — the same date-based rule as the Overdue card
@@ -3903,15 +3904,15 @@ function clearAIChat(){
       if (!el) return;
       el.innerHTML = _paymentsMadeData.length
         ? _paymentsMadeData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 90px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r.vendor || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.ref || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
-            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewPaymentMade(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentMade(${r.id})">✕</button></div>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 80px 90px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(r.vendor || '')}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.ref || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(r.amount)}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
+            <span data-style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
+            <div data-style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" data-arg-id="${r.id}" data-on-click="viewPaymentMade(Number(this.dataset.argId))">View</button><button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${r.id}" data-on-click="deletePaymentMade(Number(this.dataset.argId))">✕</button></div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments made yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No payments made yet</div>';
       // KPI cards: total paid · unique vendor count · largest single · avg
       // L5: "Paid" and "Vendors Paid" are labelled "This month"; Largest/Avg carry no period (all payments).
       const _pmMonth = _paymentsMadeData.filter(r => inThisMonth(r.date));
@@ -4044,18 +4045,18 @@ function clearAIChat(){
       const cls = { active: 'b-green', paused: 'b-amber' };
       el.innerHTML = _recurringBillsData.length
         ? _recurringBillsData.map(r => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
+          <div data-style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
             <div>
-              <div style="font-weight:500;font-size:13px">${esc(r.vendor)}</div>
-              <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
+              <div data-style="font-weight:500;font-size:13px">${esc(r.vendor)}</div>
+              <div data-style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
+            <div data-style="display:flex;align-items:center;gap:10px">
+              <span data-style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
               <span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status)}</span>
-              <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteRecurringBill(${r.id})">✕</button>
+              <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${r.id}" data-on-click="deleteRecurringBill(Number(this.dataset.argId))">✕</button>
             </div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No recurring bill profiles yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No recurring bill profiles yet</div>';
       // KPI cards: active count · monthly cost · next due · YTD total
       // YTD is approximated as monthly × elapsed months (Jan = 1 … current
       // month). No global "_realBills" array exists, so we can't filter
@@ -4136,7 +4137,7 @@ function clearAIChat(){
       if (!el) return;
       el.innerHTML = _vendorCreditsData.length
         ? _creditRowsHTML(_vendorCreditsData, 'vendor_credit')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendor credits yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No vendor credits yet</div>';
       setKpiCards('page-vendor-credits', _creditCards(_vendorCreditsData));   // FA-M6b: same four figures as credit notes
       window._refreshDashboardUI?.();
     };
@@ -4343,11 +4344,11 @@ function clearAIChat(){
       modal.innerHTML = `<div class="modal">
         <div class="modal-header">
           <div><div class="modal-title">Invoice Details</div><div class="modal-sub" id="ivm-sub"></div></div>
-          <button class="modal-close" onclick="document.getElementById('inv-view-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('inv-view-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div id="ivm-body" style="margin-top:4px"></div>
+        <div id="ivm-body" data-style="margin-top:4px"></div>
       </div>`;
       document.body.appendChild(modal);
     }
@@ -4357,25 +4358,25 @@ function clearAIChat(){
     const _stBadge = { paid:'b-green', pending:'b-amber', partial:'b-blue', overdue:'b-red' }[_st] || 'b-amber';
     document.getElementById('ivm-sub').textContent = _stTitle + ' invoice — ' + (inv.client || '');
     document.getElementById('ivm-body').innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">
+      <div data-style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">
         <div>
-          <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Client</div>
-          <div style="font-size:14px;font-weight:600;color:var(--t1);margin-top:4px">${e(inv.client)}</div>
+          <div data-style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Client</div>
+          <div data-style="font-size:14px;font-weight:600;color:var(--t1);margin-top:4px">${e(inv.client)}</div>
         </div>
         <div>
-          <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Amount</div>
-          <div style="font-size:14px;font-weight:600;color:var(--acc);margin-top:4px;font-family:var(--font-mono)">${money(inv.amount)}</div>
+          <div data-style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Amount</div>
+          <div data-style="font-size:14px;font-weight:600;color:var(--acc);margin-top:4px;font-family:var(--font-mono)">${money(inv.amount)}</div>
         </div>
         <div>
-          <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Due Date</div>
-          <div style="font-size:13px;color:var(--t2);margin-top:4px">${e(inv.due || '—')}</div>
+          <div data-style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Due Date</div>
+          <div data-style="font-size:13px;color:var(--t2);margin-top:4px">${e(inv.due || '—')}</div>
         </div>
         <div>
-          <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Status</div>
-          <div style="margin-top:4px"><span class="badge ${_stBadge}">${e(inv.status)}</span></div>
+          <div data-style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Status</div>
+          <div data-style="margin-top:4px"><span class="badge ${_stBadge}">${e(inv.status)}</span></div>
         </div>
       </div>
-      ${inv.notes ? `<div style="margin-top:16px;padding:10px;background:var(--bg2);border-radius:var(--radius);font-size:12px;color:var(--t2);line-height:1.5">${e(inv.notes)}</div>` : ''}
+      ${inv.notes ? `<div data-style="margin-top:16px;padding:10px;background:var(--bg2);border-radius:var(--radius);font-size:12px;color:var(--t2);line-height:1.5">${e(inv.notes)}</div>` : ''}
     `;
     modal.classList.remove('hidden');
     if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
@@ -4413,18 +4414,18 @@ function clearAIChat(){
     const el = document.getElementById('timesheet-list');
     if (!el) return;
     if (!_tsData.length) {
-      el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No time entries yet — click + Log Time to add one</div>';
+      el.innerHTML = '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No time entries yet — click + Log Time to add one</div>';
       return;
     }
     el.innerHTML = _tsData.map(t => `
-      <div style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px 36px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-        <span style="font-weight:500">${e(t.employee)}</span>
-        <span style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(_tsProjectLabel(t) || '—')}</span>
-        <span style="color:var(--t2)">${e(t.date || '—')}</span>
-        <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
+      <div data-style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px 36px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+        <span data-style="font-weight:500">${e(t.employee)}</span>
+        <span data-style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(_tsProjectLabel(t) || '—')}</span>
+        <span data-style="color:var(--t2)">${e(t.date || '—')}</span>
+        <span data-style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
         <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
-        <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
-        <span style="display:inline-flex;gap:2px"><button class="btn btn-ghost btn-sm" style="padding:0 4px" title="Edit" onclick="editTimesheetEntry(${t.id})">✎</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button></span>
+        <span data-style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
+        <span data-style="display:inline-flex;gap:2px"><button class="btn btn-ghost btn-sm" data-style="padding:0 4px" title="Edit" data-arg-id="${t.id}" data-on-click="editTimesheetEntry(Number(this.dataset.argId))">✎</button><button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7;padding:0 4px" data-arg-id="${t.id}" data-on-click="deleteTimesheetEntry(Number(this.dataset.argId))">✕</button></span>
       </div>`).join('');
   }
 
@@ -4471,7 +4472,7 @@ function clearAIChat(){
     modal.innerHTML = `<div class="modal">
       <div class="modal-header">
         <div><div class="modal-title">Log Time</div><div class="modal-sub">Record a time entry</div></div>
-        <button class="modal-close" onclick="document.getElementById('ts-log-modal').classList.add('hidden')">
+        <button class="modal-close" data-on-click="document.getElementById('ts-log-modal').classList.add('hidden')">
           <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
         </button>
       </div>
@@ -4491,8 +4492,8 @@ function clearAIChat(){
         <div class="field-wrap"><label class="field-label">Rate (<span data-cur="biz">USD</span>/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="document.getElementById('ts-log-modal').classList.add('hidden')">Cancel</button>
-        <button class="btn btn-primary" onclick="saveTimesheetEntry()">Save entry →</button>
+        <button class="btn btn-ghost" data-on-click="document.getElementById('ts-log-modal').classList.add('hidden')">Cancel</button>
+        <button class="btn btn-primary" data-on-click="saveTimesheetEntry()">Save entry →</button>
       </div>
     </div>`;
     document.body.appendChild(modal);
@@ -4625,7 +4626,7 @@ function clearAIChat(){
     } else if (state === 'error') {
       [0, 1, 2].forEach(i => { if (mcs[i]) mcs[i].textContent = '—'; });
       if (chgs[1]) {
-        chgs[1].innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window.renderReports&&window.renderReports()') : 'Retry');
+        chgs[1].innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('renderReports') : 'Retry');
         chgs[1].className = 'mc-change dn';
       }
     }
@@ -4746,15 +4747,15 @@ function clearAIChat(){
         const roleLabel = roleLabels[m.role] || m.role || 'Member';
         const roleCls   = roleClasses[m.role] || 'role-viewer';
         return `<div class="team-member-row">
-          <div class="team-avatar" style="background:${col}22;color:${col};border:1px solid ${col}44">${e(initials)}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(m.name)}</div>
-            <div style="font-size:11px;color:var(--t3)">${e(m.email || '')}</div>
+          <div class="team-avatar" data-style="background:${col}22;color:${col};border:1px solid ${col}44">${e(initials)}</div>
+          <div data-style="flex:1;min-width:0">
+            <div data-style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(m.name)}</div>
+            <div data-style="font-size:11px;color:var(--t3)">${e(m.email || '')}</div>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+          <div data-style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
             <span class="role-badge ${roleCls}">${e(roleLabel)}</span>
-            <span style="font-size:10px;color:var(--t3)">${e(m.lastSeen || 'Active')}</span>
-            ${m._tmId ? `<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick='openMemberAccess(${m._tmId}, ${JSON.stringify(m.entity_access || null)})'>Businesses</button>` : ''}
+            <span data-style="font-size:10px;color:var(--t3)">${e(m.lastSeen || 'Active')}</span>
+            ${m._tmId ? `<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:2px 8px" data-arg-id="${m._tmId}" data-arg-access="${String(JSON.stringify(m.entity_access || null)).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" data-on-click="openMemberAccess(Number(this.dataset.argId), JSON.parse(this.dataset.argAccess))">Businesses</button>` : ''}
           </div>
         </div>`;
       }).join('');
@@ -4785,21 +4786,21 @@ function clearAIChat(){
       modal = document.createElement('div');
       modal.id = 'member-access-modal';
       modal.className = 'modal-overlay hidden';
-      modal.innerHTML = `<div class="modal" style="max-width:360px">
+      modal.innerHTML = `<div class="modal" data-style="max-width:360px">
         <div class="modal-header">
           <div class="modal-title">Business access</div>
-          <button class="modal-close" onclick="document.getElementById('member-access-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('member-access-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div style="margin-top:8px"><label class="flabel">Businesses this member can access</label>
-          <div id="ma-entities" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
-            <div style="font-size:12px;color:var(--t3)">Loading…</div>
+        <div data-style="margin-top:8px"><label class="flabel">Businesses this member can access</label>
+          <div id="ma-entities" data-style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
+            <div data-style="font-size:12px;color:var(--t3)">Loading…</div>
           </div>
         </div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('member-access-modal').classList.add('hidden')">Cancel</button>
-          <button class="btn btn-primary btn-sm" onclick="saveMemberAccess()">Save access</button>
+        <div class="modal-footer" data-style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('member-access-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" data-on-click="saveMemberAccess()">Save access</button>
         </div>
       </div>`;
       document.body.appendChild(modal);
@@ -4812,8 +4813,8 @@ function clearAIChat(){
       const granted = Array.isArray(access) ? access.map(Number) : null;   // null = all currently
       const box = document.getElementById('ma-entities');
       if (box) box.innerHTML = (ents && ents.length)
-        ? ents.map(en => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="ma-ent-cb" value="${en.id}" ${(!granted || granted.includes(en.id)) ? 'checked' : ''}> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
-        : '<div style="font-size:12px;color:var(--t3)">No businesses yet</div>';
+        ? ents.map(en => `<label data-style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="ma-ent-cb" value="${en.id}" ${(!granted || granted.includes(en.id)) ? 'checked' : ''}> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
+        : '<div data-style="font-size:12px;color:var(--t3)">No businesses yet</div>';
     } catch (_) {}
   };
 
@@ -4864,7 +4865,7 @@ function clearAIChat(){
     _pjKpi('proj-unbilled', money(_projects.reduce((s, p) => s + Math.max(0, (parseFloat(p.budget) || 0) - (parseFloat(p.billed) || 0)), 0)));
     window._refreshDashboardUI?.();
     if (!_projects.length) {
-      l.innerHTML = '<div style="padding:16px 0;color:var(--t3);font-size:13px">No projects yet. Click + New Project to add one.</div>';
+      l.innerHTML = '<div data-style="padding:16px 0;color:var(--t3);font-size:13px">No projects yet. Click + New Project to add one.</div>';
       return;
     }
     const colorMap = { 'In Progress': 'b-blue', 'Completed': 'b-green', 'On Hold': 'b-amber' };
@@ -4872,22 +4873,22 @@ function clearAIChat(){
       const billed = p.billed || 0;
       const budget = p.budget || 0;
       const pct    = budget > 0 ? Math.min(100, Math.round((billed / budget) * 100)) : 0;
-      return `<div style="padding:10px 0;border-bottom:1px solid var(--bd)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      return `<div data-style="padding:10px 0;border-bottom:1px solid var(--bd)">
+        <div data-style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <div>
-            <div style="font-size:13px;font-weight:500;color:var(--t1)">${e(p.name)}</div>
-            <div style="font-size:11px;color:var(--t3)">${e(p.client || '—')} · ${e(p.hours || 0)}h logged</div>
+            <div data-style="font-size:13px;font-weight:500;color:var(--t1)">${e(p.name)}</div>
+            <div data-style="font-size:11px;color:var(--t3)">${e(p.client || '—')} · ${e(p.hours || 0)}h logged</div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="text-align:right">
-              <div style="font-size:11px;color:var(--t3)">Billable value / Budget</div>
-              <div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${window._fmtMoneyNative(billed)} / ${window._fmtMoneyNative(budget)}</div>
+          <div data-style="display:flex;align-items:center;gap:10px">
+            <div data-style="text-align:right">
+              <div data-style="font-size:11px;color:var(--t3)">Billable value / Budget</div>
+              <div data-style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${window._fmtMoneyNative(billed)} / ${window._fmtMoneyNative(budget)}</div>
             </div>
             <span class="badge ${colorMap[p.status] || 'b-blue'}">${e(p.status)}</span>
-            <button class="btn btn-ghost btn-sm" onclick="deleteProject(${p.id})" style="color:var(--red);padding:2px 6px" title="Delete">✕</button>
+            <button class="btn btn-ghost btn-sm" data-arg-id="${p.id}" data-on-click="deleteProject(Number(this.dataset.argId))" data-style="color:var(--red);padding:2px 6px" title="Delete">✕</button>
           </div>
         </div>
-        <div class="bar-track" style="height:4px"><div class="bar-fill" style="width:${pct}%;background:${p.status === 'Completed' ? 'var(--green)' : 'var(--acc)'}"></div></div>
+        <div class="bar-track" data-style="height:4px"><div class="bar-fill" data-style="width:${pct}%;background:${p.status === 'Completed' ? 'var(--green)' : 'var(--acc)'}"></div></div>
       </div>`;
     }).join('');
   }
@@ -4901,11 +4902,11 @@ function clearAIChat(){
       modal.innerHTML = `<div class="modal">
         <div class="modal-header">
           <div class="modal-title">New Project</div>
-          <button class="modal-close" onclick="document.getElementById('proj-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('proj-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <div data-style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
           <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
           <div><label class="flabel">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
           <div><label class="flabel">Budget (<span data-cur="biz">USD</span>)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
@@ -4917,9 +4918,9 @@ function clearAIChat(){
             </select>
           </div>
         </div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('proj-modal').classList.add('hidden')">Cancel</button>
-          <button class="btn btn-primary btn-sm" onclick="saveProject()">Save Project</button>
+        <div class="modal-footer" data-style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('proj-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" data-on-click="saveProject()">Save Project</button>
         </div>
       </div>`;
       document.body.appendChild(modal);
@@ -5006,22 +5007,22 @@ function clearAIChat(){
       // 88vh with a SCROLLING body — otherwise the modal overflows and clips the top KPIs / bottom Net
       // Profit (as it did on first ship). Header + footer stay pinned; #rpt-body scrolls (min-height:0
       // lets the flex child actually shrink and scroll).
-      modal.innerHTML = `<div class="modal" style="max-width:480px;max-height:88vh;display:flex;flex-direction:column">
-        <div class="modal-header" style="flex:0 0 auto">
+      modal.innerHTML = `<div class="modal" data-style="max-width:480px;max-height:88vh;display:flex;flex-direction:column">
+        <div class="modal-header" data-style="flex:0 0 auto">
           <div>
             <div class="modal-title" id="rpt-title"></div>
             <div class="modal-sub" id="rpt-sub"></div>
           </div>
-          <button class="modal-close" onclick="document.getElementById('report-gen-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('report-gen-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div id="rpt-body" style="margin-top:12px;font-size:13px;color:var(--t2);overflow-y:auto;flex:1 1 auto;min-height:0">Loading…</div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;flex:0 0 auto">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('report-gen-modal').classList.add('hidden')">Close</button>
-          <button class="btn btn-ghost btn-sm" id="rpt-csv-btn" onclick="window._rptExport('csv')">CSV</button>
-          <button class="btn btn-ghost btn-sm" id="rpt-pdf-btn" onclick="window._rptExport('pdf')">PDF</button>
-          <button class="btn btn-primary btn-sm" onclick="window.print()">Print ↗</button>
+        <div id="rpt-body" data-style="margin-top:12px;font-size:13px;color:var(--t2);overflow-y:auto;flex:1 1 auto;min-height:0">Loading…</div>
+        <div class="modal-footer" data-style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;flex:0 0 auto">
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('report-gen-modal').classList.add('hidden')">Close</button>
+          <button class="btn btn-ghost btn-sm" id="rpt-csv-btn" data-on-click="window._rptExport('csv')">CSV</button>
+          <button class="btn btn-ghost btn-sm" id="rpt-pdf-btn" data-on-click="window._rptExport('pdf')">PDF</button>
+          <button class="btn btn-primary btn-sm" data-on-click="window.print()">Print ↗</button>
         </div>
       </div>`;
       document.body.appendChild(modal);
@@ -5032,23 +5033,22 @@ function clearAIChat(){
     // built from var(--...)-driven inline styles, flipping the vars re-themes every element (tiles,
     // bars, text) to dark-on-white for paper without touching the on-screen (dark) rendering.
     // NOTE: on-paper appearance is owner-confirmed via print preview — jsdom cannot render @media print.
-    if (!document.getElementById('rpt-print-css')) {
-      const _pcss = document.createElement('style');
-      _pcss.id = 'rpt-print-css';
-      _pcss.textContent = '@media print {'
+    // FA-P1: a constructed stylesheet (no <style> element under the strict Content-Security-Policy), added once, the
+    // first time a report is generated — exactly when the <style> used to be.
+    if (window.ffAdoptCss && !window.ffAdoptCss.has('rpt-print-css')) {
+      window.ffAdoptCss('rpt-print-css', '@media print {'
         + ' body > *:not(#report-gen-modal){display:none !important;}'
         + ' #report-gen-modal{position:static !important;background:#fff !important;}'
         + ' #report-gen-modal .modal{--bg2:#f4f1ea;--bd:#d9d2c4;--t1:#1a1712;--t2:#3a352c;--t3:#6a6255;--green:#1f7a44;--red:#a23b2e;--acc:#9a7d2e;background:#fff !important;color:#111 !important;max-width:none !important;max-height:none !important;box-shadow:none !important;border:none !important;}'
         + ' #report-gen-modal #rpt-body{overflow:visible !important;max-height:none !important;}'
         + ' #report-gen-modal .modal-footer, #report-gen-modal .modal-close{display:none !important;}'
         + ' @page{margin:14mm;}'
-        + '}';
-      document.head.appendChild(_pcss);
+        + '}');
     }
     window._rptExportData = null;   // C15: the renderer below sets it (a report's own figures, as plain numbers)
     document.getElementById('rpt-title').textContent = name;
     document.getElementById('rpt-sub').textContent = 'Generated ' + new Date().toLocaleDateString();
-    document.getElementById('rpt-body').innerHTML = '<div style="color:var(--t3)">Loading data…</div>';
+    document.getElementById('rpt-body').innerHTML = '<div data-style="color:var(--t3)">Loading data…</div>';
     modal.classList.remove('hidden');
     if (typeof window._ffApplyCurrencyLabels === 'function') window._ffApplyCurrencyLabels();   // FA-M13
 
@@ -5058,8 +5058,8 @@ function clearAIChat(){
       const m = n => (typeof window._fmtMoneyNative === 'function')
         ? window._fmtMoneyNative(n)
         : (typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2));
-      const hdr = l => `<div style="font-size:11px;color:var(--acc, #c8a44a);font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:9px 0 4px;border-bottom:1px solid var(--acc-bg, rgba(200,164,74,.18));margin-bottom:2px">${l}</div>`;
-      const row = (label, val, opts = {}) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
+      const hdr = l => `<div data-style="font-size:11px;color:var(--acc, #c8a44a);font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:9px 0 4px;border-bottom:1px solid var(--acc-bg, rgba(200,164,74,.18));margin-bottom:2px">${l}</div>`;
+      const row = (label, val, opts = {}) => `<div data-style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span data-style="color:var(--t2)">${e(label)}</span><span data-style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
       const _rptBody = html => { document.getElementById('rpt-body').innerHTML = html; };
       // L12/L13: every report covers the dashboard's ACTIVE period (year ⇒ fiscal year) — the convention
       // P&L / Sales by Customer / Expense Report already followed. Payroll runs belong to the period they
@@ -5073,11 +5073,11 @@ function clearAIChat(){
       };
       // ── F137 rich shared helpers (used across the report renderers). ────────────────────────────
       const _gold = 'var(--acc, #c8a44a)';
-      const tile = (label, val, sub, cls) => `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div>${sub ? `<div style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div>` : ''}</div>`;
-      const tiles = arr => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">${arr.join('')}</div>`;
-      const pillHtml = t => `<span style="font-size:10px;font-weight:600;color:${_gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
+      const tile = (label, val, sub, cls) => `<div data-style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div data-style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div data-style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div>${sub ? `<div data-style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div>` : ''}</div>`;
+      const tiles = arr => `<div data-style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">${arr.join('')}</div>`;
+      const pillHtml = t => `<span data-style="font-size:10px;font-weight:600;color:${_gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
       // A share-bar row: label + amount + a proportional bar (share of `denom`).
-      const shareRow = (label, amt, denom, color) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:${color || 'var(--t1)'}">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${denom > 0 ? Math.max(2, Math.round(Math.abs(amt) / denom * 100)) : 0}%"></i></div></div>`;
+      const shareRow = (label, amt, denom, color) => `<div data-style="padding:6px 0"><div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t2)">${e(label)}</span><span data-style="font-family:var(--font-mono);color:${color || 'var(--t1)'}">${m(amt)}</span></div><div data-style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i data-style="display:block;height:100%;background:${_gold};opacity:.75;width:${denom > 0 ? Math.max(2, Math.round(Math.abs(amt) / denom * 100)) : 0}%"></i></div></div>`;
       // Paired-series monthly SVG bar chart (rows: [{label, a, b}]). Inline SVG → prints cleanly.
       const barChart = (cap, series, aLabel, bLabel) => {
         const rws = series.slice(-6);
@@ -5092,12 +5092,12 @@ function clearAIChat(){
           bars += `<rect x="${(cx - bw - 1).toFixed(1)}" y="${base - ah}" width="${bw.toFixed(1)}" height="${ah}" rx="1" fill="${_gold}"/>`;
           bars += `<rect x="${(cx + 1).toFixed(1)}" y="${base - bh}" width="${bw.toFixed(1)}" height="${bh}" rx="1" fill="var(--t3)"/>`;
         });
-        const xl = rws.map(r => `<span style="flex:1;text-align:center">${e(r.label || '')}</span>`).join('');
-        return `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
-          <div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">${e(cap)}</div>
-          <svg viewBox="0 0 ${CW} ${CH}" style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
-          <div style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
-          <div style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${_gold};margin:0 4px 0 8px;vertical-align:middle"></span>${e(aLabel)}<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>${e(bLabel)}</div>
+        const xl = rws.map(r => `<span data-style="flex:1;text-align:center">${e(r.label || '')}</span>`).join('');
+        return `<div data-style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
+          <div data-style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">${e(cap)}</div>
+          <svg viewBox="0 0 ${CW} ${CH}" data-style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
+          <div data-style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
+          <div data-style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span data-style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${_gold};margin:0 4px 0 8px;vertical-align:middle"></span>${e(aLabel)}<span data-style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>${e(bLabel)}</div>
         </div>`;
       };
 
@@ -5125,11 +5125,11 @@ function clearAIChat(){
                 + row('Lines cleared', n + ' line' + (n === 1 ? '' : 's'))
                 + row('Saved by', e(r.created_by || '—') + ' · ' + e(fd(String(r.created_at || '').slice(0, 10))))
                 + (r.status === 'undone' ? row('Undone by', e(r.undone_by || '—') + ' · ' + e(fd(String(r.undone_at || '').slice(0, 10)))) : '')
-                + (r.changed_since ? `<div style="font-size:12px;color:var(--amber);padding:4px 0">⚠ ${r.changed_since} line${r.changed_since === 1 ? '' : 's'} changed by the bank after this reconciliation — review before trusting it.</div>` : '')
-                + (r.lines || []).map(l => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0 2px 10px;color:var(--t3)"><span>${e(l.missing ? '(line no longer in the feed)' : fd(l.date) + ' · ' + (l.description || ''))}</span><span style="font-family:var(--font-mono)">${l.missing ? '' : c2(l.amount)}</span></div>`).join('')
-                + (latest && r.id === latest.id ? `<div style="text-align:right;margin:6px 0 10px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ffUndoReconciliation(${r.id})">Undo this reconciliation</button></div>` : '');
+                + (r.changed_since ? `<div data-style="font-size:12px;color:var(--amber);padding:4px 0">⚠ ${r.changed_since} line${r.changed_since === 1 ? '' : 's'} changed by the bank after this reconciliation — review before trusting it.</div>` : '')
+                + (r.lines || []).map(l => `<div data-style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0 2px 10px;color:var(--t3)"><span>${e(l.missing ? '(line no longer in the feed)' : fd(l.date) + ' · ' + (l.description || ''))}</span><span data-style="font-family:var(--font-mono)">${l.missing ? '' : c2(l.amount)}</span></div>`).join('')
+                + (latest && r.id === latest.id ? `<div data-style="text-align:right;margin:6px 0 10px"><button class="btn btn-ghost btn-sm" data-style="font-size:11px" data-arg-id="${r.id}" data-on-click="ffUndoReconciliation(Number(this.dataset.argId))">Undo this reconciliation</button></div>` : '');
             }).join('')
-            : '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No reconciliations saved yet. Bank Rec → Reconcile: enter your statement\'s closing balance, tick the lines on it, and finish at a 0.00 difference.</div>'));
+            : '<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No reconciliations saved yet. Bank Rec → Reconcile: enter your statement\'s closing balance, tick the lines on it, and finish at a 0.00 difference.</div>'));
         return;
       }
 
@@ -5141,7 +5141,7 @@ function clearAIChat(){
       // is labelled as excluding it. Returns before the generic render so the P&L cards do not also show.
       if (name === 'Balance Sheet') {
         const bs = await api('POST', '/api/reports/balance-sheet', {});
-        const cashCell = bs.cashTracked === false ? '<span style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
+        const cashCell = bs.cashTracked === false ? '<span data-style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
         const ta = parseFloat(bs.totalAssets) || 0, tl = parseFloat(bs.totalLiabilities) || 0, eq = parseFloat(bs.equity) || 0;
         const denomBS = Math.max(1, ta, tl);
         // GL Phase 5b: the balance sheet may now be ledger-sourced (bs.source==='gl') with a REAL cash
@@ -5181,7 +5181,7 @@ function clearAIChat(){
                  + (_payL > 0 ? row('Payroll Liabilities', m(_payL), { color: 'var(--red)' }) : ''))
           + row('Total Liabilities', m(tl), { color: 'var(--red)', bold: true })
           + (_L ? hdr('Equity') + _lineRows(_L.equity, 'var(--t2)') : '')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span data-style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`
           // ASC 830 CTA is SUPPLEMENTARY (the closing-rate translation view); it is not part of the Equity total above,
           // so it renders after that total — between the equity lines and their total it would break the footing.
           + (Math.abs(_cta) >= 0.01 ? row('Cumulative Translation Adjustment (ASC 830, supplementary)', m(_cta), { color: 'var(--t2)' }) : '')
@@ -5191,7 +5191,7 @@ function clearAIChat(){
           + (() => {
               const _h = window.bizHoldings || [];
               const _mv = _h.reduce((s, x) => s + (parseFloat(x.shares) || 0) * (parseFloat(x.price) || parseFloat(x._lastPrice) || parseFloat(x.costPer) || parseFloat(x.cost) || 0), 0);
-              return _mv > 0 ? `<div style="margin-top:12px;font-size:11px;color:var(--t3);line-height:1.5">Note: business investment holdings (market value ${m(_mv)}) are tracked in <strong>Investments</strong> and are not posted to the double-entry books, so they are excluded from this balance sheet. It reflects only booked activity.</div>` : '';
+              return _mv > 0 ? `<div data-style="margin-top:12px;font-size:11px;color:var(--t3);line-height:1.5">Note: business investment holdings (market value ${m(_mv)}) are tracked in <strong>Investments</strong> and are not posted to the double-entry books, so they are excluded from this balance sheet. It reflects only booked activity.</div>` : '';
             })());
         return;
       }
@@ -5210,7 +5210,7 @@ function clearAIChat(){
         const net = tin - tout;
         const detail = rows.map(r => {
           const rn = (parseFloat(r.inflow) || 0) - (parseFloat(r.outflow) || 0);
-          return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">${e(r.month || '')}</span><span style="color:var(--t3);font-family:var(--font-mono);font-size:11px">${m(r.inflow)} in / ${m(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${rn >= 0 ? 'var(--green)' : 'var(--red)'}">${m(rn)}</span></div>`;
+          return `<div data-style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span data-style="color:var(--t2)">${e(r.month || '')}</span><span data-style="color:var(--t3);font-family:var(--font-mono);font-size:11px">${m(r.inflow)} in / ${m(r.outflow)} out</span><span data-style="font-family:var(--font-mono);color:${rn >= 0 ? 'var(--green)' : 'var(--red)'}">${m(rn)}</span></div>`;
         }).join('');
         _rptBody(
           tiles([
@@ -5221,8 +5221,8 @@ function clearAIChat(){
           ])
           + barChart('Cash in vs out — monthly', rows.map(r => ({ label: r.month, a: parseFloat(r.inflow) || 0, b: parseFloat(r.outflow) || 0 })), 'Inflow', 'Outflow')
           + hdr('Monthly detail')
-          + (detail || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No cash movement recorded.</div>')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Cash Flow</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
+          + (detail || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No cash movement recorded.</div>')
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Cash Flow</span><span data-style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
         return;
       }
 
@@ -5284,7 +5284,7 @@ function clearAIChat(){
             tile('Overdue', m(ar.overdueTotal || 0), (ar.overdueCount || 0) + ' invoices', (ar.overdueTotal || 0) > 0 ? 'var(--red)' : 'var(--t2)'),
           ])
           + hdr('Outstanding by customer')
-          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding receivables.</div>')
+          + (rows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding receivables.</div>')
           + row('Total Receivable', m(_arTotal), { bold: true, color: 'var(--green)' }));
         return;
       }
@@ -5333,7 +5333,7 @@ function clearAIChat(){
             tile('Largest', vendorEntries.length ? m(vendorEntries[0][1]) : m(0), vendorEntries.length ? String(vendorEntries[0][0]) : '—'),
           ])
           + hdr('Outstanding by vendor')
-          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding payables.</div>')
+          + (rows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding payables.</div>')
           + row('Total Payable', m(apTotal), { bold: true, color: 'var(--red)' }));
         return;
       }
@@ -5394,7 +5394,7 @@ function clearAIChat(){
             tile('Top Customer', entries.length ? m(entries[0][1]) : m(0), entries.length ? String(entries[0][0]) : '—'),
           ])
           + hdr('Revenue by customer — ' + (PERIOD_LABEL[period] || period))
-          + (custRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No revenue from named customers in this period.</div>')
+          + (custRows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No revenue from named customers in this period.</div>')
           + remRow
           + row('Total Revenue', m(total), { bold: true, color: 'var(--green)' }));
         return;
@@ -5419,7 +5419,7 @@ function clearAIChat(){
         const tGross = _recog.reduce((s, x) => s + x.g, 0);
         const tNet = _recog.reduce((s, x) => s + x.n, 0);
         const gDen = Math.max(1, ...runData.map(x => x.g));
-        const runRows = runData.map(x => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(x.period)} <span style="color:var(--t3);font-size:11px">${e(x.status)}${_RPT_PAYROLL_RECOGNISED.includes(x.status) ? '' : ' · not in totals'}</span></span><span style="font-family:var(--font-mono)">net ${m(x.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(x.g / gDen * 100))}%"></i></div><div style="font-size:10px;color:var(--t3);margin-top:2px">gross ${m(x.g)}</div></div>`).join('');
+        const runRows = runData.map(x => `<div data-style="padding:6px 0"><div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t2)">${e(x.period)} <span data-style="color:var(--t3);font-size:11px">${e(x.status)}${_RPT_PAYROLL_RECOGNISED.includes(x.status) ? '' : ' · not in totals'}</span></span><span data-style="font-family:var(--font-mono)">net ${m(x.n)}</span></div><div data-style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i data-style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(x.g / gDen * 100))}%"></i></div><div data-style="font-size:10px;color:var(--t3);margin-top:2px">gross ${m(x.g)}</div></div>`).join('');
         _rptBody(
           tiles([
             tile('Total Gross', m(tGross), 'approved + paid runs (Σ line items)', 'var(--red)'),
@@ -5428,8 +5428,8 @@ function clearAIChat(){
             tile('Deductions', m(Math.round((tGross - tNet) * 100) / 100), 'gross − net'),
           ])
           + hdr('Payroll runs (gross = Σ line items, basis C)')
-          + (runRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs yet.</div>')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Gross / Net</span><span style="font-family:var(--font-mono)">${m(tGross)} / ${m(tNet)}</span></div>`);
+          + (runRows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs yet.</div>')
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Gross / Net</span><span data-style="font-family:var(--font-mono)">${m(tGross)} / ${m(tNet)}</span></div>`);
         return;
       }
 
@@ -5453,8 +5453,8 @@ function clearAIChat(){
 
         // Hero KPI tiles. M45 (money audit 2026-10-09): "Expenses" is OPERATING expenses (totalExpenses — COGS is
         // already taken in Gross Profit); its caption said "incl. payroll + COGS" over a value that excludes COGS.
-        const tile = (label, val, sub, cls) => `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div></div>`;
-        const kpis = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        const tile = (label, val, sub, cls) => `<div data-style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div data-style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div data-style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div><div data-style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div></div>`;
+        const kpis = `<div data-style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
           ${tile('Revenue', m(rev), 'issued', 'var(--green)')}
           ${tile('Gross Profit', m(gp), pct(gp, rev) + ' margin')}
           ${tile('Net Profit', m(net), pct(net, rev) + ' net margin', net >= 0 ? 'var(--green)' : 'var(--red)')}
@@ -5476,12 +5476,12 @@ function clearAIChat(){
             bars += `<rect x="${(cx - bw - 1).toFixed(1)}" y="${base - rh}" width="${bw.toFixed(1)}" height="${rh}" rx="1" fill="${gold}"/>`;
             bars += `<rect x="${(cx + 1).toFixed(1)}" y="${base - eh}" width="${bw.toFixed(1)}" height="${eh}" rx="1" fill="var(--t3)"/>`;
           });
-          const xl = rws.map(r => `<span style="flex:1;text-align:center">${e(r.month || '')}</span>`).join('');
-          chart = `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
-            <div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">Revenue vs Expenses — monthly</div>
-            <svg viewBox="0 0 ${CW} ${CH}" style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
-            <div style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
-            <div style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${gold};margin:0 4px 0 8px;vertical-align:middle"></span>Revenue<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>Expenses</div>
+          const xl = rws.map(r => `<span data-style="flex:1;text-align:center">${e(r.month || '')}</span>`).join('');
+          chart = `<div data-style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
+            <div data-style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">Revenue vs Expenses — monthly</div>
+            <svg viewBox="0 0 ${CW} ${CH}" data-style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
+            <div data-style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
+            <div data-style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span data-style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${gold};margin:0 4px 0 8px;vertical-align:middle"></span>Revenue<span data-style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>Expenses</div>
           </div>`;
         }
 
@@ -5508,24 +5508,24 @@ function clearAIChat(){
         }
         if (Math.abs(_gap) >= 0.01) catList.push(['Unreconciled difference', _gap]);
         catList.sort((a, b) => b[1] - a[1]);
-        const catBar = ([label, amt]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:var(--red)">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${gold};opacity:.75;width:${exp > 0 ? Math.max(2, Math.round((amt / exp) * 100)) : 0}%"></i></div></div>`;
-        const pill = t => `<span style="font-size:10px;font-weight:600;color:${gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
+        const catBar = ([label, amt]) => `<div data-style="padding:6px 0"><div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t2)">${e(label)}</span><span data-style="font-family:var(--font-mono);color:var(--red)">${m(amt)}</span></div><div data-style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i data-style="display:block;height:100%;background:${gold};opacity:.75;width:${exp > 0 ? Math.max(2, Math.round((amt / exp) * 100)) : 0}%"></i></div></div>`;
+        const pill = t => `<span data-style="font-size:10px;font-weight:600;color:${gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
 
         // C14: the month-by-month table (every month of the period). Its total row is the statement's own totals; if
         // the months ever fail to add up to them the gap is shown, never hidden.
         let monthly = '';
         if (prows.length) {
           const n = v => parseFloat(v) || 0;
-          const cell = (v, c) => `<td style="padding:4px 6px;text-align:right;font-family:var(--font-mono);${c ? 'color:' + c : ''}">${v}</td>`;
+          const cell = (v, c) => `<td data-style="padding:4px 6px;text-align:right;font-family:var(--font-mono);${c ? 'color:' + c : ''}">${v}</td>`;
           const sum = k => Math.round(prows.reduce((t, r) => t + n(r[k]), 0) * 100) / 100;
           const off = [['revenue', rev], ['cogs', cogs], ['expenses', exp], ['netProfit', net]].filter(([k, t]) => Math.abs(sum(k) - t) >= 0.01);
           monthly = hdr('By month')
-            + `<table id="pl-monthly" style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px"><thead><tr style="color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">`
-            + `<th style="text-align:left;padding:4px 6px">Month</th><th style="text-align:right;padding:4px 6px">Revenue</th><th style="text-align:right;padding:4px 6px">Cost of goods</th><th style="text-align:right;padding:4px 6px">Expenses</th><th style="text-align:right;padding:4px 6px">Net</th></tr></thead><tbody>`
-            + prows.map(r => `<tr style="border-top:1px solid var(--bd)"><td style="padding:4px 6px;color:var(--t2)">${e(r.month || '')}</td>${cell(m(n(r.revenue)))}${cell(m(n(r.cogs)))}${cell(m(n(r.expenses)))}${cell(m(n(r.netProfit)), n(r.netProfit) >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`).join('')
-            + `<tr style="border-top:2px solid var(--bd);font-weight:700"><td style="padding:4px 6px">Total</td>${cell(m(rev))}${cell(m(cogs))}${cell(m(exp))}${cell(m(net), net >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`
+            + `<table id="pl-monthly" data-style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px"><thead><tr data-style="color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">`
+            + `<th data-style="text-align:left;padding:4px 6px">Month</th><th data-style="text-align:right;padding:4px 6px">Revenue</th><th data-style="text-align:right;padding:4px 6px">Cost of goods</th><th data-style="text-align:right;padding:4px 6px">Expenses</th><th data-style="text-align:right;padding:4px 6px">Net</th></tr></thead><tbody>`
+            + prows.map(r => `<tr data-style="border-top:1px solid var(--bd)"><td data-style="padding:4px 6px;color:var(--t2)">${e(r.month || '')}</td>${cell(m(n(r.revenue)))}${cell(m(n(r.cogs)))}${cell(m(n(r.expenses)))}${cell(m(n(r.netProfit)), n(r.netProfit) >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`).join('')
+            + `<tr data-style="border-top:2px solid var(--bd);font-weight:700"><td data-style="padding:4px 6px">Total</td>${cell(m(rev))}${cell(m(cogs))}${cell(m(exp))}${cell(m(net), net >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`
             + `</tbody></table>`
-            + (off.length ? `<div style="font-size:11px;color:var(--red);margin:-6px 0 10px">The months do not add up to the totals (${off.map(([k]) => k).join(', ')}) — please report this.</div>` : '');
+            + (off.length ? `<div data-style="font-size:11px;color:var(--red);margin:-6px 0 10px">The months do not add up to the totals (${off.map(([k]) => k).join(', ')}) — please report this.</div>` : '');
         }
 
         // C15: what CSV / PDF export — the statement and the monthly table, as plain numbers (2 dp) in the
@@ -5556,11 +5556,11 @@ function clearAIChat(){
           + row('Total Revenue', m(rev), { bold: true, color: 'var(--green)' })
           + hdr('Cost of Sales')
           + row('Cost of Goods Sold (FIFO)', '− ' + m(cogs), { color: 'var(--red)' })
-          + `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd);font-weight:600"><span>Gross Profit ${pill(pct(gp, rev) + ' margin')}</span><span style="font-family:var(--font-mono)">${m(gp)}</span></div>`
+          + `<div data-style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd);font-weight:600"><span>Gross Profit ${pill(pct(gp, rev) + ' margin')}</span><span data-style="font-family:var(--font-mono)">${m(gp)}</span></div>`
           + hdr('Operating Expenses')
           + catList.map(catBar).join('')
           + row('Total Operating Expenses', m(exp), { bold: true, color: 'var(--red)' })
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Net Profit ${pill(pct(net, rev) + ' net margin')}</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Net Profit ${pill(pct(net, rev) + ' net margin')}</span><span data-style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`
           + ((() => {
               // GL consolidation: when viewing the consolidated group, surface DETECTED intercompany trade
               // and the eliminated group P&L. Only renders when the server returns intercompany data
@@ -5571,8 +5571,8 @@ function clearAIChat(){
               return hdr('Intercompany (group consolidation)')
                 + row('Intercompany revenue (detected)', '\u2212 ' + m(icRev), { color: 'var(--t2)' })
                 + row('Intercompany expense (detected)', '\u2212 ' + m(icExp), { color: 'var(--t2)' })
-                + (el ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700"><span>Group Net Profit (eliminated) ${pill('intercompany removed')}</span><span style="font-family:var(--font-mono);color:${(parseFloat(el.netProfit)||0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(parseFloat(el.netProfit)||0)}</span></div>` : '')
-                + `<div style="font-size:10px;color:var(--t3);margin-top:6px">Detected by matching a customer/vendor name to another of your entities. The figures above are the primary (transaction-precise) consolidation; eliminated is the group view net of internal trade.</div>`;
+                + (el ? `<div data-style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700"><span>Group Net Profit (eliminated) ${pill('intercompany removed')}</span><span data-style="font-family:var(--font-mono);color:${(parseFloat(el.netProfit)||0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(parseFloat(el.netProfit)||0)}</span></div>` : '')
+                + `<div data-style="font-size:10px;color:var(--t3);margin-top:6px">Detected by matching a customer/vendor name to another of your entities. The figures above are the primary (transaction-precise) consolidation; eliminated is the group view net of internal trade.</div>`;
             })()));
         return;
       }
@@ -5601,7 +5601,7 @@ function clearAIChat(){
             tile('Not Deductible', m(nonDed), 'excluded from tax', 'var(--t2)'),
           ])
           + hdr('Deductible by category')
-          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No deductible expenses recorded.</div>')
+          + (rows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No deductible expenses recorded.</div>')
           + row('Total Deductible', m(ded), { bold: true, color: 'var(--green)' }));
         return;
       }
@@ -5667,20 +5667,20 @@ function clearAIChat(){
         window.removeTaxLine = (i) => { window._readTaxInputs(); window._taxLines.splice(i, 1); if (!window._taxLines.length) window._taxLines.push({ label: 'Income tax', type: 'taxable', value: 0, note: '' }); window._renderTaxWorksheet(); persistTax(); };
         window._renderTaxWorksheet = () => {
           const opt = (v, lbl, cur) => `<option value="${v}"${cur === v ? ' selected' : ''}>${lbl}</option>`;
-          const lineRows = window._taxLines.map((l, i) => `<div style="padding:8px 0;border-bottom:1px solid var(--bd)">
-            <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-              <input id="tl-label-${i}" value="${e(l.label)}" oninput="onTaxEdit()" placeholder="Tax name" style="flex:1;min-width:0;background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 7px;font-size:12px">
-              <input id="tl-val-${i}" type="number" step="0.1" min="0" value="${l.value}" oninput="onTaxEdit()" style="width:62px;text-align:right;font-family:var(--font-mono);background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 6px;font-size:12px">
-              <select id="tl-type-${i}" onchange="onTaxEdit()" style="background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 4px;font-size:11px">${opt('taxable', '% taxable', l.type)}${opt('revenue', '% revenue', l.type)}${opt('fixed', 'fixed $', l.type)}</select>
-              <button onclick="removeTaxLine(${i})" title="Remove" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 3px">✕</button>
+          const lineRows = window._taxLines.map((l, i) => `<div data-style="padding:8px 0;border-bottom:1px solid var(--bd)">
+            <div data-style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+              <input id="tl-label-${i}" value="${e(l.label)}" data-on-input="onTaxEdit()" placeholder="Tax name" data-style="flex:1;min-width:0;background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 7px;font-size:12px">
+              <input id="tl-val-${i}" type="number" step="0.1" min="0" value="${l.value}" data-on-input="onTaxEdit()" data-style="width:62px;text-align:right;font-family:var(--font-mono);background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 6px;font-size:12px">
+              <select id="tl-type-${i}" data-on-change="onTaxEdit()" data-style="background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 4px;font-size:11px">${opt('taxable', '% taxable', l.type)}${opt('revenue', '% revenue', l.type)}${opt('fixed', 'fixed $', l.type)}</select>
+              <button data-arg-i="${i}" data-on-click="removeTaxLine(Number(this.dataset.argI))" title="Remove" data-style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 3px">✕</button>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-              <input id="tl-note-${i}" value="${e(l.note)}" oninput="onTaxEdit()" placeholder="note (optional)" style="flex:1;min-width:0;background:none;border:none;color:var(--t3);font-size:11px;padding:0">
-              <span style="font-family:var(--font-mono);color:var(--red);font-size:12px">= <span id="tl-amt-${i}">${m(r2(lineAmt(l)))}</span></span>
+            <div data-style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <input id="tl-note-${i}" value="${e(l.note)}" data-on-input="onTaxEdit()" placeholder="note (optional)" data-style="flex:1;min-width:0;background:none;border:none;color:var(--t3);font-size:11px;padding:0">
+              <span data-style="font-family:var(--font-mono);color:var(--red);font-size:12px">= <span id="tl-amt-${i}">${m(r2(lineAmt(l)))}</span></span>
             </div></div>`).join('');
           const total = totalTax(), q = Math.round(total / 4);
           _rptBody(
-            `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">Add a line per tax you owe — each a % of taxable income, % of revenue, or a fixed amount. <strong>Rough estimate — not tax advice.</strong> Cross-border obligations (foreign tax credits, worldwide income, capital gains) aren't computed here — enter them as fixed amounts and consult a professional. Your lines also feed your accountant's Tax Summary.</div>`
+            `<div data-style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">Add a line per tax you owe — each a % of taxable income, % of revenue, or a fixed amount. <strong>Rough estimate — not tax advice.</strong> Cross-border obligations (foreign tax credits, worldwide income, capital gains) aren't computed here — enter them as fixed amounts and consult a professional. Your lines also feed your accountant's Tax Summary.</div>`
             + tiles([
               tile('Estimated Tax', `<span id="tl-total">${m(total)}</span>`, 'sum of all lines', 'var(--red)'),
               tile('Per Quarter', `<span id="tl-quarter">${m(q)}</span>`, 'set aside each Q', 'var(--red)'),
@@ -5689,8 +5689,8 @@ function clearAIChat(){
             ])
             + hdr('Tax lines')
             + lineRows
-            + `<button onclick="addTaxLine()" style="margin-top:8px;background:none;border:1px dashed var(--acc,#c8a44a);color:var(--acc,#c8a44a);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;width:100%">+ Add tax line</button>`
-            + `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Total Estimated Tax <span style="color:var(--t3);font-size:11px;font-weight:500">(<span id="tl-fq">${m(q)}</span>/quarter)</span></span><span style="font-family:var(--font-mono);color:var(--red)" id="tl-total2">${m(total)}</span></div>`);
+            + `<button data-on-click="addTaxLine()" data-style="margin-top:8px;background:none;border:1px dashed var(--acc,#c8a44a);color:var(--acc,#c8a44a);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;width:100%">+ Add tax line</button>`
+            + `<div data-style="margin-top:12px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Total Estimated Tax <span data-style="color:var(--t3);font-size:11px;font-weight:500">(<span id="tl-fq">${m(q)}</span>/quarter)</span></span><span data-style="font-family:var(--font-mono);color:var(--red)" id="tl-total2">${m(total)}</span></div>`);
         };
         window._renderTaxWorksheet();
         return;
@@ -5700,10 +5700,10 @@ function clearAIChat(){
       // state (F123 class), never a fabricated return. ────────────────────────────────────────────
       if (name === 'VAT Return') {
         _rptBody(
-          `<div style="text-align:center;padding:28px 16px;color:var(--t2)">
-            <div style="font-size:30px;margin-bottom:10px">🧾</div>
-            <div style="font-size:15px;font-weight:600;color:var(--t1);margin-bottom:6px">VAT / GST is not tracked</div>
-            <div style="font-size:12px;color:var(--t3);line-height:1.5;max-width:340px;margin:0 auto">FinFlow doesn’t record VAT or sales tax on invoices or bills, so a VAT return can’t be produced from your data. If you’re VAT/GST-registered and need this, VAT tracking can be added as a feature.</div>
+          `<div data-style="text-align:center;padding:28px 16px;color:var(--t2)">
+            <div data-style="font-size:30px;margin-bottom:10px">🧾</div>
+            <div data-style="font-size:15px;font-weight:600;color:var(--t1);margin-bottom:6px">VAT / GST is not tracked</div>
+            <div data-style="font-size:12px;color:var(--t3);line-height:1.5;max-width:340px;margin:0 auto">FinFlow doesn’t record VAT or sales tax on invoices or bills, so a VAT return can’t be produced from your data. If you’re VAT/GST-registered and need this, VAT tracking can be added as a feature.</div>
           </div>`);
         return;
       }
@@ -5725,7 +5725,7 @@ function clearAIChat(){
         }));
         const emps = Object.entries(byEmp).sort((a, b) => b[1].g - a[1].g);
         const gDen = Math.max(1, ...emps.map(([, v]) => v.g));
-        const rows = emps.map(([nm, v]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(nm)}</span><span style="font-family:var(--font-mono)">gross ${m(v.g)} · net ${m(v.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(v.g / gDen * 100))}%"></i></div></div>`).join('');
+        const rows = emps.map(([nm, v]) => `<div data-style="padding:6px 0"><div data-style="display:flex;justify-content:space-between;font-size:13px"><span data-style="color:var(--t2)">${e(nm)}</span><span data-style="font-family:var(--font-mono)">gross ${m(v.g)} · net ${m(v.n)}</span></div><div data-style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i data-style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(v.g / gDen * 100))}%"></i></div></div>`).join('');
         _rptBody(
           tiles([
             tile('People', String(emps.length), 'on payroll runs'),
@@ -5733,10 +5733,10 @@ function clearAIChat(){
             tile('Total Withheld', m(Math.round((tG - tN) * 100) / 100), 'deductions'),
             tile('Total Net', m(tN), 'take-home', 'var(--green)'),
           ])
-          + `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:var(--t2)">Pay per person from approved and paid payroll runs. <strong>Payments to contractors outside payroll are not included</strong> — they are expenses or bills.</div>`
+          + `<div data-style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:var(--t2)">Pay per person from approved and paid payroll runs. <strong>Payments to contractors outside payroll are not included</strong> — they are expenses or bills.</div>`
           + hdr('Pay by person')
-          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs recorded.</div>')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Wages / Net</span><span style="font-family:var(--font-mono)">${m(tG)} / ${m(tN)}</span></div>`);
+          + (rows || '<div data-style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs recorded.</div>')
+          + `<div data-style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Wages / Net</span><span data-style="font-family:var(--font-mono)">${m(tG)} / ${m(tN)}</span></div>`);
         return;
       }
       // ── F128: DELEGATE to the canonical client engines. Do NOT recompute. ────────────────────
@@ -5809,33 +5809,33 @@ function clearAIChat(){
       // computeExpenseBreakdown itself and adds up to the Expenses figure above (it used to list expense categories only).
       const _tbl = (title, m) => {
         const rows = Object.entries(m || {}).sort((a, b) => b[1] - a[1])
-          .map(([k, amt]) => `<tr><td style="padding:3px 0;color:var(--t2)">${e(k)}</td><td style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
-        return rows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">${e(title)}</div>
-        <table style="width:100%;border-collapse:collapse">${rows}<tr style="border-top:1px solid var(--bd)"><td style="padding:3px 0;font-weight:600">Total</td><td style="text-align:right;font-family:var(--font-mono);font-weight:600">${money(expTotal)}</td></tr></table>` : '';
+          .map(([k, amt]) => `<tr><td data-style="padding:3px 0;color:var(--t2)">${e(k)}</td><td data-style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
+        return rows ? `<div data-style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">${e(title)}</div>
+        <table data-style="width:100%;border-collapse:collapse">${rows}<tr data-style="border-top:1px solid var(--bd)"><td data-style="padding:3px 0;font-weight:600">Total</td><td data-style="text-align:right;font-family:var(--font-mono);font-weight:600">${money(expTotal)}</td></tr></table>` : '';
       };
       const _byCat = (typeof window._expenseCategoryRows === 'function') ? Object.fromEntries(window._expenseCategoryRows(breakdown, { all: true })) : {};   // D3: the one category decomposition
       const catRows = _tbl('By source', breakdown.bySource) + _tbl('By category', _byCat) + _tbl('By vendor', breakdown.byVendor);
 
       document.getElementById('rpt-body').innerHTML = `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-          <div style="background:var(--bg2);border-radius:6px;padding:10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Revenue</div>
-            <div style="font-size:16px;font-weight:600;color:var(--green)">${money(revenue)}</div>
-            <div style="font-size:10px;color:var(--t3)">issued, ${e(PERIOD_LABEL[period] || period)}</div>
+        <div data-style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+          <div data-style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div data-style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Revenue</div>
+            <div data-style="font-size:16px;font-weight:600;color:var(--green)">${money(revenue)}</div>
+            <div data-style="font-size:10px;color:var(--t3)">issued, ${e(PERIOD_LABEL[period] || period)}</div>
           </div>
-          <div style="background:var(--bg2);border-radius:6px;padding:10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Expenses</div>
-            <div style="font-size:16px;font-weight:600;color:var(--red)">${money(expTotal)}</div>
-            <div style="font-size:10px;color:var(--t3)">incl. bills &amp; payroll</div>
+          <div data-style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div data-style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Expenses</div>
+            <div data-style="font-size:16px;font-weight:600;color:var(--red)">${money(expTotal)}</div>
+            <div data-style="font-size:10px;color:var(--t3)">incl. bills &amp; payroll</div>
           </div>
-          <div style="background:var(--bg2);border-radius:6px;padding:10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Net Profit</div>
-            <div style="font-size:16px;font-weight:600;color:${profit >= 0 ? 'var(--green)' : 'var(--red)'}">${money(profit)}</div>
+          <div data-style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div data-style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Net Profit</div>
+            <div data-style="font-size:16px;font-weight:600;color:${profit >= 0 ? 'var(--green)' : 'var(--red)'}">${money(profit)}</div>
           </div>
-          <div style="background:var(--bg2);border-radius:6px;padding:10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Outstanding</div>
-            <div style="font-size:16px;font-weight:600;color:var(--amber)">${money(outstanding)}</div>
-            <div style="font-size:10px;color:var(--t3)">all time</div>
+          <div data-style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div data-style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Outstanding</div>
+            <div data-style="font-size:16px;font-weight:600;color:var(--amber)">${money(outstanding)}</div>
+            <div data-style="font-size:10px;color:var(--t3)">all time</div>
           </div>
         </div>
         ${catRows}`;
@@ -5906,14 +5906,14 @@ function clearAIChat(){
       modal = document.createElement('div');
       modal.id = 'invite-modal';
       modal.className = 'modal-overlay hidden';
-      modal.innerHTML = `<div class="modal" style="max-width:360px">
+      modal.innerHTML = `<div class="modal" data-style="max-width:360px">
         <div class="modal-header">
           <div class="modal-title">Invite Team Member</div>
-          <button class="modal-close" onclick="document.getElementById('invite-modal').classList.add('hidden')">
+          <button class="modal-close" data-on-click="document.getElementById('invite-modal').classList.add('hidden')">
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <div data-style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
           <div><label class="flabel">Name *</label><input id="inv-name" class="finput" placeholder="Full name"></div>
           <div><label class="flabel">Email *</label><input id="inv-email" class="finput" type="email" placeholder="email@company.com"></div>
           <div><label class="flabel">Role</label>
@@ -5924,14 +5924,14 @@ function clearAIChat(){
             </select>
           </div>
           <div><label class="flabel">Businesses this member can access</label>
-            <div id="inv-entities" style="display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
-              <div style="font-size:12px;color:var(--t3)">Loading…</div>
+            <div id="inv-entities" data-style="display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
+              <div data-style="font-size:12px;color:var(--t3)">Loading…</div>
             </div>
           </div>
         </div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('invite-modal').classList.add('hidden')">Cancel</button>
-          <button class="btn btn-primary btn-sm" onclick="sendInvite()">Send Invite</button>
+        <div class="modal-footer" data-style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('invite-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" data-on-click="sendInvite()">Send Invite</button>
         </div>
       </div>`;
       document.body.appendChild(modal);
@@ -5956,8 +5956,8 @@ function clearAIChat(){
       const ents = await api('GET', '/api/entities');
       const box = document.getElementById('inv-entities');
       if (box) box.innerHTML = (ents && ents.length)
-        ? ents.map(en => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="inv-ent-cb" value="${en.id}" checked> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
-        : '<div style="font-size:12px;color:var(--t3)">No businesses yet</div>';
+        ? ents.map(en => `<label data-style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="inv-ent-cb" value="${en.id}" checked> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
+        : '<div data-style="font-size:12px;color:var(--t3)">No businesses yet</div>';
     } catch (_) {}
   };
 
@@ -5994,22 +5994,22 @@ function clearAIChat(){
       let h;
       if (b.paid) {
         const per = b.interval === 'year' ? 'year' : 'month';
-        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)} · billed ${b.interval === 'year' ? 'yearly' : 'monthly'} · $${Number(b.price).toLocaleString('en-US')} a ${per}</div>`
+        h = `<div data-style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)} · billed ${b.interval === 'year' ? 'yearly' : 'monthly'} · $${Number(b.price).toLocaleString('en-US')} a ${per}</div>`
           + (b.periodEnd
               ? (b.cancelAtPeriodEnd
-                  ? `<div style="color:var(--amber)">Cancels on ${e(_bDate(b.periodEnd))} — you keep full access until then.</div>`
+                  ? `<div data-style="color:var(--amber)">Cancels on ${e(_bDate(b.periodEnd))} — you keep full access until then.</div>`
                   : `<div>Renews on ${e(_bDate(b.periodEnd))}.</div>`)
               : '');
       } else if (b.readOnly) {
-        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">No active plan — your books are read-only</div><div>You can view and export everything. Choose a plan to make changes again.</div>`
+        h = `<div data-style="font-size:15px;color:var(--t1);font-weight:500">No active plan — your books are read-only</div><div>You can view and export everything. Choose a plan to make changes again.</div>`
           // D-G step 4: when a PAID plan ended, the books are kept 90 days, then deleted — say when, and how to keep them.
-          + (b.deleteOn ? `<div style="margin-top:6px;color:var(--amber)">Your plan ended on ${e(_bDate(b.accessEndedAt))}. Your books will be deleted on <strong>${e(_bDate(b.deleteOn))}</strong> unless you choose a plan before then — we e-mail you 14 days before. Export a copy any time: Settings → Your data → Download my data.</div>` : '');
+          + (b.deleteOn ? `<div data-style="margin-top:6px;color:var(--amber)">Your plan ended on ${e(_bDate(b.accessEndedAt))}. Your books will be deleted on <strong>${e(_bDate(b.deleteOn))}</strong> unless you choose a plan before then — we e-mail you 14 days before. Export a copy any time: Settings → Your data → Download my data.</div>` : '');
       } else {
-        h = `<div style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)}</div>` + (b.trialEnds ? `<div>Ends on ${e(_bDate(b.trialEnds))}. No card needed until you choose a plan.</div>` : '');
+        h = `<div data-style="font-size:15px;color:var(--t1);font-weight:500">${e(b.planName)}</div>` + (b.trialEnds ? `<div>Ends on ${e(_bDate(b.trialEnds))}. No card needed until you choose a plan.</div>` : '');
       }
-      h += `<div style="margin-top:.75rem;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="showPage('pricing')">${b.paid ? 'Change plan' : 'Choose a plan'}</button>`
-        + (b.paid && !b.cancelAtPeriodEnd ? `<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ffCancelPlan()">Cancel plan</button>` : '')
-        + (b.paid && b.cancelAtPeriodEnd ? `<button class="btn btn-primary btn-sm" onclick="ffResumePlan()">Keep my plan</button>` : '')
+      h += `<div data-style="margin-top:.75rem;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-on-click="showPage('pricing')">${b.paid ? 'Change plan' : 'Choose a plan'}</button>`
+        + (b.paid && !b.cancelAtPeriodEnd ? `<button class="btn btn-ghost btn-sm" data-style="color:var(--red)" data-on-click="ffCancelPlan()">Cancel plan</button>` : '')
+        + (b.paid && b.cancelAtPeriodEnd ? `<button class="btn btn-primary btn-sm" data-on-click="ffResumePlan()">Keep my plan</button>` : '')
         + `</div><div id="billing-cancel-box"></div>`;
       el.innerHTML = h;
     } catch (err) { el.textContent = 'Could not load your plan — ' + err.message; }
@@ -6027,10 +6027,10 @@ function clearAIChat(){
         : `You paid <strong>${_money2(p.paid)}</strong> for this year. ${p.monthsUsed} month${p.monthsUsed === 1 ? '' : 's'} used × ${_money2(p.monthlyPrice)} (the monthly price) = ${_money2(p.used)}. `
           + (p.refund > 0 ? `We refund <strong>${_money2(p.refund)}</strong> to the card you paid with. ` : 'No refund is due. ')
           + `Access ends today. ${keep}`;
-      box.innerHTML = `<div style="margin-top:.75rem;padding:12px 14px;border:1px solid var(--red-bd);border-radius:var(--radius);background:var(--red-bg)">
-          <div style="color:var(--t1);margin-bottom:8px">${what}</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="billing-cancel-confirm" style="background:var(--red);color:#fff" onclick="ffConfirmCancel()">Cancel my plan</button>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('billing-cancel-box').innerHTML=''">Keep my plan</button></div></div>`;
+      box.innerHTML = `<div data-style="margin-top:.75rem;padding:12px 14px;border:1px solid var(--red-bd);border-radius:var(--radius);background:var(--red-bg)">
+          <div data-style="color:var(--t1);margin-bottom:8px">${what}</div>
+          <div data-style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="billing-cancel-confirm" data-style="background:var(--red);color:#fff" data-on-click="ffConfirmCancel()">Cancel my plan</button>
+          <button class="btn btn-ghost btn-sm" data-on-click="document.getElementById('billing-cancel-box').innerHTML=''">Keep my plan</button></div></div>`;
     } catch (err) { box.textContent = 'Could not prepare the cancellation — ' + err.message; }
   };
   window.ffConfirmCancel = async function () {
@@ -6060,7 +6060,7 @@ function clearAIChat(){
     if (sel) sel.value = m;
     let d;
     try { d = await api('GET', '/api/saas-metrics?month=' + encodeURIComponent(m)); }
-    catch (err) { body.innerHTML = `<div style="color:var(--t3)">${e(err.message)}</div>`; return; }
+    catch (err) { body.innerHTML = `<div data-style="color:var(--t3)">${e(err.message)}</div>`; return; }
     window._saas = d;
     const x = d.metrics || {}, cur = d.currency || 'USD';
     const sym = (window.CURRENCIES && window.CURRENCIES[cur] && window.CURRENCIES[cur].symbol) || (cur === 'USD' ? '$' : cur + ' ');
@@ -6070,41 +6070,41 @@ function clearAIChat(){
     const nm = k => (d.names && d.names[k]) || String(k).replace(/^(ff|stripe):/, '');
     if (title) title.textContent = 'Growth & retention — ' + _ymLabel(m);
     const flagFor = re => (x.flags || []).find(f => re.test(f));
-    const tile = (id, label, val, key, hint) => `<button type="button" class="mrr-metric" id="${id}" data-working="${key || ''}" style="text-align:left;cursor:${key ? 'pointer' : 'default'};border:1px solid var(--bd);background:none;border-radius:var(--radius);padding:10px" title="${e(hint || 'Show how this is worked out')}">
-        <div class="mrr-val" style="font-size:18px">${val}</div><div class="mrr-label">${e(label)}</div></button>`;
-    const ltvTxt = x.ltv != null ? money(x.ltv) : `<span style="font-size:12px;color:var(--t3)">${e(flagFor(/Lifetime value/) || 'Not available')}</span>`;
-    const cacTxt = x.cac != null ? money(x.cac) : `<span style="font-size:12px;color:var(--t3)">${e(flagFor(/new customers/) || 'Not available')}</span>`;
-    const mvRow = (label, amt, keys, color) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)"><span><span style="color:var(--t1)">${e(label)}</span> <span style="color:var(--t3)">${(keys || []).map(k => e(nm(k))).join(', ') || '—'}</span></span><span style="font-family:var(--font-mono);color:${color}">${money(amt)}</span></div>`;
+    const tile = (id, label, val, key, hint) => `<button type="button" class="mrr-metric" id="${id}" data-working="${key || ''}" data-style="text-align:left;cursor:${key ? 'pointer' : 'default'};border:1px solid var(--bd);background:none;border-radius:var(--radius);padding:10px" title="${e(hint || 'Show how this is worked out')}">
+        <div class="mrr-val" data-style="font-size:18px">${val}</div><div class="mrr-label">${e(label)}</div></button>`;
+    const ltvTxt = x.ltv != null ? money(x.ltv) : `<span data-style="font-size:12px;color:var(--t3)">${e(flagFor(/Lifetime value/) || 'Not available')}</span>`;
+    const cacTxt = x.cac != null ? money(x.cac) : `<span data-style="font-size:12px;color:var(--t3)">${e(flagFor(/new customers/) || 'Not available')}</span>`;
+    const mvRow = (label, amt, keys, color) => `<div data-style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)"><span><span data-style="color:var(--t1)">${e(label)}</span> <span data-style="color:var(--t3)">${(keys || []).map(k => e(nm(k))).join(', ') || '—'}</span></span><span data-style="font-family:var(--font-mono);color:${color}">${money(amt)}</span></div>`;
     const cohorts = (d.cohorts || []).slice(-12);
     const maxOff = cohorts.reduce((mx, g) => Math.max(mx, g.months.length), 0);
-    const cohortHtml = cohorts.length ? `<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11.5px;min-width:420px"><thead><tr><th style="text-align:left;padding:4px 6px;color:var(--t3)">Started</th><th style="padding:4px 6px;color:var(--t3)">Customers</th>${Array.from({ length: maxOff }, (_, i) => `<th style="padding:4px 6px;color:var(--t3)">M${i}</th>`).join('')}</tr></thead><tbody>`
-      + cohorts.map(g => `<tr><td style="padding:4px 6px;color:var(--t1)">${e(_ymLabel(g.start).replace(/ (\d{4})$/, ' $1'))}</td><td style="padding:4px 6px;text-align:center">${g.size}</td>${g.months.map(r => `<td style="padding:4px 6px;text-align:center;background:rgba(201,168,76,${(r.customerPct || 0) / 400})" title="Revenue retained: ${r.mrrPct == null ? '—' : r.mrrPct + '%'}">${r.customerPct}%</td>`).join('')}</tr>`).join('')
-      + `</tbody></table><div style="font-size:11px;color:var(--t3);margin-top:4px">Share of each starting group of customers still paying; hover a cell for the share of their revenue kept.</div></div>` : '<div style="color:var(--t3)">No subscription history yet.</div>';
+    const cohortHtml = cohorts.length ? `<div data-style="overflow-x:auto"><table data-style="border-collapse:collapse;font-size:11.5px;min-width:420px"><thead><tr><th data-style="text-align:left;padding:4px 6px;color:var(--t3)">Started</th><th data-style="padding:4px 6px;color:var(--t3)">Customers</th>${Array.from({ length: maxOff }, (_, i) => `<th data-style="padding:4px 6px;color:var(--t3)">M${i}</th>`).join('')}</tr></thead><tbody>`
+      + cohorts.map(g => `<tr><td data-style="padding:4px 6px;color:var(--t1)">${e(_ymLabel(g.start).replace(/ (\d{4})$/, ' $1'))}</td><td data-style="padding:4px 6px;text-align:center">${g.size}</td>${g.months.map(r => `<td data-style="padding:4px 6px;text-align:center;background:rgba(201,168,76,${(r.customerPct || 0) / 400})" title="Revenue retained: ${r.mrrPct == null ? '—' : r.mrrPct + '%'}">${r.customerPct}%</td>`).join('')}</tr>`).join('')
+      + `</tbody></table><div data-style="font-size:11px;color:var(--t3);margin-top:4px">Share of each starting group of customers still paying; hover a cell for the share of their revenue kept.</div></div>` : '<div data-style="color:var(--t3)">No subscription history yet.</div>';
     const st = d.settings || {};
     body.innerHTML =
-      `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">`
+      `<div data-style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">`
       + tile('saas-nrr', 'Net revenue retention', pc(x.nrr), 'nrr') + tile('saas-grr', 'Gross revenue retention', pc(x.grr), 'grr')
       + tile('saas-customer-churn', 'Customer churn', pc(x.customerChurnRate), 'customerChurnRate') + tile('saas-revenue-churn', 'Revenue churn', pc(x.revenueChurnRate), 'revenueChurnRate')
       + tile('saas-arpa', 'Revenue per customer (ARPA)', x.arpa != null ? money(x.arpa) : '—', 'arpa') + tile('saas-cac', 'Cost to win a customer (CAC)', cacTxt, x.cac != null ? 'cac' : '')
       + tile('saas-payback', 'Months to earn back CAC', x.paybackMonths != null ? Number(x.paybackMonths).toFixed(1) + ' months' : '—', x.paybackMonths != null ? 'paybackMonths' : '')
       + tile('saas-ltv', 'Lifetime value (LTV)', ltvTxt, x.ltv != null ? 'ltv' : '')
-      + `</div><div id="saas-working" style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid var(--acc);border-radius:var(--radius);font-size:12px"></div>`
-      + `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">`
-      +   `<div id="saas-movement"><div style="font-weight:600;color:var(--t1);margin-bottom:4px">What changed in ${e(_ymLabel(m))}</div>`
+      + `</div><div id="saas-working" data-style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid var(--acc);border-radius:var(--radius);font-size:12px"></div>`
+      + `<div data-style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">`
+      +   `<div id="saas-movement"><div data-style="font-weight:600;color:var(--t1);margin-bottom:4px">What changed in ${e(_ymLabel(m))}</div>`
       +     mvRow('New', x.newMrr, x.newCustomers, 'var(--green)') + mvRow('Came back', x.reactivation, [], 'var(--green)') + mvRow('Expanded', x.expansion, x.expandedCustomers, 'var(--acc)')
       +     mvRow('Reduced', -(x.contraction || 0), x.contractedCustomers, 'var(--amber)') + mvRow('Left', -(x.churnedMrr || 0), x.churnedCustomers, 'var(--red)') + `</div>`
-      +   `<div id="saas-cohorts"><div style="font-weight:600;color:var(--t1);margin-bottom:4px">Retention by starting month</div>${cohortHtml}</div>`
+      +   `<div id="saas-cohorts"><div data-style="font-weight:600;color:var(--t1);margin-bottom:4px">Retention by starting month</div>${cohortHtml}</div>`
       + `</div>`
-      + `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">`
-      +   `<div style="flex:1 1 260px"><label class="flabel" for="saas-cats">Expense categories that count as winning customers</label><input class="finput" id="saas-cats" value="${e((st.acquisitionCategories || []).join(', '))}"></div>`
-      +   `<div style="width:150px"><label class="flabel" for="saas-payroll-pct">Share of payroll (%)</label><input class="finput" id="saas-payroll-pct" type="number" min="0" max="100" value="${Number(st.salesPayrollPct || 0)}"></div>`
-      +   `<button class="btn btn-ghost btn-sm" onclick="ffSaveSaasSettings()">Save</button></div>`
-      + `<div style="font-size:11px;color:var(--t3);margin-top:6px">Sources: ${d.sources && d.sources.finflowLines || 0} recurring invoices in FinFlow${d.sources && d.sources.stripeConnected ? ', ' + (d.sources.stripeLines || 0) + ' Stripe subscription invoices' : ''}${d.sources && d.sources.otherCurrencySkipped ? ' · ' + d.sources.otherCurrencySkipped + ' Stripe invoices in another currency not included' : ''}${d.sources && d.sources.stripeError ? ' · Stripe could not be read: ' + e(d.sources.stripeError) : ''}. Gross margin from your books: ${d.grossMargin == null ? '—' : (d.grossMargin * 100).toFixed(1) + '%'}.</div>`;
+      + `<div data-style="margin-top:14px;padding-top:10px;border-top:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">`
+      +   `<div data-style="flex:1 1 260px"><label class="flabel" for="saas-cats">Expense categories that count as winning customers</label><input class="finput" id="saas-cats" value="${e((st.acquisitionCategories || []).join(', '))}"></div>`
+      +   `<div data-style="width:150px"><label class="flabel" for="saas-payroll-pct">Share of payroll (%)</label><input class="finput" id="saas-payroll-pct" type="number" min="0" max="100" value="${Number(st.salesPayrollPct || 0)}"></div>`
+      +   `<button class="btn btn-ghost btn-sm" data-on-click="ffSaveSaasSettings()">Save</button></div>`
+      + `<div data-style="font-size:11px;color:var(--t3);margin-top:6px">Sources: ${d.sources && d.sources.finflowLines || 0} recurring invoices in FinFlow${d.sources && d.sources.stripeConnected ? ', ' + (d.sources.stripeLines || 0) + ' Stripe subscription invoices' : ''}${d.sources && d.sources.otherCurrencySkipped ? ' · ' + d.sources.otherCurrencySkipped + ' Stripe invoices in another currency not included' : ''}${d.sources && d.sources.stripeError ? ' · Stripe could not be read: ' + e(d.sources.stripeError) : ''}. Gross margin from your books: ${d.grossMargin == null ? '—' : (d.grossMargin * 100).toFixed(1) + '%'}.</div>`;
     body.querySelectorAll('[data-working]').forEach(b => { const k = b.getAttribute('data-working'); if (!k) return; b.onclick = () => {
       const wv = (x.working || {})[k], box = document.getElementById('saas-working');
       if (!wv || !box) return;
-      const inp = Object.entries(wv.inputs || {}).filter(([kk, v]) => typeof v !== 'object' || Array.isArray(v)).map(([kk, v]) => `<div><span style="color:var(--t3)">${e(kk)}</span>: ${e(Array.isArray(v) ? v.join(', ') : v)}</div>`).join('');
-      box.innerHTML = `<div style="color:var(--t1);font-weight:600;margin-bottom:4px">${e(b.querySelector('.mrr-label').textContent)}</div><div style="margin-bottom:6px">${e(wv.formula)}</div>${inp}`;
+      const inp = Object.entries(wv.inputs || {}).filter(([kk, v]) => typeof v !== 'object' || Array.isArray(v)).map(([kk, v]) => `<div><span data-style="color:var(--t3)">${e(kk)}</span>: ${e(Array.isArray(v) ? v.join(', ') : v)}</div>`).join('');
+      box.innerHTML = `<div data-style="color:var(--t1);font-weight:600;margin-bottom:4px">${e(b.querySelector('.mrr-label').textContent)}</div><div data-style="margin-bottom:6px">${e(wv.formula)}</div>${inp}`;
       box.style.display = 'block'; }; });
     // the breakdown tiles + the churn card, for the same completed month (ONE writer — the engine)
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -6130,16 +6130,16 @@ function clearAIChat(){
     let c;
     try { c = await api('GET', '/api/sso/config'); } catch (err) { el.textContent = err.message; return; }
     const ent = window.FinFlowPlans && window.FinFlowPlans.has(typeof currentUserPlan !== 'undefined' ? currentUserPlan : '', 'sso');
-    if (!ent) { el.innerHTML = `<div>Sign in through your company's identity provider (Google Workspace, Microsoft Entra ID, Okta and other OpenID Connect providers). Single sign-on is part of the Enterprise plan — <a href="#" onclick="showPage('pricing');return false" style="color:var(--acc)">talk to us</a>.</div>`; return; }
-    el.innerHTML = `<div style="margin-bottom:8px">${c.enabled ? '<strong style="color:var(--green)">On</strong> for ' + e((c.domains || []).join(', ')) : 'Off'} — your team signs in through your identity provider (OpenID Connect: Google Workspace, Microsoft Entra ID, Okta, Auth0…). SAML is not supported.</div>
-      <div style="font-size:11.5px;color:var(--t3);margin-bottom:8px">In your provider, register this redirect URL: <code id="sso-redirect">${e(c.redirectUri || '')}</code></div>
+    if (!ent) { el.innerHTML = `<div>Sign in through your company's identity provider (Google Workspace, Microsoft Entra ID, Okta and other OpenID Connect providers). Single sign-on is part of the Enterprise plan — <a href="#" data-on-click="showPage('pricing');return false" data-style="color:var(--acc)">talk to us</a>.</div>`; return; }
+    el.innerHTML = `<div data-style="margin-bottom:8px">${c.enabled ? '<strong data-style="color:var(--green)">On</strong> for ' + e((c.domains || []).join(', ')) : 'Off'} — your team signs in through your identity provider (OpenID Connect: Google Workspace, Microsoft Entra ID, Okta, Auth0…). SAML is not supported.</div>
+      <div data-style="font-size:11.5px;color:var(--t3);margin-bottom:8px">In your provider, register this redirect URL: <code id="sso-redirect">${e(c.redirectUri || '')}</code></div>
       <div class="field-wrap"><label class="field-label" for="sso-issuer">Issuer URL</label><input class="finput" id="sso-issuer" placeholder="https://login.example.com" value="${e(c.issuer || '')}"></div>
       <div class="field-group"><div class="field-wrap"><label class="field-label" for="sso-client">Client ID</label><input class="finput" id="sso-client" value="${e(c.client_id || '')}"></div>
         <div class="field-wrap"><label class="field-label" for="sso-secret">Client secret</label><input class="finput" id="sso-secret" type="password" placeholder="${c.hasSecret ? 'Saved — leave blank to keep' : ''}"></div></div>
       <div class="field-wrap"><label class="field-label" for="sso-domains">E-mail domains (comma-separated)</label><input class="finput" id="sso-domains" placeholder="yourcompany.com" value="${e((c.domains || []).join(', '))}"></div>
-      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-enforce" ${c.enforce ? 'checked' : ''}> Require single sign-on for these domains (you, the owner, can always use your password)</label>
-      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-jit" ${c.jitViewer ? 'checked' : ''}> New people from these domains can join as Viewers</label>
-      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" onclick="ffSaveSso()">Save</button>${c.enabled ? '<button class="btn btn-ghost btn-sm" onclick="ffSaveSso(false)">Turn off</button>' : ''}</div>`;
+      <label data-style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-enforce" ${c.enforce ? 'checked' : ''}> Require single sign-on for these domains (you, the owner, can always use your password)</label>
+      <label data-style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sso-jit" ${c.jitViewer ? 'checked' : ''}> New people from these domains can join as Viewers</label>
+      <div data-style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" data-on-click="ffSaveSso()">Save</button>${c.enabled ? '<button class="btn btn-ghost btn-sm" data-on-click="ffSaveSso(false)">Turn off</button>' : ''}</div>`;
   };
   window.ffSaveSso = async function (on) {
     const v = id => (document.getElementById(id) || {}).value || '';
@@ -6595,7 +6595,7 @@ function clearAIChat(){
     } else if (state === 'error') {
       ids.forEach(id => set(id, '—'));
       if (chg) {
-        chg.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window._bootDashboardWiring&&window._bootDashboardWiring()') : 'Retry');
+        chg.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('_bootDashboardWiring') : 'Retry');
         chg.className = 'mc-change dn';
       }
     }
@@ -6871,7 +6871,7 @@ function clearAIChat(){
       ? window.crypto.randomUUID()
       : 'je-' + Date.now() + '-' + Math.random().toString(36).slice(2));
     window._savingJournal = true;
-    const _jeBtns = document.querySelectorAll('#journal-entry-modal [onclick*="saveJournalEntry"]');
+    const _jeBtns = document.querySelectorAll('#journal-entry-modal [data-on-click*="saveJournalEntry"]');
     _jeBtns.forEach(b => { b.disabled = true; });
     try {
       await api('POST', '/api/journals', { date, description, lines: apiLines, status, idempotency_key: window._jeIdemKey });
@@ -7147,7 +7147,7 @@ function clearAIChat(){
       const span = banner.querySelector('span[style*="flex"]');
       if (span) {
         span.innerHTML =
-          'Your data is <strong style="color:#f2e8d5">securely stored in the cloud</strong> ' +
+          'Your data is <strong data-style="color:#f2e8d5">securely stored in the cloud</strong> ' +
           '— backed by PostgreSQL on Supabase. It\'s safe across all browsers and devices.';
       }
     }, 600);

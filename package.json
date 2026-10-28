@@ -11,7 +11,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "minify": "node scripts/minify.js",
-    "gen": "node scripts/gen-plan-cards.js && node scripts/gen-tier-cards.js && node bundle.js && node scripts/minify.js && node scripts/externalize-app.js && node scripts/lazy-pages.js"
+    "gen": "node scripts/gen-plan-cards.js && node scripts/gen-tier-cards.js && node scripts/gen-handlers.js && node bundle.js && node scripts/minify.js && node scripts/externalize-app.js && node scripts/lazy-pages.js"
   },
   "dependencies": {
     "@sentry/node": "^8.55.2",

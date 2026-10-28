@@ -27,36 +27,36 @@
     var badge = document.getElementById('badge-review');
     if (badge){ if ((s.total||0)>0){ badge.textContent = s.total; badge.style.display=''; } else { badge.style.display='none'; } }
 
-    if (!items.length){ box.innerHTML = '<div style="padding:28px 8px;text-align:center;color:var(--t2)">Your books look clean — nothing to review right now.</div>'; return; }
+    if (!items.length){ box.innerHTML = '<div data-style="padding:28px 8px;text-align:center;color:var(--t2)">Your books look clean — nothing to review right now.</div>'; return; }
 
     var html = '';
     var uncat = items.filter(function(i){ return i.type==='uncategorized'; });
     if (uncat.length){
-      html += '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 11px;background:rgba(120,120,120,.07);border-radius:8px">'
-        + '<div style="font-size:12px;color:var(--t2)">' + uncat.length + ' uncategorized expense' + (uncat.length===1?'':'s') + '. Let AI propose categories — you approve each one.</div>'
-        + '<button class="btn btn-ghost btn-sm" id="rev-ai-btn" style="margin-left:auto" onclick="ffReviewSuggest&&ffReviewSuggest()">Suggest categories (AI)</button>'
-        + (suggestions ? '<button class="btn btn-sm" style="background:var(--amber,#c9a84c);color:#1a140a;border:none" onclick="ffReviewApplyAll(this)">Apply all (' + Object.keys(suggestions).length + ')</button>' : '')
+      html += '<div data-style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 11px;background:rgba(120,120,120,.07);border-radius:8px">'
+        + '<div data-style="font-size:12px;color:var(--t2)">' + uncat.length + ' uncategorized expense' + (uncat.length===1?'':'s') + '. Let AI propose categories — you approve each one.</div>'
+        + '<button class="btn btn-ghost btn-sm" id="rev-ai-btn" data-style="margin-left:auto" data-on-click="ffReviewSuggest&&ffReviewSuggest()">Suggest categories (AI)</button>'
+        + (suggestions ? '<button class="btn btn-sm" data-style="background:var(--amber,#c9a84c);color:#1a140a;border:none" data-on-click="ffReviewApplyAll(this)">Apply all (' + Object.keys(suggestions).length + ')</button>' : '')
         + '</div>';
     }
     items.forEach(function(it){
       var sev = SEV[it.severity] || SEV.low;
       var sug = suggestions && it.type==='uncategorized' ? suggestions[it.id] : null;
-      html += '<div class="tx-row" style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--bd,rgba(120,120,120,.14))">'
-        + '<span style="flex:0 0 auto;font-size:10px;font-weight:600;padding:2px 8px;border-radius:9px;background:'+sev.bg+';color:'+sev.fg+'">'+esc(TYPE_LABEL[it.type]||sev.label)+'</span>'
-        + '<div style="flex:1 1 auto;min-width:0">'
-        +   '<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(it.title)+'</div>'
-        +   '<div style="font-size:11.5px;color:var(--t2)">'+esc(it.detail)+(it.date?' · '+esc(it.date):'')+'</div>'
+      html += '<div class="tx-row" data-style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--bd,rgba(120,120,120,.14))">'
+        + '<span data-style="flex:0 0 auto;font-size:10px;font-weight:600;padding:2px 8px;border-radius:9px;background:'+sev.bg+';color:'+sev.fg+'">'+esc(TYPE_LABEL[it.type]||sev.label)+'</span>'
+        + '<div data-style="flex:1 1 auto;min-width:0">'
+        +   '<div data-style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(it.title)+'</div>'
+        +   '<div data-style="font-size:11.5px;color:var(--t2)">'+esc(it.detail)+(it.date?' · '+esc(it.date):'')+'</div>'
         + '</div>'
-        + '<div style="flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;min-width:90px">'+money(it.amount)+'</div>'
-        + '<div style="flex:0 0 auto;display:flex;gap:6px;align-items:center">';
+        + '<div data-style="flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;min-width:90px">'+money(it.amount)+'</div>'
+        + '<div data-style="flex:0 0 auto;display:flex;gap:6px;align-items:center">';
       if (sug && sug.category){
-        html += '<span style="font-size:11px;color:var(--t2)">→ '+esc(sug.category)+'</span>'
-          + '<button class="btn btn-ghost btn-sm" onclick="ffReviewApplyCat('+Number(it.id)+',this)" data-cat="'+esc(sug.category)+'">Apply</button>';
+        html += '<span data-style="font-size:11px;color:var(--t2)">→ '+esc(sug.category)+'</span>'
+          + '<button class="btn btn-ghost btn-sm" data-arg-id="'+Number(it.id)+'" data-on-click="ffReviewApplyCat(Number(this.dataset.argId),this)" data-cat="'+esc(sug.category)+'">Apply</button>';
       } else {
         if (it.type==='duplicate'){
-          html += '<button class="btn btn-ghost btn-sm" style="color:#c94a4a" onclick="ffReviewDeleteDup('+Number(it.id)+',\''+esc(it.kind)+'\',this)">Delete duplicate</button>';
+          html += '<button class="btn btn-ghost btn-sm" data-style="color:#c94a4a" data-arg-id="'+Number(it.id)+'" data-arg-kind="'+esc(it.kind)+'" data-on-click="ffReviewDeleteDup(Number(this.dataset.argId),this.dataset.argKind,this)">Delete duplicate</button>';
         }
-        html += '<button class="btn btn-ghost btn-sm" onclick="window.showPage&&window.showPage(\''+(PAGE_OF[it.kind]||'dashboard')+'\')">View</button>';
+        html += '<button class="btn btn-ghost btn-sm" data-arg-page="'+(PAGE_OF[it.kind]||'dashboard')+'" data-on-click="window.showPage&&window.showPage(this.dataset.argPage)">View</button>';
       }
       html += '</div></div>';
     });
@@ -70,11 +70,11 @@
     try {
       var eid = activeEntityId();
       var res = await fetch('/api/books-review' + (eid ? '?entity_id='+encodeURIComponent(eid) : ''), { credentials:'same-origin', headers:{'Content-Type':'application/json'} });
-      if (!res.ok){ box.innerHTML = '<div style="padding:20px 8px;color:var(--t2)">Couldn\'t load the review queue (error '+res.status+'). Try Refresh.</div>'; loading=false; return; }
+      if (!res.ok){ box.innerHTML = '<div data-style="padding:20px 8px;color:var(--t2)">Couldn\'t load the review queue (error '+res.status+'). Try Refresh.</div>'; loading=false; return; }
       lastData = await res.json();
       render();
     } catch(e){
-      box.innerHTML = '<div style="padding:20px 8px;color:var(--t2)">Couldn\'t load the review queue. Check your connection and try Refresh.</div>';
+      box.innerHTML = '<div data-style="padding:20px 8px;color:var(--t2)">Couldn\'t load the review queue. Check your connection and try Refresh.</div>';
     }
     loading = false;
   };

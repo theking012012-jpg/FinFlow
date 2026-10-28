@@ -378,7 +378,7 @@
     } else if (state === 'error') {
       ids.forEach(id => set(id, '—'));
       if (chg) {
-        chg.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window._bootDashboardWiring&&window._bootDashboardWiring()') : 'Retry');
+        chg.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('_bootDashboardWiring') : 'Retry');
         chg.className = 'mc-change dn';
       }
     }

@@ -48,7 +48,7 @@ async function loadAuditTrail(){
   const lastTimeEl=document.getElementById('audit-last-time');
   const lastActEl=document.getElementById('audit-last-action');
   if(!tbody)return;
-  tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
+  tbody.innerHTML='<tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
   try{
     const tbl=document.getElementById('audit-filter-table')?.value||'all';
     const act=document.getElementById('audit-filter-action')?.value||'all';
@@ -67,7 +67,7 @@ async function loadAuditTrail(){
       if(lastActEl)lastActEl.textContent=events[0].action||'—';
     }
     if(!events.length){
-      tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
+      tbody.innerHTML='<tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
       return;
     }
     const actionBadge={CREATE:'b-green',UPDATE:'b-amber',DELETE:'b-red'};
@@ -75,19 +75,19 @@ async function loadAuditTrail(){
       const d=new Date(r.created_at);
       const dStr=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
       const badge=actionBadge[r.action]||'b-amber';
-      return _auditDiff(r.action,r.old_data,r.new_data).map(f=>`<tr style="border-bottom:1px solid var(--bd)">
-        <td style="padding:5px 8px;color:var(--t2);font-size:11px;white-space:nowrap">${esc(dStr)}</td>
-        <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
-        <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
-        <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
-        <td style="padding:5px 8px;color:var(--t1);white-space:nowrap">${esc(r.actor_name||'—')}</td>
-        <td style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
-        <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.old)||'')}">${esc(_auditUnit(r,f.old)||'—')}</td>
-        <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.new)||'')}">${esc(_auditUnit(r,f.new)||'—')}</td>
+      return _auditDiff(r.action,r.old_data,r.new_data).map(f=>`<tr data-style="border-bottom:1px solid var(--bd)">
+        <td data-style="padding:5px 8px;color:var(--t2);font-size:11px;white-space:nowrap">${esc(dStr)}</td>
+        <td data-style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
+        <td data-style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
+        <td data-style="padding:5px 8px"><span class="badge ${badge}" data-style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" data-style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
+        <td data-style="padding:5px 8px;color:var(--t1);white-space:nowrap">${esc(r.actor_name||'—')}</td>
+        <td data-style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
+        <td data-style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.old)||'')}">${esc(_auditUnit(r,f.old)||'—')}</td>
+        <td data-style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.new)||'')}">${esc(_auditUnit(r,f.new)||'—')}</td>
       </tr>`).join('');
     }).join('');
   }catch(e){
-    tbody.innerHTML='<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
   }
 }
 
@@ -249,12 +249,12 @@ function _brecRenderPay(){
     rows=r.ranked.map(x=>({ p:x.c.p, suggested:x.suggested, why:x.why }));
   }
   payList.innerHTML=rows.length?rows.map(({p,suggested,why})=>`
-        <div class="tx-row" style="cursor:pointer" onclick="matchBankRec(_brecBankSelected,${p.id})">
-          <div><div class="tx-name">${esc(p.client||'Invoice payment')}${suggested?` <span class="badge b-green" style="font-size:9.5px">Suggested · ${esc(why.join(' · '))}</span>`:''}</div>
+        <div class="tx-row" data-style="cursor:pointer" data-arg-id="${p.id}" data-on-click="matchBankRec(_brecBankSelected,Number(this.dataset.argId))">
+          <div><div class="tx-name">${esc(p.client||'Invoice payment')}${suggested?` <span class="badge b-green" data-style="font-size:9.5px">Suggested · ${esc(why.join(' · '))}</span>`:''}</div>
           <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(p.payment_date,{year:true}):(p.payment_date||''))||'—')} · ${esc(p.method||'')}</div></div>
           <div class="tx-amt up">+${S(parseFloat(p.amount))}</div>
         </div>`).join('')
-    :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All payments matched</div>';
+    :'<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All payments matched</div>';
 }
 async function loadBankRec(){
   try{
@@ -285,13 +285,13 @@ async function loadBankRec(){
 
     if(bankList){
       bankList.innerHTML=unbank.length?unbank.map(b=>`
-        <div class="tx-row" style="cursor:pointer;border-left:2px solid transparent;padding-left:8px;transition:border-color .15s" id="bbtx-${b.id}"
-          onclick="selectBankTx(${b.id},this)">
+        <div class="tx-row" data-style="cursor:pointer;border-left:2px solid transparent;padding-left:8px;transition:border-color .15s" id="bbtx-${b.id}"
+          data-arg-id="${b.id}" data-on-click="selectBankTx(Number(this.dataset.argId),this)">
           <div><div class="tx-name">${esc(b.description||b.merchant||'Transaction')}</div>
           <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.tx_date||b.date,{year:true}):(b.tx_date||b.date||''))||'—')}${b.account_name?' · '+esc(b.account_name):''}</div></div>
           <div class="tx-amt up">+${S(Math.abs(parseFloat(b.amount)))}</div>
         </div>`).join('')
-        :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All bank transactions matched</div>';
+        :'<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All bank transactions matched</div>';
     }
     window._brecLast={ unbank, unpay };   // G4: the selected line re-ranks these without a refetch
     if(payList) _brecRenderPay();
@@ -299,20 +299,20 @@ async function loadBankRec(){
       // F101: pending (unsaved) block first, with the single Save button that commits ALL staged
       // pairs in one batch POST; then the persisted matches from the server.
       const pendingHtml=_brecPending.length?`
-        <div style="padding:8px;margin-bottom:8px;border:1px dashed var(--acc);border-radius:8px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <strong style="font-size:12px">${_brecPending.length} pending (unsaved)</strong>
-            <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="saveBankRecMatches()">Save ${_brecPending.length} match${_brecPending.length===1?'':'es'}</button>
+        <div data-style="padding:8px;margin-bottom:8px;border:1px dashed var(--acc);border-radius:8px">
+          <div data-style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <strong data-style="font-size:12px">${_brecPending.length} pending (unsaved)</strong>
+            <button class="btn btn-primary btn-sm" data-style="font-size:11px" data-on-click="saveBankRecMatches()">Save ${_brecPending.length} match${_brecPending.length===1?'':'es'}</button>
           </div>
-          ${_brecPending.map((m,i)=>`<div class="tx-row"><div><div class="tx-name">Bank ID ${m.banking_id} ↔ Payment ID ${m.invoice_payment_id}</div><div class="tx-cat">pending — unsaved</div></div><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="unstageBankRec(${i})">Remove</button></div>`).join('')}
+          ${_brecPending.map((m,i)=>`<div class="tx-row"><div><div class="tx-name">Bank ID ${m.banking_id} ↔ Payment ID ${m.invoice_payment_id}</div><div class="tx-cat">pending — unsaved</div></div><button class="btn btn-ghost btn-sm" data-style="font-size:10px" data-arg-i="${i}" data-on-click="unstageBankRec(Number(this.dataset.argI))">Remove</button></div>`).join('')}
         </div>`:'';
       const savedHtml=matched.length?matched.map(m=>`
         <div class="tx-row">
           <div><div class="tx-name">Bank ID ${m.banking_id} ↔ Payment ID ${m.invoice_payment_id}</div>
           <div class="tx-cat">${esc(m.status||'matched')} · ${new Date(m.matched_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div></div>
-          <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="unmatchBankRec(${m.id})">Unmatch</button>
+          <button class="btn btn-ghost btn-sm" data-style="font-size:10px" data-arg-id="${m.id}" data-on-click="unmatchBankRec(Number(this.dataset.argId))">Unmatch</button>
         </div>`).join('')
-        :(_brecPending.length?'':'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No matched pairs yet — select a bank transaction then a payment to match.</div>');
+        :(_brecPending.length?'':'<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No matched pairs yet — select a bank transaction then a payment to match.</div>');
       matchedList.innerHTML=pendingHtml+savedHtml;
     }
     const debEl=document.getElementById('brec-debits-list');
@@ -341,24 +341,24 @@ async function loadBankRec(){
       debEl.innerHTML=debits.length?debits.map(function(d){
         const when=(window.FinFlowDates?window.FinFlowDates.fmtLabel(d.tx_date||d.date,{year:true}):(d.tx_date||d.date||''))||'—';
         const _r=billOpts?_rankFor(d):null;
-        const whyLine=_r?'<div class="tx-cat" id="brec-why-'+d.id+'" style="color:'+(_r.pick?'var(--green)':'var(--t3)')+'">'+esc(_whyFor(_r))+'</div>':'';
-        const billSel=billOpts?('<select id="brec-bill-'+d.id+'" aria-describedby="brec-why-'+d.id+'" style="font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 4px;max-width:220px">'+billOptsFor(d,_r)+'</select><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankMatchBill('+d.id+')">Match bill</button>'):'';
-        return '<div class="tx-row" style="align-items:center">'+
+        const whyLine=_r?'<div class="tx-cat" id="brec-why-'+d.id+'" data-style="color:'+(_r.pick?'var(--green)':'var(--t3)')+'">'+esc(_whyFor(_r))+'</div>':'';
+        const billSel=billOpts?('<select id="brec-bill-'+d.id+'" aria-describedby="brec-why-'+d.id+'" data-style="font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 4px;max-width:220px">'+billOptsFor(d,_r)+'</select><button class="btn btn-ghost btn-sm" data-style="font-size:10px" data-arg-id="'+d.id+'" data-on-click="ffBankMatchBill(Number(this.dataset.argId))">Match bill</button>'):'';
+        return '<div class="tx-row" data-style="align-items:center">'+
           '<div><div class="tx-name">'+esc(d.description||'Debit')+'</div><div class="tx-cat">'+esc(when)+' - money out</div>'+whyLine+'</div>'+
-          '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+
-            '<div class="tx-amt dn" style="margin-right:6px">'+S(Math.abs(parseFloat(d.amount)||0))+'</div>'+
-            '<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankBookExpense('+d.id+')">Book expense</button>'+
+          '<div data-style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+
+            '<div class="tx-amt dn" data-style="margin-right:6px">'+S(Math.abs(parseFloat(d.amount)||0))+'</div>'+
+            '<button class="btn btn-ghost btn-sm" data-style="font-size:10px" data-arg-id="'+d.id+'" data-on-click="ffBankBookExpense(Number(this.dataset.argId))">Book expense</button>'+
             billSel+
-            '<button class="btn btn-ghost btn-sm" style="font-size:10px;opacity:.7" onclick="ffBankIgnore('+d.id+')">Ignore</button>'+
+            '<button class="btn btn-ghost btn-sm" data-style="font-size:10px;opacity:.7" data-arg-id="'+d.id+'" data-on-click="ffBankIgnore(Number(this.dataset.argId))">Ignore</button>'+
           '</div></div>';
-      }).join(''):'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No unreconciled business debits.</div>';
+      }).join(''):'<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No unreconciled business debits.</div>';
     }
     // LR16: every handled line, with what was done — nothing leaves Bank Rec without a trace.
     const hEl=document.getElementById('brec-handled-list');
     if(hEl){
       const _hs={expense:'Booked as an expense',bill:'Matched to a bill',ignored:'Ignored (not a business cost)'};
       const hl=data.handled||[];
-      hEl.innerHTML=hl.length?hl.map(h=>`<div class="tx-row"><div><div class="tx-name">${esc(h.description||'Transaction')}</div><div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(h.tx_date,{year:true}):(h.tx_date||''))||'—')} · ${esc(_hs[h.reconcile_state]||h.reconcile_state)}</div></div><span class="tx-amt" style="color:${h.tx_type==='credit'?'var(--green)':'var(--red)'}">${h.tx_type==='credit'?'+':'−'}${S(h.amount)}</span></div>`).join(''):'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No handled lines yet.</div>';
+      hEl.innerHTML=hl.length?hl.map(h=>`<div class="tx-row"><div><div class="tx-name">${esc(h.description||'Transaction')}</div><div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(h.tx_date,{year:true}):(h.tx_date||''))||'—')} · ${esc(_hs[h.reconcile_state]||h.reconcile_state)}</div></div><span class="tx-amt" data-style="color:${h.tx_type==='credit'?'var(--green)':'var(--red)'}">${h.tx_type==='credit'?'+':'−'}${S(h.amount)}</span></div>`).join(''):'<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No handled lines yet.</div>';
     }
   }catch(e){if(typeof notify==='function')notify('Could not load bank reconciliation');}
 }
@@ -459,25 +459,25 @@ async function loadPayrollRuns(){
   }catch(e){ /* leave window.payrollRuns as-is; the empty state below reports honestly */ }
   if(!el)return;
   try{
-    if(!rows.length){el.innerHTML='<div style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No payroll runs yet.</div>';return;}
+    if(!rows.length){el.innerHTML='<div data-style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No payroll runs yet.</div>';return;}
     const statusBadge={draft:'b-amber',approved:'b-blue',paid:'b-green',voided:'b-red'};
     el.innerHTML=rows.map(r=>`
-      <div class="tx-row" style="align-items:flex-start">
-        <div style="flex:1">
+      <div class="tx-row" data-style="align-items:flex-start">
+        <div data-style="flex:1">
           <div class="tx-name">${esc(r.period)}</div>
           <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.run_date,{year:true}):(r.run_date||''))||'—')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}</div>
           ${_runWithholdingsLine(r)}
         </div>
-        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
-          <span class="badge ${statusBadge[r.status]||'b-amber'}" style="font-size:9px">${esc(r.status)}</span>
-          ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="approvePayrollRun(${r.id})">Approve</button>`:''}
-          ${r.status==='approved'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="markPayrollPaid(${r.id})">Mark Paid</button>`:''}
-          ${(r.status==='paid'&&r.paid_basis==='net'&&!r.withholdings_remitted_date&&_runWithholdings(r)>0)?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="openRemitWithholdings(${r.id})">Remit</button>`:''}
-          ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px;color:var(--red)" onclick="deletePayrollRun(${r.id})">Delete</button>`:''}
-          ${(r.status==='approved'||r.status==='paid')?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px;color:var(--red)" onclick="voidPayrollRun(${r.id})">Void</button>`:''}
+        <div data-style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+          <span class="badge ${statusBadge[r.status]||'b-amber'}" data-style="font-size:9px">${esc(r.status)}</span>
+          ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-id="${r.id}" data-on-click="approvePayrollRun(Number(this.dataset.argId))">Approve</button>`:''}
+          ${r.status==='approved'?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-id="${r.id}" data-on-click="markPayrollPaid(Number(this.dataset.argId))">Mark Paid</button>`:''}
+          ${(r.status==='paid'&&r.paid_basis==='net'&&!r.withholdings_remitted_date&&_runWithholdings(r)>0)?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-id="${r.id}" data-on-click="openRemitWithholdings(Number(this.dataset.argId))">Remit</button>`:''}
+          ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px;color:var(--red)" data-arg-id="${r.id}" data-on-click="deletePayrollRun(Number(this.dataset.argId))">Delete</button>`:''}
+          ${(r.status==='approved'||r.status==='paid')?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px;color:var(--red)" data-arg-id="${r.id}" data-on-click="voidPayrollRun(Number(this.dataset.argId))">Void</button>`:''}
         </div>
       </div>`).join('');
-  }catch(e){el.innerHTML='<div style="color:var(--red);padding:1rem;font-size:12px">Could not load payroll runs</div>';}
+  }catch(e){el.innerHTML='<div data-style="color:var(--red);padding:1rem;font-size:12px">Could not load payroll runs</div>';}
 }
 
 // V1 (D1, 2026-10-22): the pay period is a MONTH, picked — never typed. A typed period the date reader could not parse
@@ -507,12 +507,12 @@ function openRunPayrollModal(){
     const emps=window.payrollEmployees||[];
     const owner=window.ownerPayroll;
     const all=owner?[owner,...emps]:emps;
-    if(!all.length){preview.innerHTML='<span style="color:var(--t3)">No employees on payroll yet.</span>';return;}
+    if(!all.length){preview.innerHTML='<span data-style="color:var(--t3)">No employees on payroll yet.</span>';return;}
     preview.innerHTML=all.map(e=>{
       const net=netFromDeductions(e.gross, e.deductions);
-      return`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--t1)">${esc(e.fname||'')} ${esc(e.lname||'')}</span><span style="font-family:var(--font-mono);color:var(--green)">${S(net)} net</span></div>`;
+      return`<div data-style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--bd)"><span data-style="color:var(--t1)">${esc(e.fname||'')} ${esc(e.lname||'')}</span><span data-style="font-family:var(--font-mono);color:var(--green)">${S(net)} net</span></div>`;
     }).join('')
-      + '<div class="ded-disclaimer" style="margin-top:8px">Estimate only, based on the deductions you entered. FinFlow performs no tax calculation and is not responsible for tax accuracy.</div>';
+      + '<div class="ded-disclaimer" data-style="margin-top:8px">Estimate only, based on the deductions you entered. FinFlow performs no tax calculation and is not responsible for tax accuracy.</div>';
   }
   openModal('run-payroll-modal');
 }
@@ -592,8 +592,8 @@ function _runWithholdingsLine(r){
   const w=_runWithholdings(r); if(!(w>0)) return '';
   const fmt=d=>esc(window.FinFlowDates?window.FinFlowDates.fmtLabel(String(d).slice(0,10),{year:true}):String(d).slice(0,10));
   return r.withholdings_remitted_date
-    ? `<div class="tx-cat" style="color:var(--green)">Withholdings ${S(w)} remitted ${fmt(r.withholdings_remitted_date)}</div>`
-    : `<div class="tx-cat" style="color:var(--amber)">Withholdings owed: ${S(w)} — remit to the tax authority / fund, then record it here</div>`;
+    ? `<div class="tx-cat" data-style="color:var(--green)">Withholdings ${S(w)} remitted ${fmt(r.withholdings_remitted_date)}</div>`
+    : `<div class="tx-cat" data-style="color:var(--amber)">Withholdings owed: ${S(w)} — remit to the tax authority / fund, then record it here</div>`;
 }
 function openRemitWithholdings(id){
   const r=(window.payrollRuns||[]).find(x=>x.id===id); if(!r) return;
@@ -757,7 +757,7 @@ function _soPreview(){
   const prev=document.getElementById('so-cogs-preview'); if(!prev) return;
   const sale=(document.getElementById('so-kind')||{}).value!=='writeoff';
   const qty=parseFloat((document.getElementById('so-qty')||{}).value)||0, price=parseFloat((document.getElementById('so-price')||{}).value)||0;
-  if(sale&&qty>0&&price>0){ prev.style.display='block'; prev.innerHTML='Sale: '+qty+' × '+S(price)+' = <strong style="color:var(--t1)">'+S(Math.round(qty*price*100)/100)+'</strong> revenue · the cost (FIFO) is worked out when you record it.'; }
+  if(sale&&qty>0&&price>0){ prev.style.display='block'; prev.innerHTML='Sale: '+qty+' × '+S(price)+' = <strong data-style="color:var(--t1)">'+S(Math.round(qty*price*100)/100)+'</strong> revenue · the cost (FIFO) is worked out when you record it.'; }
   else prev.style.display='none';
 }
 async function submitStockOut(){
@@ -790,7 +790,7 @@ async function submitStockOut(){
     const prev=document.getElementById('so-cogs-preview');
     if(prev){
       prev.style.display='block';
-      prev.innerHTML=`FIFO COGS for ${qty} units: <strong style="color:var(--t1)">${S(cogs)}</strong>`;
+      prev.innerHTML=`FIFO COGS for ${qty} units: <strong data-style="color:var(--t1)">${S(cogs)}</strong>`;
     }
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
@@ -849,14 +849,14 @@ async function loadCOGS(){
     const breakdown=data.breakdown||[];
     if(bdEl){
       const warn=parseInt(data.uncoveredItems||0)>0
-        ?`<div style="padding:7px 9px;margin-bottom:6px;border:1px solid var(--red);border-radius:6px;background:rgba(200,60,60,.08);color:var(--red);font-size:11px">⚠ ${data.uncoveredItems} item(s) sold beyond purchase history — those units have no cost basis (FIFO). COGS excludes them, so gross profit is overstated until you record the matching purchases.</div>`
+        ?`<div data-style="padding:7px 9px;margin-bottom:6px;border:1px solid var(--red);border-radius:6px;background:rgba(200,60,60,.08);color:var(--red);font-size:11px">⚠ ${data.uncoveredItems} item(s) sold beyond purchase history — those units have no cost basis (FIFO). COGS excludes them, so gross profit is overstated until you record the matching purchases.</div>`
         :'';
       bdEl.innerHTML=breakdown.length?warn+breakdown.map(b=>`
-        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd);font-size:12px">
-          <span style="color:var(--t1)">${esc(b.name||b.inventory_id||'Item')}${b.no_cost_basis?` <span style="color:var(--red);font-size:10px">⚠ ${b.uncovered_units} unit(s) no cost basis</span>`:''}</span>
-          <span style="font-family:var(--font-mono);color:var(--t2)">${S(parseFloat(b.cogs||0))}</span>
+        <div data-style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd);font-size:12px">
+          <span data-style="color:var(--t1)">${esc(b.name||b.inventory_id||'Item')}${b.no_cost_basis?` <span data-style="color:var(--red);font-size:10px">⚠ ${b.uncovered_units} unit(s) no cost basis</span>`:''}</span>
+          <span data-style="font-family:var(--font-mono);color:var(--t2)">${S(parseFloat(b.cogs||0))}</span>
         </div>`).join('')
-        :'<div style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No COGS recorded yet. Record stock out movements to calculate.</div>';
+        :'<div data-style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No COGS recorded yet. Record stock out movements to calculate.</div>';
     }
     if(data.by_item){
       (inventory||[]).forEach(item=>{
@@ -902,14 +902,14 @@ async function loadFXData(){
     const ratesList=document.getElementById('fx-rates-list');
     if(ratesList){
       ratesList.innerHTML=(rates.length?rates:[] ).map(r=>`
-        <div style="display:grid;grid-template-columns:52px 52px 80px 78px 60px 30px;gap:6px;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12px;align-items:center">
-          <span style="font-family:var(--font-mono)">${esc(r.from_currency)}</span>
-          <span style="font-family:var(--font-mono)">${esc(r.to_currency)}</span>
-          <span style="font-family:var(--font-mono)">${parseFloat(r.rate).toFixed(4)}</span>
-          <span style="color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.rate_date,{year:true}):(r.rate_date||''))||'—')}</span>
-          <span>${r.source==='live'?'<span class="badge b-green" style="font-size:9px">Live</span>':'<span class="badge b-amber" style="font-size:9px">Manual</span>'}</span>
-          <span style="text-align:right"><button onclick="deleteFXRate(${r.id})" title="Delete rate" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;line-height:1;padding:2px 0 2px 8px" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--t3)'">✕</button></span>
-        </div>`).join('')||'<div style="padding:1rem;color:var(--t3);font-size:12px;text-align:center">No rates yet</div>';
+        <div data-style="display:grid;grid-template-columns:52px 52px 80px 78px 60px 30px;gap:6px;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12px;align-items:center">
+          <span data-style="font-family:var(--font-mono)">${esc(r.from_currency)}</span>
+          <span data-style="font-family:var(--font-mono)">${esc(r.to_currency)}</span>
+          <span data-style="font-family:var(--font-mono)">${parseFloat(r.rate).toFixed(4)}</span>
+          <span data-style="color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.rate_date,{year:true}):(r.rate_date||''))||'—')}</span>
+          <span>${r.source==='live'?'<span class="badge b-green" data-style="font-size:9px">Live</span>':'<span class="badge b-amber" data-style="font-size:9px">Manual</span>'}</span>
+          <span data-style="text-align:right"><button data-arg-id="${r.id}" data-on-click="deleteFXRate(Number(this.dataset.argId))" title="Delete rate" data-style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;line-height:1;padding:2px 0 2px 8px" data-on-mouseenter="this.style.color='var(--red)'" data-on-mouseleave="this.style.color='var(--t3)'">✕</button></span>
+        </div>`).join('')||'<div data-style="padding:1rem;color:var(--t3);font-size:12px;text-align:center">No rates yet</div>';
     }
 
     const txList=document.getElementById('fx-tx-list');
@@ -922,13 +922,13 @@ async function loadFXData(){
         const glColor=!hasGL?'var(--t3)':(gl>=0?'var(--green)':'var(--red)');
         const glText=!hasGL?'—':`${gl>=0?'+':''}${S(Math.abs(gl))}`;
         const glTitle=!hasGL?' title="No current rate entered for this currency — add one under FX Rates to see unrealised P/L"':'';
-        return`<tr style="border-bottom:1px solid var(--bd)">
-          <td style="padding:5px 6px;color:var(--t1);font-family:var(--font-mono)">${esc(t.foreign_currency)}</td>
-          <td style="padding:5px 6px;color:var(--t1);font-family:var(--font-mono)">${S(parseFloat(t.foreign_amount))}</td>
-          <td style="padding:5px 6px;font-family:var(--font-mono);color:var(--t2)">${parseFloat(t.rate_at_transaction||0).toFixed(4)}</td>
-          <td style="padding:5px 6px;font-family:var(--font-mono);color:${glColor}"${glTitle}>${glText}</td>
-          <td style="padding:5px 6px"><span class="badge ${t.status==='settled'?'b-green':'b-amber'}" style="font-size:9px">${esc(t.status)}</span></td>
-          <td style="padding:5px 6px">${t.status!=='settled'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="settleFXTransaction(${t.id})">Settle</button>`:''}</td>
+        return`<tr data-style="border-bottom:1px solid var(--bd)">
+          <td data-style="padding:5px 6px;color:var(--t1);font-family:var(--font-mono)">${esc(t.foreign_currency)}</td>
+          <td data-style="padding:5px 6px;color:var(--t1);font-family:var(--font-mono)">${S(parseFloat(t.foreign_amount))}</td>
+          <td data-style="padding:5px 6px;font-family:var(--font-mono);color:var(--t2)">${parseFloat(t.rate_at_transaction||0).toFixed(4)}</td>
+          <td data-style="padding:5px 6px;font-family:var(--font-mono);color:${glColor}"${glTitle}>${glText}</td>
+          <td data-style="padding:5px 6px"><span class="badge ${t.status==='settled'?'b-green':'b-amber'}" data-style="font-size:9px">${esc(t.status)}</span></td>
+          <td data-style="padding:5px 6px">${t.status!=='settled'?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:2px 6px" data-arg-id="${t.id}" data-on-click="settleFXTransaction(Number(this.dataset.argId))">Settle</button>`:''}</td>
         </tr>`;
       }).join('');
     }
@@ -971,11 +971,11 @@ window._confirmModal=function(message, opts){
     overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem';
     var done=function(v){ overlay.remove(); document.removeEventListener('keydown',onKey); resolve(v); };
     function onKey(e){ if(e.key==='Escape') done(false); else if(e.key==='Enter') done(true); }
-    overlay.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-lg);padding:1.5rem;max-width:340px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.5)">'
-      +'<div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:1.25rem">'+esc(message)+'</div>'
-      +'<div style="display:flex;gap:8px;justify-content:flex-end">'
-      +'<button class="btn btn-ghost" id="_confirm-no" style="font-size:12px">'+esc(opts.cancelText||'Cancel')+'</button>'
-      +'<button class="btn btn-primary" id="_confirm-yes" style="font-size:12px'+(opts.danger?';background:var(--red);border-color:var(--red)':'')+'">'+esc(opts.okText||'Confirm')+'</button>'
+    overlay.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-lg);padding:1.5rem;max-width:340px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.5)">'
+      +'<div data-style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:1.25rem">'+esc(message)+'</div>'
+      +'<div data-style="display:flex;gap:8px;justify-content:flex-end">'
+      +'<button class="btn btn-ghost" id="_confirm-no" data-style="font-size:12px">'+esc(opts.cancelText||'Cancel')+'</button>'
+      +'<button class="btn btn-primary" id="_confirm-yes" data-style="font-size:12px'+(opts.danger?';background:var(--red);border-color:var(--red)':'')+'">'+esc(opts.okText||'Confirm')+'</button>'
       +'</div></div>';
     overlay.addEventListener('click',function(e){ if(e.target===overlay) done(false); });
     document.body.appendChild(overlay);

@@ -16,12 +16,14 @@ function inlineScriptBlocks(page = 'index.html') {
 }
 
 // The page as it read before the move: every <script src="/js/…"> put back inline with its file's code, and the
-// policy's handler runtime + registry (/ff-csp.js, /_gen/ff-handlers.js) inline too — for a harness that reads the
-// page's own code from the HTML text, or runs the page in a jsdom that loads no <script src>.
+// policy's handler runtime + registry (/ff-csp.js, /_gen/ff-handlers.js) and the page's stylesheets (/css/…) inline too —
+// for a harness that reads the page's own code or CSS from the HTML text, or runs the page in a jsdom that loads no src.
 function pageSource(page = 'index.html') {
   const html = fs.readFileSync(path.join(PUB, page), 'utf8');
   return html.replace(/<script\b[^>]*\bsrc="\/(js\/[^"]+|ff-csp\.js|_gen\/ff-handlers\.js)"[^>]*><\/script>/g,
-    (m, f) => fs.existsSync(path.join(PUB, f)) ? '<script>\n' + fs.readFileSync(path.join(PUB, f), 'utf8') + '</script>' : m);
+    (m, f) => fs.existsSync(path.join(PUB, f)) ? '<script>\n' + fs.readFileSync(path.join(PUB, f), 'utf8') + '</script>' : m)
+    // …and each page stylesheet moved out of a <style> block (/css/…) back inline.
+    .replace(/<link rel="stylesheet" href="\/(css\/[^"]+)">/g, (m, f) => fs.existsSync(path.join(PUB, f)) ? '<style>' + fs.readFileSync(path.join(PUB, f), 'utf8') + '</style>' : m);
 }
 
 module.exports = { inlineScriptBlocks, pageSource };

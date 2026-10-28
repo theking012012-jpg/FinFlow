@@ -20,7 +20,7 @@ runBrowser('FA-U2 — phone width: no sideways scroll, no tiny tap targets', asy
         let a = el.parentElement, clipped = false; while (a && a !== document.body) { const o = getComputedStyle(a).overflowX; if (o === 'auto' || o === 'scroll' || o === 'hidden') { clipped = true; break; } a = a.parentElement; }
         if (!clipped) wide.push((el.id ? '#' + el.id : el.tagName.toLowerCase() + '.' + String(el.className).split(' ')[0]) + ' ' + Math.round(b.right)); } });
       const small = [];
-      if (pg) pg.querySelectorAll('button, a[href], a[onclick], input:not([type=hidden]), select, [role=button]').forEach(el => { const b = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+      if (pg) pg.querySelectorAll('button, a[href], a[data-on-click], input:not([type=hidden]), select, [role=button]').forEach(el => { const b = el.getBoundingClientRect(); const cs = getComputedStyle(el);
         const inline = el.tagName === 'A' && cs.display === 'inline' && el.parentElement && el.parentElement.textContent.trim().length > (el.textContent || '').trim().length + 10;   // WCAG 2.2: a link inside a sentence is exempt
         if (!inline && b.width && b.height && cs.visibility !== 'hidden' && (b.width < 24 || b.height < 24)) small.push((el.id ? '#' + el.id : el.tagName.toLowerCase()) + ' "' + (el.textContent || el.value || el.getAttribute('aria-label') || '').trim().slice(0, 20) + '" ' + Math.round(b.width) + '×' + Math.round(b.height)); });
       return { overflow: sw - vw, wide: wide.slice(0, 4), small };

@@ -18,16 +18,16 @@ function renderNotifs(){
   if(countLabel) countLabel.textContent = unreadCount>0?`${unreadCount} unread`:'All caught up';
 
   list.innerHTML = NOTIFS.map(n=>`
-    <div class="notif-item${n.unread?' unread':''}" onclick="handleNotifClick(${n.id})">
-      <div class="notif-item-icon" style="background:${TYPE_BG[n.type]};color:${TYPE_COLORS[n.type]}">
+    <div class="notif-item${n.unread?' unread':''}" data-arg-id="${n.id}" data-on-click="handleNotifClick(Number(this.dataset.argId))">
+      <div class="notif-item-icon" data-style="background:${TYPE_BG[n.type]};color:${TYPE_COLORS[n.type]}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">${n.icon}</svg>
       </div>
-      <div style="flex:1;min-width:0">
+      <div data-style="flex:1;min-width:0">
         <div class="notif-item-title">${n.title}</div>
         <div class="notif-item-sub">${n.sub}</div>
         <div class="notif-item-time">${n.time}</div>
       </div>
-      ${n.unread?`<div style="width:7px;height:7px;border-radius:50%;background:var(--acc);flex-shrink:0;margin-top:4px"></div>`:''}
+      ${n.unread?`<div data-style="width:7px;height:7px;border-radius:50%;background:var(--acc);flex-shrink:0;margin-top:4px"></div>`:''}
     </div>`).join('');
 }
 
@@ -88,7 +88,7 @@ window.updateScenario = function(){
   const delta = (now, base) => {
     const d = now-base;
     const col = d>=0?'var(--green)':'var(--red)';
-    return `<span style="color:${col}">${d>=0?'▲':'▼'} ${S(Math.abs(d))}</span>`;
+    return `<span data-style="color:${col}">${d>=0?'▲':'▼'} ${S(Math.abs(d))}</span>`;
   };
 
   set('sc-rev', S(projRev));
@@ -106,7 +106,7 @@ window.updateScenario = function(){
   document.getElementById('sc-r-profit-d').innerHTML = delta(projProfit, BASE.rev-BASE.exp);
   // Baseline runway = current cash ÷ current monthly burn (no hardcoded 14)
   const baseRunway = BASE.burn > 0 ? Math.round(BASE.cash / BASE.burn) : 0;
-  const _runDelta = runway === -1 ? '<span style="color:var(--t3)">Cash not tracked</span>' : runway === 99 ? '<span style="color:var(--green)">∞</span>' : (runway - baseRunway >= 0 ? '<span style="color:var(--green)">▲ ' : '<span style="color:var(--red)">▼ ') + Math.abs(runway - baseRunway) + ' mo</span>';
+  const _runDelta = runway === -1 ? '<span data-style="color:var(--t3)">Cash not tracked</span>' : runway === 99 ? '<span data-style="color:var(--green)">∞</span>' : (runway - baseRunway >= 0 ? '<span data-style="color:var(--green)">▲ ' : '<span data-style="color:var(--red)">▼ ') + Math.abs(runway - baseRunway) + ' mo</span>';
   document.getElementById('sc-r-runway-d').innerHTML = _runDelta;
 
   renderScenarioChart(projRev, projExp);
@@ -203,20 +203,20 @@ async function renderAutocat(){
     const hasConf = sug && typeof sug.confidence === 'number';
     const pct = hasConf ? Math.round(sug.confidence*100) : null;
     const confHtml = hasConf
-      ? `<div class="autocat-conf"><div class="autocat-conf-bar"><div class="autocat-conf-fill" style="width:${pct}%;background:${confColor(sug.confidence)}"></div></div><span class="autocat-conf-pct">${pct}%</span></div>`
-      : `<span class="autocat-conf-pct" style="width:auto;color:var(--t3)">${sug?(sug.source==='rule'?'rule':'—'):'—'}</span>`;
+      ? `<div class="autocat-conf"><div class="autocat-conf-bar"><div class="autocat-conf-fill" data-style="width:${pct}%;background:${confColor(sug.confidence)}"></div></div><span class="autocat-conf-pct">${pct}%</span></div>`
+      : `<span class="autocat-conf-pct" data-style="width:auto;color:var(--t3)">${sug?(sug.source==='rule'?'rule':'—'):'—'}</span>`;
     return `<div class="autocat-row" id="acat-row-${e.id}">
-      <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description||'(no description)')}</div></div>
-      <div style="font-family:var(--font-mono);font-size:12px;color:var(--red);width:80px;text-align:right;flex-shrink:0">-${_fmtMoneyNative(Math.abs(parseFloat(e.amount)||0))}</div>
-      <div style="width:110px;flex-shrink:0">
-        <select class="finput" id="acat-sel-${e.id}" style="font-size:11px;padding:3px 6px">
+      <div data-style="flex:1;min-width:0"><div data-style="font-size:12.5px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description||'(no description)')}</div></div>
+      <div data-style="font-family:var(--font-mono);font-size:12px;color:var(--red);width:80px;text-align:right;flex-shrink:0">-${_fmtMoneyNative(Math.abs(parseFloat(e.amount)||0))}</div>
+      <div data-style="width:110px;flex-shrink:0">
+        <select class="finput" id="acat-sel-${e.id}" data-style="font-size:11px;padding:3px 6px">
           ${cats.map(c=>`<option${c===selected?' selected':''}>${esc(c)}</option>`).join('')}
         </select>
       </div>
       ${confHtml}
-      <div style="width:70px;flex-shrink:0;text-align:right"><button class="autocat-tag" onclick="approveCat(${e.id})">✓ Approve</button></div>
+      <div data-style="width:70px;flex-shrink:0;text-align:right"><button class="autocat-tag" data-arg-id="${e.id}" data-on-click="approveCat(Number(this.dataset.argId))">✓ Approve</button></div>
     </div>`;
-  }).join('') : '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">All expenses categorised ✓</div>';
+  }).join('') : '<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">All expenses categorised ✓</div>';
 
   // Rules list — REAL rules only; honest empty state (no phantom fallback).
   const rulesList = document.getElementById('autocat-rules-list');
@@ -226,14 +226,14 @@ async function renderAutocat(){
       const rules=res.ok?(await res.json()||[]):[];
       const rc=document.getElementById('autocat-rules-count'); if(rc) rc.textContent=rules.length;
       rulesList.innerHTML = rules.length ? rules.map(r=>`
-        <div style="display:flex;align-items:center;gap:10px;padding:.5rem 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-          <span style="font-family:var(--font-mono);color:var(--t1);flex:1">${esc(r.keyword||'')}</span>
-          <span style="color:var(--t2)">→ ${esc(r.category||'')}</span>
-          <span style="font-size:11px;color:var(--t3)">${r.enabled?'Auto-approve':'Review'}</span>
-          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteAutocatRule(${r.id})">✕</button>
-        </div>`).join('') : '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12.5px">No rules yet — add one to auto-categorise matching transactions.</div>';
+        <div data-style="display:flex;align-items:center;gap:10px;padding:.5rem 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+          <span data-style="font-family:var(--font-mono);color:var(--t1);flex:1">${esc(r.keyword||'')}</span>
+          <span data-style="color:var(--t2)">→ ${esc(r.category||'')}</span>
+          <span data-style="font-size:11px;color:var(--t3)">${r.enabled?'Auto-approve':'Review'}</span>
+          <button class="btn btn-ghost btn-sm" data-style="color:var(--red)" data-arg-id="${r.id}" data-on-click="deleteAutocatRule(Number(this.dataset.argId))">✕</button>
+        </div>`).join('') : '<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12.5px">No rules yet — add one to auto-categorise matching transactions.</div>';
     }catch(e){
-      rulesList.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12.5px">Could not load rules.</div>';
+      rulesList.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:12.5px">Could not load rules.</div>';
     }
   }
 }
@@ -260,15 +260,15 @@ window.openAddRuleModal=function(){
   let m=document.getElementById('add-rule-modal');
   if(!m){
     m=document.createElement('div');m.id='add-rule-modal';m.className='modal-overlay';
-    m.innerHTML=`<div class="modal" style="width:380px">
-      <div class="modal-header"><span class="modal-title">Add Categorisation Rule</span><button class="modal-close" onclick="closeModal('add-rule-modal')">✕</button></div>
-      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+    m.innerHTML=`<div class="modal" data-style="width:380px">
+      <div class="modal-header"><span class="modal-title">Add Categorisation Rule</span><button class="modal-close" data-on-click="closeModal('add-rule-modal')">✕</button></div>
+      <div class="modal-body" data-style="display:flex;flex-direction:column;gap:12px">
         <div><label class="field-label" for="rule-keyword">Keyword / Pattern</label><input id="rule-keyword" class="finput" placeholder="e.g. GOOGLE *"></div>
         <div><label class="field-label" for="rule-category">Category</label>
           <select id="rule-category" class="finput">${AUTOCAT_CATS.map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
-        <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="rule-auto" checked><label for="rule-auto" style="font-size:13px;color:var(--t2)">Auto-approve matching transactions</label></div>
+        <div data-style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="rule-auto" checked><label for="rule-auto" data-style="font-size:13px;color:var(--t2)">Auto-approve matching transactions</label></div>
       </div>
-      <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('add-rule-modal')">Cancel</button><button class="btn btn-primary" onclick="saveAutocatRule()">Save Rule</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" data-on-click="closeModal('add-rule-modal')">Cancel</button><button class="btn btn-primary" data-on-click="saveAutocatRule()">Save Rule</button></div>
     </div>`;
     document.body.appendChild(m);
   }
@@ -415,7 +415,7 @@ document.addEventListener('click', e=>{
     const pill = document.createElement('div');
     pill.id = 'live-status-' + pageId;
     pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t3);padding:3px 8px;background:var(--bg2);border:1px solid var(--bd);border-radius:20px;margin-bottom:10px';
-    pill.innerHTML = '<span class="live-dot" style="width:6px;height:6px;border-radius:50%;background:var(--t3);transition:background .3s;flex-shrink:0"></span><span class="live-label">Connecting…</span>';
+    pill.innerHTML = '<span class="live-dot" data-style="width:6px;height:6px;border-radius:50%;background:var(--t3);transition:background .3s;flex-shrink:0"></span><span class="live-label">Connecting…</span>';
     page.insertBefore(pill, page.firstChild);
   }
 
@@ -558,7 +558,7 @@ document.addEventListener('click', e=>{
     // LR22: holdings are priced in USD (M36) — say US$, so a TTD (or any non-USD) business never reads them as its own dollars.
     const S2b = n => (window._fmtMoney ? window._fmtMoney(n, 'US$') : 'US$'+Math.round(n).toLocaleString());
     if(!hs.length){
-      list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>';
+      list.innerHTML = '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>';
       ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'US$0'));
       bizEl('biz-inv-income','US$0/yr');
       // F155: this render OWNS the business Performance box. It used to be written only by the
@@ -582,21 +582,21 @@ document.addEventListener('click', e=>{
       const pos=gl>=0; const glPct=cost>0?(gl/cost*100).toFixed(1):'0.0';
       const color=h.color||palette[i%palette.length];
       const sym3=esc((h.ticker||'').slice(0,3));
-      return `<div style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-        <div style="width:30px;height:30px;border-radius:7px;background:${color}22;border:1px solid ${color}44;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${color}">${sym3}</div>
+      return `<div data-style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+        <div data-style="width:30px;height:30px;border-radius:7px;background:${color}22;border:1px solid ${color}44;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${color}">${sym3}</div>
         <div>
-          <div style="font-weight:500;color:var(--t1)">${esc(h.ticker)}${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
-          <div style="font-size:11px;color:var(--t3)">${esc(h.type||'Stock')} · ${esc(String(shares))} units</div>
+          <div data-style="font-weight:500;color:var(--t1)">${esc(h.ticker)}${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" data-style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" data-style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
+          <div data-style="font-size:11px;color:var(--t3)">${esc(h.type||'Stock')} · ${esc(String(shares))} units</div>
         </div>
-        <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">US$${price.toFixed(2)}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'US$')}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'US$')}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${glPct}%</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">
+        <div data-style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">US$${price.toFixed(2)}</div>
+        <div data-style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'US$')}</div>
+        <div data-style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'US$')}</div>
+        <div data-style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${glPct}%</div>
+        <div data-style="text-align:right;font-family:var(--font-mono);color:var(--teal)">
           ${inc>0?window._fmtMoney(inc,'US$'):'—'}
-          ${h.id!=null?`<div style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
-            <button class="btn btn-ghost" style="padding:1px 7px;font-size:10px" title="Edit holding" onclick="event.stopPropagation();editHolding(${h.id})">Edit</button>
-            <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" onclick="event.stopPropagation();deleteHolding(${h.id})">✕</button>
+          ${h.id!=null?`<div data-style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
+            <button class="btn btn-ghost" data-style="padding:1px 7px;font-size:10px" title="Edit holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();editHolding(Number(this.dataset.argId))">Edit</button>
+            <button class="btn btn-ghost" data-style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();deleteHolding(Number(this.dataset.argId))">✕</button>
           </div>`:''}
         </div>
       </div>`;

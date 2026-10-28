@@ -30,21 +30,21 @@
     var box=document.getElementById('seg-list'); if(!box) return;
     var cur=data.currency||'', segs=data.segments||[], t=data.totals||{};
     var basis=document.getElementById('seg-basis'); if(basis) basis.textContent = data.basis ? ('Basis: '+data.basis+'.') : '';
-    if(!segs.length){ box.innerHTML='<div style="padding:26px 8px;text-align:center;color:var(--t2)">Nothing tagged yet. Add a class or location on an expense or invoice, then come back.</div>'; return; }
-    var rows='<table style="width:100%;border-collapse:collapse;min-width:460px"><thead><tr style="text-align:right;color:var(--t2);font-size:11px">'
-      +'<th style="text-align:left;padding:5px 8px">'+(dim==='class'?'Class':'Location')+'</th><th style="padding:5px 8px">Revenue</th><th style="padding:5px 8px">Cost</th><th style="padding:5px 8px">Net</th></tr></thead><tbody>';
+    if(!segs.length){ box.innerHTML='<div data-style="padding:26px 8px;text-align:center;color:var(--t2)">Nothing tagged yet. Add a class or location on an expense or invoice, then come back.</div>'; return; }
+    var rows='<table data-style="width:100%;border-collapse:collapse;min-width:460px"><thead><tr data-style="text-align:right;color:var(--t2);font-size:11px">'
+      +'<th data-style="text-align:left;padding:5px 8px">'+(dim==='class'?'Class':'Location')+'</th><th data-style="padding:5px 8px">Revenue</th><th data-style="padding:5px 8px">Cost</th><th data-style="padding:5px 8px">Net</th></tr></thead><tbody>';
     segs.forEach(function(s){
       var un = s.key==='(unassigned)';
-      rows+='<tr style="text-align:right;border-top:1px solid var(--bd,rgba(120,120,120,.12))'+(un?';opacity:.72':'')+'">'
-        +'<td style="text-align:left;padding:5px 8px;font-weight:'+(un?'400':'600')+'">'+esc(s.key)+'</td>'
-        +'<td style="padding:5px 8px">'+money(s.revenue,'')+'</td>'
-        +'<td style="padding:5px 8px">'+money(s.expense,'')+'</td>'
-        +'<td style="padding:5px 8px;font-weight:600;color:'+(s.net<0?'#c94a4a':'inherit')+'">'+money(s.net,'')+'</td></tr>';
+      rows+='<tr data-style="text-align:right;border-top:1px solid var(--bd,rgba(120,120,120,.12))'+(un?';opacity:.72':'')+'">'
+        +'<td data-style="text-align:left;padding:5px 8px;font-weight:'+(un?'400':'600')+'">'+esc(s.key)+'</td>'
+        +'<td data-style="padding:5px 8px">'+money(s.revenue,'')+'</td>'
+        +'<td data-style="padding:5px 8px">'+money(s.expense,'')+'</td>'
+        +'<td data-style="padding:5px 8px;font-weight:600;color:'+(s.net<0?'#c94a4a':'inherit')+'">'+money(s.net,'')+'</td></tr>';
     });
-    rows+='</tbody><tfoot><tr style="text-align:right;border-top:2px solid var(--bd,rgba(120,120,120,.3));font-weight:700">'
-      +'<td style="text-align:left;padding:6px 8px">Total ('+cur+')</td>'
-      +'<td style="padding:6px 8px">'+money(t.revenue,'')+'</td><td style="padding:6px 8px">'+money(t.expense,'')+'</td>'
-      +'<td style="padding:6px 8px;color:'+((t.net||0)<0?'#c94a4a':'inherit')+'">'+money(t.net,'')+'</td></tr></tfoot></table>';
+    rows+='</tbody><tfoot><tr data-style="text-align:right;border-top:2px solid var(--bd,rgba(120,120,120,.3));font-weight:700">'
+      +'<td data-style="text-align:left;padding:6px 8px">Total ('+cur+')</td>'
+      +'<td data-style="padding:6px 8px">'+money(t.revenue,'')+'</td><td data-style="padding:6px 8px">'+money(t.expense,'')+'</td>'
+      +'<td data-style="padding:6px 8px;color:'+((t.net||0)<0?'#c94a4a':'inherit')+'">'+money(t.net,'')+'</td></tr></tfoot></table>';
     box.innerHTML=rows;
   }
 
@@ -59,9 +59,9 @@
     try{
       var eid=activeEntityId();
       var res=await fetch('/api/reports/segments?dim='+dim+(eid?'&entity_id='+encodeURIComponent(eid):''),{credentials:'same-origin',headers:{'Content-Type':'application/json'}});
-      if(!res.ok){ box.innerHTML='<div style="padding:20px 8px;color:var(--t2)">Couldn’t load segments (error '+res.status+').</div>'; loading=false; return; }
+      if(!res.ok){ box.innerHTML='<div data-style="padding:20px 8px;color:var(--t2)">Couldn’t load segments (error '+res.status+').</div>'; loading=false; return; }
       render(await res.json());
-    }catch(e){ box.innerHTML='<div style="padding:20px 8px;color:var(--t2)">Couldn’t load segments.</div>'; }
+    }catch(e){ box.innerHTML='<div data-style="padding:20px 8px;color:var(--t2)">Couldn’t load segments.</div>'; }
     loading=false;
   };
 

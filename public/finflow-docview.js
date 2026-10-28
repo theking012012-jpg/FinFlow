@@ -106,22 +106,22 @@
       rowsHTML = items.map(function(i, n){
         var lineTotal = (parseFloat(i.qty)||0) * (parseFloat(i.rate)||0);
         return '<tr>'
-          + '<td style="padding:11px 8px;border-bottom:1px solid #eee;color:#555;width:28px">'+(n+1)+'</td>'
-          + '<td style="padding:11px 8px;border-bottom:1px solid #eee;color:#222">'+esc(i.desc || '—')+'</td>'
-          + '<td style="padding:11px 8px;border-bottom:1px solid #eee;text-align:center;color:#666">'+(parseFloat(i.qty)||0)+'</td>'
-          + '<td style="padding:11px 8px;border-bottom:1px solid #eee;text-align:right;color:#666">'+money(i.rate, cur)+'</td>'
-          + '<td style="padding:11px 8px;border-bottom:1px solid #eee;text-align:right;color:#222;font-weight:600">'+money(lineTotal, cur)+'</td>'
+          + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;color:#555;width:28px">'+(n+1)+'</td>'
+          + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;color:#222">'+esc(i.desc || '—')+'</td>'
+          + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;text-align:center;color:#666">'+(parseFloat(i.qty)||0)+'</td>'
+          + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;text-align:right;color:#666">'+money(i.rate, cur)+'</td>'
+          + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;text-align:right;color:#222;font-weight:600">'+money(lineTotal, cur)+'</td>'
           + '</tr>';
       }).join('');
     } else {
       // no line items — a single summary row from the record's own amount + description/notes
       subtotal = parseFloat(doc.amount) || 0;
       rowsHTML = '<tr>'
-        + '<td style="padding:11px 8px;border-bottom:1px solid #eee;color:#555;width:28px">1</td>'
-        + '<td style="padding:11px 8px;border-bottom:1px solid #eee;color:#222">'+esc(doc.notes || doc.description || (K.title.charAt(0) + K.title.slice(1).toLowerCase()))+'</td>'
-        + '<td style="padding:11px 8px;border-bottom:1px solid #eee;text-align:center;color:#666">1</td>'
-        + '<td style="padding:11px 8px;border-bottom:1px solid #eee;text-align:right;color:#666">'+money(subtotal, cur)+'</td>'
-        + '<td style="padding:11px 8px;border-bottom:1px solid #eee;text-align:right;color:#222;font-weight:600">'+money(subtotal, cur)+'</td>'
+        + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;color:#555;width:28px">1</td>'
+        + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;color:#222">'+esc(doc.notes || doc.description || (K.title.charAt(0) + K.title.slice(1).toLowerCase()))+'</td>'
+        + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;text-align:center;color:#666">1</td>'
+        + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;text-align:right;color:#666">'+money(subtotal, cur)+'</td>'
+        + '<td data-style="padding:11px 8px;border-bottom:1px solid #eee;text-align:right;color:#222;font-weight:600">'+money(subtotal, cur)+'</td>'
         + '</tr>';
     }
     var tax = parseFloat(doc.tax) || 0;
@@ -140,81 +140,81 @@
     var _settledShown = _paidShown + _creditShown;
 
     var logoHTML = L.logo
-      ? '<img src="'+esc(L.logo)+'" style="max-height:52px;max-width:180px;object-fit:contain" alt="">'
-      : '<div style="font-size:22px;font-weight:700;color:'+acc+';font-family:Georgia,serif;font-style:italic">'+esc(L.name)+'</div>';
+      ? '<img src="'+esc(L.logo)+'" data-style="max-height:52px;max-width:180px;object-fit:contain" alt="">'
+      : '<div data-style="font-size:22px;font-weight:700;color:'+acc+';font-family:Georgia,serif;font-style:italic">'+esc(L.name)+'</div>';
 
     var statusBadge = doc.status
-      ? '<span style="display:inline-block;margin-top:8px;padding:3px 12px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#fff;background:'+statusColor(doc.status)+'">'+esc(doc.status)+'</span>'
+      ? '<span data-style="display:inline-block;margin-top:8px;padding:3px 12px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#fff;background:'+statusColor(doc.status)+'">'+esc(doc.status)+'</span>'
       : '';
 
-    var partyBlock = '<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#999;margin-bottom:6px">'+K.party+'</div>'
-      + '<div style="font-size:14px;font-weight:600;color:#1a1a1a">'+esc(doc.party || '—')+'</div>'
-      + (doc.party_address ? '<div style="font-size:12px;color:#666;margin-top:3px;white-space:pre-line">'+esc(doc.party_address)+'</div>' : '');
+    var partyBlock = '<div data-style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#999;margin-bottom:6px">'+K.party+'</div>'
+      + '<div data-style="font-size:14px;font-weight:600;color:#1a1a1a">'+esc(doc.party || '—')+'</div>'
+      + (doc.party_address ? '<div data-style="font-size:12px;color:#666;margin-top:3px;white-space:pre-line">'+esc(doc.party_address)+'</div>' : '');
 
     var lhLines = [L.address, L.phone, L.email, (L.taxId ? 'Tax ID: ' + L.taxId : '')].filter(Boolean)
-      .map(function(x){ return '<div style="font-size:12px;color:#666;line-height:1.55">'+esc(x)+'</div>'; }).join('');
+      .map(function(x){ return '<div data-style="font-size:12px;color:#666;line-height:1.55">'+esc(x)+'</div>'; }).join('');
 
     var totalsHTML =
-        '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Subtotal</span><span>'+money(subtotal, cur)+'</span></div>'
-      + (tax ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Tax</span><span>'+money(tax, cur)+'</span></div>' : '')
+        '<div data-style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Subtotal</span><span>'+money(subtotal, cur)+'</span></div>'
+      + (tax ? '<div data-style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Tax</span><span>'+money(tax, cur)+'</span></div>' : '')
       + (_settledShown > 0.005
-          ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#222;font-weight:600"><span>Total</span><span>'+money(total, cur)+'</span></div>'
-          + (_paidShown > 0.005 ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#1a7f4b"><span>'+(kind === 'bill' ? 'Paid' : 'Payments received')+'</span><span>&minus;'+money(_paidShown, cur)+'</span></div>' : '')
-          + (_creditShown > 0.005 ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#1a7f4b"><span>'+(kind === 'bill' ? 'Vendor credit applied' : 'Credit note applied')+'</span><span>&minus;'+money(_creditShown, cur)+'</span></div>' : '')
+          ? '<div data-style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#222;font-weight:600"><span>Total</span><span>'+money(total, cur)+'</span></div>'
+          + (_paidShown > 0.005 ? '<div data-style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#1a7f4b"><span>'+(kind === 'bill' ? 'Paid' : 'Payments received')+'</span><span>&minus;'+money(_paidShown, cur)+'</span></div>' : '')
+          + (_creditShown > 0.005 ? '<div data-style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#1a7f4b"><span>'+(kind === 'bill' ? 'Vendor credit applied' : 'Credit note applied')+'</span><span>&minus;'+money(_creditShown, cur)+'</span></div>' : '')
           : '')
-      + '<div style="display:flex;justify-content:space-between;padding:12px 0 0;margin-top:6px;border-top:2px solid #222;font-size:15px;font-weight:700;color:#111"><span>'+K.balanceLabel+'</span><span>'+money(_balanceVal, cur)+'</span></div>';
+      + '<div data-style="display:flex;justify-content:space-between;padding:12px 0 0;margin-top:6px;border-top:2px solid #222;font-size:15px;font-weight:700;color:#111"><span>'+K.balanceLabel+'</span><span>'+money(_balanceVal, cur)+'</span></div>';
 
-    var footer = S.poweredBy ? '<div style="text-align:center;margin-top:34px;padding-top:16px;border-top:1px solid #eee"><span style="font-size:10px;color:#bbb;letter-spacing:.08em">POWERED BY </span><span style="font-size:10px;font-weight:700;color:'+acc+';letter-spacing:.06em;font-family:Georgia,serif;font-style:italic">FinFlow</span></div>' : '';
-    var dates = (doc.issue_date ? '<div><span style="color:#999">Date:</span> '+dlabel(doc.issue_date)+'</div>' : '') + (doc.due_date ? '<div><span style="color:#999">Due:</span> '+dlabel(doc.due_date)+'</div>' : '')
-      + ((kind === 'invoice' || !kind) && docTerms(doc) != null ? '<div><span style="color:#999">Terms:</span> '+(docTerms(doc) ? 'Net '+docTerms(doc)+' — due within '+docTerms(doc)+' days' : 'Due on receipt')+'</div>' : '');   // FA-B1 part 2 / FA-B5b: THIS invoice's terms (its own dates), never the business default beside a different due date
+    var footer = S.poweredBy ? '<div data-style="text-align:center;margin-top:34px;padding-top:16px;border-top:1px solid #eee"><span data-style="font-size:10px;color:#bbb;letter-spacing:.08em">POWERED BY </span><span data-style="font-size:10px;font-weight:700;color:'+acc+';letter-spacing:.06em;font-family:Georgia,serif;font-style:italic">FinFlow</span></div>' : '';
+    var dates = (doc.issue_date ? '<div><span data-style="color:#999">Date:</span> '+dlabel(doc.issue_date)+'</div>' : '') + (doc.due_date ? '<div><span data-style="color:#999">Due:</span> '+dlabel(doc.due_date)+'</div>' : '')
+      + ((kind === 'invoice' || !kind) && docTerms(doc) != null ? '<div><span data-style="color:#999">Terms:</span> '+(docTerms(doc) ? 'Net '+docTerms(doc)+' — due within '+docTerms(doc)+' days' : 'Due on receipt')+'</div>' : '');   // FA-B1 part 2 / FA-B5b: THIS invoice's terms (its own dates), never the business default beside a different due date
     if (S.template === 'compact') {   // a narrow receipt-style page
-      var crow = function(a, b, st){ return '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed #ddd;'+(st||'')+'"><span>'+a+'</span><span>'+b+'</span></div>'; };
+      var crow = function(a, b, st){ return '<div data-style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed #ddd;'+(st||'')+'"><span>'+a+'</span><span>'+b+'</span></div>'; };
       var lines = items ? items.map(function(i){ return crow(esc(i.desc || '—') + ' × ' + (parseFloat(i.qty)||0), money((parseFloat(i.qty)||0) * (parseFloat(i.rate)||0), cur)); }).join('') : crow(esc(doc.notes || doc.description || K.title), money(subtotal, cur));
-      return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;color:#222;padding:28px 22px;max-width:460px;margin:0 auto;font-size:12.5px}@media print{body{padding:0}}</style></head><body>'
-        + '<div style="text-align:center;border-bottom:2px dashed #ccc;padding-bottom:12px;margin-bottom:12px">'+logoHTML+'<div style="margin-top:6px;font-size:11px;color:#777">'+[L.address, L.email, L.phone].filter(Boolean).map(esc).join(' · ')+'</div>'
-        + '<div style="margin-top:10px;font-weight:700;letter-spacing:.06em;color:'+acc+'">'+K.title+(doc.number ? ' #'+esc(doc.number) : '')+'</div><div style="font-size:11px;color:#777">'+esc(doc.party || '')+(doc.issue_date ? ' · '+dlabel(doc.issue_date) : '')+(doc.due_date ? ' · due '+dlabel(doc.due_date) : '')+'</div>'+statusBadge+'</div>'
+      return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><template data-ff-css>*{box-sizing:border-box;margin:0;padding:0}body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;color:#222;padding:28px 22px;max-width:460px;margin:0 auto;font-size:12.5px}@media print{body{padding:0}}</template></head><body>'
+        + '<div data-style="text-align:center;border-bottom:2px dashed #ccc;padding-bottom:12px;margin-bottom:12px">'+logoHTML+'<div data-style="margin-top:6px;font-size:11px;color:#777">'+[L.address, L.email, L.phone].filter(Boolean).map(esc).join(' · ')+'</div>'
+        + '<div data-style="margin-top:10px;font-weight:700;letter-spacing:.06em;color:'+acc+'">'+K.title+(doc.number ? ' #'+esc(doc.number) : '')+'</div><div data-style="font-size:11px;color:#777">'+esc(doc.party || '')+(doc.issue_date ? ' · '+dlabel(doc.issue_date) : '')+(doc.due_date ? ' · due '+dlabel(doc.due_date) : '')+'</div>'+statusBadge+'</div>'
         + lines + crow('Subtotal', money(subtotal, cur), 'color:#777') + (tax ? crow('Tax', money(tax, cur), 'color:#777') : '')
         + (_settledShown > 0.005 ? crow('Total', money(total, cur)) + (_paidShown > 0.005 ? crow(kind === 'bill' ? 'Paid' : 'Payments received', '&minus;'+money(_paidShown, cur), 'color:#1a7f4b') : '') + (_creditShown > 0.005 ? crow(kind === 'bill' ? 'Vendor credit applied' : 'Credit note applied', '&minus;'+money(_creditShown, cur), 'color:#1a7f4b') : '') : '')
-        + '<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:2px dashed #ccc;font-size:15px;font-weight:700"><span>'+K.balanceLabel+'</span><span style="color:'+acc+'">'+money(_balanceVal, cur)+'</span></div>'
-        + (doc.notes && items ? '<div style="margin-top:14px;font-size:11.5px;color:#666">'+esc(doc.notes)+'</div>' : '')
+        + '<div data-style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:2px dashed #ccc;font-size:15px;font-weight:700"><span>'+K.balanceLabel+'</span><span data-style="color:'+acc+'">'+money(_balanceVal, cur)+'</span></div>'
+        + (doc.notes && items ? '<div data-style="margin-top:14px;font-size:11.5px;color:#666">'+esc(doc.notes)+'</div>' : '')
         + footer + '</body></html>';
     }
     var minimal = S.template === 'minimal';
     var header = minimal
-      ? '<div style="background:'+acc+';margin:-44px -40px 26px;padding:26px 40px;display:flex;justify-content:space-between;align-items:center;gap:20px"><div>'+(L.logo ? logoHTML : '<div style="font-size:22px;font-weight:800;color:#fff">'+esc(L.name)+'</div>')+'</div>'
-        + '<div style="text-align:right;color:#fff"><div style="font-size:26px;font-weight:800;letter-spacing:-.01em">'+K.title+'</div>'+(doc.number ? '<div style="font-size:12px;opacity:.85">#'+esc(doc.number)+'</div>' : '')+statusBadge+'</div></div>'
-      : '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">'
+      ? '<div data-style="background:'+acc+';margin:-44px -40px 26px;padding:26px 40px;display:flex;justify-content:space-between;align-items:center;gap:20px"><div>'+(L.logo ? logoHTML : '<div data-style="font-size:22px;font-weight:800;color:#fff">'+esc(L.name)+'</div>')+'</div>'
+        + '<div data-style="text-align:right;color:#fff"><div data-style="font-size:26px;font-weight:800;letter-spacing:-.01em">'+K.title+'</div>'+(doc.number ? '<div data-style="font-size:12px;opacity:.85">#'+esc(doc.number)+'</div>' : '')+statusBadge+'</div></div>'
+      : '<div data-style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">'
         +   '<div>'+logoHTML+'</div>'
-        +   '<div style="text-align:right">'
-        +     '<div style="font-size:30px;font-weight:800;letter-spacing:.04em;color:'+acc+';font-family:Georgia,serif">'+K.title+'</div>'
-        +     (doc.number ? '<div style="font-size:12px;color:#888;margin-top:2px">#'+esc(doc.number)+'</div>' : '')
+        +   '<div data-style="text-align:right">'
+        +     '<div data-style="font-size:30px;font-weight:800;letter-spacing:.04em;color:'+acc+';font-family:Georgia,serif">'+K.title+'</div>'
+        +     (doc.number ? '<div data-style="font-size:12px;color:#888;margin-top:2px">#'+esc(doc.number)+'</div>' : '')
         +     statusBadge
         +   '</div>'
         + '</div>'
-        + '<div style="height:1px;background:#eee;margin:22px 0"></div>';
-    var thead = minimal ? '<tr style="border-bottom:2px solid '+acc+';color:#666">' : '<tr style="background:#2a2a2a;color:#fff">';
+        + '<div data-style="height:1px;background:#eee;margin:22px 0"></div>';
+    var thead = minimal ? '<tr data-style="border-bottom:2px solid '+acc+';color:#666">' : '<tr data-style="background:#2a2a2a;color:#fff">';
     return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-      + '<style>*{box-sizing:border-box;margin:0;padding:0}'
+      + '<template data-ff-css>*{box-sizing:border-box;margin:0;padding:0}'
       + 'body{font-family:'+(minimal ? 'Arial,Helvetica,sans-serif' : '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif')+';background:#fff;color:#222;padding:44px 40px;max-width:760px;margin:0 auto}'
       + 'table{width:100%;border-collapse:collapse}'
-      + '@media print{body{padding:0}}</style></head><body>'
+      + '@media print{body{padding:0}}</template></head><body>'
       + header
-      + '<div style="display:flex;justify-content:space-between;gap:24px">'
-      +   '<div style="max-width:52%">'
-      +     '<div style="font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:4px">'+esc(L.name)+'</div>'+lhLines
+      + '<div data-style="display:flex;justify-content:space-between;gap:24px">'
+      +   '<div data-style="max-width:52%">'
+      +     '<div data-style="font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:4px">'+esc(L.name)+'</div>'+lhLines
       +   '</div>'
-      +   '<div style="text-align:right;font-size:12px;color:#555;line-height:1.9">'+dates+'</div>'
+      +   '<div data-style="text-align:right;font-size:12px;color:#555;line-height:1.9">'+dates+'</div>'
       + '</div>'
-      + '<div style="margin:26px 0 18px">'+partyBlock+'</div>'
+      + '<div data-style="margin:26px 0 18px">'+partyBlock+'</div>'
       + '<table><thead>'+thead
-      +   '<th style="padding:10px 8px;text-align:left;font-size:11px;letter-spacing:.05em;width:28px">#</th>'
-      +   '<th style="padding:10px 8px;text-align:left;font-size:11px;letter-spacing:.05em">Item &amp; Description</th>'
-      +   '<th style="padding:10px 8px;text-align:center;font-size:11px;letter-spacing:.05em">Qty</th>'
-      +   '<th style="padding:10px 8px;text-align:right;font-size:11px;letter-spacing:.05em">Rate</th>'
-      +   '<th style="padding:10px 8px;text-align:right;font-size:11px;letter-spacing:.05em">Amount</th>'
+      +   '<th data-style="padding:10px 8px;text-align:left;font-size:11px;letter-spacing:.05em;width:28px">#</th>'
+      +   '<th data-style="padding:10px 8px;text-align:left;font-size:11px;letter-spacing:.05em">Item &amp; Description</th>'
+      +   '<th data-style="padding:10px 8px;text-align:center;font-size:11px;letter-spacing:.05em">Qty</th>'
+      +   '<th data-style="padding:10px 8px;text-align:right;font-size:11px;letter-spacing:.05em">Rate</th>'
+      +   '<th data-style="padding:10px 8px;text-align:right;font-size:11px;letter-spacing:.05em">Amount</th>'
       + '</tr></thead><tbody>'+rowsHTML+'</tbody></table>'
-      + '<div style="display:flex;justify-content:flex-end;margin-top:20px"><div style="width:260px">'+totalsHTML+'</div></div>'
-      + (doc.notes && items ? '<div style="margin-top:28px;padding-top:14px;border-top:1px solid #eee"><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#999;margin-bottom:5px">Notes</div><div style="font-size:12.5px;color:#555;line-height:1.6">'+esc(doc.notes)+'</div></div>' : '')
+      + '<div data-style="display:flex;justify-content:flex-end;margin-top:20px"><div data-style="width:260px">'+totalsHTML+'</div></div>'
+      + (doc.notes && items ? '<div data-style="margin-top:28px;padding-top:14px;border-top:1px solid #eee"><div data-style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#999;margin-bottom:5px">Notes</div><div data-style="font-size:12.5px;color:#555;line-height:1.6">'+esc(doc.notes)+'</div></div>' : '')
       + footer
       + '</body></html>';
   }
@@ -225,16 +225,16 @@
     var o = $('ff-docview'); if (o) return o;
     o = document.createElement('div');
     o.id = 'ff-docview';
-    o.setAttribute('style', 'position:fixed;inset:0;z-index:9600;display:none;align-items:flex-start;justify-content:center;background:rgba(10,8,5,.62);padding:28px 16px;overflow:auto');
+    o.style.cssText = 'position:fixed;inset:0;z-index:9600;display:none;align-items:flex-start;justify-content:center;background:rgba(10,8,5,.62);padding:28px 16px;overflow:auto';
     o.innerHTML =
-        '<div style="width:100%;max-width:820px">'
-      +   '<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px">'
-      +     '<button id="ff-docview-print" style="font-family:var(--font,inherit);font-size:12.5px;font-weight:600;padding:8px 15px;border-radius:7px;border:1px solid var(--acc2,#8a6d1f);background:linear-gradient(135deg,var(--acc,#c9a84c),var(--acc2,#8a6d1f));color:#1a1305;cursor:pointer">Print / PDF ↧</button>'
-      +     '<button id="ff-docview-close" style="font-family:var(--font,inherit);font-size:12.5px;padding:8px 15px;border-radius:7px;border:1px solid var(--bd,#3a3128);background:var(--bg2,#221c14);color:var(--t1,#e8dcc4);cursor:pointer">Close ✕</button>'
+        '<div data-style="width:100%;max-width:820px">'
+      +   '<div data-style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px">'
+      +     '<button id="ff-docview-print" data-style="font-family:var(--font,inherit);font-size:12.5px;font-weight:600;padding:8px 15px;border-radius:7px;border:1px solid var(--acc2,#8a6d1f);background:linear-gradient(135deg,var(--acc,#c9a84c),var(--acc2,#8a6d1f));color:#1a1305;cursor:pointer">Print / PDF ↧</button>'
+      +     '<button id="ff-docview-close" data-style="font-family:var(--font,inherit);font-size:12.5px;padding:8px 15px;border-radius:7px;border:1px solid var(--bd,#3a3128);background:var(--bg2,#221c14);color:var(--t1,#e8dcc4);cursor:pointer">Close ✕</button>'
       +   '</div>'
-      +   '<iframe id="ff-docview-frame" title="Document" style="width:100%;height:78vh;border:none;border-radius:10px;background:#fff;box-shadow:0 18px 60px rgba(0,0,0,.5)"></iframe>'
+      +   '<iframe id="ff-docview-frame" title="Document" data-style="width:100%;height:78vh;border:none;border-radius:10px;background:#fff;box-shadow:0 18px 60px rgba(0,0,0,.5)"></iframe>'
       // Batch 7: the document's change history — OUTSIDE the frame, so it never prints or reaches a customer's PDF.
-      +   '<div id="ff-docview-history" style="display:none;margin-top:10px;background:var(--bg1,#1a160f);border:1px solid var(--bd,#3a3128);border-radius:10px;padding:10px 14px;color:var(--t2,#cfc3ab);font-size:12px;line-height:1.7"></div>'
+      +   '<div id="ff-docview-history" data-style="display:none;margin-top:10px;background:var(--bg1,#1a160f);border:1px solid var(--bd,#3a3128);border-radius:10px;padding:10px 14px;color:var(--t2,#cfc3ab);font-size:12px;line-height:1.7"></div>'
       + '</div>';
     document.body.appendChild(o);
     o.addEventListener('click', function(ev){ if (ev.target === o) close(); });
@@ -247,7 +247,7 @@
     var o = overlay();
     var _h = $('ff-docview-history'); if (_h) { _h.style.display = 'none'; _h.innerHTML = ''; }   // a previous document's history never lingers
     var frame = $('ff-docview-frame');
-    try { frame.srcdoc = buildDocumentHTML(doc, kind); } catch(e){ console.warn('[docview]', e && e.message); return; }
+    try { window.ffFrameWrite(frame, buildDocumentHTML(doc, kind)); } catch(e){ console.warn('[docview]', e && e.message); return; }
     o.style.display = 'flex';
   }
   window.ffOpenDocView = openDoc;
@@ -286,7 +286,7 @@
         return '<div>' + esc(dlabel(when) || when) + ' · ' + esc(who) + ' — ' + parts.join('; ') + '</div>';
       }).filter(Boolean);
       if (!lines.length) return;
-      panel.innerHTML = '<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3,#8a7d66);margin-bottom:4px">History · not printed</div>' + lines.join('');
+      panel.innerHTML = '<div data-style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3,#8a7d66);margin-bottom:4px">History · not printed</div>' + lines.join('');
       panel.style.display = 'block';
     } catch (_) { /* history is a convenience — never blocks the document */ }
   };

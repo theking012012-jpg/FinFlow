@@ -16,12 +16,12 @@
             // strings like "Common Stock"). Keeps the row from clipping at the dropdown edge.
             var ty = String(r.type||'');
             if(/common stock/i.test(ty)) ty='Stock'; else if(/^crypto/i.test(ty)) ty='Crypto'; else if(/etp|etf|fund/i.test(ty)) ty='ETF';
-            return '<div data-i="'+i+'" onmousedown="event.preventDefault();window.ffHoldingPick('+i+')" '
-              +'style="padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--bd);'
+            return '<div data-i="'+i+'" data-arg-i="'+i+'" data-on-mousedown="event.preventDefault();window.ffHoldingPick(Number(this.dataset.argI))" '
+              +'data-style="padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--bd);'
               +(i===active?'background:var(--acc-bg,#2a2418)':'')+'">'
-              +'<span style="font-weight:700;color:var(--t1);font-family:var(--font-mono);min-width:66px;flex-shrink:0;font-size:13px">'+esc(r.symbol||'')+'</span>'
-              +'<span style="flex:1;min-width:0;color:var(--t2);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.description||'')+'</span>'
-              +'<span style="color:var(--t3);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;min-width:38px;text-align:right">'+esc(ty)+'</span>'
+              +'<span data-style="font-weight:700;color:var(--t1);font-family:var(--font-mono);min-width:66px;flex-shrink:0;font-size:13px">'+esc(r.symbol||'')+'</span>'
+              +'<span data-style="flex:1;min-width:0;color:var(--t2);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.description||'')+'</span>'
+              +'<span data-style="color:var(--t3);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;min-width:38px;text-align:right">'+esc(ty)+'</span>'
               +'</div>';
           }).join('');
           b.style.display='block';

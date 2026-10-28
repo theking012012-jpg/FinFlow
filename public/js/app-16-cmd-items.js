@@ -47,7 +47,7 @@ function renderCmdItems(q){
   container.innerHTML=Object.entries(groups).map(([g,items])=>`
     <div class="cmd-group-label">${g}</div>
     ${items.map(({item,idx})=>`
-      <div class="cmd-item${idx===0?' selected':''}" data-idx="${idx}" onclick="runCmdItem(${idx})">
+      <div class="cmd-item${idx===0?' selected':''}" data-idx="${idx}" data-arg-idx="${idx}" data-on-click="runCmdItem(Number(this.dataset.argIdx))">
         <div class="cmd-item-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${item.icon}</svg></div>
         <span class="cmd-item-label">${item.label}</span>
         ${item.kbd?`<span class="cmd-item-kbd">${item.kbd}</span>`:''}
@@ -147,7 +147,7 @@ async function startStripeFeed(){
     if(!r.ok){ if(r.status===401||r.status===403) return; throw new Error('HTTP '+r.status); }
     const d=await r.json();
     if(!d.connected){
-      feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Connect Stripe to see live payment transactions</div>';
+      feed.innerHTML='<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Connect Stripe to see live payment transactions</div>';
       if(label)label.textContent=''; return;
     }
     // Entity gating: this Stripe account books to ONE entity. On any OTHER entity, don't render its
@@ -157,7 +157,7 @@ async function startStripeFeed(){
     if(d.books&&d.books.scope==='business'&&d.books.entity_id!=null&&_actId!=null&&d.books.entity_id!==_actId){
       const _be=(window.ENTITIES||[]).find(e=>(e._dbId||e.id)===d.books.entity_id);
       const _bn=_be?(_be.name||_be.business_name||'another business'):'another business';
-      feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">This Stripe account books to <span style="color:var(--t2)">'+esc(_bn)+'</span>. Switch to that business to see and reconcile its payments.</div>';
+      feed.innerHTML='<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">This Stripe account books to <span data-style="color:var(--t2)">'+esc(_bn)+'</span>. Switch to that business to see and reconcile its payments.</div>';
       if(label)label.textContent='';
       const _pb0=document.getElementById('stripe-payouts'); if(_pb0)_pb0.innerHTML='';
       return;
@@ -165,10 +165,10 @@ async function startStripeFeed(){
     const charges=d.charges||[];
     const _bk=d.books||null;
     let bindingBar='';
-    if(_bk){ const _ent=(window.ENTITIES||[]).find(e=>(e._dbId||e.id)===_bk.entity_id); const _lbl=_bk.scope==='personal'?'Personal':(_ent?(_ent.name||_ent.business_name||'Business'):'a business'); bindingBar='<div id="stripe-binding-bar" style="font-size:10px;color:var(--t3);padding:0 0 6px 0">Books to: <button type="button" onclick="ffChooseStripeBinding()" style="font-size:10px;color:var(--t2);background:none;border:1px solid var(--bd);border-radius:5px;padding:2px 6px;cursor:pointer">'+esc(_lbl)+' \u25be</button></div>'; }
+    if(_bk){ const _ent=(window.ENTITIES||[]).find(e=>(e._dbId||e.id)===_bk.entity_id); const _lbl=_bk.scope==='personal'?'Personal':(_ent?(_ent.name||_ent.business_name||'Business'):'a business'); bindingBar='<div id="stripe-binding-bar" data-style="font-size:10px;color:var(--t3);padding:0 0 6px 0">Books to: <button type="button" data-on-click="ffChooseStripeBinding()" data-style="font-size:10px;color:var(--t2);background:none;border:1px solid var(--bd);border-radius:5px;padding:2px 6px;cursor:pointer">'+esc(_lbl)+' \u25be</button></div>'; }
     const mode=(d.livemode===false)?'Test mode · ':'';
     if(!charges.length){
-      feed.innerHTML=bindingBar+'<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">No payments yet on your connected Stripe account.</div>';
+      feed.innerHTML=bindingBar+'<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">No payments yet on your connected Stripe account.</div>';
       if(label)label.textContent=mode.trim(); return;
     }
     feed.innerHTML=bindingBar+charges.map(c=>{
@@ -179,32 +179,32 @@ async function startStripeFeed(){
       let bookCtl='';
       if(c.refunded && c.inBooks){
         bookCtl = c.refundInBooks
-          ? '<span style="font-size:10px;color:var(--amber);white-space:nowrap">refund recorded</span>'
-          : '<button type="button" onclick="ffImportStripeRefund(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--amber);cursor:pointer;white-space:nowrap">Record refund</button>';
+          ? '<span data-style="font-size:10px;color:var(--amber);white-space:nowrap">refund recorded</span>'
+          : '<button type="button" data-arg-id="'+esc(c.id)+'" data-on-click="ffImportStripeRefund(this.dataset.argId,this)" data-style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--amber);cursor:pointer;white-space:nowrap">Record refund</button>';
       } else if(c.inBooks){
-        bookCtl = '<span style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 in books</span>';
+        bookCtl = '<span data-style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 in books</span>';
       } else if(c.appliedToInvoice){
-        bookCtl = '<span style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 applied to invoice</span>';
+        bookCtl = '<span data-style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 applied to invoice</span>';
       } else if(canBook){
-        const _addBtn = '<button type="button" onclick="ffImportStripeCharge(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--t2);cursor:pointer;white-space:nowrap">'+(c.matchInvoice?'Add as income':'Add to books')+'</button>';
+        const _addBtn = '<button type="button" data-arg-id="'+esc(c.id)+'" data-on-click="ffImportStripeCharge(this.dataset.argId,this)" data-style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--t2);cursor:pointer;white-space:nowrap">'+(c.matchInvoice?'Add as income':'Add to books')+'</button>';
         if(c.matchInvoice){
           const _mnum = esc(c.matchInvoice.number||c.matchInvoice.num||('#'+c.matchInvoice.id));   // B1b: the real number
-          bookCtl = '<button type="button" onclick="ffMatchStripeInvoice(\''+esc(c.id)+'\','+(c.matchInvoice.id)+',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--green);border-radius:6px;background:var(--card);color:var(--green);cursor:pointer;white-space:nowrap">Match '+_mnum+'</button>'+_addBtn;
+          bookCtl = '<button type="button" data-arg-id="'+esc(c.id)+'" data-arg-id-2="'+(c.matchInvoice.id)+'" data-on-click="ffMatchStripeInvoice(this.dataset.argId,Number(this.dataset.argId2),this)" data-style="font-size:10px;padding:3px 8px;border:1px solid var(--green);border-radius:6px;background:var(--card);color:var(--green);cursor:pointer;white-space:nowrap">Match '+_mnum+'</button>'+_addBtn;
         } else {
           bookCtl = _addBtn;
         }
       }
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'+
-        '<div style="min-width:0"><div style="color:var(--t1);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.description||c.email||'Payment')+'</div>'+
-        '<div style="color:var(--t3);font-size:11px">'+esc(dt)+' · <span style="color:'+col+'">'+esc(st)+'</span></div></div>'+
-        '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-left:10px">'+
-          '<div style="font-family:var(--font-mono);color:var(--t1);white-space:nowrap">'+_symOf(c.currency)+_m(c.amount)+'</div>'+
+      return '<div data-style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'+
+        '<div data-style="min-width:0"><div data-style="color:var(--t1);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.description||c.email||'Payment')+'</div>'+
+        '<div data-style="color:var(--t3);font-size:11px">'+esc(dt)+' · <span data-style="color:'+col+'">'+esc(st)+'</span></div></div>'+
+        '<div data-style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-left:10px">'+
+          '<div data-style="font-family:var(--font-mono);color:var(--t1);white-space:nowrap">'+_symOf(c.currency)+_m(c.amount)+'</div>'+
           bookCtl+
         '</div></div>';
     }).join('');
     if(label) label.textContent=mode+_symOf((charges[0]||{}).currency)+_m(d.total)+' collected';
   }catch(e){
-    feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Could not load Stripe payments — '+esc(e.message||'try again')+'</div>';
+    feed.innerHTML='<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Could not load Stripe payments — '+esc(e.message||'try again')+'</div>';
   }
 }
 window.startStripeFeed=startStripeFeed;
@@ -299,12 +299,12 @@ async function startStripePayouts(){
     const rows=d.payouts.map(function(p){
       const col=p.status==='paid'?'var(--green)':((p.status==='failed'||p.status==='canceled')?'var(--red)':'var(--amber)');
       const when=p.arrival_date?new Date(p.arrival_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)">'+
-        '<div style="min-width:0"><div style="color:var(--t2);font-size:12px">Payout to bank</div>'+
-        '<div style="color:var(--t3);font-size:11px">'+esc(when)+' \u00b7 <span style="color:'+col+'">'+esc(p.status)+'</span></div></div>'+
-        '<div style="font-family:var(--font-mono);color:var(--t1);white-space:nowrap;margin-left:10px">'+_symOf(p.currency)+_m(p.amount)+'</div></div>';
+      return '<div data-style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)">'+
+        '<div data-style="min-width:0"><div data-style="color:var(--t2);font-size:12px">Payout to bank</div>'+
+        '<div data-style="color:var(--t3);font-size:11px">'+esc(when)+' \u00b7 <span data-style="color:'+col+'">'+esc(p.status)+'</span></div></div>'+
+        '<div data-style="font-family:var(--font-mono);color:var(--t1);white-space:nowrap;margin-left:10px">'+_symOf(p.currency)+_m(p.amount)+'</div></div>';
     }).join('');
-    box.innerHTML='<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;padding:8px 0 4px">Payouts to your bank</div>'+rows+'<div style="font-size:10px;color:var(--t3);padding:6px 0 0">Match each to the matching deposit on your bank statement.</div>';
+    box.innerHTML='<div data-style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;padding:8px 0 4px">Payouts to your bank</div>'+rows+'<div data-style="font-size:10px;color:var(--t3);padding:6px 0 0">Match each to the matching deposit on your bank statement.</div>';
   }catch(e){ box.innerHTML=''; }
 }
 window.startStripePayouts=startStripePayouts;
@@ -339,21 +339,21 @@ function renderBudget(){
   const el=document.getElementById('budget-rows');
   if(!el)return;
   const BUDGET_DATA=window.BUDGET_DATA||[];
-  if(!BUDGET_DATA.length){el.innerHTML='<div style="padding:1.2rem;text-align:center;color:var(--t3);font-size:13px">No budget targets set. Click "Edit targets" to add categories.</div>';return;}
+  if(!BUDGET_DATA.length){el.innerHTML='<div data-style="padding:1.2rem;text-align:center;color:var(--t3);font-size:13px">No budget targets set. Click "Edit targets" to add categories.</div>';return;}
   el.innerHTML=BUDGET_DATA.map(r=>{
     const pct=Math.min(100,(r.actual/r.budget)*100);
     const over=r.actual>r.budget;
     const variance=r.budget-r.actual;
     const varColor=over?'var(--red)':'var(--green)';
     const varStr=(over?'-':'+')+window._fmtMoneyNative(Math.abs(variance));   // L29: exact (was K/M/B)   // F129: entity symbol, matches this row's actual/budget
-    return `<div class="budget-row" style="margin-top:8px">
+    return `<div class="budget-row" data-style="margin-top:8px">
       <span class="budget-label">${r.cat}</span>
       <div class="budget-track">
-        <div class="budget-actual" style="width:${pct}%;background:${over?'var(--red)':r.color}"></div>
-        <div class="budget-marker" style="left:100%"></div>
+        <div class="budget-actual" data-style="width:${pct}%;background:${over?'var(--red)':r.color}"></div>
+        <div class="budget-marker" data-style="left:100%"></div>
       </div>
-      <span class="budget-vals" style="font-family:var(--font-mono);font-size:11px">${window._fmtMoneyNative(r.actual)} / ${window._fmtMoneyNative(r.budget)}</span>
-      <span class="budget-variance" style="color:${varColor}">${varStr}</span>
+      <span class="budget-vals" data-style="font-family:var(--font-mono);font-size:11px">${window._fmtMoneyNative(r.actual)} / ${window._fmtMoneyNative(r.budget)}</span>
+      <span class="budget-variance" data-style="color:${varColor}">${varStr}</span>
     </div>`;
   }).join('');
 
@@ -460,8 +460,8 @@ async function loadMRRData(){
     if(_custEl){
       const _entries = Object.entries(_byCust).sort((a,b)=>b[1]-a[1]);
       _custEl.innerHTML = _entries.length
-        ? _entries.map(([c,v])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--t1)">${esc(c)}</span><span style="font-family:var(--font-mono);color:var(--t2)">${_sym+Math.round(v).toLocaleString()}/mo</span></div>`).join('')
-        : '<div style="padding:1rem;text-align:center;color:var(--t3)">No active subscriptions yet.</div>';
+        ? _entries.map(([c,v])=>`<div data-style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd)"><span data-style="color:var(--t1)">${esc(c)}</span><span data-style="font-family:var(--font-mono);color:var(--t2)">${_sym+Math.round(v).toLocaleString()}/mo</span></div>`).join('')
+        : '<div data-style="padding:1rem;text-align:center;color:var(--t3)">No active subscriptions yet.</div>';
     }
     // F-F2: Active customers = distinct clients with an active subscription. Net MRR = current active MRR.
     // New/Churned/Expansion require period-over-period cohort history that is NOT retained server-side

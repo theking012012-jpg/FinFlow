@@ -34,10 +34,10 @@
     if (!(body && num)) return '';
     var L = registryLink(body, num);
     var tag = L.direct
-      ? '<span style="color:var(--t3);font-size:11px;margin-left:6px">official register</span>'
-      : '<span style="color:var(--t3);font-size:11px;margin-left:6px">(web search)</span>';
+      ? '<span data-style="color:var(--t3);font-size:11px;margin-left:6px">official register</span>'
+      : '<span data-style="color:var(--t3);font-size:11px;margin-left:6px">(web search)</span>';
     return '<div class="detail-row"><span class="detail-label">Registry check</span><span class="detail-val">'
-      + '<a href="' + esc(L.url) + '" target="_blank" rel="noopener noreferrer" style="color:var(--acc,#c9a84c);text-decoration:underline">'
+      + '<a href="' + esc(L.url) + '" target="_blank" rel="noopener noreferrer" data-style="color:var(--acc,#c9a84c);text-decoration:underline">'
       + esc(L.label) + ' ↗</a>' + tag + '</span></div>';
   }
 

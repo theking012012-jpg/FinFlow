@@ -98,16 +98,16 @@ function renderScanResult(d){
   if(!result)return;
   // Restore normal result HTML in case it was replaced by key prompt
   result.innerHTML=`
-    <div style="font-size:11px;color:var(--acc);font-weight:500;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">✦ Extracted data</div>
+    <div data-style="font-size:11px;color:var(--acc);font-weight:500;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">✦ Extracted data</div>
     <div class="scanner-result-row"><span class="scanner-result-label">Vendor</span><span class="scanner-result-val" id="sc-vendor">—</span></div>
-    <div class="scanner-result-row"><span class="scanner-result-label">Amount</span><span class="scanner-result-val" id="sc-amount" style="color:var(--green);font-family:var(--font-mono)">—</span></div>
+    <div class="scanner-result-row"><span class="scanner-result-label">Amount</span><span class="scanner-result-val" id="sc-amount" data-style="color:var(--green);font-family:var(--font-mono)">—</span></div>
     <div class="scanner-result-row"><span class="scanner-result-label">Date</span><span class="scanner-result-val" id="sc-date">—</span></div>
     <div class="scanner-result-row"><span class="scanner-result-label">Category</span><span class="scanner-result-val" id="sc-category">—</span></div>
     <div class="scanner-result-row"><span class="scanner-result-label">Tax deductible</span><span class="scanner-result-val" id="sc-tax">—</span></div>
-    <div class="scanner-result-row"><span class="scanner-result-label">Notes</span><span class="scanner-result-val" id="sc-notes" style="font-size:11.5px;color:var(--t2);text-align:right;max-width:60%">—</span></div>
-    <div style="display:flex;gap:8px;margin-top:.85rem">
-      <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="addScannedExpense()">+ Add to expenses</button>
-      <button class="btn btn-ghost" onclick="resetScanner()">Clear</button>
+    <div class="scanner-result-row"><span class="scanner-result-label">Notes</span><span class="scanner-result-val" id="sc-notes" data-style="font-size:11.5px;color:var(--t2);text-align:right;max-width:60%">—</span></div>
+    <div data-style="display:flex;gap:8px;margin-top:.85rem">
+      <button class="btn btn-primary" data-style="flex:1;justify-content:center" data-on-click="addScannedExpense()">+ Add to expenses</button>
+      <button class="btn btn-ghost" data-on-click="resetScanner()">Clear</button>
     </div>`;
   result.style.display='block';
 

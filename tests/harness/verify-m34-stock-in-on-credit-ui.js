@@ -24,7 +24,7 @@ run('M34 — Stock In on credit creates the supplier bill', async ({ w, d, ev, t
   w.showPage('bills'); await settle(30, 60);
   const row = Array.from(d.querySelectorAll('#page-bills .table-row')).find(r => /Acme Supplies/.test(r.textContent));
   eq('Bills page: the bill is tagged Stock', !!(row && /Stock/.test(row.textContent)), true, false);
-  eq('Bills page: no delete on a purchase bill', row && row.querySelector('button[onclick^="deleteBill"]') ? 1 : 0, 0);
+  eq('Bills page: no delete on a purchase bill', row && row.querySelector('button[data-on-click^="deleteBill"]') ? 1 : 0, 0);
   w.showPage('dashboard'); ev(`setPeriod(document.getElementById('pY'),'year')`); await settle(40, 60);
   eq('Year expenses unchanged by buying stock', text('d-exp'), '$2.9K', '$3.1K');
 });

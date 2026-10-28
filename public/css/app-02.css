@@ -1,0 +1,4 @@
+/* Moved out of index.html (FA-P1, 2026-10-27): the page runs under a Content-Security-Policy with no inline
+   style, so every stylesheet is a file. It is linked at the same place, so the cascade order is unchanged. */
+.skip-link{position:absolute;left:-9999px;top:8px;z-index:10000;background:var(--acc);color:#0e0b08;padding:8px 16px;border-radius:6px;font-weight:600;font-size:13px;text-decoration:none}
+.skip-link:focus{left:8px}

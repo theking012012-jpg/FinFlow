@@ -30,7 +30,7 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
     await settle(40);
     await window.loadMyAccess(); await settle(10);
     const list = window.document.getElementById('my-access-list');
-    const btn = list && [...list.querySelectorAll('button')].find(b => /Switch/.test(b.textContent) && (b.getAttribute('onclick') || '').includes(String(other)));
+    const btn = list && [...list.querySelectorAll('button')].find(b => /Switch/.test(b.textContent) && /* FA-P1: the id rides in a data-arg-* attribute */ [...b.attributes].some(a => /^data-arg-/.test(a.name) && a.value === String(other)));
     A('card shows a Switch button for the joined account (bug: no switcher)', !!btn, list && list.innerHTML.slice(0, 300));
     try { Object.defineProperty(window.location, 'reload', { value: () => {}, configurable: true }); } catch (_) {}
     if (btn) { btn.click(); await settle(20); }

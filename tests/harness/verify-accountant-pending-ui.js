@@ -36,9 +36,10 @@ const API = {
     const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: new VirtualConsole(), url: 'https://finflow.test/accountant-dashboard.html' });
     const { window } = dom;
     for (let i = 0; i < 40; i++) await new Promise(r => setTimeout(r, 50));
-    const rows = [...window.document.querySelectorAll('[onclick^="approveRequest("]')].map(b => b.getAttribute('onclick'));
-    A('client-initiated request has an Approve button (control)', rows.some(o => /approveRequest\(11,/.test(o)), JSON.stringify(rows));
-    A('referral link has NO Approve button (bug: Approve)', !rows.some(o => /approveRequest\(22,/.test(o)), JSON.stringify(rows));
+    // FA-P1: the handler is constant code; the client's id rides in data-arg-user-id
+    const rows = [...window.document.querySelectorAll('[data-on-click^="approveRequest("]')].map(b => b.getAttribute('data-arg-user-id'));
+    A('client-initiated request has an Approve button (control)', rows.includes('11'), JSON.stringify(rows));
+    A('referral link has NO Approve button (bug: Approve)', !rows.includes('22'), JSON.stringify(rows));
     A('referral link shows "awaiting client approval"', /awaiting client approval/i.test(window.document.body.textContent));
     try { window.close(); } catch {}
   } catch (e) { console.error('\n  FATAL:', e && e.stack || e); fail++; }

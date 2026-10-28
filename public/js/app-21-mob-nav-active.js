@@ -393,10 +393,10 @@ function _maybeAskReportingCurrency(){
     if (_pl && _pl.parentNode) _pl.parentNode.insertBefore(m, _pl); else document.body.appendChild(m);
   }
   const def = consolCurrency && curs.includes(consolCurrency) ? consolCurrency : curs[0];
-  m.innerHTML = `<div style="font-size:13px;font-weight:600;color:var(--t1)">Which currency for your combined figures?</div>
-    <div style="font-size:12px;color:var(--t2);margin:2px 0 8px">Your businesses use ${curs.map(esc).join(' and ')}. "All entities" totals are shown in one currency — you can change it any time in Settings.</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="field-label" for="rc-ask-select" style="margin:0">Report all businesses in</label>
-      <select class="finput" id="rc-ask-select" style="width:auto">${curs.map(c => `<option value="${esc(c)}"${c === def ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
+  m.innerHTML = `<div data-style="font-size:13px;font-weight:600;color:var(--t1)">Which currency for your combined figures?</div>
+    <div data-style="font-size:12px;color:var(--t2);margin:2px 0 8px">Your businesses use ${curs.map(esc).join(' and ')}. "All entities" totals are shown in one currency — you can change it any time in Settings.</div>
+    <div data-style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="field-label" for="rc-ask-select" data-style="margin:0">Report all businesses in</label>
+      <select class="finput" id="rc-ask-select" data-style="width:auto">${curs.map(c => `<option value="${esc(c)}"${c === def ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
       <button class="btn btn-primary btn-sm" id="rc-ask-use">Use this currency</button></div>`;
   m.classList.remove('hidden');
   m.querySelector('#rc-ask-use').onclick = async function () {
@@ -427,22 +427,22 @@ function renderConsolPL(){
   if(hdr){
     hdr.style.gridTemplateColumns = cols;
     hdr.innerHTML = '<span>Line</span>' +
-      ENTITIES.map(e=>`<span style="text-align:right">${e.name}</span>`).join('') +
-      '<span style="text-align:right">Consolidated</span>';
+      ENTITIES.map(e=>`<span data-style="text-align:right">${e.name}</span>`).join('') +
+      '<span data-style="text-align:right">Consolidated</span>';
   }
 
   pl.innerHTML = CONSOL_ROW_DEFS.map(row=>{
     const entityVals = ENTITIES.map(e=>{
       // F31: an entity whose data failed to load shows "—", never a fabricated $0.
       const cell = (e.data && e.data.unavailable) ? '—' : fmtConsol(e.data[row.key], e.currency);
-      return `<span style="text-align:right;color:var(--t2);font-family:var(--font-mono)">${cell}</span>`;
+      return `<span data-style="text-align:right;color:var(--t2);font-family:var(--font-mono)">${cell}</span>`;
     }).join('');
     const total = getConsolTotal(row.key);
     return `
-      <div style="display:grid;grid-template-columns:${cols};gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);align-items:center;font-size:12px">
-        <span style="color:var(--t1);font-weight:500">${row.label}</span>
+      <div data-style="display:grid;grid-template-columns:${cols};gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);align-items:center;font-size:12px">
+        <span data-style="color:var(--t1);font-weight:500">${row.label}</span>
         ${entityVals}
-        <span style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${(total===0||total===null)?'var(--t2)':row.color}">${fmtTotal(total)}</span>
+        <span data-style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${(total===0||total===null)?'var(--t2)':row.color}">${fmtTotal(total)}</span>
       </div>`;
   }).join('');
 }
@@ -474,9 +474,9 @@ window.renderEntities=function(){
     const revConverted = _unavail ? '—' : fmtConsol(e.data.rev, e.currency);
     const margin = (!_unavail && e.data.rev) ? Math.round(e.data.netProfit/e.data.rev*100*10)/10 : null;
     return `
-    <div class="entity-card${e.active?' active-entity':''}" onclick="switchEntity(${i})">
-      <div class="entity-logo" style="background:${e.color}">${e.name.slice(0,2).toUpperCase()}</div>
-      <div style="flex:1;min-width:0">
+    <div class="entity-card${e.active?' active-entity':''}" data-arg-i="${i}" data-on-click="switchEntity(Number(this.dataset.argI))">
+      <div class="entity-logo" data-style="background:${e.color}">${e.name.slice(0,2).toUpperCase()}</div>
+      <div data-style="flex:1;min-width:0">
         <div class="entity-name">${e.name}</div>
         <div class="entity-meta">${e.currency}${e.country?' · '+_ffCountryName(e.country):''} · <span class="entity-tag">${e.tag}</span></div>
       </div>
@@ -484,8 +484,8 @@ window.renderEntities=function(){
         <div class="entity-stat-val">${revConverted}</div>
         <div class="entity-stat-lbl">${_unavail ? 'Failed to load' : (margin!==null?'Revenue · '+margin+'% margin':'—')}</div>
       </div>
-      <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="event.stopPropagation();openEntityProfile(${i})" title="Edit business profile / letterhead">Profile</button>
-      ${e.active?`<span class="badge b-green" style="flex-shrink:0">Active</span>`:`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();switchEntity(${i})">Switch</button>`}
+      <button class="btn btn-ghost btn-sm" data-style="flex-shrink:0" data-arg-i="${i}" data-on-click="event.stopPropagation();openEntityProfile(Number(this.dataset.argI))" title="Edit business profile / letterhead">Profile</button>
+      ${e.active?`<span class="badge b-green" data-style="flex-shrink:0">Active</span>`:`<button class="btn btn-ghost btn-sm" data-arg-i="${i}" data-on-click="event.stopPropagation();switchEntity(Number(this.dataset.argI))">Switch</button>`}
     </div>`;
   }).join('');
 
@@ -633,7 +633,7 @@ window.switchEntity=async function(idx){
   // (e.g. -TT$210 lingering on a CAD entity). Resetting currencySymbol above does NOT re-render existing
   // SVG, so clear it now; buildRiver repaints with the new entity's data + currency once it loads.
   try { window._serverBooks = null;   // LR3: the river must never repaint from the previous business's cached books
-    var _rw=document.getElementById('river-wrap'); if(_rw) _rw.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Loading…</div>'; var _rs=document.getElementById('river-sub'); if(_rs) _rs.textContent='Where every dollar goes'; } catch(_e){}
+    var _rw=document.getElementById('river-wrap'); if(_rw) _rw.innerHTML='<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Loading…</div>'; var _rs=document.getElementById('river-sub'); if(_rs) _rs.textContent='Where every dollar goes'; } catch(_e){}
 
   // Refresh entity list UI
   renderEntities();
@@ -797,17 +797,17 @@ window.renderTeam=function(){
   const tc=document.getElementById('team-count');if(tc)tc.textContent=active.length;
   const tp=document.getElementById('team-pending');if(tp)tp.textContent=pending.length;
   if(tl){
-    if(!TEAM.length){tl.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No team members yet. Click + Invite to add someone.</div>';}
+    if(!TEAM.length){tl.innerHTML='<div data-style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No team members yet. Click + Invite to add someone.</div>';}
     else tl.innerHTML=TEAM.map(m=>`
     <div class="team-member-row">
-      <div class="team-avatar" style="background:${m.color}22;color:${m.color};border:1px solid ${m.color}44">${m.avatar}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.name}</div>
-        <div style="font-size:11px;color:var(--t3)">${m.email}</div>
+      <div class="team-avatar" data-style="background:${m.color}22;color:${m.color};border:1px solid ${m.color}44">${m.avatar}</div>
+      <div data-style="flex:1;min-width:0">
+        <div data-style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.name}</div>
+        <div data-style="font-size:11px;color:var(--t3)">${m.email}</div>
       </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+      <div data-style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
         <span class="role-badge ${ROLE_CLASSES[m.role]}">${ROLE_LABELS[m.role]}</span>
-        <span style="font-size:10px;color:var(--t3)">${m.lastSeen}</span>
+        <span data-style="font-size:10px;color:var(--t3)">${m.lastSeen}</span>
       </div>
     </div>`).join('');
   }
@@ -816,8 +816,8 @@ window.renderTeam=function(){
   // Read-only reference: shows the role defaults enforced server-side by rbac.js.
   // Every cell is disabled — per-account customization is a tracked follow-up.
   if(pl)pl.innerHTML=PERMS.map((p,pi)=>{
-    const chk=(on)=>`<input type="checkbox" ${on?'checked':''} disabled style="width:16px;height:16px;accent-color:var(--acc);cursor:default;margin:0 auto;display:block">`;
-    return `<div class="perm-row" style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;align-items:center">
+    const chk=(on)=>`<input type="checkbox" ${on?'checked':''} disabled data-style="width:16px;height:16px;accent-color:var(--acc);cursor:default;margin:0 auto;display:block">`;
+    return `<div class="perm-row" data-style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;align-items:center">
       <div><div class="perm-label">${p.label}</div><div class="perm-desc">${p.desc}</div></div>
       ${chk(p.o)}${chk(p.a)}${chk(p.ac)}${chk(p.v)}
     </div>`;
@@ -842,20 +842,20 @@ window.filterAudit=function(val){auditFilter=val;renderAudit();};
 window.renderAudit=async function(){
   const el=document.getElementById('audit-list');
   if(!el)return;
-  el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
+  el.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
   try{
     const params=auditFilter!=='all'?'?type='+encodeURIComponent(auditFilter):'';
     const res=await fetch('/api/audit-log'+params,{credentials:'include'});
     if(!res.ok)throw new Error();
     const data=await res.json();
     const entries=Array.isArray(data)?data:(data.rows||data.entries||[]);
-    if(!entries.length){el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No audit events yet.</div>';return;}
+    if(!entries.length){el.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No audit events yet.</div>';return;}
     el.innerHTML=entries.map(e=>`
       <div class="audit-row">
-        <div class="audit-icon" style="background:var(--acc-bg);color:var(--acc)">
+        <div class="audit-icon" data-style="background:var(--acc-bg);color:var(--acc)">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><polyline points="8,5 8,8 10,10"/></svg>
         </div>
-        <div style="flex:1;min-width:0">
+        <div data-style="flex:1;min-width:0">
           <div><span class="audit-user">You</span> <span class="audit-action">${e.action||''}</span> <span class="audit-target">${e.table_name||''}${e.record_id?' #'+e.record_id:''}</span></div>
           <div class="audit-time">${e.created_at?new Date(e.created_at).toLocaleString():''}</div>
         </div>
@@ -881,7 +881,7 @@ window.renderAudit=async function(){
       }
     })();
   }catch(err){
-    el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Could not load audit log. Check your connection.</div>';
+    el.innerHTML='<div data-style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Could not load audit log. Check your connection.</div>';
   }
 };
 
@@ -966,8 +966,8 @@ function renderFeatureList(id, items){
   const el=document.getElementById(id);
   if(!el)return;
   el.innerHTML=items.map(f=>`
-    <div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:${f.ok?'var(--t1)':'var(--t3)'}">
-      <span style="flex-shrink:0">${check(f.ok)}</span>
+    <div data-style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:${f.ok?'var(--t1)':'var(--t3)'}">
+      <span data-style="flex-shrink:0">${check(f.ok)}</span>
       <span>${f.text}</span>
     </div>`).join('');
 }
@@ -976,12 +976,12 @@ function renderFAQ(){
   const el=document.getElementById('faq-list');
   if(!el)return;
   el.innerHTML=FAQ.map((f,i)=>`
-    <div style="border-bottom:1px solid var(--bd);${i===FAQ.length-1?'border-bottom:none':''}">
-      <div onclick="toggleFAQ(${i})" style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 0;cursor:pointer;user-select:none">
-        <span style="font-size:13px;font-weight:500;color:var(--t1)">${f.q}</span>
-        <svg id="faq-arr-${i}" width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="var(--t3)" stroke-width="1.5" stroke-linecap="round" style="flex-shrink:0;transition:transform .2s"><polyline points="2,3 5,7 8,3"/></svg>
+    <div data-style="border-bottom:1px solid var(--bd);${i===FAQ.length-1?'border-bottom:none':''}">
+      <div data-arg-i="${i}" data-on-click="toggleFAQ(Number(this.dataset.argI))" data-style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 0;cursor:pointer;user-select:none">
+        <span data-style="font-size:13px;font-weight:500;color:var(--t1)">${f.q}</span>
+        <svg id="faq-arr-${i}" width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="var(--t3)" stroke-width="1.5" stroke-linecap="round" data-style="flex-shrink:0;transition:transform .2s"><polyline points="2,3 5,7 8,3"/></svg>
       </div>
-      <div id="faq-ans-${i}" style="display:none;font-size:12.5px;color:var(--t2);line-height:1.65;padding-bottom:.85rem">${f.a}</div>
+      <div id="faq-ans-${i}" data-style="display:none;font-size:12.5px;color:var(--t2);line-height:1.65;padding-bottom:.85rem">${f.a}</div>
     </div>`).join('');
 }
 
@@ -1032,12 +1032,12 @@ window.ffChangePlan = async function(plan, interval){
   let box=document.getElementById('plan-change-box');
   if(!box){ box=document.createElement('div'); box.id='plan-change-box'; box.className='card'; box.style.cssText='margin-bottom:1.25rem;border:1px solid var(--acc)';
     const grid=document.getElementById('plan-grid'); if(grid&&grid.parentNode) grid.parentNode.insertBefore(box, grid.nextSibling); else document.body.appendChild(box); }
-  box.innerHTML='<div style="font-size:13px;color:var(--t2)">Working out the change…</div>';
+  box.innerHTML='<div data-style="font-size:13px;color:var(--t2)">Working out the change…</div>';
   box.scrollIntoView && box.scrollIntoView({block:'nearest'});
   try{
     const r=await fetch('/api/billing/change-preview',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan,interval})});
     const p=await r.json();
-    if(!r.ok){ box.innerHTML='<div style="font-size:13px;color:var(--red)">'+esc(p.error||('Could not prepare the change ('+r.status+').'))+'</div>'; return; }
+    if(!r.ok){ box.innerHTML='<div data-style="font-size:13px;color:var(--red)">'+esc(p.error||('Could not prepare the change ('+r.status+').'))+'</div>'; return; }
     const per = p.interval==='year' ? 'a year' : 'a month';
     let what;
     if(p.when==='now'){
@@ -1045,11 +1045,11 @@ window.ffChangePlan = async function(plan, interval){
         + (p.credit>0 ? ', after a '+_pcMoney(p.credit)+' credit for the unused part of your current plan' : '') + '. Then $'+Number(p.price).toLocaleString('en-US')+' '+per+'.';
     } else {
       what = 'Switch to <strong>'+esc(p.planName)+'</strong>'+(p.interval==='year'?' billed yearly':' billed monthly')+' on <strong>'+esc(_pcDate(p.effective))+'</strong>, at the end of what you have paid for. You keep your current plan until then, and nothing is charged now. From then: $'+Number(p.price).toLocaleString('en-US')+' '+per+'.';
-      if(p.seatsOver>0) what += '<div style="margin-top:10px">'+esc(p.planName)+' includes '+p.newSeats+' people who can edit, plus you. Choose who keeps edit access — everyone else becomes a Viewer (they keep seeing the books).</div>'
-        + '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">'+(p.editors||[]).map(ed=>'<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--t1)"><input type="checkbox" data-editor="'+Number(ed.id)+'"> '+esc(ed.name||ed.email||('Member '+ed.id))+' <span style="color:var(--t3)">'+esc(ed.email||'')+'</span></label>').join('')+'</div>';
+      if(p.seatsOver>0) what += '<div data-style="margin-top:10px">'+esc(p.planName)+' includes '+p.newSeats+' people who can edit, plus you. Choose who keeps edit access — everyone else becomes a Viewer (they keep seeing the books).</div>'
+        + '<div data-style="display:flex;flex-direction:column;gap:6px;margin-top:6px">'+(p.editors||[]).map(ed=>'<label data-style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--t1)"><input type="checkbox" data-editor="'+Number(ed.id)+'"> '+esc(ed.name||ed.email||('Member '+ed.id))+' <span data-style="color:var(--t3)">'+esc(ed.email||'')+'</span></label>').join('')+'</div>';
     }
-    box.innerHTML='<div style="font-size:13px;color:var(--t1);line-height:1.6">'+what+'</div>'
-      + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="plan-change-confirm">Confirm</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'plan-change-box\').remove()">Not now</button></div>';
+    box.innerHTML='<div data-style="font-size:13px;color:var(--t1);line-height:1.6">'+what+'</div>'
+      + '<div data-style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="plan-change-confirm">Confirm</button><button class="btn btn-ghost btn-sm" data-on-click="document.getElementById(\'plan-change-box\').remove()">Not now</button></div>';
     document.getElementById('plan-change-confirm').onclick=async function(){
       const keep=[...box.querySelectorAll('input[data-editor]:checked')].map(i=>Number(i.dataset.editor));
       if(p.seatsOver>0 && (!keep.length || keep.length>p.newSeats)){ notify('Choose up to '+p.newSeats+' people who keep edit access.',true); return; }
@@ -1065,14 +1065,14 @@ window.ffChangePlan = async function(plan, interval){
         _updatePricingCTAs();
       }catch(e){ notify('Could not change the plan — '+e.message,true); this.disabled=false; }
     };
-  }catch(e){ box.innerHTML='<div style="font-size:13px;color:var(--red)">Could not prepare the change — '+esc(e.message)+'</div>'; }
+  }catch(e){ box.innerHTML='<div data-style="font-size:13px;color:var(--red)">Could not prepare the change — '+esc(e.message)+'</div>'; }
 };
 
 // D-A: Pro / Business / Scale side by side, row for row from plans.js (replaces the unsourced competitor table).
 function renderPlanCompare(){
   const body=document.querySelector('#plan-compare-app tbody');
   if(!body||!window.FinFlowPlans)return;
-  body.innerHTML=window.FinFlowPlans.comparisonRows().map(([label,vals],i)=>`<tr style="border-bottom:1px solid var(--bd);${i%2?'background:rgba(255,255,255,.01)':''}"><td style="padding:7px 8px;color:var(--t2)">${esc(label)}</td>${vals.map((v,k)=>`<td style="padding:7px 8px;text-align:center;${k===1?'background:var(--acc-bg);':''}color:${v==='—'?'var(--t3)':'var(--t1)'}">${esc(v)}</td>`).join('')}</tr>`).join('');
+  body.innerHTML=window.FinFlowPlans.comparisonRows().map(([label,vals],i)=>`<tr data-style="border-bottom:1px solid var(--bd);${i%2?'background:rgba(255,255,255,.01)':''}"><td data-style="padding:7px 8px;color:var(--t2)">${esc(label)}</td>${vals.map((v,k)=>`<td data-style="padding:7px 8px;text-align:center;${k===1?'background:var(--acc-bg);':''}color:${v==='—'?'var(--t3)':'var(--t1)'}">${esc(v)}</td>`).join('')}</tr>`).join('');
 }
 
 function initPricing(){

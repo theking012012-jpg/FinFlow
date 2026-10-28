@@ -35,14 +35,14 @@ process.on('uncaughtException', (e) => { const s = String(e && e.message || e); 
     const clone = d.body.cloneNode(true); clone.querySelectorAll('script,style').forEach(e => e.remove());
     const soon = (clone.textContent.match(/[^.]{0,50}coming soon[^.]{0,20}/gi) || []);
     A('1  no "coming soon" text anywhere in the app (bug: Advisor Network, Client Portal, role note)', soon.length === 0, JSON.stringify(soon.slice(0, 4)));
-    const nav = [...d.querySelectorAll('.nav-item')].map(n => n.getAttribute('onclick') || '');
+    const nav = [...d.querySelectorAll('.nav-item')].map(n => n.getAttribute('data-on-click') || '');
     A('2  no nav item opens the advisor or portal placeholders', !nav.some(o => /'advisors'|'portal'/.test(o)), JSON.stringify(nav.filter(o => /advisors|portal/.test(o))));
     A('3  the role note states what is true', /roles FinFlow enforces/.test(d.body.textContent), '');
 
     // 4 — business Rebalance: the real view, on business holdings only
     try { if (typeof window._loadBizHoldingsFromDB === 'function') await window._loadBizHoldingsFromDB(((window.ENTITIES || []).find(e => e.active) || {})._dbId); } catch (_) {}
     await settle(6, 50);
-    const btn = [...d.querySelectorAll('button')].find(b => /Rebalance/.test(b.textContent) && /bizHoldings/.test(b.getAttribute('onclick') || ''));
+    const btn = [...d.querySelectorAll('button')].find(b => /Rebalance/.test(b.textContent) && /bizHoldings/.test(b.getAttribute('data-on-click') || ''));
     A('4  the business investments Rebalance button opens the rebalance view (bug: a "coming soon" toast)', !!btn, '');
     if (btn) { try { btn.click(); } catch (e) { A('click ran', false, e.message); } }
     await settle(3, 30);

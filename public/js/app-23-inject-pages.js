@@ -19,58 +19,58 @@
       </div>
 
       <div class="two-col">
-        <div class="card" style="margin-bottom:0">
+        <div class="card" data-style="margin-bottom:0">
           <div class="card-header">
             <div><h2 class="card-title">What-if scenario builder</h2><div class="card-sub">Drag sliders to model different futures</div></div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="scenario-preset-btn active-preset" id="preset-base" onclick="applyPreset('base')">Baseline</button>
-              <button class="scenario-preset-btn" id="preset-hire" onclick="applyPreset('hire')">🧑‍💻 Hire 2 devs</button>
-              <button class="scenario-preset-btn" id="preset-growth" onclick="applyPreset('growth')">🚀 High growth</button>
-              <button class="scenario-preset-btn" id="preset-downturn" onclick="applyPreset('downturn')">📉 Downturn</button>
+            <div data-style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="scenario-preset-btn active-preset" id="preset-base" data-on-click="applyPreset('base')">Baseline</button>
+              <button class="scenario-preset-btn" id="preset-hire" data-on-click="applyPreset('hire')">🧑‍💻 Hire 2 devs</button>
+              <button class="scenario-preset-btn" id="preset-growth" data-on-click="applyPreset('growth')">🚀 High growth</button>
+              <button class="scenario-preset-btn" id="preset-downturn" data-on-click="applyPreset('downturn')">📉 Downturn</button>
             </div>
           </div>
 
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">Revenue growth rate</span><span class="scenario-slider-val" id="lbl-rev-growth">0%</span></div>
-            <input type="range" class="ff-range" id="sl-rev-growth" min="-30" max="100" value="0" oninput="updateScenario()">
+            <input type="range" class="ff-range" id="sl-rev-growth" min="-30" max="100" value="0" data-on-input="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">Additional headcount</span><span class="scenario-slider-val" id="lbl-headcount">0 hires</span></div>
-            <input type="range" class="ff-range" id="sl-headcount" min="0" max="10" value="0" oninput="updateScenario()">
+            <input type="range" class="ff-range" id="sl-headcount" min="0" max="10" value="0" data-on-input="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">Avg salary per hire ($K)</span><span class="scenario-slider-val" id="lbl-salary">$0K</span></div>
-            <input type="range" class="ff-range" id="sl-salary" min="0" max="250" value="0" oninput="updateScenario()">
+            <input type="range" class="ff-range" id="sl-salary" min="0" max="250" value="0" data-on-input="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">Churn rate</span><span class="scenario-slider-val" id="lbl-churn">0%</span></div>
-            <input type="range" class="ff-range" id="sl-churn" min="0" max="20" value="0" step="0.1" oninput="updateScenario()">
+            <input type="range" class="ff-range" id="sl-churn" min="0" max="20" value="0" step="0.1" data-on-input="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">One-time investment ($K)</span><span class="scenario-slider-val" id="lbl-invest">$0K</span></div>
-            <input type="range" class="ff-range" id="sl-invest" min="0" max="500" value="0" step="5" oninput="updateScenario()">
+            <input type="range" class="ff-range" id="sl-invest" min="0" max="500" value="0" step="5" data-on-input="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">Expense efficiency (%)</span><span class="scenario-slider-val" id="lbl-efficiency">0%</span></div>
-            <input type="range" class="ff-range" id="sl-efficiency" min="-20" max="40" value="0" oninput="updateScenario()">
+            <input type="range" class="ff-range" id="sl-efficiency" min="-20" max="40" value="0" data-on-input="updateScenario()">
           </div>
 
           <div class="scenario-result-grid">
-            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo revenue</div><div class="scenario-result-val" id="sc-r-rev">$0</div><div class="scenario-result-delta" id="sc-r-rev-d" style="color:var(--t3)">Baseline</div></div>
-            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo profit</div><div class="scenario-result-val" id="sc-r-profit">$0</div><div class="scenario-result-delta" id="sc-r-profit-d" style="color:var(--t3)">Baseline</div></div>
-            <div class="scenario-result-mc"><div class="scenario-result-label">Runway</div><div class="scenario-result-val" id="sc-r-runway">—</div><div class="scenario-result-delta" id="sc-r-runway-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo revenue</div><div class="scenario-result-val" id="sc-r-rev">$0</div><div class="scenario-result-delta" id="sc-r-rev-d" data-style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo profit</div><div class="scenario-result-val" id="sc-r-profit">$0</div><div class="scenario-result-delta" id="sc-r-profit-d" data-style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">Runway</div><div class="scenario-result-val" id="sc-r-runway">—</div><div class="scenario-result-delta" id="sc-r-runway-d" data-style="color:var(--t3)">Baseline</div></div>
           </div>
         </div>
 
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div class="card" style="margin-bottom:0">
+        <div data-style="display:flex;flex-direction:column;gap:12px">
+          <div class="card" data-style="margin-bottom:0">
             <div class="card-header"><h2 class="card-title">Cash runway projection</h2></div>
-            <div class="canvas-wrap" style="height:160px"><canvas id="scenarioChart" role="img" aria-label="Line chart comparing financial scenarios">Scenario comparison chart</canvas></div>
+            <div class="canvas-wrap" data-style="height:160px"><canvas id="scenarioChart" role="img" aria-label="Line chart comparing financial scenarios">Scenario comparison chart</canvas></div>
           </div>
-          <div class="card" style="margin-bottom:0">
+          <div class="card" data-style="margin-bottom:0">
             <div class="card-header"><h2 class="card-title">✦ AI scenario analysis</h2></div>
-            <div class="ai-insight" id="scenario-ai-text" style="font-size:12.5px;color:var(--t2);line-height:1.6">Adjust the sliders to model your scenario. Claude will analyse the impact and give a recommendation.</div>
-            <button class="btn btn-ghost btn-sm" style="margin-top:.75rem" onclick="getScenarioAI()">✦ Ask Claude to analyse this scenario</button>
+            <div class="ai-insight" id="scenario-ai-text" data-style="font-size:12.5px;color:var(--t2);line-height:1.6">Adjust the sliders to model your scenario. Claude will analyse the impact and give a recommendation.</div>
+            <button class="btn btn-ghost btn-sm" data-style="margin-top:.75rem" data-on-click="getScenarioAI()">✦ Ask Claude to analyse this scenario</button>
           </div>
         </div>
       </div>`;
@@ -82,28 +82,28 @@
     autocatPage.id = 'page-autocat';
     autocatPage.innerHTML = `
       <div class="metrics-grid-3">
-        <div class="mc"><div class="mc-label">Uncategorised</div><div class="mc-val" id="autocat-pending-count" style="color:var(--amber)">0</div><div class="mc-change neutral">Need a category</div></div>
-        <div class="mc"><div class="mc-label">Categorised this session</div><div class="mc-val" id="autocat-approved-count" style="color:var(--green)">0</div><div class="mc-change up">Applied to expenses</div></div>
+        <div class="mc"><div class="mc-label">Uncategorised</div><div class="mc-val" id="autocat-pending-count" data-style="color:var(--amber)">0</div><div class="mc-change neutral">Need a category</div></div>
+        <div class="mc"><div class="mc-label">Categorised this session</div><div class="mc-val" id="autocat-approved-count" data-style="color:var(--green)">0</div><div class="mc-change up">Applied to expenses</div></div>
         <div class="mc"><div class="mc-label">Active rules</div><div class="mc-val" id="autocat-rules-count">0</div><div class="mc-change neutral">Keyword rules</div></div>
       </div>
       <div class="card">
         <div class="card-header">
           <div><h2 class="card-title">Transactions awaiting categorisation</h2><div class="card-sub">Run keyword rules (free) or ask AI to suggest a category, then approve to apply</div></div>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-ghost btn-sm" onclick="runAutocatRules()">▶ Run rules</button>
-            <button class="btn btn-ghost btn-sm" id="autocat-ai-btn" onclick="runAutocatAI()">✦ Suggest with AI</button>
-            <button class="btn btn-primary btn-sm" onclick="approveAllAutocat()">✓ Approve all</button>
+          <div data-style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" data-on-click="runAutocatRules()">▶ Run rules</button>
+            <button class="btn btn-ghost btn-sm" id="autocat-ai-btn" data-on-click="runAutocatAI()">✦ Suggest with AI</button>
+            <button class="btn btn-primary btn-sm" data-on-click="approveAllAutocat()">✓ Approve all</button>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 100px 120px 90px 80px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
+        <div data-style="display:grid;grid-template-columns:1fr 100px 120px 90px 80px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
           <span>Description</span><span>Amount</span><span>Suggested category</span><span>Confidence</span><span>Action</span>
         </div>
         <div id="autocat-list"></div>
       </div>
-      <div class="card" style="margin-bottom:0">
+      <div class="card" data-style="margin-bottom:0">
         <div class="card-header"><h2 class="card-title">Categorisation rules</h2><div class="card-sub">Auto-approve future transactions matching these patterns</div></div>
         <div id="autocat-rules-list"></div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:.75rem" onclick="openAddRuleModal()">+ Add custom rule</button>
+        <button class="btn btn-ghost btn-sm" data-style="margin-top:.75rem" data-on-click="openAddRuleModal()">+ Add custom rule</button>
       </div>`;
     content.appendChild(autocatPage);
 

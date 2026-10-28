@@ -76,11 +76,11 @@ async function main() {
     console.log('='.repeat(78));
 
     const jbtnHidden = (w) => {
-      const btns = [...w.document.querySelectorAll('[onclick="toggleJournalForm()"]')];
+      const btns = [...w.document.querySelectorAll('[data-on-click="toggleJournalForm()"]')];
       return btns.length > 0 && btns.every(b => b.style.display === 'none');
     };
     const jbtnShown = (w) => {
-      const btns = [...w.document.querySelectorAll('[onclick="toggleJournalForm()"]')];
+      const btns = [...w.document.querySelectorAll('[data-on-click="toggleJournalForm()"]')];
       return btns.length > 0 && btns.every(b => b.style.display !== 'none');
     };
     const periodsHtml = (w) => ((w.document.getElementById('periods-list') || {}).innerHTML) || '';

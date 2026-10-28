@@ -94,15 +94,15 @@
       const cls = { pending: 'b-amber', accepted: 'b-green', declined: 'b-red', converted: 'b-blue' };
       el.innerHTML = _quotesData.length
         ? _quotesData.map(q => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(q.client)}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(q.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(q.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(q.expiry_date,{year:true}):(q.expiry_date||''))||'—')}</span>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(q.client)}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(q.num || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(q.amount)}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(q.expiry_date,{year:true}):(q.expiry_date||''))||'—')}</span>
             <span><span class="badge ${cls[q.status] || 'b-amber'}">${esc(q.status)}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewQuote(${q.id})">View</button>${String(q.status || '').toLowerCase() === 'converted' ? '' : `<button class="btn btn-ghost btn-sm" title="Edit" onclick="editQuote(${q.id})">✎</button><button class="btn btn-ghost btn-sm" title="Create a draft invoice from this quote" onclick="convertQuote(${q.id})">→ Invoice</button>`}<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button></div>
+            <div data-style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" data-arg-id="${q.id}" data-on-click="viewQuote(Number(this.dataset.argId))">View</button>${String(q.status || '').toLowerCase() === 'converted' ? '' : `<button class="btn btn-ghost btn-sm" title="Edit" data-arg-id="${q.id}" data-on-click="editQuote(Number(this.dataset.argId))">✎</button><button class="btn btn-ghost btn-sm" title="Create a draft invoice from this quote" data-arg-id="${q.id}" data-on-click="convertQuote(Number(this.dataset.argId))">→ Invoice</button>`}<button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${q.id}" data-on-click="deleteQuote(Number(this.dataset.argId))">✕</button></div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
       const accepted = _quotesData.filter(q => q.status?.toLowerCase() === 'accepted').length;
       const pending  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').length;
       const openVal  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').reduce((s, q) => s + (q.amount || 0), 0);
@@ -243,15 +243,15 @@
       if (!el) return;
       el.innerHTML = _receiptsData.length
         ? _receiptsData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r.customer || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
-            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewReceipt(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteReceipt(${r.id})">✕</button></div>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(r.customer || '')}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(r.amount)}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
+            <span data-style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
+            <div data-style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" data-arg-id="${r.id}" data-on-click="viewReceipt(Number(this.dataset.argId))">View</button><button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${r.id}" data-on-click="deleteReceipt(Number(this.dataset.argId))">✕</button></div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No receipts yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No receipts yet</div>';
       // KPI cards: count · cash sales · card/stripe sales · refunds
       const _rcCash = _receiptsData.filter(r => /cash/i.test(r.method || '')).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _rcCard = _receiptsData.filter(r => /card|stripe/i.test(r.method || '')).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
@@ -358,16 +358,16 @@
         ? _paymentsRecvData.map(r => {
             const _prInv = _prInvById.get(r.invoice_id);
             return `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 90px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(_prInv?.client || '—')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.number || _prInv?.num || '—')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
-            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
-            <button class="btn btn-ghost btn-sm" style="justify-self:end" onclick="viewPaymentReceived(${r.id})">View</button>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 80px 70px 90px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(_prInv?.client || '—')}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.number || _prInv?.num || '—')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(r.amount)}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
+            <span data-style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
+            <button class="btn btn-ghost btn-sm" data-style="justify-self:end" data-arg-id="${r.id}" data-on-click="viewPaymentReceived(Number(this.dataset.argId))">View</button>
           </div>`;
           }).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments received yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No payments received yet</div>';
       // KPI cards: total received · outstanding · overdue · avg days to pay
       // Outstanding/overdue are derived from window._realInvoices (set by the dashboard wiring).
       // FA-M12c: avg days to pay = for each invoice PAID IN FULL, the days from its issue date to its last payment,
@@ -499,18 +499,18 @@
       const cls = { active: 'b-green', paused: 'b-amber' };
       el.innerHTML = _recurringInvData.length
         ? _recurringInvData.map(r => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
+          <div data-style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
             <div>
-              <div style="font-weight:500;font-size:13px">${esc(r.client)}</div>
-              <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
+              <div data-style="font-weight:500;font-size:13px">${esc(r.client)}</div>
+              <div data-style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
+            <div data-style="display:flex;align-items:center;gap:10px">
+              <span data-style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
               <span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status)}</span>
-              <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteRecurringInvoice(${r.id})">✕</button>
+              <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${r.id}" data-on-click="deleteRecurringInvoice(Number(this.dataset.argId))">✕</button>
             </div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No recurring invoice profiles yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No recurring invoice profiles yet</div>';
       // KPI cards: active count · monthly value · next run · YTD generated (M31: _recurringYtd)
       // YTD comes from invoices that the recurring scheduler created (server
       // tags them with notes "Auto-generated from recurring schedule").
@@ -590,19 +590,19 @@
       const u = _CREDIT_UI[kind], cls = { Open: 'b-amber', Applied: 'b-green', Void: 'b-red' };
       return rows.map(r => {
         const left = _creditLeft(r), applied = parseFloat(r.applied) || 0, isVoid = r.status === 'Void';
-        const actions = '<button class="btn btn-ghost btn-sm" onclick="' + u.view + '(' + r.id + ')">View</button>'
-          + (isVoid ? '' : '<button class="btn btn-ghost btn-sm" onclick="openApplyCredit(\'' + kind + '\', ' + r.id + ')">' + (left > 0.005 ? 'Apply' : 'Applied to') + '</button>')
-          + (isVoid ? '<button class="btn btn-ghost btn-sm" onclick="setCreditStatus(\'' + u.path + '\', ' + r.id + ', \'Open\')">Reopen</button>'
-            : (applied > 0.005 ? '' : '<button class="btn btn-ghost btn-sm" onclick="setCreditStatus(\'' + u.path + '\', ' + r.id + ', \'Void\')">Void</button>'))
-          + '<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" aria-label="Delete" onclick="' + u.del + '(' + r.id + ')">✕</button>';
+        const actions = '<button class="btn btn-ghost btn-sm" data-arg-fn="' + u.view + '" data-arg-id="' + r.id + '" data-on-click="window[this.dataset.argFn](Number(this.dataset.argId))">View</button>'
+          + (isVoid ? '' : '<button class="btn btn-ghost btn-sm" data-arg-kind="' + kind + '" data-arg-id="' + r.id + '" data-on-click="openApplyCredit(this.dataset.argKind, Number(this.dataset.argId))">' + (left > 0.005 ? 'Apply' : 'Applied to') + '</button>')
+          + (isVoid ? '<button class="btn btn-ghost btn-sm" data-arg-path="' + u.path + '" data-arg-id="' + r.id + '" data-on-click="setCreditStatus(this.dataset.argPath, Number(this.dataset.argId), \'Open\')">Reopen</button>'
+            : (applied > 0.005 ? '' : '<button class="btn btn-ghost btn-sm" data-arg-path="' + u.path + '" data-arg-id="' + r.id + '" data-on-click="setCreditStatus(this.dataset.argPath, Number(this.dataset.argId), \'Void\')">Void</button>'))
+          + '<button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" aria-label="Delete" data-arg-fn="' + u.del + '" data-arg-id="' + r.id + '" data-on-click="window[this.dataset.argFn](Number(this.dataset.argId))">✕</button>';
         return `
-          <div class="table-row" style="grid-template-columns:1fr 90px 90px 80px 70px 170px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r[u.party] || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}${applied > 0.005 && !isVoid ? '<br><span class="credit-left" style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : ''}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
+          <div class="table-row" data-style="grid-template-columns:1fr 90px 90px 80px 70px 170px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(r[u.party] || '')}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(r.amount)}${applied > 0.005 && !isVoid ? '<br><span class="credit-left" data-style="font-size:11px;color:var(--t3)">' + esc(S(left)) + ' left</span>' : ''}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
             <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
-            <div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">${actions}</div>
+            <div data-style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">${actions}</div>
           </div>`;
       }).join('');
     };
@@ -631,21 +631,21 @@
       const o = document.createElement('div'); o.id = 'apply-credit-overlay';
       o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px';
       const appRows = apps.map(a => { const d = docs.find(x => docId(x) === a.doc_id);
-        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)"><span>' + esc(d ? u.docNum(d) : (u.docWord + ' #' + a.doc_id)) + ' · ' + esc(window.FinFlowDates ? window.FinFlowDates.fmtLabel(a.applied_date, { year: true }) : a.applied_date) + '</span><span style="font-family:var(--font-mono)">' + esc(S(a.amount)) + '</span><button class="btn btn-ghost btn-sm" onclick="unapplyCredit(\'' + kind + '\', ' + id + ', ' + a.id + ')">Unapply</button></div>'; }).join('');
+        return '<div data-style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)"><span>' + esc(d ? u.docNum(d) : (u.docWord + ' #' + a.doc_id)) + ' · ' + esc(window.FinFlowDates ? window.FinFlowDates.fmtLabel(a.applied_date, { year: true }) : a.applied_date) + '</span><span data-style="font-family:var(--font-mono)">' + esc(S(a.amount)) + '</span><button class="btn btn-ghost btn-sm" data-arg-kind="' + kind + '" data-arg-id="' + id + '" data-arg-id-2="' + a.id + '" data-on-click="unapplyCredit(this.dataset.argKind, Number(this.dataset.argId), Number(this.dataset.argId2))">Unapply</button></div>'; }).join('');
       const docOpts = open.map(d => '<option value="' + docId(d) + '" data-owed="' + owed(d) + '">' + esc(u.docNum(d)) + ' — ' + esc(S(owed(d))) + ' owed</option>').join('');
       const today = window._entityToday ? window._entityToday() : new Date().toISOString().slice(0, 10);
       const form = left > 0.005
         ? (open.length
-          ? '<label class="form-label" for="apc-doc">Apply to</label><select id="apc-doc" class="form-input" onchange="_apcSuggest()">' + docOpts + '</select>'
-            + '<div style="display:flex;gap:8px;margin-top:8px"><div style="flex:1"><label class="form-label" for="apc-amount">Amount</label><input id="apc-amount" class="form-input" type="number" min="0.01" step="0.01"></div>'
-            + '<div style="flex:1"><label class="form-label" for="apc-date">Date</label><input id="apc-date" class="form-input" type="date" value="' + esc(today) + '"></div></div>'
-            + '<button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="submitApplyCredit(\'' + kind + '\', ' + id + ')">Apply credit</button>'
-          : '<div style="color:var(--t2);font-size:13px">' + esc(cr[u.party] || 'This ' + u.party) + ' has no open ' + u.docWord + 's to apply it to. The credit still lowers what they owe in total.</div>')
-        : '<div style="color:var(--t2);font-size:13px">All of this credit is applied.</div>';
-      o.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Apply ' + esc(u.word) + '" style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:460px;max-height:90vh;overflow:auto;padding:1rem 1.25rem">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:14px;font-weight:500">' + esc(u.word.charAt(0).toUpperCase() + u.word.slice(1)) + ' ' + esc(cr.num || '') + ' · ' + esc(cr[u.party] || '') + '</div><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'apply-credit-overlay\').remove()">✕ Close</button></div>'
-        + '<div style="font-size:13px;color:var(--t2);margin-bottom:10px">' + esc(S(cr.amount)) + ' credit · <strong class="apc-left">' + esc(S(left)) + ' left to apply</strong></div>'
-        + (appRows ? '<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-top:6px">Applied to</div>' + appRows + '<div style="height:10px"></div>' : '')
+          ? '<label class="form-label" for="apc-doc">Apply to</label><select id="apc-doc" class="form-input" data-on-change="_apcSuggest()">' + docOpts + '</select>'
+            + '<div data-style="display:flex;gap:8px;margin-top:8px"><div data-style="flex:1"><label class="form-label" for="apc-amount">Amount</label><input id="apc-amount" class="form-input" type="number" min="0.01" step="0.01"></div>'
+            + '<div data-style="flex:1"><label class="form-label" for="apc-date">Date</label><input id="apc-date" class="form-input" type="date" value="' + esc(today) + '"></div></div>'
+            + '<button class="btn btn-primary" data-style="margin-top:12px;width:100%" data-arg-kind="' + kind + '" data-arg-id="' + id + '" data-on-click="submitApplyCredit(this.dataset.argKind, Number(this.dataset.argId))">Apply credit</button>'
+          : '<div data-style="color:var(--t2);font-size:13px">' + esc(cr[u.party] || 'This ' + u.party) + ' has no open ' + u.docWord + 's to apply it to. The credit still lowers what they owe in total.</div>')
+        : '<div data-style="color:var(--t2);font-size:13px">All of this credit is applied.</div>';
+      o.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Apply ' + esc(u.word) + '" data-style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:460px;max-height:90vh;overflow:auto;padding:1rem 1.25rem">'
+        + '<div data-style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div data-style="font-size:14px;font-weight:500">' + esc(u.word.charAt(0).toUpperCase() + u.word.slice(1)) + ' ' + esc(cr.num || '') + ' · ' + esc(cr[u.party] || '') + '</div><button class="btn btn-ghost btn-sm" data-on-click="document.getElementById(\'apply-credit-overlay\').remove()">✕ Close</button></div>'
+        + '<div data-style="font-size:13px;color:var(--t2);margin-bottom:10px">' + esc(S(cr.amount)) + ' credit · <strong class="apc-left">' + esc(S(left)) + ' left to apply</strong></div>'
+        + (appRows ? '<div data-style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-top:6px">Applied to</div>' + appRows + '<div data-style="height:10px"></div>' : '')
         + form + '</div>';
       document.body.appendChild(o);
       o.addEventListener('click', e => { if (e.target === o) o.remove(); });
@@ -704,7 +704,7 @@
       if (!el) return;
       el.innerHTML = _creditNotesData.length
         ? _creditRowsHTML(_creditNotesData, 'credit_note')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No credit notes yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No credit notes yet</div>';
       // KPI cards (FA-M6b): issued (not void) · still to apply · applied to invoices · issued this month — money, each
       setKpiCards('page-credit-notes', _creditCards(_creditNotesData));
       window._refreshDashboardUI?.();
@@ -812,37 +812,37 @@
       if (!el) return;
       const unsaved = (unsavedList || _vendorsUnsavedNow()).map(u => ({ u, i: _vendorsUnsavedNow().indexOf(u) }));
       // Batch 9 (D3): one click saves them all — with a preview that holds back look-alikes of saved vendors.
-      const unsavedHead = unsaved.length ? `<div class="ff-saveall-head" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;margin:4px 0;border-radius:var(--radius);background:var(--bg2)"><div><div style="font-weight:500">${unsaved.length} vendor name${unsaved.length === 1 ? '' : 's'} from bills not saved as vendors</div><div style="font-size:11px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" onclick="openSaveAllContacts('vendor')">Save all…</button></div>` : '';
+      const unsavedHead = unsaved.length ? `<div class="ff-saveall-head" data-style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;margin:4px 0;border-radius:var(--radius);background:var(--bg2)"><div><div data-style="font-weight:500">${unsaved.length} vendor name${unsaved.length === 1 ? '' : 's'} from bills not saved as vendors</div><div data-style="font-size:11px;color:var(--t3)">Review them and save in one go</div></div><button class="btn btn-primary btn-sm" data-on-click="openSaveAllContacts('vendor')">Save all…</button></div>` : '';
       const unsavedHtml = unsavedHead + unsaved.map(({ u, i }) => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
             <div>
-              <div style="font-weight:500">${esc(u.name)}</div>
-              <div style="font-size:11px;color:var(--t3)">${u.bills} bill${u.bills === 1 ? '' : 's'} · not saved as a vendor yet</div>
+              <div data-style="font-weight:500">${esc(u.name)}</div>
+              <div data-style="font-size:11px;color:var(--t3)">${u.bills} bill${u.bills === 1 ? '' : 's'} · not saved as a vendor yet</div>
             </div>
-            <span style="color:var(--t3)">—</span>
-            <span style="color:${u.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
+            <span data-style="color:var(--t3)">—</span>
+            <span data-style="color:${u.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
               ${u.owing > 0 ? S(u.owing) + ' owing' : '—'}
             </span>
-            <span style="color:var(--t2)">${S(u.ytd_paid || 0)} YTD</span>
+            <span data-style="color:var(--t2)">${S(u.ytd_paid || 0)} YTD</span>
             <span><span class="badge b-amber">Not saved</span></span>
-            <button class="btn btn-ghost btn-sm" onclick="openVendorModalFromUnsaved(${i})">Save</button>
+            <button class="btn btn-ghost btn-sm" data-arg-i="${i}" data-on-click="openVendorModalFromUnsaved(Number(this.dataset.argI))">Save</button>
           </div>`).join('');
       el.innerHTML = (list.length || unsaved.length)
         ? list.map(v => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 90px 90px 80px 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
             <div>
-              <div style="font-weight:500">${esc(v.name)}</div>
-              <div style="font-size:11px;color:var(--t3)">${esc(v.contact || '—')}</div>
+              <div data-style="font-weight:500">${esc(v.name)}</div>
+              <div data-style="font-size:11px;color:var(--t3)">${esc(v.contact || '—')}</div>
             </div>
-            <span><span class="badge b-blue" style="font-size:10px">${esc(v.category || 'Other')}</span></span>
-            <span style="color:${v.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
+            <span><span class="badge b-blue" data-style="font-size:10px">${esc(v.category || 'Other')}</span></span>
+            <span data-style="color:${v.owing > 0 ? 'var(--amber)' : 'var(--t2)'}">
               ${v.owing > 0 ? S(v.owing) + ' owing' : '—'}
             </span>
-            <span style="color:var(--t2)">${S(v.ytd_paid || 0)} YTD</span>
+            <span data-style="color:var(--t2)">${S(v.ytd_paid || 0)} YTD</span>
             <span><span class="badge ${v.status === 'active' ? 'b-green' : 'b-red'}">${esc(v.status || 'active')}</span></span>
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendor(${v.id})">✕</button>
+            <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${v.id}" data-on-click="deleteVendor(Number(this.dataset.argId))">✕</button>
           </div>`).join('') + unsavedHtml
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendors yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No vendors yet</div>';
     }
 
     // F-C1: bills/vendors overdue = Σ balance of UNPAID bills past their due date (entity-local today).
@@ -974,20 +974,20 @@
       const cls = { unpaid: 'b-amber', due_soon: 'b-amber', overdue: 'b-red', paid: 'b-green' };
       el.innerHTML = _billsData.length
         ? _billsData.map(b => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 90px 80px 160px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(b.vendor)}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
-            <span style="color:${window._billDisplayStatus(b) === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'No due date')}</span>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 90px 80px 160px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(b.vendor)}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(b.amount)}</span>
+            <span data-style="color:${window._billDisplayStatus(b) === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'No due date')}</span>
             <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[window._billDisplayStatus(b)] || 'b-amber'}">${esc(window._billDisplayStatus(b))}</span></span>
-            <div style="display:flex;gap:4px">
-              <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
-              <button class="btn btn-ghost btn-sm" onclick="editBill(${b.id})">Edit</button>
-              ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
-              ${window.FinFlowDates.isInventoryBill(b) ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>`}
+            <div data-style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" data-arg-id="${b.id}" data-on-click="viewBill(Number(this.dataset.argId))">View</button>
+              <button class="btn btn-ghost btn-sm" data-arg-id="${b.id}" data-on-click="editBill(Number(this.dataset.argId))">Edit</button>
+              ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" data-arg-id="${b.id}" data-on-click="markBillPaid(Number(this.dataset.argId))">Pay</button>` : ''}
+              ${window.FinFlowDates.isInventoryBill(b) ? '' : `<button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${b.id}" data-on-click="deleteBill(Number(this.dataset.argId))">✕</button>`}
             </div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';
 
       // badge
       // M25: the badge counts bills PAST DUE with a balance — the same date-based rule as the Overdue card
@@ -1200,15 +1200,15 @@
       if (!el) return;
       el.innerHTML = _paymentsMadeData.length
         ? _paymentsMadeData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 90px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r.vendor || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.ref || '')}</span>
-            <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
-            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
-            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewPaymentMade(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentMade(${r.id})">✕</button></div>
+          <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 80px 90px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span data-style="font-weight:500">${esc(r.vendor || '')}</span>
+            <span data-style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.ref || '')}</span>
+            <span data-style="font-family:var(--font-mono)">${S(r.amount)}</span>
+            <span data-style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
+            <span data-style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
+            <div data-style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" data-arg-id="${r.id}" data-on-click="viewPaymentMade(Number(this.dataset.argId))">View</button><button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${r.id}" data-on-click="deletePaymentMade(Number(this.dataset.argId))">✕</button></div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments made yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No payments made yet</div>';
       // KPI cards: total paid · unique vendor count · largest single · avg
       // L5: "Paid" and "Vendors Paid" are labelled "This month"; Largest/Avg carry no period (all payments).
       const _pmMonth = _paymentsMadeData.filter(r => inThisMonth(r.date));
@@ -1341,18 +1341,18 @@
       const cls = { active: 'b-green', paused: 'b-amber' };
       el.innerHTML = _recurringBillsData.length
         ? _recurringBillsData.map(r => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
+          <div data-style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
             <div>
-              <div style="font-weight:500;font-size:13px">${esc(r.vendor)}</div>
-              <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
+              <div data-style="font-weight:500;font-size:13px">${esc(r.vendor)}</div>
+              <div data-style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
+            <div data-style="display:flex;align-items:center;gap:10px">
+              <span data-style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
               <span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status)}</span>
-              <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteRecurringBill(${r.id})">✕</button>
+              <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7" data-arg-id="${r.id}" data-on-click="deleteRecurringBill(Number(this.dataset.argId))">✕</button>
             </div>
           </div>`).join('')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No recurring bill profiles yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No recurring bill profiles yet</div>';
       // KPI cards: active count · monthly cost · next due · YTD total
       // YTD is approximated as monthly × elapsed months (Jan = 1 … current
       // month). No global "_realBills" array exists, so we can't filter
@@ -1433,7 +1433,7 @@
       if (!el) return;
       el.innerHTML = _vendorCreditsData.length
         ? _creditRowsHTML(_vendorCreditsData, 'vendor_credit')
-        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendor credits yet</div>';
+        : '<div data-style="padding:2rem;text-align:center;color:var(--t3)">No vendor credits yet</div>';
       setKpiCards('page-vendor-credits', _creditCards(_vendorCreditsData));   // FA-M6b: same four figures as credit notes
       window._refreshDashboardUI?.();
     };

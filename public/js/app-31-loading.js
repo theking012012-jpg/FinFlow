@@ -9,7 +9,7 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function activeEntityId(){ try{ var e=(window.ENTITIES||[]).find(function(x){return x.active;}); return e&&e._dbId?e._dbId:null; }catch(e){ return null; } }
   function money(n,cur){ if(n==null) return '—'; var x=Number(n)||0; var neg=x<0; var s=Math.abs(x).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}); return (neg?'-':'')+(cur?cur+' ':'')+s; }
-  function tile(label,val,sub,color){ return '<div class="mc"><div class="mc-label">'+esc(label)+'</div><div class="mc-val" style="font-size:19px'+(color?';color:'+color:'')+'">'+val+'</div><div class="mc-change neutral">'+esc(sub||'')+'</div></div>'; }
+  function tile(label,val,sub,color){ return '<div class="mc"><div class="mc-label">'+esc(label)+'</div><div class="mc-val" data-style="font-size:19px'+(color?';color:'+color:'')+'">'+val+'</div><div class="mc-change neutral">'+esc(sub||'')+'</div></div>'; }
 
   function svgLine(periods, cashTracked, cur){
     var W=640, H=170, padL=8, padR=8, padT=14, padB=22;
@@ -55,17 +55,17 @@
     }
     sumBox.innerHTML=tiles;
     document.getElementById('cff-chart').innerHTML = svgLine(periods, s.cash_tracked, cur);
-    var rows='<table style="width:100%;border-collapse:collapse;min-width:460px"><thead><tr style="text-align:right;color:var(--t2);font-size:11px">'
-      +'<th style="text-align:left;padding:4px 6px">Week</th><th style="padding:4px 6px">In</th><th style="padding:4px 6px">Out</th><th style="padding:4px 6px">Net</th>'
-      +(s.cash_tracked?'<th style="padding:4px 6px">Balance</th>':'<th style="padding:4px 6px">Cumulative</th>')+'</tr></thead><tbody>';
+    var rows='<table data-style="width:100%;border-collapse:collapse;min-width:460px"><thead><tr data-style="text-align:right;color:var(--t2);font-size:11px">'
+      +'<th data-style="text-align:left;padding:4px 6px">Week</th><th data-style="padding:4px 6px">In</th><th data-style="padding:4px 6px">Out</th><th data-style="padding:4px 6px">Net</th>'
+      +(s.cash_tracked?'<th data-style="padding:4px 6px">Balance</th>':'<th data-style="padding:4px 6px">Cumulative</th>')+'</tr></thead><tbody>';
     periods.forEach(function(p){
       var bal = s.cash_tracked ? p.balance : p.cumulative;
-      rows+='<tr style="text-align:right;border-top:1px solid var(--bd,rgba(120,120,120,.12))">'
-        +'<td style="text-align:left;padding:4px 6px;color:var(--t2)">'+p.week+' <span style="font-size:10px">'+esc(p.start_date||'')+'</span></td>'
-        +'<td style="padding:4px 6px">'+(p.inflow?money(p.inflow,''):'·')+'</td>'
-        +'<td style="padding:4px 6px">'+(p.outflow?money(p.outflow,''):'·')+'</td>'
-        +'<td style="padding:4px 6px;color:'+(p.net<0?'#c94a4a':'inherit')+'">'+money(p.net,'')+'</td>'
-        +'<td style="padding:4px 6px;font-weight:600;color:'+(bal<0?'#c94a4a':'inherit')+'">'+money(bal,'')+'</td></tr>';
+      rows+='<tr data-style="text-align:right;border-top:1px solid var(--bd,rgba(120,120,120,.12))">'
+        +'<td data-style="text-align:left;padding:4px 6px;color:var(--t2)">'+p.week+' <span data-style="font-size:10px">'+esc(p.start_date||'')+'</span></td>'
+        +'<td data-style="padding:4px 6px">'+(p.inflow?money(p.inflow,''):'·')+'</td>'
+        +'<td data-style="padding:4px 6px">'+(p.outflow?money(p.outflow,''):'·')+'</td>'
+        +'<td data-style="padding:4px 6px;color:'+(p.net<0?'#c94a4a':'inherit')+'">'+money(p.net,'')+'</td>'
+        +'<td data-style="padding:4px 6px;font-weight:600;color:'+(bal<0?'#c94a4a':'inherit')+'">'+money(bal,'')+'</td></tr>';
     });
     rows+='</tbody></table>';
     document.getElementById('cff-table').innerHTML=rows;
@@ -77,9 +77,9 @@
     try{
       var eid=activeEntityId();
       var res=await fetch('/api/cashflow-forecast'+(eid?'?entity_id='+encodeURIComponent(eid):''),{credentials:'same-origin',headers:{'Content-Type':'application/json'}});
-      if(!res.ok){ box.innerHTML='<div style="color:var(--t2);font-size:12px">Couldn’t load the forecast (error '+res.status+').</div>'; loading=false; return; }
+      if(!res.ok){ box.innerHTML='<div data-style="color:var(--t2);font-size:12px">Couldn’t load the forecast (error '+res.status+').</div>'; loading=false; return; }
       render(await res.json());
-    }catch(e){ box.innerHTML='<div style="color:var(--t2);font-size:12px">Couldn’t load the forecast.</div>'; }
+    }catch(e){ box.innerHTML='<div data-style="color:var(--t2);font-size:12px">Couldn’t load the forecast.</div>'; }
     loading=false;
   };
 

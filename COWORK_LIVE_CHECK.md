@@ -227,9 +227,9 @@ books reconcile (Revenue − Expenses = Net, Year). *(13 Oct: TT$8,000 − TT$1,
 VAT / GST return.
 
 **B10. The 13 Oct findings, re-checked.** For each, PASS / FAIL with what you saw:
-- 13 Oct B1 `$0` cards → A1. · 13 Oct B2 owner salary → B6 above. · M1 customers → A5. · M2 inventory value → A6.
-- M3 credit notes → A7; and the credit note is recognised in its **own** month (a negative month is expected — by design).
-- Minor labels → A8. · Full page reloads: none from sidebar navigation or period buttons; a business switch shows the
+- 13 Oct B1 `$0` cards → R1. · 13 Oct B2 owner salary → B6 above. · M1 customers → R5. · M2 inventory value → R6.
+- M3 credit notes → R7; and the credit note is recognised in its **own** month (a negative month is expected — by design).
+- Minor labels → R8. · Full page reloads: none from sidebar navigation or period buttons; a business switch shows the
   "Loading your workspace…" screen without a document reload (by design).
 
 **B11. Console for Part B.** Count of red console errors across B1–B10 (expected **0**), each copied in full.

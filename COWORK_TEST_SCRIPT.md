@@ -68,7 +68,9 @@ A new account starts on a **trial**, which allows only **one business**. This te
 
 Checks:
 - 1.3a Each required field (*) refuses to continue when left empty.
-- 1.3b After finishing, the dashboard shows **Northwind Studio**, with every money card at **$0**.
+- 1.3b After finishing, the dashboard shows **Northwind Studio**. Every money card reads **$0**, or **"—"** where
+  there is nothing to compute yet (e.g. days-to-get-paid with no paid invoice) — never another business's figure,
+  never a non-dollar symbol.
 - 1.3c Settings (or Entities) show Northwind Studio as **USD** and **United States**.
 - 1.3d Log out, then log back in. You land back in Northwind Studio, and onboarding does not repeat.
 
@@ -156,7 +158,8 @@ Now run payroll:
 - **Stock in #1:** 20 units at 15.00 each, dated **2026-06-01**, paid in **cash**.
 - **Stock in #2:** 10 units at 18.00 each, dated **2026-07-01**, bought **on credit** (choose the bill / "on credit"
   option), vendor **Widget Maker**, due **2026-11-30**.
-- **Sale:** 25 units, dated **2026-08-15**.
+- **Sale (Stock Out):** 25 units, dated **2026-08-15**. Choose **A sale**; customer **Echo Retail** (type it — a new
+  customer); **Price each 32.00**; **Paid now**.
 
 Checks:
 - 2.7a Units on hand: **5**.
@@ -165,6 +168,8 @@ Checks:
 - 2.7c Cost of goods sold for the year is **390.00**. FIFO: the first 20 at 15 = 300, plus 5 at 18 = 90.
   (An average-cost answer would be 400, and last-in-first-out would be 405; both are wrong.)
 - 2.7d The Widget Maker purchase does **not** increase Expenses.
+- 2.7e The sale made a **sales receipt**: Sales Receipts lists one for **Echo Retail**, **800.00**, dated
+  **2026-08-15**, with the line "Widget × 25 @ 32.00" (25 × 32 = 800). Echo Retail is now on the Customers page.
 
 ### 2.8 Business investment (Business investments page)
 
@@ -221,36 +226,38 @@ Northwind is in the United States, so this should open **Plaid**.
 
 | Card | Exact | Card may show |
 |---|---|---|
-| Revenue | 15,400.00 | $15.4K |
+| Revenue | 16,200.00 | $16.2K |
 | Expenses | 11,005.00 | $11.0K |
-| Net Profit | 4,005.00 | $4.0K |
+| Net Profit | 4,805.00 | $4.8K |
 | Outstanding | 2,400.00 | $2,400 |
 
 How these are worked out, so you can see where a wrong number comes from:
-- **Revenue** = 12,000 + 2,500 + 1,200 − 300 credit note = **15,400**. The draft (9,000) is excluded.
+- **Revenue** = 12,000 + 2,500 + 1,200 + 800 stock sale (2.7) − 300 credit note = **16,200**. The draft (9,000) is
+  excluded.
 - **Expenses** = expenses 1,920 + bank fee 35 + bills 1,050 + payroll 8,000 = **11,005**. Cost of goods (390) is shown
   separately, and the stock bill (180) is not an expense.
-- **Net** = 15,400 − 390 − 11,005 = **4,005**.
+- **Net** = 16,200 − 390 − 11,005 = **4,805**.
 - **Outstanding** = (2,500 − 1,000) + 1,200 − 300 credit = **2,400**.
 
-**Reports → Profit & Loss (Year):** Revenue 15,400.00 · Cost of goods sold 390.00 · Gross profit 15,010.00 · Payroll
-8,000.00 · Total expenses 11,005.00 · Net profit 4,005.00.
-- By month: Mar revenue 12,000 · Aug revenue 2,500 and COGS 390 · Sep revenue −300 and expenses 10,550 (rent 1,500 +
+**Reports → Profit & Loss (Year):** Revenue 16,200.00 · Cost of goods sold 390.00 · Gross profit 15,810.00 · Payroll
+8,000.00 · Total expenses 11,005.00 · Net profit 4,805.00.
+- By month: Mar revenue 12,000 · Aug revenue 3,300 (2,500 + 800 stock sale) and COGS 390 · Sep revenue −300 and expenses 10,550 (rent 1,500 +
   bills 1,050 + payroll 8,000) · Oct revenue 1,200 and expenses 455 (240 + 180 + 35).
 
-**Reports → Balance Sheet:** Cash 1,695.00 · Accounts receivable 2,400.00 · Inventory 90.00 · Total assets 4,185.00 ·
-Accounts payable 180.00 · Payroll liabilities 0.00 · Total liabilities 180.00 · Equity 4,005.00. Assets must equal
+**Reports → Balance Sheet:** Cash 2,495.00 · Accounts receivable 2,400.00 · Inventory 90.00 · Total assets 4,985.00 ·
+Accounts payable 180.00 · Payroll liabilities 0.00 · Total liabilities 180.00 · Equity 4,805.00. Assets must equal
 liabilities + equity.
-- Cash, worked out: received 13,000. Paid out: expenses 1,955 + CloudHost 400 + Paper Supply 650 + net wages 6,700 +
-  withholdings 1,300 + stock 300 = 11,305. Cash = 13,000 − 11,305 = **1,695**.
+- Cash, worked out: received 13,000 + 800 stock sale = 13,800. Paid out: expenses 1,955 + CloudHost 400 + Paper Supply 650 + net wages 6,700 +
+  withholdings 1,300 + stock 300 = 11,305. Cash = 13,800 − 11,305 = **2,495**.
 
-**Overdue (AR / invoices page / aged receivables):** total overdue **1,200.00**. Bright Labs owes 1,500 past due, and
-Acme's unapplied 300 credit nets against the total, as aged-receivables reports do. Count of overdue invoices: **1**.
+**Overdue (AR / invoices page / aged receivables):** total overdue **1,500.00** — Bright Labs' 1,500 past due. Acme's
+unapplied 300 credit reduces only **Acme's** overdue (none), never another customer's; it still reduces Outstanding
+(2,400). Count of overdue invoices: **1**. (If you run this before 2026-10-31; Delta Co falls due that day.)
 
 **Reports → Income Tax Estimate:** set the "Income tax" line to **20 %** of taxable income.
-- Taxable income **4,220.00** = net 4,005 + non-deductible lunch 180 + bank fee 35. (A fee booked from the bank feed
+- Taxable income **5,020.00** = net 4,805 + non-deductible lunch 180 + bank fee 35. (A fee booked from the bank feed
   is recorded as not deductible.)
-- Estimated tax **844.00**; quarterly **211.00**.
+- Estimated tax **1,004.00**; quarterly **251.00**.
 
 **Checkpoints during Part 2** (if you check earlier):
 - After payroll is marked paid, before remitting: Balance Sheet payroll liabilities **1,300.00** and cash **3,980.00**.
@@ -298,7 +305,7 @@ Acme's unapplied 300 credit nets against the total, as aged-receivables reports 
 ### 4.6 All-businesses (consolidated) view, if the app has one
 
 - Open the FX page and write down the **USD ↔ TTD rate** shown (R = TTD per 1 USD).
-- In the all-businesses view: revenue ≈ 15,400 + 8,000 ÷ R (in USD). Net ≈ 4,005 + 6,750 ÷ R. Within $1 of rounding.
+- In the all-businesses view: revenue ≈ 16,200 + 8,000 ÷ R (in USD). Net ≈ 4,805 + 6,750 ÷ R. Within $1 of rounding.
 - 4.6a The Banking page in the all-businesses view shows **no** bank lines, and "Link bank" asks you to choose a business first.
 
 ---
@@ -386,8 +393,8 @@ Date,Description,Amount
 
 6.4 Back as the business owner, approve the accountant connection. Give access to **Northwind Studio: view**, and
 **Personal: none**.
-- 6.4a The accountant sees Northwind's figures: revenue 15,400.00, COGS 390.00, operating expenses 11,005.00, net
-  profit 4,005.00, outstanding 2,400.00, taxable income 4,220.00.
+- 6.4a The accountant sees Northwind's figures: revenue 16,200.00, COGS 390.00, operating expenses 11,005.00, net
+  profit 4,805.00, outstanding 2,400.00, taxable income 5,020.00.
 - 6.4b The accountant does **not** see Island Traders, and does **not** see any personal data.
 
 6.5 Owner changes Personal access to **view**.
@@ -441,11 +448,11 @@ Northwind → Payroll → the September 2026 run → **Void**. Confirm the promp
 | Figure | Expected after the void |
 |---|---|
 | Dashboard Expenses (Year) | **3,005.00** (11,005 − 8,000 payroll), card ≈ $3.0K |
-| Dashboard Net Profit (Year) | **12,005.00** (card ≈ $12.0K) |
-| Revenue / COGS / Outstanding | unchanged: 15,400.00 / 390.00 / 2,400.00 |
-| Balance Sheet cash | **9,695.00** (1,695 + net wages 6,700 + withholdings 1,300 reversed) |
-| Balance Sheet payroll liabilities | 0.00 · equity **12,005.00** · total assets **12,185.00** |
-| Income Tax Estimate | taxable **12,220.00**, tax at 20 % **2,444.00** |
+| Dashboard Net Profit (Year) | **12,805.00** (card ≈ $12.8K) |
+| Revenue / COGS / Outstanding | unchanged: 16,200.00 / 390.00 / 2,400.00 |
+| Balance Sheet cash | **10,495.00** (2,495 + net wages 6,700 + withholdings 1,300 reversed) |
+| Balance Sheet payroll liabilities | 0.00 · equity **12,805.00** · total assets **12,985.00** |
+| Income Tax Estimate | taxable **13,020.00**, tax at 20 % **2,604.00** |
 | Personal income (Year) | **1,845.00**: the 4,000 owner-salary row is **gone** |
 
 - 9a The Personal page no longer shows the owner-salary row, and nothing else on Personal changes (spending 394.50;

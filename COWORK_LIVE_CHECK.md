@@ -327,14 +327,27 @@ loading it is what the policy has to allow.
   provider keys on the server, not the policy — record the exact message.
 - Rows that were already in the baseline, or whose `source` is a browser extension (`chrome-extension://…`,
   `moz-extension://…`), are not FinFlow's — list them under Notes, they do not fail the check.
----
 
-## Final summary (put this at the top of your report)
+**C17. The public site and every standalone page (launch).** In a **private window (logged out)**, at full width and
+again at **~375 px**, open each page below. For each: it loads (no error page, nothing blank, no `undefined` / `NaN` /
+`{{…}}` / "lorem" / "TODO" text), **no red Console error and no `Refused to` line**, nothing scrolls sideways at
+375 px, and **every link and button on it goes somewhere real** (click each nav and footer link once — note any that
+404 or land on the wrong page).
+- `/` (landing) — the sign-up / free-trial button opens sign-up; the pricing shown matches Settings → Plan inside the
+  app (same plan names, same prices, same monthly / yearly figures).
+- `/privacy`, `/terms`, `/security`, `/conduct` — readable; the business name and contact details are filled in
+  (no placeholder such as "[Company]" or "example.com"). Note the legal entity name and contact address shown.
+- `/accountants` (directory) — loads; an accountant card opens its profile.
+- `/accountant-login`, `/accountant-register` — load; submitting **empty** forms shows field errors. Do not register.
+- `/reset-password` with no token — says the link is invalid or expired (not a blank page or a crash).
+- `/team-accept` with no token, `/pay-received`, `/portal` with no link — each says plainly what is missing.
+- Log-in page: wrong password → a clear error (do this **once** only — repeated failures trigger the lockout).
+  "Forgot password" opens its form; **do not submit it** (it sends an email).
 
 - Part A: how many PASS / FAIL / N/A out of 17 (A0–A16).
 - Part R: how many PASS / FAIL out of 11 (R1–R11).
 - Part B: how many PASS / FAIL out of 11 (B1–B11) — and every figure that differs from 13 Oct, with what explains it.
-- Part C: how many PASS / FAIL / SKIPPED / BLOCKED out of 16 (C1–C16).
+- Part C: how many PASS / FAIL / SKIPPED / BLOCKED out of 17 (C1–C17).
 - Every FAIL in one line each, worst first.
 - The `ZZ-LIVECHECK` records you created (for the owner to clean up).
 - Every red console error, and any full page reload, with the step.

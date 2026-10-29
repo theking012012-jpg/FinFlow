@@ -190,7 +190,9 @@ card, Reports' NET RESULT, the Money-flow block and the P&L. *(13 Oct: 15,400 �
 
 **B2. Receivables reconcile.** Reports → AR by customer: the per-customer amounts add up to Outstanding on the
 Dashboard **and** on the Invoices page (all three equal). Overdue = the overdue customers' amounts.
-*(13 Oct: Bright 1,500 + Delta 1,200 + Acme −300 = 2,400; overdue 1,200.)*
+*(13 Oct: Bright 1,500 + Delta 1,200 + Acme −300 = 2,400; overdue 1,200.)* **Changed on purpose since (FA-M2):** a credit note now reduces only
+**its own customer's** overdue — Acme's −300 no longer comes off Bright Labs' 1,500 — so the same books now read overdue
+**1,500**, while Outstanding still nets the credit (2,400). A rise of that kind is expected, not a regression.
 
 **B3. Revenue basis (accrual, issue-based).** Revenue (Year) = total of this year's issued invoices (pending, overdue,
 partial, paid — **drafts excluded**) − this year's credit notes. Show the two numbers. *(13 Oct: 15,700 − 300 = 15,400.)*

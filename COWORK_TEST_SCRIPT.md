@@ -428,8 +428,8 @@ Dashboard · Banking · Bank Rec · Scheduled Documents · Review · Reminders �
 Quotes · Payments Received · Sales Receipts · Recurring Invoices · Credit Notes · Expenses · Bills · Vendors ·
 Payments Made · Recurring Bills · Vendor Credits · Payroll · Inventory · Items · Projects · Timesheet · Reports (open
 each report type) · Budget · MRR / SaaS · Business investments · Manual Journals · Chart of Accounts · Transaction
-Locking · Documents · Templates · Audit trail · Team & roles · API connections · Entities · FX · Settings · Help ·
-Personal · Investments.
+Locking · Documents · Templates · Audit trail · Team & roles · API connections · Entities · FX / Currency · Settings ·
+Help Center · Personal finance · Personal investments · Scenario planner · AI insights · Auto-categorise.
 
 Also:
 - 8.1 Export the Profit & Loss as **PDF** and **CSV**. The numbers in both match 3.4.

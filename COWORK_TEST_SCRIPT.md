@@ -271,7 +271,7 @@ unapplied 300 credit reduces only **Acme's** overdue (none), never another custo
 
 - Name **Island Traders**, currency **TTD**, country **Trinidad and Tobago**.
 - Switch to **Island Traders**.
-- 4.1a Every money card shows **0**, and nothing from Northwind (no invoices, bills, payroll, stock, bank lines or MSFT).
+- 4.1a Every money card shows **0** (or **"—"** where there is nothing to compute yet, as in 1.3b), and nothing from Northwind (no invoices, bills, payroll, stock, bank lines or MSFT).
 
 ### 4.2 Data
 

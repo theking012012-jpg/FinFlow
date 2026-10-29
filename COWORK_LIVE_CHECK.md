@@ -1,9 +1,11 @@
 # FinFlow — post-deploy live check (for Cowork)
 
-**Run this only after** the branch `claude/laughing-hawking-lkvv38` is merged into `main` and Railway shows the new
-deployment as live. It has three parts — **run them in this order**:
+**Run this after every deploy of `main`**, once Railway shows the new deployment as live. Latest: `main` at
+`91f309f` (2026-10-29) — the full-app audit fixes (FA-…), the strict security policy (FA-P1) and the client portal
+(FA-B10b). It has four parts — **run them in this order**:
 
-- **Part A — confirm the fixes are live.** Observe only. Nothing is created or changed.
+- **Part A — confirm this deploy's fixes are live.** Observe only, except A14 (one portal link, turned off again).
+- **Part R — the earlier fixes are still live** (the LA round, 13 Oct audit). Observe only.
 - **Part B — rerun the 2026-10-13 live audit** (`LIVE_AUDIT_2026-10-13.md`): the same reconciliations, flow tests,
   payroll run, walls and multi-currency checks, now against the fixed app.
 - **Part C — exercise the areas no audit has tested yet.** Creates a few clearly labelled test records.
@@ -37,19 +39,104 @@ step it appeared in, and any full page reload you saw (what you clicked).
 
 ---
 
-## Part A — confirm the fixes are live (observe only)
+## Part A — confirm this deploy's fixes are live
 
-**A0. The new code is deployed.** Open **Settings**. There is a field **"Reporting currency — all businesses
-combined"**. If it is missing, **stop here** — the deploy has not landed; report that and nothing else.
+Business **Northwind Studio**, period **Year**, DevTools **Console and Network open, Preserve log on** — unless a step
+says otherwise. Each step names the finding it confirms (see `AUDIT_MASTER.md`).
 
-**A1. No boot errors, no $0 cards (13 Oct B1 / LA1 / LA2).** On the Dashboard, hard reload (**Ctrl+Shift+R**) and wait for it
+**A0. The new code is deployed (FA-P1).** In the Network tab, click the first request (the page itself, `/app` or
+`/`) → Response Headers → `content-security-policy`. It contains `script-src 'self'` and does **not** contain
+`unsafe-inline` anywhere. If it does, **stop here** — the deploy has not landed; report that and nothing else.
+
+**A1. The strict policy blocks nothing of FinFlow's own (FA-P1, FA-P1c).** Open every sidebar page once (Dashboard
+through Settings, plus Personal and Investments). The Console shows **no** line containing `Refused to` or
+`Content Security Policy`. Then: Invoices → **New invoice** opens **one** form (not two stacked); close it with its ✕.
+Toggle the theme twice — it switches each time. Copy any refusal line in full.
+
+**A2. One chart of accounts (FA-M7).** Open Chart of Accounts and note the accounts (code + name). Open a new journal
+entry: the account picker lists the **same** accounts — no account the Chart of Accounts lacks, none missing. Close
+without saving.
+
+**A3. Documents are linked to contacts (FA-B4).** New invoice: the customer field offers the **saved customers** from
+the Customers page. New bill: the vendor field offers the saved vendors. Close both without saving.
+
+**A4. Items and terms on documents (FA-B5).** New invoice: a line can pick an item from the **Items** page; choosing
+one fills its **selling price** and qty 1. The form has **Terms** (Your terms / Due on receipt / Net 7–90 / Custom);
+choosing **Due on receipt** sets the due date to the issue date, **Net 30** to 30 days later. On a new bill, an item
+fills its **cost** (else its price). Close without saving.
+
+**A5. Stock Out is a sale or a write-off (FA-B7).** Inventory → Stock Out. The form asks whether it is
+**"A sale"** or **"A write-off (damaged, lost, own use)"**. For a sale it asks for the customer, **Price each** (in the
+business's currency) and **Paid now / On credit**. Close without saving. (Part C exercises it.)
+
+**A6. One category list (FA-B8).** The expense form's category list and the categorisation-rule form's list are the
+**same list**, and neither offers **"Salaries"** or **"Cost of Goods"** (payroll comes only from payroll runs, cost of
+goods only from inventory).
+
+**A7. Forms close when you change page (FA-B12).** Open **New invoice**, then click **Expenses** in the sidebar: no
+invoice form is left over the Expenses page. Go back to Invoices: no form is open.
+
+**A8. The reporting-currency question does not block the page (FA-B14).** Only if the **All entities** view asks which
+currency to combine in: it is a **banner above the figures** and the rest of the page still scrolls and clicks. If it
+does not ask (a currency is already saved), mark **N/A**. Do not answer it — the owner picks.
+
+**A9. No "$0" for a business that is not in dollars (FA-K1).** Switch to **Island Traders (TTD)** and hard reload
+(Ctrl+Shift+R). While the cards load they read **"—"**; once loaded they show **TT$** figures. At no point does any
+card read **"$0"**. Check Dashboard, Invoices, Expenses. Switch back to Northwind Studio.
+
+**A10. Phone width (FA-U2, FA-U2b).** In a window about **375 px wide**: Dashboard, Invoices, Expenses, Reports,
+Settings. No page scrolls sideways; buttons, period toggles, currency chips and switches are comfortable to tap (none
+looks thinner than a fingertip). Screenshot any that are not.
+
+**A11. Connections asks each provider once (FA-P2).** Network tab, filter `status`. Open **Connections**: about
+**17** status requests, **one per provider** — not 4 of each. Leave and re-open: 17 again. The connected count at the
+top matches the cards marked connected.
+
+**A12. Documents (FA-P1d, LR13).** Documents page: the list loads; **Total files** equals the number of files listed,
+**Storage used** has a unit (B / KB / MB), **Added this month** counts the ones uploaded this month. (The new
+"Could not load your documents" state appears only when loading fails — it is not expected here.)
+
+**A13. Reports add up (FA-M2, FA-M3, FA-M4, FA-M8, FA-M9).**
+- Invoices list: under **Paid** is the amount paid, under **Due date** a date, under **Status** the status — the
+  columns line up with the headers.
+- Open a **part-paid** invoice's document: it shows **Total**, **"Payments received −X"** and a **Balance Due** of
+  Total − X. (If none is part-paid, N/A.)
+- Reports → **Sales by customer**: the customers' figures add up to the report's total, and that total equals
+  Revenue for the same period on the Profit & Loss.
+- Reports → **Expense report**: each of its breakdowns (by source, by category, …) adds up to the same total.
+- Customers: a customer's **overdue** never exceeds what that customer owes; a credit note only reduces its own
+  customer's figure.
+
+**A14. Client portal (FA-B10b).** Customers → pick a customer with an open invoice → **Portal** → **Create link**. A
+`/portal#…` link appears with **"Works until … · not opened yet"**. Copy it. In a **private window** (no login),
+open it: the page names the business and the customer, shows **only that customer's** open invoices, and its
+**owed / overdue** totals match that customer's figures on the Customers page. No other customer's name or invoice
+appears anywhere. Do **not** press Pay. Back in the app, the Portal shows **opened 1 time**. Then press **Turn off**;
+reload the private window → the link no longer works. Record the customer you used.
+
+**A15. Numbering and the unknown-page page (FA-M5c, FA-M6c, FA-B13).**
+- Bills, credit notes and vendor credits lists: each document has a number, in sequence **per business** (Island
+  Traders has its own sequence).
+- Open `/no-such-page` on the app's address: a **"Page not found"** page (status **404** in the Network tab), with
+  links back to the app — not the landing page.
+
+**A16. Bank-linking widgets under the strict policy** — run **C16** (Part C) now if you have the admin login, so its
+baseline is taken before Part B creates traffic; otherwise run it where it stands.
+
+---
+
+## Part R — the earlier fixes are still live (observe only)
+
+These were confirmed after the LA round; they are re-checked so a later change cannot have undone them.
+
+**R1. No boot errors, no $0 cards (13 Oct B1 / LA1 / LA2).** On the Dashboard, hard reload (**Ctrl+Shift+R**) and wait for it
 to finish loading. Do this **twice**.
 - Console: **zero** red errors containing `deferred render hook threw` or `Cannot set properties of null`.
   (Before the fix: 7 on every reload.) Copy any red error that does appear.
 - Revenue, Expenses and Net Profit show real figures, **not $0**. Then open **Reports → Profit & Loss** for the same
   period: the three dashboard figures match it.
 
-**A2. Reporting currency (LA21).** In Settings, the dropdown's first option reads **"Your first business's currency
+**R2. Reporting currency (LA21).** In Settings, the dropdown's first option reads **"Your first business's currency
 (USD)"** and is selected (nothing chosen yet). In the Network tab, `GET /api/settings` returns
 `reporting_currency: null` and `reporting_currency_effective: "USD"`.
 - Switch to the **All entities** view (the combined view of both businesses) and note the currency and totals.
@@ -57,35 +144,35 @@ to finish loading. Do this **twice**.
 - Choose **"Your first business's currency (USD)"** again → All-entities totals are back in **$**, matching what you
   noted. **Leave it on the default** — the owner picks the real one.
 
-**A3. Payroll runs carry no "TT" (LA23).** In the Network tab, open the response of `GET /api/payroll-runs` (open the
+**R3. Payroll runs carry no "TT" (LA23).** In the Network tab, open the response of `GET /api/payroll-runs` (open the
 Payroll page if it hasn't loaded). **Every** run has `jurisdiction: null` — none says `"TT"`.
 
-**A4. Owner flag on employees (LA3).** Payroll → edit **Sam Owner** (do not save). The form has a
+**R4. Owner flag on employees (LA3).** Payroll → edit **Sam Owner** (do not save). The form has a
 **"This is me — the business owner"** checkbox, ticked. Close without saving.
 
-**A5. Customers and vendors come from your documents (LA4, LA14).** Customers page: names that appear only on invoices
+**R5. Customers and vendors come from your documents (LA4, LA14).** Customers page: names that appear only on invoices
 are listed with a **"Not saved"** marker and a Save button, and the totals include them. Vendors page: the same for
 names that appear only on bills. (Do not click Save.)
 
-**A6. Inventory rows add up (LA5).** Inventory page: the value shown on each product row adds up to the Inventory
+**R6. Inventory rows add up (LA5).** Inventory page: the value shown on each product row adds up to the Inventory
 value card.
 
-**A7. Invoices "Outstanding" names credit notes (LA6).** Invoices page, Outstanding card: if any credit note is open,
+**R7. Invoices "Outstanding" names credit notes (LA6).** Invoices page, Outstanding card: if any credit note is open,
 the caption reads **"… less $X in credit notes"**.
 
-**A8. Labels (LA8, LA9, LA10, LA13).**
+**R8. Labels (LA8, LA9, LA10, LA13).**
 - Expenses page: the card is labelled **"Expense entries"**.
 - Reports → Tax reports: there is **no VAT** tile.
 - Reports: a report named **"Payroll by person"** (not "1099 / W-2 Summary").
 - Dashboard, under Net Profit: a caption **"after $N cost of goods sold"** when the period has any cost of goods sold.
 
-**A9. One product list (LA16).** Items page: stocked products appear as **"Stock item"** rows alongside services.
+**R9. One product list (LA16).** Items page: stocked products appear as **"Stock item"** rows alongside services.
 
-**A10. Each business in its own currency (LA15).** Switch to **Island Traders (TTD)**. On Chart of Accounts, Projects
+**R10. Each business in its own currency (LA15).** Switch to **Island Traders (TTD)**. On Chart of Accounts, Projects
 and Items, money shows **TT$**, never a bare `$`. Settings → invoice template preview: the sample total is in **TT$**.
 Switch back to Northwind Studio.
 
-**A11. Accountant sign-up pricing (LA17, LA15c).** In a **private window**, open `/accountant-register`. The pricing
+**R11. Accountant sign-up pricing (LA17, LA15c).** In a **private window**, open `/accountant-register`. The pricing
 section has **"Currency for your rates"**; picking Trinidad & Tobago as the country switches it to TTD and the rate
 fields show **TT$**. **Do not submit the form.**
 
@@ -244,7 +331,8 @@ loading it is what the policy has to allow.
 
 ## Final summary (put this at the top of your report)
 
-- Part A: how many PASS / FAIL out of 12 (A0–A11).
+- Part A: how many PASS / FAIL / N/A out of 17 (A0–A16).
+- Part R: how many PASS / FAIL out of 11 (R1–R11).
 - Part B: how many PASS / FAIL out of 11 (B1–B11) — and every figure that differs from 13 Oct, with what explains it.
 - Part C: how many PASS / FAIL / SKIPPED / BLOCKED out of 16 (C1–C16).
 - Every FAIL in one line each, worst first.

@@ -154,6 +154,8 @@ async function bootSpaInJsdom(opts = {}) {
   // them from their first line — as page scripts see fetch in a browser. (Before, scripts that ran during parse ran
   // with no fetch and the real clock, and a script that wrapped fetch was silently discarded when this layer replaced
   // it afterwards — that is how the coalescer's stale reads, FA-P1b, stayed hidden.)
+  // F72b: the page's requests still in flight through this layer — what idle() waits on.
+  let inflight = 0, started = 0;
   const installLayers = (window) => {
     // Pin the jsdom window clock so client period windows match the server probe.
     window.Date = (function () {
@@ -184,7 +186,8 @@ async function bootSpaInJsdom(opts = {}) {
       }
       const abs = url.startsWith('http') ? url : origin + (url.startsWith('/') ? url : '/' + url);
       const headers = Object.assign({}, init.headers, { Cookie: cookiePair });
-      return nodeFetch(abs, Object.assign({}, init, { headers }));
+      inflight++; started++;
+      return nodeFetch(abs, Object.assign({}, init, { headers })).finally(() => { inflight--; });
     };
   };
 
@@ -205,6 +208,22 @@ async function bootSpaInJsdom(opts = {}) {
 
   const settle = async (iters = 200, ms = 100) => {
     for (let i = 0; i < iters; i++) await new Promise((r) => setTimeout(r, ms));
+  };
+  // F72b: wait for the page to go quiet — none of the page's requests in flight through this layer, and none started,
+  // for quietMs — instead of guessing a fixed time that a slow answer can outlast on a busy machine (verify-f72-payables
+  // read the Payables card's "—" before /api/reports/balance-sheet answered: 1 red in the owner's 3x sweep, 8/8 under
+  // load). Opt-in: settle() is unchanged, so harnesses that look at a page mid-request still can. Resolves true when
+  // quiet, false at timeoutMs (the harness then asserts on what it sees — a hang is never a pass).
+  const idle = async ({ timeoutMs = 30000, quietMs = 300 } = {}) => {
+    const end = clock.RealDate.now() + timeoutMs;
+    while (clock.RealDate.now() < end) {
+      if (inflight === 0) {
+        const before = started;
+        await new Promise((r) => setTimeout(r, quietMs));
+        if (inflight === 0 && started === before) return true;
+      } else await new Promise((r) => setTimeout(r, 50));
+    }
+    return false;
   };
   const text = (id) => { const el = window.document.getElementById(id); return el ? (el.textContent || '').trim() : null; };
   const toast = () => ({
@@ -230,7 +249,7 @@ async function bootSpaInJsdom(opts = {}) {
   return {
     window, http, origin, scratch, client: c, userId,
     consoleErrors, consoleWarns, consoleLogs, wireLog, reqLog, injected,
-    settle, text, toast, stop,
+    settle, idle, text, toast, stop,
   };
 }
 

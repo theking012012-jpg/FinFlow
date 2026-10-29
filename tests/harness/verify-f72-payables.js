@@ -35,7 +35,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
           [uid, { vendor: 'Acme', num: 'B-1', amount: 1000, amount_paid: 400, status: 'partial', issue_date: '2026-07-01', due_date: '2026-07-20' }]);
       },
     });
-    const { window, settle } = boot;
+    const { window, settle, idle } = boot;
     const doc = window.document;
 
     await settle(4, 100);
@@ -48,8 +48,12 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
       `window.bills.length = ${billsLen}`);
 
     // Render the Vendors page (the live payables surface). First call may fetch vendors & return.
-    if (typeof window.renderVendors === 'function') { window.renderVendors(); await settle(3, 90); window.renderVendors(); }
-    await settle(3, 90);
+    // F72b: the Payables card is filled by /api/reports/balance-sheet (slow — it reconciles the ledger first) and reads
+    // "—" until that answers. Wait for the page's requests to finish, not a fixed 0.5 s that a busy machine outlasts
+    // (owner's sweep 2026-10-29 run 2 read "—"; 8 of 8 red with 8 copies running at once).
+    if (typeof window.renderVendors === 'function') { window.renderVendors(); await idle(); window.renderVendors(); }
+    const quiet = await idle();
+    A("the page's requests all answered (within 30 s)", quiet, 'still waiting on a request after 30 s');
     const vEls = doc.querySelectorAll('#page-vendors .mc-val');
     const vPay = vEls && vEls[1] ? num(vEls[1].textContent) : NaN;
     A('LIVE Vendors payables KPI = 600 (remaining balance, not the 1000 face)', vPay === 600,

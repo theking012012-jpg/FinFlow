@@ -269,8 +269,8 @@ The timesheet shows 1.5 h; the project shows the logged time. Record whatever bi
 **C7. Budget.** Budget page: set a monthly budget for the expense category you used in C5. The "actual" for that
 category includes the **$20.00** from C5, and actual + remaining = budget.
 
-**C8. MRR / SaaS.** Record MRR and ARR as shown. Then compare with Recurring Invoices: MRR = sum of the **active
-monthly** recurring invoices (annual ones ÷ 12, if any). Write down both numbers. **Do not create a recurring
+**C8. MRR / SaaS.** Record MRR and ARR as shown. Then compare with Recurring Invoices: MRR = the **active** recurring
+invoices converted to a month: monthly as is, quarterly ÷ 3, annual ÷ 12, weekly × 52 ÷ 12. Write down both numbers. **Do not create a recurring
 invoice.**
 
 **C9. Scheduled Documents.** The list shows the upcoming recurring invoices and bills, with dates and amounts matching

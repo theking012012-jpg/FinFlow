@@ -119,12 +119,35 @@
       set('inv-client', r.client); set('inv-amount', r.amount != null ? Number(r.amount) : '');
       set('inv-issue', ymd(r.issue_date)); set('inv-due', ymd(r.due_date));
       if (window._docTermsSet) window._docTermsSet('inv', ymd(r.issue_date), ymd(r.due_date));   // FA-B5: this invoice's own terms
-      set('inv-status', String(r.status || 'pending').toLowerCase()); set('inv-desc', r.notes);
+      // E2E-1: the form offers Unpaid (issued) / Paid / Draft. Overdue and part-paid are worked out from the due date and
+      // the payments, so they open as "Unpaid — issued" (saving keeps the payments; the server re-derives the status, G3).
+      { const _st = String(r.status || 'pending').toLowerCase(); set('inv-status', (_st === 'draft' || _st === 'paid') ? _st : 'pending'); }
+      set('inv-desc', r.notes);
       const lines = Array.isArray(raw && raw.line_items) ? raw.line_items : (Array.isArray(r.line_items) ? r.line_items : []);
       if (lines.length && window.ffInvLineItems && window.ffInvLineItems.load) window.ffInvLineItems.load(lines);
       window._invEditId = inv._dbId;
       const t = document.querySelector('#invoice-modal .modal-title'); if (t) t.textContent = 'Edit invoice' + (r.number ? ' ' + r.number : '');
       const st = document.querySelector('#invoice-modal .modal-sub'); if (st) st.textContent = 'Changes are saved to this invoice and shown in its history';
+    };
+
+    // E2E-1: a DRAFT invoice is not issued — it is in no total (Rule 11: revenue counts pending / overdue / partial / paid).
+    // Issuing it is one status change on the same invoice (PUT, audited, the ledger follows the flip — GL Phase 2), so
+    // it then counts on its own issue date. The server refuses the change inside a locked period and says why.
+    window.issueInvoice = async function (idx) {
+      const inv = (window.userInvoices || [])[idx];
+      if (!inv || inv._dbId == null) { notify('That invoice could not be found — refresh and try again', true); return; }
+      if (window._issuingInvoice) return;
+      window._issuingInvoice = true;
+      try {
+        const upd = await api('PUT', '/api/invoices/' + inv._dbId, { status: 'pending' });
+        notify('Invoice ' + ((upd && upd.number) || inv.number || '') + ' issued — it now counts in your books ✦');
+        await loadInvoicesFromDB().catch(() => {});
+        if (typeof renderInvoices === 'function') renderInvoices();
+        window._refreshDashboardUI?.();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
+      } catch (e) {
+        notify(e.message || 'Could not issue the invoice', true);
+      } finally { window._issuingInvoice = false; }
     };
 
     // Patch saveInvoice to persist to API
@@ -237,7 +260,7 @@
         window._invIdemKey = null;   // success → the next invoice mints a fresh token
         closeModal('invoice-modal');
         if (typeof renderInvoices === 'function') renderInvoices();
-        notify(`Invoice created for ${client} ✦`);
+        notify(status === 'draft' ? `Draft invoice saved for ${client} — it is not in your books until you issue it` : `Invoice created for ${client} ✦`);   // E2E-1
         loadInvoicesFromDB().catch(()=>{});
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
@@ -290,7 +313,7 @@
     // so the modal can show Total/Paid/Remaining and check overpayment inline.
     window.renderInvoices = function () {
       if (typeof updateInvoices === 'function') updateInvoices();
-      const badgeCls = { paid: 'b-green', pending: 'b-amber', partial: 'b-blue', overdue: 'b-red' };
+      const badgeCls = { paid: 'b-green', pending: 'b-amber', partial: 'b-blue', overdue: 'b-red', draft: 'b-grey' };
       const el = document.getElementById('invoice-list');
       if (!el) return;
       // F206 (perf): render the table incrementally. The full window.userInvoices array is untouched
@@ -319,7 +342,7 @@
           <span data-style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
           <span class="inv-paid">${_invPaidCell(inv)}</span>
           <span data-style="color:${esc(inv.color)}">${esc(inv.due)}</span>
-          <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
+          <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}"${inv.status?.toLowerCase() === 'draft' ? ' title="Not issued yet — not in your revenue, receivables or reports until you issue it"' : ''}>${esc(inv.status)}</span></span>
           <span class="table-actions">
             ${inv.status?.toLowerCase() === 'overdue'
               ? `<button class="btn btn-ghost btn-sm inv-remind-btn"
@@ -329,6 +352,9 @@
               : ''}
             <button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="viewInvoice(Number(this.dataset.argIdx))">View</button>
             <button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="editInvoice(Number(this.dataset.argIdx))">Edit</button>
+            ${inv.status?.toLowerCase() === 'draft'
+              ? `<button class="btn btn-ghost btn-sm" title="Issue this invoice — it then counts in your revenue and receivables" data-arg-idx="${idx}" data-on-click="issueInvoice(Number(this.dataset.argIdx))">Issue</button>`
+              : ''}
             ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
               ? `<button class="btn btn-ghost btn-sm" data-arg-idx="${idx}" data-on-click="openRecordPaymentModal(window.userInvoices[Number(this.dataset.argIdx)])">Record Payment</button>`
                 + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" data-arg-idx="${idx}" data-on-click="ffInvoicePayLinkChoose(window.userInvoices[Number(this.dataset.argIdx)]._dbId)">Pay link ↗</button>`

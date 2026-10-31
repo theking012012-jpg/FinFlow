@@ -853,6 +853,24 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// E2E-6 (full test 2026-10-30): the app page fired its data GETs before it knew whether anyone was signed in, so the
+// sign-in screen produced ~38 red 401s in the console. The page now asks first — but only when it has to: `ff_auth` is a
+// non-secret HINT cookie (readable by the page, carries no credential, grants nothing) that says "this browser has a
+// session". It follows the session on every request: set when one exists, cleared when it does not. With it the page
+// skips the question (no added round trip for a signed-in user); without it the page asks GET /api/auth/session once.
+const _FF_AUTH_RE = /(?:^|;\s*)ff_auth=1(?:;|$)/;
+const _ffAuthCookie = { sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', httpOnly: false };
+app.use((req, res, next) => {
+  const has = _FF_AUTH_RE.test(req.headers.cookie || ''), authed = !!(req.session && req.session.userId);
+  if (authed && !has) res.cookie('ff_auth', '1', Object.assign({ maxAge: 7 * 24 * 60 * 60 * 1000 }, _ffAuthCookie));
+  else if (!authed && has) res.clearCookie('ff_auth', _ffAuthCookie);
+  next();
+});
+app.get('/api/auth/session', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ authenticated: !!(req.session && req.session.userId) });
+});
+
 // Cloudflare/Railway-aware client IP for IP-keyed limiters. Behind Cloudflare, CF-Connecting-IP is
 // the single authoritative client address (no fragile hop-counting); _clientIp handles the
 // Railway/Envoy chain and the pre-Cloudflare topology too. Degrade to a UNIQUE key — never a shared
@@ -1306,6 +1324,7 @@ app.post('/api/auth/logout', wrap(async (req, res) => {
   if (_lo) await recordAudit(pool, { userId: _lo, table: 'users', recordId: _lo, action: 'LOGOUT', req });   // LC3d — before the session is gone
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
+    res.clearCookie('ff_auth', _ffAuthCookie);   // E2E-6
     res.json({ ok: true });
   });
 }));

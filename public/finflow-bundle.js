@@ -2761,7 +2761,7 @@ function clearAIChat(){
     if (isGet && _inflightGets.has(path)) return _inflightGets.get(path);
     const p = (async () => {
       const res = await fetch(path, opts);
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `API error ${res.status}`); }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); const err = new Error(e.error || `API error ${res.status}`); err.status = res.status; throw err; }
       return res.json();
     })();
     if (isGet) { _inflightGets.set(path, p); const done = () => { if (_inflightGets.get(path) === p) _inflightGets.delete(path); }; p.then(done, done); }
@@ -3520,7 +3520,7 @@ function clearAIChat(){
         const _q = _eidV2 ? '?entity_id=' + _eidV2 : '';
         const [rows, unsaved] = await Promise.all([
           api('GET', '/api/vendors' + _q),
-          api('GET', '/api/vendors/unsaved' + _q).catch(e => { console.error('[Vendors] could not load bill vendors:', e.message); return []; }),
+          api('GET', '/api/vendors/unsaved' + _q).catch(e => { if (e.status !== 401) console.error('[Vendors] could not load bill vendors:', e.message); return []; }),   // E2E-6: signed out is not an error
         ]);
         _vendorsFetched = true;
         _vendorsData = rows || [];

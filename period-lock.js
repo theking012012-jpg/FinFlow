@@ -6,18 +6,45 @@
 // Dates are calendar-date strings 'YYYY-MM-DD' compared as strings (Rule 10).
 const { rowToObj } = require('./database');
 
-async function isLocked(pool, userId, entityId, date) {
-  if (!date) return false;
+// The lock date that closes `date` for this business ('YYYY-MM-DD', the latest one when several apply), or null.
+async function lockedThrough(pool, userId, entityId, date) {
+  if (!date) return null;
   const d = String(date).slice(0, 10);
   const { rows } = await pool.query(
     `SELECT * FROM lock_settings WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) AND (data->>'enabled')::int = 1`,
     [userId, entityId == null ? null : entityId]
   );
+  let through = null;
   for (const r of rows) {
     const s = rowToObj(r);
-    if (s && s.lock_date && d <= String(s.lock_date).slice(0, 10)) return true;
+    const ld = s && s.lock_date ? String(s.lock_date).slice(0, 10) : null;
+    if (ld && d <= ld && (!through || ld > through)) through = ld;
   }
-  return false;
+  return through;
+}
+async function isLocked(pool, userId, entityId, date) { return (await lockedThrough(pool, userId, entityId, date)) != null; }
+
+// E2E-2 (full test 2026-10-30, Part 9): every refusal said only "Period is locked." — not which dates are closed, nor
+// what to do — so a payroll void in a locked month read as "nothing happened". ONE wording for every lock refusal
+// (the owner's app and the accountant portal): the closed-through date, the record's date, and the way out.
+function lockedRefusal(date, lockDate, opts = {}) {
+  const FD = require('./public/finflow-dates.js');
+  const d = String(date).slice(0, 10), ld = lockDate ? String(lockDate).slice(0, 10) : null;
+  const fmt = v => FD.fmtLabel(v, { year: true }) || v;
+  const how = opts.accountant
+    ? 'Ask the business owner to reopen that period.'
+    : 'To change it, move the lock date back in Transaction Locking, then try again.';
+  const error = (ld ? 'Your books are locked through ' + fmt(ld) + ', and this is dated ' + fmt(d) + '. '
+                    : 'This is dated ' + fmt(d) + ', inside a locked period. ') + how;
+  return { error, code: 'PERIOD_LOCKED', date: d, lock_date: ld };
+}
+
+// Answers 403 when `date` is in a closed period; returns true when it has answered.
+async function refuseIfLockedRes(pool, res, userId, entityId, date, opts) {
+  const ld = await lockedThrough(pool, userId, entityId, date);
+  if (ld == null) return false;
+  res.status(403).json(lockedRefusal(date, ld, opts));
+  return true;
 }
 
 // 'YYYY-MM' → { first: 'YYYY-MM-01', last: 'YYYY-MM-<last day>', dayBefore: '<last day of previous month>' }
@@ -56,4 +83,4 @@ async function setPeriodLock(pool, db, userId, entityId, period, lock, extra = {
   return next;
 }
 
-module.exports = { isLocked, periodBounds, setPeriodLock };
+module.exports = { isLocked, lockedThrough, lockedRefusal, refuseIfLockedRes, periodBounds, setPeriodLock };

@@ -1197,7 +1197,7 @@ If you cannot find a field, use null. Be concise.`;
     // N102: no date ⇒ the client ENTITY's today (as the main app's POST /api/journals), never the UTC day.
     const _jDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date)
       : (entityTodayYmd ? await entityTodayYmd(_clientEntityId) : new Date().toISOString().slice(0, 10));
-    if (await require('./period-lock').isLocked(pool, parseInt(userId), _clientEntityId, _jDate)) return res.status(403).json({ error: 'Period is locked.' });
+    if (await require('./period-lock').refuseIfLockedRes(pool, res, parseInt(userId), _clientEntityId, _jDate, { accountant: true })) return;   // E2E-2
     if (_picked) {
       if (_lines.some(l => !l.acct)) return res.status(400).json({ error: 'Choose an account for every line with an amount.' });
       const _rl = require('./journal-chart.js').resolveLines(_lines, chartForBusiness ? await chartForBusiness(parseInt(userId), _clientEntityId) : []);

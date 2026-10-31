@@ -1784,8 +1784,7 @@ async function isLocked(userId, entityId, date) { return _periodLock.isLocked(po
 // import-refund / match-invoice). Same refusal as lockGuard. Returns true when it has answered.
 async function refuseIfLocked(res, userId, entityId, ymd) {
   const d = FinFlowDates._toYmd(ymd);
-  if (d && await isLocked(userId, entityId, d)) { res.status(403).json({ error: 'Period is locked.', code: 'PERIOD_LOCKED', date: d }); return true; }
-  return false;
+  return d ? _periodLock.refuseIfLockedRes(pool, res, userId, entityId, d) : false;   // E2E-2: the one refusal wording
 }
 
 // N9 + N8 class: ONE period-lock guard for every money write. Each money table names the date(s) its
@@ -1847,7 +1846,7 @@ function lockGuard(spec) {
       checks.push(...(ds.length ? ds : [await entityTodayYmd(entityId)]));   // no date → the route defaults to the entity's today
     }
     for (const d of checks) {
-      if (d && await isLocked(uid, entityId, String(d).slice(0, 10))) return res.status(403).json({ error: 'Period is locked.', code: 'PERIOD_LOCKED', date: String(d).slice(0, 10) });
+      if (d && await _periodLock.refuseIfLockedRes(pool, res, uid, entityId, String(d).slice(0, 10))) return;   // E2E-2
     }
     next();
   });
@@ -12116,7 +12115,7 @@ app.put('/api/payroll-runs/:id/remit', requireAuth, requirePerm('payroll:write')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Enter a valid date.' });
   const paidYmd = FinFlowDates._toYmd(run.paid_date);
   if (paidYmd && date < paidYmd) return res.status(400).json({ error: 'Withholdings cannot be remitted before the run was paid (' + paidYmd + ').' });
-  if (await isLocked(scopeId(req), run.entity_id || null, date)) return res.status(403).json({ error: 'Period is locked.', code: 'PERIOD_LOCKED', date });
+  if (await _periodLock.refuseIfLockedRes(pool, res, scopeId(req), run.entity_id || null, date)) return;   // E2E-2
   const { rows: [upd] } = await pool.query(
     `UPDATE payroll_runs SET withholdings_remitted_date = COALESCE(withholdings_remitted_date, $3::date) WHERE id=$1 AND user_id=$2 AND lower(status)='paid' RETURNING *`,
     [id, scopeId(req), date]);

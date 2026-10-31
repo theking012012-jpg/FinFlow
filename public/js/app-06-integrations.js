@@ -129,6 +129,7 @@
               var col2=CAT_COLOR[item.cat]||'#888';
               var idx=INTEGRATIONS.indexOf(item);
               var built=_isBuilt(item.name);
+              var notSetUp=built&&!on&&cfgStates[item.name]===false;   // NEW-5
               var card=document.createElement('div');
               card.className='conn-card'+(on?' is-connected':'');
               card.innerHTML=(on?'<div class="conn-dot"></div>':'')
@@ -140,20 +141,20 @@
                 +'<div class="conn-card-desc">'+item.desc+'</div>'
                 +(COVERS[item.name]?'<div data-style="font-size:10px;color:var(--t3);line-height:1.35;margin-top:-3px">'+COVERS[item.name]+'</div>':'')
                 +'<div class="conn-card-footer">'
-                +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span data-style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
+                +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(notSetUp?'<span data-style="font-size:10px;color:var(--t3)" title="This connection is not switched on for FinFlow yet">Not set up yet</span>':(built?'<span data-style="font-size:10px;color:var(--green)">Ready to connect</span>':'<span></span>')))
                 +((on&&SYNC_MAP[item.name])?'<button class="conn-toggle-btn disconn" data-sync="'+item.name+'" data-style="margin-right:6px" title="Pull the latest data from '+item.name+'" data-arg-name="'+item.name+'" data-on-click="event.stopPropagation();connSyncNow(this.dataset.argName)">&#8635; Sync now</button>':'')
                 +((on&&item.name==='Codat')?'<button class="conn-toggle-btn conn" data-style="margin-right:6px" title="Import your existing accounting data into FinFlow" data-on-click="event.stopPropagation();ffCodatMigrate()">&#8681; Import books</button>':'')
                 +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" data-arg-idx="'+idx+'" data-on-click="connToggle(Number(this.dataset.argIdx))">'+(on?'Disconnect':(built?'Connect':'Request'))+'</button>'
                 +'</div>';
               return card;
             }
-            function _connSection(title, sub, items, col){
+            function _connSection(title, sub, items, col, subIsCount){
               var sec=document.createElement('div');
               sec.className='conn-section';
               sec.innerHTML='<div class="conn-section-hdr">'
                 +'<div class="conn-section-icon" data-style="background:'+col+'22;color:'+col+'">'+title.charAt(0)+'</div>'
                 +'<span class="conn-section-title">'+title+'</span>'
-                +'<span class="conn-section-ct">'+items.length+' '+sub+'</span>'
+                +'<span class="conn-section-ct">'+(subIsCount?sub:items.length+' '+sub)+'</span>'
                 +'</div><div class="conn-grid"></div>';
               catalog.appendChild(sec);
               var grid=sec.querySelector('.conn-grid');
@@ -162,7 +163,12 @@
             // SECTION 1 — Live hubs (real, connectable). The aggregator hubs lead the page.
             var builtItems=filtered.filter(function(i){return _isBuilt(i.name);});
             if(builtItems.length){
-              _connSection('Available now','live connection'+(builtItems.length!==1?'s':''),builtItems,'#3aa76d');
+              // NEW-5: the header counted every built provider as a "live connection" (17 with nothing connected). It now
+              // says what is true: connected · ready to connect · not set up yet — and the cards follow that order.
+              var _rank=function(i){ return connStates[i.name]?0:(cfgStates[i.name]===false?2:1); };
+              builtItems=builtItems.slice().sort(function(a,b){ return _rank(a)-_rank(b); });
+              var _nOn=builtItems.filter(function(i){return _rank(i)===0;}).length, _nReady=builtItems.filter(function(i){return _rank(i)===1;}).length, _nOff=builtItems.length-_nOn-_nReady;
+              _connSection('Connections',[_nOn+' connected',_nReady+' ready to connect'].concat(_nOff?[_nOff+' not set up yet']:[]).join(' · '),builtItems,'#3aa76d',true);
             }
             var soonItems=filtered.filter(function(i){return !_isBuilt(i.name);});
             if(!browsing){
@@ -212,15 +218,20 @@
           // FA-P2: the ONE place the page asks for statuses — once per visit (showPage), per business switch and after a
           // connect / disconnect / sync. A newer round wins: a slow answer from before a business switch is dropped.
           var _hydrateGen=0;
+          // NEW-5 (live retest 2026-10-30): every built provider read "Available", although 9 of them are not set up on
+          // this server (their own status answers configured:false) and clicking them says "isn't available yet". The
+          // same one round of answers now also keeps `configured` (false = not set up; a provider that takes the
+          // person's own credentials answers no flag and stays available). Not-set-up cards say so and sort last.
+          var cfgStates={};
           function hydrateStates(){
             var gen=++_hydrateGen;
             var proms=CONN_PROBES.map(function(pr){
-              if(!pr[1]) return fetch('/api/plaid/items',{credentials:'include'}).then(function(r){return r.ok?r.json():{};}).then(function(d){return (d.items&&d.items.length)?1:0;}).catch(function(){return 0;});
-              return fetch('/api/'+pr[1]+'/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{};}).then(function(d){return d.connected?1:0;}).catch(function(){return 0;});
+              if(!pr[1]) return fetch('/api/plaid/items',{credentials:'include'}).then(function(r){return r.ok?r.json():{};}).then(function(d){return {on:(d.items&&d.items.length)?1:0, cfg:d.configured!==false};}).catch(function(){return {on:0,cfg:true};});
+              return fetch('/api/'+pr[1]+'/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{};}).then(function(d){return {on:d.connected?1:0, cfg:d.configured!==false};}).catch(function(){return {on:0,cfg:true};});
             });
             Promise.all(proms).then(function(res){
               if(gen!==_hydrateGen) return;
-              CONN_PROBES.forEach(function(pr,i){ connStates[pr[0]] = res[i]?1:0; });
+              CONN_PROBES.forEach(function(pr,i){ connStates[pr[0]] = res[i].on?1:0; cfgStates[pr[0]] = res[i].cfg; });
               render();
             });
           }

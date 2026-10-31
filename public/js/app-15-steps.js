@@ -288,6 +288,9 @@ async function _completeOnboarding(d){
   // latched "0 businesses", so Entities showed 0 until a page reload. force=true bypasses that memo.
   const ls=document.getElementById('login-screen'); if(ls)ls.style.display='none';
   if(typeof window.loadEntitiesFromDB==='function'){ try{ await window.loadEntitiesFromDB(true); }catch(e){} }
+  // NEW-1 (live retest 2026-10-30): Settings was filled at boot, BEFORE onboarding saved the business profile, so it
+  // kept its blank defaults (Industry read "Technology", the first option) until a reload. Re-read what was just saved.
+  if(typeof window.loadSettingsFromDB==='function'){ try{ await window.loadSettingsFromDB(); }catch(e){} }
   notify('Welcome to FinFlow! Your workspace is ready \u2726');
 }
 

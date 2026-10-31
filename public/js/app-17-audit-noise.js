@@ -138,7 +138,8 @@ function openRecordPaymentModal(inv){
   // and Save instead of falling back (locked decision).
   const dateEl=document.getElementById('rp-date');
   if(dateEl){
-    if(window._serverToday){ dateEl.value=window._serverToday; dateEl.disabled=false; dateEl.placeholder=''; }
+    const _bt=(typeof window._businessToday==='function')?window._businessToday():window._serverToday;   // NEW-2: the business's today
+    if(_bt){ dateEl.value=_bt; dateEl.disabled=false; dateEl.placeholder=''; }
     else { dateEl.value=''; dateEl.disabled=true; dateEl.placeholder='Loading…'; }
   }
   const refEl=document.getElementById('rp-reference');
@@ -634,7 +635,8 @@ function openRemitWithholdings(id){
   document.getElementById('rw-run-id').value=id;
   document.getElementById('rw-sub').textContent=(r.period||'')+' — '+S(_runWithholdings(r))+' withheld';
   const dEl=document.getElementById('rw-date');
-  if(window._serverToday){ dEl.value=window._serverToday; dEl.disabled=false; } else { dEl.value=''; dEl.disabled=true; }   // F115: server today only
+  const _bt=(typeof window._businessToday==='function')?window._businessToday():window._serverToday;   // NEW-2: the business's today, server clock
+  if(_bt){ dEl.value=_bt; dEl.disabled=false; } else { dEl.value=''; dEl.disabled=true; }   // F115: never the viewer's clock
   openModal('remit-withholdings-modal');
 }
 async function saveRemitWithholdings(){

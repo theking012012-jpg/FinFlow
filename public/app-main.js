@@ -510,6 +510,19 @@ window._activeEntityTz = _activeEntityTz;
 // line near midnight, so client and server disagreed. No active entity or no zone ⇒ UTC, byte-identical to before.
 function _entityToday(){ return window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
 window._entityToday = _entityToday;
+// NEW-2 (live retest 2026-10-30): a money date's DEFAULT is the active business's today on the SERVER's clock. F115 kept
+// the viewer's clock out by using the server's today — but that was the server's UTC day, so from 8 pm in New York
+// (UTC−4) Record Payment and Remit defaulted to TOMORROW. The server now also sends its clock (`now`); the business's
+// today is that instant (advanced by the time elapsed since, never by the viewer's clock reading) in the business's own
+// timezone. Null until the server's clock is known (callers keep the field blocked, as F115 decided).
+function _primeServerClock(data){ if(data && data.now){ const t=Date.parse(data.now); if(isFinite(t)) window._serverClock={ server:t, local:Date.now() }; } }
+window._primeServerClock = _primeServerClock;
+function _businessToday(){
+  const c=window._serverClock;
+  if(!c) return window._serverToday || null;
+  return window.FinFlowDates.resolvedToday(new Date(c.server + (Date.now() - c.local)), _activeEntityTz());
+}
+window._businessToday = _businessToday;
 window._isScheduled = function(dateStr){
   try { const y = window.FinFlowDates._toYmd(dateStr); return y != null && y > window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
   catch(_){ return false; }
@@ -627,6 +640,7 @@ async function doLogin(){
       return;
     }
     if(data.today) window._serverToday = data.today; // F116: prime server-truth date on fresh login (mirrors auth/me path)
+    _primeServerClock(data);   // NEW-2
     const r = 'owner';
     currentRole = r;
     sessionStorage.setItem('ff_role', r);
@@ -688,6 +702,7 @@ async function doRegister(){
     const data = await res.json();
     if(!res.ok){ if(errEl) errEl.textContent=data.error||'Registration failed.'; return; }
     if(data.today) window._serverToday = data.today; // L30 (F116): a new account's first session needs it too (date defaults, F115)
+    _primeServerClock(data);   // NEW-2
     const plan = new URLSearchParams(window.location.search).get('plan');
     if(plan && (plan==='pro'||plan==='business')){
       try{
@@ -844,7 +859,12 @@ window._ffExportPdf = function(rows, filename, title, more){
       var ttl = title || String(filename || 'Report').replace(/\.(csv|pdf)$/, '');
       doc.setFontSize(16); doc.text(String(ttl), 40, 40);
       doc.setFontSize(9); doc.setTextColor(120);
-      doc.text('FinFlow · ' + new Date().toLocaleDateString(), 40, 56);
+      // NEW-4 (live retest 2026-10-30): the header named only "FinFlow" and the VIEWER's clock / locale date, so an exported
+      // statement did not say whose books it was. Now: the business, FinFlow, and the business's today (server clock).
+      var _ent = (window.ENTITIES || []).find(function(e){ return e.active; });
+      var _bt = (typeof window._businessToday === 'function' && window._businessToday()) || '';
+      var _btLbl = _bt && window.FinFlowDates ? window.FinFlowDates.fmtLabel(_bt, { year: true }) : _bt;
+      doc.text([_ent && _ent.name, 'FinFlow', _btLbl].filter(Boolean).join(' · '), 40, 56);
       var _tblOpts = { styles: { fontSize: 9, cellPadding: 5 }, headStyles: { fillColor: [201,168,76], textColor: 20 }, alternateRowStyles: { fillColor: [245,242,235] }, margin: { left: 40, right: 40 } };
       doc.autoTable(Object.assign({ head: head, body: body, startY: 72 }, _tblOpts));
       (more || []).forEach(function(sec){

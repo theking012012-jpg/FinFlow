@@ -45,7 +45,9 @@ const ROOT = path.join(__dirname, '..', '..');
     const text = () => catalog.textContent || '';
 
     // ── DEFAULT view ──────────────────────────────────────────────────────────────
-    A('default view renders the "Available now" hubs', /Available now/.test(text()));
+    // NEW-5 (2026-10-30): the hub section is titled "Connections" with honest counts (was "Available now · 17 live
+    // connections" with nothing connected). Stale wording restated — what it asserts (the hubs render) is unchanged.
+    A('default view renders the "Connections" hubs', /Connections/.test(text()) && /ready to connect/.test(text()));
     A('default view shows ONE compact request line (points to search)', /Search the directory/.test(text()));
     A('[DISCRIMINATING] default view does NOT dump the directory wall (no Healthcare section)',
       !/Healthcare/.test(text()), 'the full category wall is being rendered by default');

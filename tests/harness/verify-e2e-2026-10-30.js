@@ -22,6 +22,13 @@
  *   E2E-6  The sign-in screen makes no data request: zero 401s / red console lines signed out (bug: one per boot
  *          loader), and signing in through the form still loads the business.
  */
+// Own clock (both under the sweep's clock.js July pin and standalone): this harness is dated 30 Oct 2026 (the live E2E run), so it pins the
+// process clock to 2026-10-30T16:00:00.000Z before the server boots — the server, sessions and every date default read this instant.
+// The real Date is recovered from under clock.js's PinnedDate (it extends the real one). SWEEP-safe.
+{ const _Real = Object.getPrototypeOf(Date) !== Function.prototype ? Object.getPrototypeOf(Date) : Date;
+  const _PIN = _Real.parse(process.env.E2E_PIN_ISO || '2026-10-30T16:00:00.000Z');
+  class _Pinned extends _Real { constructor(...a) { if (!a.length) { super(_PIN); return; } super(...a); } static now() { return _PIN; } }
+  global.Date = _Pinned; }
 const { runBrowser } = require('./browserKit.js');
 const FC = require('../../public/finflow-categories.js');
 

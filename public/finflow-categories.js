@@ -85,7 +85,43 @@
     return v;
   }
 
+  // E2E-4b: a BUSINESS bank line's provider code → the business expense list (EXPENSE_CATEGORIES), so a linked line
+  // reads — and books, through Bank Rec "Book as expense" — as Meals / Travel / Bank Fees …, never FOOD_AND_DRINK.
+  // A move between accounts (transfer, loan payment) maps to "Transfer", which is not an expense (notAnExpense, FA-B8).
+  // Anything that is not a provider code (a name the person or an import gave it, "Uncategorized") is kept as it is.
+  var BIZ_PLAID_PRIMARY = {
+    FOOD_AND_DRINK: 'Meals', TRAVEL: 'Travel', TRANSPORTATION: 'Travel', RENT_AND_UTILITIES: 'Utilities',
+    BANK_FEES: 'Bank Fees', GENERAL_SERVICES: 'Other', GENERAL_MERCHANDISE: 'Other', HOME_IMPROVEMENT: 'Equipment',
+    ENTERTAINMENT: 'Other', MEDICAL: 'Other', PERSONAL_CARE: 'Other', GOVERNMENT_AND_NON_PROFIT: 'Other',
+    TRANSFER_IN: 'Transfer', TRANSFER_OUT: 'Transfer', LOAN_PAYMENTS: 'Transfer', LOAN_DISBURSEMENTS: 'Transfer',
+    INCOME: 'Income',
+  };
+  var BIZ_PLAID_DETAILED = {
+    RENT_AND_UTILITIES_RENT: 'Rent', GENERAL_SERVICES_INSURANCE: 'Insurance',
+    GENERAL_SERVICES_ACCOUNTING_AND_FINANCIAL_PLANNING: 'Professional Fees', GENERAL_SERVICES_CONSULTING_AND_LEGAL: 'Professional Fees',
+    GENERAL_MERCHANDISE_OFFICE_SUPPLIES: 'Office Supplies', GENERAL_MERCHANDISE_ELECTRONICS: 'Equipment',
+    GENERAL_SERVICES_ADVERTISING_AND_MARKETING: 'Marketing', TRANSPORTATION_GAS: 'Travel',
+  };
+  var BIZ_BELVO = {
+    'food & groceries': 'Meals', 'transport & travel': 'Travel', 'bills & utilities': 'Utilities',
+    'transfers': 'Transfer', 'investments & savings': 'Transfer', 'deposits': 'Transfer', 'credits & loans': 'Transfer',
+    'income & payments': 'Income', 'taxes': 'Other', 'services': 'Other', 'unknown': 'Other',
+  };
+  function businessCategory(raw, detailed) {
+    var d = String(detailed == null ? '' : detailed).trim().toUpperCase();
+    if (d && BIZ_PLAID_DETAILED[d]) return BIZ_PLAID_DETAILED[d];
+    var v = String(raw == null ? '' : raw).trim();
+    if (!v) return 'Other';
+    var up = v.toUpperCase();
+    if (BIZ_PLAID_DETAILED[up]) return BIZ_PLAID_DETAILED[up];
+    if (BIZ_PLAID_PRIMARY[up]) return BIZ_PLAID_PRIMARY[up];
+    if (BIZ_BELVO[v.toLowerCase()]) return BIZ_BELVO[v.toLowerCase()];
+    if (/^[A-Z0-9_]+$/.test(v) && v.indexOf('_') !== -1) return 'Other';   // an unknown provider code
+    return v;
+  }
+
   return { EXPENSE_CATEGORIES: EXPENSE_CATEGORIES, NOT_AN_EXPENSE: NOT_AN_EXPENSE, notAnExpense: notAnExpense,
+    businessCategory: businessCategory,
     BUDGET_SUGGESTIONS: BUDGET_SUGGESTIONS, INDUSTRIES: INDUSTRIES,
     PERSONAL_EXPENSE_CATEGORIES: PERSONAL_EXPENSE_CATEGORIES, PERSONAL_INCOME_CATEGORIES: PERSONAL_INCOME_CATEGORIES,
     personalCategory: personalCategory };

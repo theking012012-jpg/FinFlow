@@ -2283,6 +2283,7 @@
         // ever reading the browser clock (that was the F115 bug). No fallback to new Date() is
         // wired anywhere for this — if it's not set yet, the modal blocks/shows loading instead.
         if (data.today) window._serverToday = data.today;
+        if (typeof window._primeServerClock === 'function') window._primeServerClock(data);   // NEW-2
         // F147: apply the restored user's plan/CURRENT_USER too — WAS MISSING here, so a page
         // reload left currentUserPlan at its 'trial' default and re-gated business users at the
         // entity cap of 1 (the "requires Business" modal). Same setter the login/register paths use.

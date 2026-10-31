@@ -510,6 +510,19 @@ window._activeEntityTz = _activeEntityTz;
 // line near midnight, so client and server disagreed. No active entity or no zone ⇒ UTC, byte-identical to before.
 function _entityToday(){ return window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
 window._entityToday = _entityToday;
+// NEW-2 (live retest 2026-10-30): a money date's DEFAULT is the active business's today on the SERVER's clock. F115 kept
+// the viewer's clock out by using the server's today — but that was the server's UTC day, so from 8 pm in New York
+// (UTC−4) Record Payment and Remit defaulted to TOMORROW. The server now also sends its clock (`now`); the business's
+// today is that instant (advanced by the time elapsed since, never by the viewer's clock reading) in the business's own
+// timezone. Null until the server's clock is known (callers keep the field blocked, as F115 decided).
+function _primeServerClock(data){ if(data && data.now){ const t=Date.parse(data.now); if(isFinite(t)) window._serverClock={ server:t, local:Date.now() }; } }
+window._primeServerClock = _primeServerClock;
+function _businessToday(){
+  const c=window._serverClock;
+  if(!c) return window._serverToday || null;
+  return window.FinFlowDates.resolvedToday(new Date(c.server + (Date.now() - c.local)), _activeEntityTz());
+}
+window._businessToday = _businessToday;
 window._isScheduled = function(dateStr){
   try { const y = window.FinFlowDates._toYmd(dateStr); return y != null && y > window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
   catch(_){ return false; }
@@ -627,6 +640,7 @@ async function doLogin(){
       return;
     }
     if(data.today) window._serverToday = data.today; // F116: prime server-truth date on fresh login (mirrors auth/me path)
+    _primeServerClock(data);   // NEW-2
     const r = 'owner';
     currentRole = r;
     sessionStorage.setItem('ff_role', r);
@@ -688,6 +702,7 @@ async function doRegister(){
     const data = await res.json();
     if(!res.ok){ if(errEl) errEl.textContent=data.error||'Registration failed.'; return; }
     if(data.today) window._serverToday = data.today; // L30 (F116): a new account's first session needs it too (date defaults, F115)
+    _primeServerClock(data);   // NEW-2
     const plan = new URLSearchParams(window.location.search).get('plan');
     if(plan && (plan==='pro'||plan==='business')){
       try{

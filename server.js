@@ -1255,7 +1255,7 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
     const user = _ru ? rowToObj(_ru) : null;
     console.log('[Register] New user created, id:', userId);
     await saveSession(req);   // F134: durable session row before the response (else immediate GETs 401)
-    res.status(201).json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()) });   // L30: as login (F116)
+    res.status(201).json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()), now: new Date().toISOString() });   // L30: as login (F116)
   } catch (err) {
     console.error('[Register] Unexpected error:', err);
     res.status(500).json({ error: 'Registration failed. Please try again.' });
@@ -1312,7 +1312,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     // after a new login and the Record Payment modal sits in its blocked "loading…" date state
     // until a navigation/reload hits the auth/me path. Same source (server resolvedToday), so no
     // new tz basis is introduced.
-    res.json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()) });
+    res.json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()), now: new Date().toISOString() });
   } catch (err) {
     console.error('[Login] Unexpected error:', err);
     res.status(500).json({ error: 'Login failed. Please try again.' });
@@ -1483,7 +1483,7 @@ app.get('/api/auth/me', requireAuth, wrap(async (req, res) => {
   // F115: the server-resolved calendar date (Phase 1 — UTC, viewer-independent), for clients that
   // need to default a money-dating field (e.g. Record Payment) WITHOUT reading the browser clock.
   // Already-called on every boot, so this needs no new route or round-trip.
-  res.json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()) });
+  res.json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()), now: new Date().toISOString() });
 }));
 // Alias used by frontend for session checks
 app.get('/api/me', requireAuth, wrap(async (req, res) => {

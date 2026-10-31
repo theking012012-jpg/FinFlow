@@ -34,6 +34,10 @@ const eq = (n, got, want, bug) => { const ok = JSON.stringify(got) === JSON.stri
     const res = { ok, status: ok ? 200 : 500, clone() { return Object.assign({}, res); }, json() { return Promise.resolve(body); } };
     return new Promise(r => setTimeout(() => r(res), 20));
   };
+  // E2E-6: app-03 also holds the sign-in gate, which asks GET /api/auth/session once when the page has no session hint.
+  // This harness measures the coalescer for a SIGNED-IN boot (the hint cookie present → the gate adds no request), so the
+  // counts below are the coalescer's alone. The gate itself is executed by verify-e2e-2026-10-30 (E2E-6).
+  w.document.cookie = 'ff_auth=1; path=/';
   w.eval(fs.readFileSync(file, 'utf8'));
   const get = u => w.fetch(u).then(r => r.json());
 

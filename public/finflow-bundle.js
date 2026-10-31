@@ -6460,7 +6460,11 @@ function clearAIChat(){
     // M36: holdings are USD-priced; a non-USD business shows them only once the server-books overlay has converted
     // them (app-main _applyServerBooks) — never the USD amount under this business's symbol.
     const _entCur = ((window.ENTITIES || []).find(e => e.active) || {}).currency || 'USD';
-    if (!_fxOwned) set('d-invest', String(_entCur).toUpperCase() === 'USD' ? money(portfolio) : (portfolio > 0 ? '…' : money(0)));   // F59: overlay owns this under a display currency
+    // E2E-5 (full test 2026-10-30): the server-books overlay paints this card abbreviated (_fmtMoneyAbbr, as Revenue /
+    // Expenses / Net), so painting it here with the exact formatter made the same figure flip "$2,610" → "$2.6K" on
+    // load. One format for the card, whichever writer paints it last.
+    const _invFmt = typeof window._fmtMoneyAbbr === 'function' ? window._fmtMoneyAbbr : money;
+    if (!_fxOwned) set('d-invest', String(_entCur).toUpperCase() === 'USD' ? _invFmt(portfolio) : (portfolio > 0 ? '…' : _invFmt(0)));   // F59: overlay owns this under a display currency
     const invChgEl = document.getElementById('d-invest-chg');
     if (invChgEl) {
       if (basis > 0 && !_fxOwned) {

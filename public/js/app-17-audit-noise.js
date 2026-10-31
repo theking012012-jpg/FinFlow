@@ -444,6 +444,23 @@ function _renderPayrollEmptyState(rows){
 }
 window._renderPayrollEmptyState=_renderPayrollEmptyState;
 
+// E2E-3 (full test 2026-10-30): the second card was a hard-coded "Next run date — / No upcoming run" (nothing schedules
+// runs). It now shows the LATEST run by pay period — what the books actually hold — with its status: after a void it says
+// "voided", where the roster cards beside it only ever show the plan.
+function _runPeriodYmd(r){ return (window.FinFlowDates&&window.FinFlowDates.payrollPeriodYmd(r.period,r.run_date))||String(r.run_date||'').slice(0,10)||''; }
+function _renderLastRunCard(rows){
+  const v=document.getElementById('pr-last-run'), sub=document.getElementById('pr-last-run-sub');
+  if(!v||!sub) return;
+  const list=(Array.isArray(rows)?rows:[]).filter(Boolean);
+  if(!list.length){ v.textContent='—'; sub.textContent='No runs yet'; sub.className='mc-change neutral'; return; }
+  const last=list.slice().sort((a,b)=>{ const pa=_runPeriodYmd(a), pb=_runPeriodYmd(b); return pa===pb ? (Number(b.id)||0)-(Number(a.id)||0) : (pa<pb?1:-1); })[0];
+  const st=String(last.status||'').toLowerCase();
+  v.textContent=last.period||'—';
+  sub.textContent=st+(st==='voided'?' · not in your books':' · gross '+S(parseFloat(last.total_gross||0)));
+  sub.className='mc-change '+(st==='voided'?'dn':st==='paid'?'up':'neutral');
+}
+window._renderLastRunCard=_renderLastRunCard;
+
 async function loadPayrollRuns(){
   const el=document.getElementById('payroll-runs-list');
   // Basis C: run lines are now the SOLE source of payroll expense, so this data has to reach the
@@ -455,6 +472,8 @@ async function loadPayrollRuns(){
     if(res.ok) rows=await res.json()||[];
     window.payrollRuns=rows;                       // read by computeExpenseBreakdown (basis C)
     _renderPayrollEmptyState(rows);
+    _renderLastRunCard(rows);                      // E2E-3
+    _prmPeriodHint();                              // E2E-3: an open Run Payroll form re-checks its month
     if(typeof window.refreshFinancials==='function') window.refreshFinancials('none');
   }catch(e){ /* leave window.payrollRuns as-is; the empty state below reports honestly */ }
   if(!el)return;
@@ -491,8 +510,23 @@ function _prmPeriodHint(){
   const lbl=_prmPeriodLabel(ym); if(!lbl){ el.textContent=''; return; }
   const start=ym+'-01', today=(typeof _entityToday==='function'?_entityToday():'');
   // Says where the money lands BEFORE anyone saves: the expense on the period's first day; cash paid sooner is prepaid.
+  // E2E-3: say BEFORE saving what the month already holds. One live run per month (idx_payroll_runs_uniq): a month with a
+  // live run cannot get another (the server would return the existing run), so the button is held and the run named. A
+  // month whose run was VOIDED may get a new one (owner decision LR1-B) — the form says it replaces the voided run.
+  const runs=(window.payrollRuns||[]).filter(r=>r&&String(r.period||'').toLowerCase()===lbl.toLowerCase());
+  const live=runs.find(r=>String(r.status||'').toLowerCase()!=='voided'), voided=runs.filter(r=>String(r.status||'').toLowerCase()==='voided');
+  const btn=document.querySelector('#run-payroll-modal .btn-primary');
+  if(live){
+    el.textContent=lbl+' already has a payroll run (#'+live.id+', '+(live.status||'')+'). A month has one run — open it in Payroll Run History, or void it first to run '+lbl+' again.';
+    el.style.color='var(--red)';
+    if(btn){ btn.disabled=true; btn.dataset.prmHeld='1'; }
+    return;
+  }
+  el.style.color='';
+  if(btn&&btn.dataset.prmHeld){ btn.disabled=false; delete btn.dataset.prmHeld; }
   el.textContent='Expense recorded in '+lbl+' (from '+(window.FinFlowDates?window.FinFlowDates.fmtLabel(start,{year:true}):start)+')'
-    +(today && today<start ? ' · this month has not started — paying before then records prepaid payroll' : '');
+    +(today && today<start ? ' · this month has not started — paying before then records prepaid payroll' : '')
+    +(voided.length ? ' · replaces the voided run #'+voided.map(r=>r.id).join(', #')+', which stays in history' : '');
 }
 window._prmPeriodHint=_prmPeriodHint;
 function openRunPayrollModal(){

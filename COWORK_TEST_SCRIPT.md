@@ -90,7 +90,7 @@ Create these. Use the exact issue and due dates; "send" or "issue" each one (not
 |---|---|---|---|---|---|
 | I1 | Acme Corp | 12,000.00 | 2026-03-10 | 2026-04-09 | issued (pending / sent) |
 | I2 | Bright Labs | 2,500.00 | 2026-08-05 | 2026-09-04 | issued |
-| I3 | Cedar LLC | 9,000.00 | 2026-09-01 | 2026-10-01 | **leave as DRAFT** |
+| I3 | Cedar LLC | 9,000.00 | 2026-09-01 | 2026-10-01 | **leave as DRAFT** (Status → "Draft — not issued, not in your books") |
 | I4 | Delta Co | 1,200.00 | 2026-10-01 | 2026-10-31 | issued |
 
 ### 2.2 Payments received (record against the invoice)
@@ -141,7 +141,7 @@ Add two people to the roster:
 
 - 2.6a Roster net pay shows **2,700.00** for Jordan and **4,000.00** for Sam.
 - 2.6b **The roster alone must not create any expense.** Open the Dashboard (Year): Expenses still only include
-  2.4 and 2.5 (1,920 + 1,050 = **3,970**, card about $4.0K). No payroll yet.
+  2.4 and 2.5 (1,920 + 1,050 = **2,970**, card about $3.0K). No payroll yet.
 
 Now run payroll:
 - Create a payroll run for period **September 2026**. Then **Approve** it, then **Mark paid**.
@@ -149,8 +149,8 @@ Now run payroll:
 - 2.6d **Personal side, the ONLY thing allowed to cross over:** open **Personal**. A single income row appears:
   "Owner salary — Northwind Studio (September 2026)", **4,000.00 USD**, dated **today**. Nothing for Jordan.
   No other business figure appears anywhere on the Personal page.
-- 2.6e Back on Payroll, the run offers **Remit** for the 1,300.00 withholdings. Remit them with **today's** date.
-  (A date before the pay date must be refused; try one to confirm.)
+- 2.6e Back on Payroll, the run offers **Remit** for the 1,300.00 withholdings. **First** enter a date before the pay
+  date and save — it must be refused. **Then** remit with **today's** date. (Order matters: once remitted, Remit is gone.)
 
 ### 2.7 Inventory (Inventory page)
 
@@ -320,7 +320,7 @@ Open **Personal** (sidebar). Set the period to **Year**, and the personal curren
 |---|---|---|---|---|
 | Income | Freelance design | Freelance | 1,800.00 | 2026-09-20 |
 | Expense | Groceries | Groceries | 320.00 | 2026-10-04 |
-| Expense | Gym | Health | 60.00 | 2026-10-01 |
+| Expense | Gym | Healthcare | 60.00 | 2026-10-01 |
 
 - Recurring: **Netflix**, 15.99, monthly, starting **2026-11-01**. It must **not** count yet (it starts in the future).
 
@@ -365,7 +365,7 @@ Date,Description,Amount
 | Portfolio | **10 × P_AAPL**; cost basis 1,500.00 |
 | Emergency fund | **66.7 %** (10,000 of 15,000) |
 
-- 5.4a Spending by category: Groceries 320 · Health 60 · plus the coffee 14.50 in its category.
+- 5.4a Spending by category: Groceries 320 · Healthcare 60 · plus the coffee 14.50 in its category. Each category shows under its own name (no "Food" / "Other" grouping), and no bank code (FOOD_AND_DRINK …) appears anywhere.
 - 5.4b Switch personal currency to **TTD** → every figure converts (the net worth too, not just the labels). Switch
   back to **USD** → the original numbers return exactly.
 - 5.4c Switch the **business** selector between Northwind and Island Traders, then come back to Personal. **Every

@@ -1440,12 +1440,12 @@
       const totalGross = allEmps.reduce((a, e) => a + (parseFloat(e.gross)   || 0), 0);
       const totalDed   = allEmps.reduce((a, e) => a + (window.dedTotal ? window.dedTotal(e.gross, e.deductions) : 0), 0);
       set('pr-total',    sm(totalGross));
-      set('pr-headcount', allEmps.length + ' employee' + (allEmps.length !== 1 ? 's' : ''));
+      set('pr-headcount', allEmps.length + (allEmps.length !== 1 ? ' people' : ' person') + ' · planned per month');   // E2E-3: a plan, not this month's cost
       set('pr-tax',      sm(totalDed));
 
       if (op) {
         set('pr-owner-net',   sm(op.net));
-        set('pr-owner-label', 'Your net salary');
+        set('pr-owner-label', 'Your planned net salary / month');   // E2E-3: the roster — Personal gets it only from a PAID run
         const ownerCta    = document.getElementById('owner-cta');
         if (ownerCta)    ownerCta.style.display    = 'none';
         const payrollLink = document.getElementById('payroll-link-card');

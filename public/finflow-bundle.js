@@ -424,6 +424,7 @@
       }
     }
     loadSettingsFromDB();
+    window.loadSettingsFromDB = loadSettingsFromDB;   // NEW-1: onboarding re-reads what it just saved
 
     // Patch saveSettings to actually persist
     window.saveSettings = async function () {

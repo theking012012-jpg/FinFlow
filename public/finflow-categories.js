@@ -35,6 +35,58 @@
   var INDUSTRIES = ['Technology', 'Retail', 'Finance', 'Healthcare', 'Consulting', 'Manufacturing', 'Construction',
     'Food & Beverage', 'Real Estate', 'Media & Creative', 'Other'];
 
+  // E2E-4 (full test 2026-10-30, 5.4a): PERSONAL categories. A linked bank's lines kept the provider's own code —
+  // Plaid's FOOD_AND_DRINK / GENERAL_MERCHANDISE / RENT_AND_UTILITIES … — so the Personal page listed raw codes and its
+  // spending breakdown, which knew only the app's names, put every bank line under "Other". ONE vocabulary and ONE
+  // reader: personalCategory() turns any stored value (the app's own name, a Plaid code, a Belvo name, an import's
+  // "Uncategorized") into the app's name. The server applies it when a bank line is written; every reader applies it
+  // when a row is shown, so lines stored before this read the same way without rewriting them (Rule 8).
+  var PERSONAL_EXPENSE_CATEGORIES = ['Rent/Mortgage', 'Groceries', 'Dining out', 'Transport', 'Travel', 'Utilities',
+    'Entertainment', 'Healthcare', 'Personal care', 'Shopping', 'Subscriptions', 'Fees & charges', 'Other', 'Transfer'];
+  var PERSONAL_INCOME_CATEGORIES = ['Salary', 'Freelance', 'Other Income', 'Transfer'];
+  // Plaid personal_finance_category: primary → name; a few DETAILED codes refine it (groceries vs eating out, rent vs
+  // utilities, wages vs other income). Transfers and loan payments are moves, not spending (FA-M14) → "Transfer".
+  var PLAID_PRIMARY = {
+    INCOME: 'Other Income', TRANSFER_IN: 'Transfer', TRANSFER_OUT: 'Transfer', LOAN_PAYMENTS: 'Transfer',
+    LOAN_DISBURSEMENTS: 'Transfer', BANK_FEES: 'Fees & charges', ENTERTAINMENT: 'Entertainment',
+    FOOD_AND_DRINK: 'Dining out', GENERAL_MERCHANDISE: 'Shopping', HOME_IMPROVEMENT: 'Shopping', MEDICAL: 'Healthcare',
+    PERSONAL_CARE: 'Personal care', GENERAL_SERVICES: 'Other', GOVERNMENT_AND_NON_PROFIT: 'Other',
+    TRANSPORTATION: 'Transport', TRAVEL: 'Travel', RENT_AND_UTILITIES: 'Utilities',
+  };
+  var PLAID_DETAILED = {
+    FOOD_AND_DRINK_GROCERIES: 'Groceries', RENT_AND_UTILITIES_RENT: 'Rent/Mortgage', INCOME_WAGES: 'Salary',
+    GENERAL_SERVICES_INSURANCE: 'Other', GENERAL_MERCHANDISE_ONLINE_MARKETPLACES: 'Shopping',
+    ENTERTAINMENT_TV_AND_MOVIES: 'Subscriptions', ENTERTAINMENT_MUSIC_AND_AUDIO: 'Subscriptions',
+    LOAN_PAYMENTS_MORTGAGE_PAYMENT: 'Rent/Mortgage',
+  };
+  // Belvo's category names (Latin America bank linking).
+  var BELVO = {
+    'food & groceries': 'Groceries', 'transport & travel': 'Transport', 'bills & utilities': 'Utilities',
+    'online platforms & leisure': 'Entertainment', 'personal shopping': 'Shopping', 'home & life': 'Shopping',
+    'income & payments': 'Other Income', 'transfers': 'Transfer', 'investments & savings': 'Transfer',
+    'deposits': 'Transfer', 'credits & loans': 'Transfer', 'taxes': 'Other', 'services': 'Other', 'unknown': 'Other',
+  };
+  var _PERS_ALL = PERSONAL_EXPENSE_CATEGORIES.concat(PERSONAL_INCOME_CATEGORIES);
+  var _PERS_LC = {}; _PERS_ALL.forEach(function (c) { _PERS_LC[c.toLowerCase()] = c; });
+  _PERS_LC.health = 'Healthcare'; _PERS_LC.uncategorized = 'Other'; _PERS_LC.uncategorised = 'Other'; _PERS_LC.income = 'Other Income';
+  function personalCategory(raw, detailed) {
+    var d = String(detailed == null ? '' : detailed).trim().toUpperCase();
+    if (d && PLAID_DETAILED[d]) return PLAID_DETAILED[d];
+    var v = String(raw == null ? '' : raw).trim();
+    if (!v) return 'Other';
+    if (_PERS_LC[v.toLowerCase()]) return _PERS_LC[v.toLowerCase()];
+    var up = v.toUpperCase();
+    if (PLAID_DETAILED[up]) return PLAID_DETAILED[up];
+    if (PLAID_PRIMARY[up]) return PLAID_PRIMARY[up];
+    if (BELVO[v.toLowerCase()]) return BELVO[v.toLowerCase()];
+    // An unknown provider code (ALL_CAPS_WITH_UNDERSCORES) reads as words, never as a code; anything else is the
+    // person's own name for it and is kept.
+    if (/^[A-Z0-9_]+$/.test(v) && v.indexOf('_') !== -1) { var w = v.toLowerCase().replace(/_+/g, ' ').trim(); return w.charAt(0).toUpperCase() + w.slice(1); }
+    return v;
+  }
+
   return { EXPENSE_CATEGORIES: EXPENSE_CATEGORIES, NOT_AN_EXPENSE: NOT_AN_EXPENSE, notAnExpense: notAnExpense,
-    BUDGET_SUGGESTIONS: BUDGET_SUGGESTIONS, INDUSTRIES: INDUSTRIES };
+    BUDGET_SUGGESTIONS: BUDGET_SUGGESTIONS, INDUSTRIES: INDUSTRIES,
+    PERSONAL_EXPENSE_CATEGORIES: PERSONAL_EXPENSE_CATEGORIES, PERSONAL_INCOME_CATEGORIES: PERSONAL_INCOME_CATEGORIES,
+    personalCategory: personalCategory };
 });

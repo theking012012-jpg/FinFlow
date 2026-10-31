@@ -8974,7 +8974,12 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
             // Plaid: positive amount = money OUT of the account (debit); negative = money IN (credit).
             ..._bankTx(personal, Number(t.amount) >= 0),
             tx_date: t.date || new Date().toISOString().slice(0, 10),
-            category: (t.personal_finance_category && t.personal_finance_category.primary) || 'Other',
+            // E2E-4: a Personal line takes the app's category (FinFlowCategories.personalCategory); the bank's own code is
+            // kept beside it. A business line keeps the code as before (business categories are chosen when it is booked).
+            category: personal
+              ? FinFlowCategories.personalCategory(t.personal_finance_category && t.personal_finance_category.primary, t.personal_finance_category && t.personal_finance_category.detailed)
+              : ((t.personal_finance_category && t.personal_finance_category.primary) || 'Other'),
+            provider_category: (t.personal_finance_category && t.personal_finance_category.detailed) || (t.personal_finance_category && t.personal_finance_category.primary) || null,
             source: 'banking', plaid_txn_id: t.transaction_id, plaid_account_id: t.account_id || null,   // V2: per-account books later
             currency: _plCur(t), pending: !!t.pending,
           });
@@ -10233,7 +10238,8 @@ function belvoTxnToRow(t, uid, entityId, personal = false, fallbackCurrency = nu
     amount: Math.abs(Number(t && t.amount) || 0),
     ..._bankTx(personal, typ === 'OUTFLOW'),   // M60: Personal rows speak income / expense
     tx_date: String(_d).slice(0, 10),
-    category: (t && t.category) || 'Other',
+    category: personal ? FinFlowCategories.personalCategory(t && t.category) : ((t && t.category) || 'Other'),   // E2E-4
+    provider_category: (t && t.category) || null,
     source: 'banking', belvo_txn_id: t && t.id,
     // M62: a line in Personal carries a currency — the bank's own, else the person's bank currency.
     ...(entityId == null && ((t && t.currency) || fallbackCurrency) ? { currency: String((t && t.currency) || fallbackCurrency).toUpperCase() } : {}),

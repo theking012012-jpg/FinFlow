@@ -3590,7 +3590,7 @@ function renderPersonal(){
     } else {
       document.getElementById('spending-bars').innerHTML = spending.map(s=>`
         <div class="bar-row">
-          <span class="bar-label">${s.label}</span>
+          <span class="bar-label">${esc(s.label)}</span>
           <div class="bar-track"><div class="bar-fill" data-style="width:${Math.round(s.amount/maxSpend*100)}%;background:${s.color}"></div></div>
           <span class="bar-val">${SP(s.amount)}</span>
         </div>`).join('');
@@ -3681,6 +3681,10 @@ const PERS_CATS=[
   {key:'Healthcare',   type:'expense',color:'var(--red)',   bg:'var(--red-bg)',   icon:'heart'},
   {key:'Shopping',     type:'expense',color:'var(--amber)', bg:'var(--amber-bg)', icon:'bag'},
   {key:'Subscriptions',type:'expense',color:'var(--acc2)',  bg:'var(--acc-bg)',   icon:'repeat'},
+  {key:'Travel',       type:'expense',color:'var(--teal)',  bg:'var(--teal-bg)',  icon:'car'},     // E2E-4: names a bank line can carry
+  {key:'Utilities',    type:'expense',color:'var(--acc)',   bg:'var(--acc-bg)',   icon:'home'},
+  {key:'Personal care',type:'expense',color:'var(--purple)',bg:'var(--purple-bg)',icon:'heart'},
+  {key:'Fees & charges',type:'expense',color:'var(--red)',  bg:'var(--red-bg)',   icon:'coins'},
   {key:'Other',        type:'expense',color:'var(--t2)',    bg:'var(--bg3)',      icon:'dots'},
   {key:'Transfer',     type:'expense',color:'var(--t3)',    bg:'var(--bg3)',      icon:'repeat'},   // FA-M14: not spending
   {key:'Salary',       type:'income', color:'var(--green)', bg:'var(--green-bg)', icon:'cash'},
@@ -4151,8 +4155,10 @@ function setPersTxFilter(filter){
 
 function _applyPersFilter(){
   const{from,to}=_persPeriodRange();
-  const CAT_GROUP={'Rent/Mortgage':'Housing','Groceries':'Food','Dining out':'Food','Transport':'Transport','Entertainment':'Entertainment','Healthcare':'Healthcare','Shopping':'Shopping','Subscriptions':'Subscriptions','Other':'Other','Income':'Other'};
-  const CAT_COLOR={Housing:'var(--acc)',Food:'var(--green)',Transport:'var(--teal)',Entertainment:'var(--purple)',Healthcare:'var(--red)',Shopping:'var(--amber)',Subscriptions:'var(--acc2)',Other:'var(--t3)'};
+  // E2E-4 (full test 2026-10-30): the breakdown shows the person's OWN categories. It folded them into hidden groups
+  // (Groceries and Dining out → "Food", Rent/Mortgage → "Housing"), so a category the person picked never appeared under
+  // its name — and every bank line, whose raw code no group knew, went to "Other". t.cat is already the app's name.
+  const _catColor=c=>(typeof persCatMeta==='function'&&PERS_CATS.some(p=>p.key===c))?persCatMeta(c).color:'var(--t3)';
   // Months the window spans (Month=1, Quarter=3, Year=12) — kept for callers that label the period; no figure is
   // scaled by it any more (M12).
   const monthsInWindow={month:1,quarter:3,year:12}[window._persPeriod]||1;
@@ -4176,8 +4182,8 @@ function _applyPersFilter(){
   const profById=new Map((window._persRecurring||[]).map(p=>[p.id,p]));
   const isRecur=t=>t.recurringProfileId!=null && profById.has(t.recurringProfileId);
   const catTotals={};
-  persTransactions.filter(t=>t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+_fxu(t.amount,_txCurOf(t));});
-  spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
+  persTransactions.filter(t=>t.type==='expense').forEach(t=>{const c=t.cat||'Other';catTotals[c]=(catTotals[c]||0)+_fxu(t.amount,_txCurOf(t));});
+  spending=Object.entries(catTotals).sort((a,b)=>b[1]-a[1]).map(([label,amount])=>({label,amount,color:_catColor(label),budget:0}));
   const recurIncome=persTransactions.filter(t=>isRecur(t)&&t.type==='income').reduce((a,t)=>a+_fxu(t.amount,_txCurOf(t)),0);
   const oneTimeIncome=persTransactions.filter(t=>!isRecur(t)&&t.type==='income').reduce((a,t)=>a+_fxu(t.amount,_txCurOf(t)),0);
   window._persPeriodRecurIncome=recurIncome;
@@ -4203,7 +4209,8 @@ async function loadPersonalFinance(){
       console.warn('[PersFinance] /api/personal-transactions returned',r.status,'— continuing without transactions');
     } else {
       const txs=await r.json();
-      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,currency:t.currency||'USD',type:window.FinFlowDates.personalTxKind(t),flow:window.FinFlowDates.personalTxType(t),date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
+      const _pc=(window.FinFlowCategories&&window.FinFlowCategories.personalCategory)||(c=>c||'Other');   // E2E-4: one reader for every stored category
+      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:_pc(t.category),amount:parseFloat(t.amount)||0,currency:t.currency||'USD',type:window.FinFlowDates.personalTxKind(t),flow:window.FinFlowDates.personalTxType(t),date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
     }
     // Active recurring profiles feed the period-KPI projection (base × months).
     try{
@@ -4451,7 +4458,7 @@ function renderPersonalSections(){
   }
 
   // Expense categories breakdown (raw categories, not grouped buckets)
-  const CAT_COLORS_RAW={'Rent/Mortgage':'var(--acc)','Groceries':'var(--green)','Dining out':'var(--teal)','Transport':'var(--teal)','Subscriptions':'var(--acc2)','Healthcare':'var(--red)','Entertainment':'var(--purple)','Shopping':'var(--amber)','Other':'var(--t3)'};
+  const _rawColor=c=>PERS_CATS.some(p=>p.key===c)?persCatMeta(c).color:'var(--t3)';   // E2E-4: the category's own colour
   const catEl=document.getElementById('expense-cat-list');
   if(catEl){
     const rawCats={};
@@ -4463,8 +4470,8 @@ function renderPersonalSections(){
       const catMax=Math.max(...catEntries.map(e=>e[1]),1);
       catEl.innerHTML=catEntries.map(([label,amount])=>`
         <div class="bar-row">
-          <span class="bar-label">${label}</span>
-          <div class="bar-track"><div class="bar-fill" data-style="width:${Math.round(amount/catMax*100)}%;background:${CAT_COLORS_RAW[label]||'var(--t3)'}"></div></div>
+          <span class="bar-label">${esc(label)}</span>
+          <div class="bar-track"><div class="bar-fill" data-style="width:${Math.round(amount/catMax*100)}%;background:${_rawColor(label)}"></div></div>
           <span class="bar-val">${SP(amount)}</span>
         </div>`).join('')
         +'<div data-style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span data-style="color:var(--t2)">Total</span><span data-style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalExp)+'</span></div>';

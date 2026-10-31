@@ -1023,7 +1023,7 @@ If you cannot find a field, use null. Be concise.`;
         expense:      _exp == null ? null : _exp.toFixed(2),
         currency:     _single ? ([..._curs][0] || null) : null,
         incomeByCurrency: _incByCur, expenseByCurrency: _expByCur, window: { from: _ytdFrom, to: _ytdTo },
-        transactions: ptx.rows.map(r => ({ ...r.data, id: r.id, tx_type: require('./public/finflow-dates.js').personalTxType(r.data), kind: require('./public/finflow-dates.js').personalTxKind(r.data) })),   // M60 · FA-M14
+        transactions: ptx.rows.map(r => ({ ...r.data, id: r.id, category: require('./public/finflow-categories.js').personalCategory(r.data && r.data.category), tx_type: require('./public/finflow-dates.js').personalTxType(r.data), kind: require('./public/finflow-dates.js').personalTxKind(r.data) })),   // M60 · FA-M14
         accounts:     pacc.rows.map(r => ({ ...r.data, id: r.id })),
       };
     }

@@ -280,6 +280,30 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // NEW-3 (live retest 2026-10-30): a bank-feed line is unique by its SOURCE id within its scope — the statement line
+    // (import_key), the Plaid transaction (plaid_txn_id), the Belvo transaction (belvo_txn_id) — per account + scope
+    // (a business, or Personal = entity NULL → 0). The writers checked "already there?" and then inserted, so two imports
+    // of one file at the same moment both inserted every line (executed live: 4 lines → 8). The index makes the second
+    // insert fail; the writers count it as "already there". GUARDED like idx_invoices_number: where duplicates already
+    // exist the index is NOT built and a warning names the lister — never a failed deploy, never a silent delete (Rule 8).
+    // Mirrored by scripts/migrations/2026-10-30-bank-line-source-keys.sql.
+    for (const [ix, key] of [['idx_bank_line_import_key', 'import_key'], ['idx_bank_line_plaid_txn', 'plaid_txn_id'], ['idx_bank_line_belvo_txn', 'belvo_txn_id']]) {
+      await client.query(`
+        DO $bl$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = '${ix}') THEN
+            IF EXISTS (SELECT 1 FROM personal_transactions WHERE data->>'${key}' IS NOT NULL
+                        GROUP BY user_id, COALESCE(entity_id, 0), data->>'${key}' HAVING count(*) > 1) THEN
+              RAISE WARNING '${ix} NOT created: duplicate bank lines exist — run tools/launch/list-duplicate-bank-lines.js';
+            ELSE
+              CREATE UNIQUE INDEX ${ix} ON personal_transactions (user_id, COALESCE(entity_id, 0), (data->>'${key}')) WHERE data->>'${key}' IS NOT NULL;
+            END IF;
+          END IF;
+        END
+        $bl$;
+      `);
+    }
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

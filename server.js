@@ -7927,12 +7927,15 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
     const { rows: [dup] } = await pool.query(
       `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'import_key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, key, eid]);
     if (dup) { skipped++; continue; }
-    const { row: _impRow } = await db.insert('personal_transactions', {
-      user_id: uid, entity_id: eid,
-      description: t.description, amount: t.amount, ..._bankTx(personal, t.tx_type === 'debit'), tx_date: t.tx_date,
-      category: 'Uncategorized', source: 'banking', import_key: key,
-      ...(_pCur ? { currency: _pCur } : {}),
-    });
+    let _impRow;
+    try {
+      ({ row: _impRow } = await db.insert('personal_transactions', {
+        user_id: uid, entity_id: eid,
+        description: t.description, amount: t.amount, ..._bankTx(personal, t.tx_type === 'debit'), tx_date: t.tx_date,
+        category: 'Uncategorized', source: 'banking', import_key: key,
+        ...(_pCur ? { currency: _pCur } : {}),
+      }));
+    } catch (e) { if (e && e.code === '23505') { skipped++; continue; } throw e; }   // NEW-3: a concurrent import wrote it first
     if (eid != null) await _auditRec(req, 'bank_lines', 'CREATE', null, _impRow);   // FIX-3b — business lines only
     imported++;
   }
@@ -8986,7 +8989,7 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
         for (const t of (sync.added || [])) {
           // Idempotency on Plaid's transaction_id (stable), not a time window.
           if (await _txRow(t.transaction_id)) continue;
-          await db.insert('personal_transactions', {
+          try { await db.insert('personal_transactions', {
             user_id: uid, entity_id: eid,
             description: t.name || t.merchant_name || 'Bank transaction',
             amount: Math.abs(Number(t.amount) || 0),
@@ -9000,7 +9003,7 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
             provider_category: (t.personal_finance_category && t.personal_finance_category.detailed) || (t.personal_finance_category && t.personal_finance_category.primary) || null,
             source: 'banking', plaid_txn_id: t.transaction_id, plaid_account_id: t.account_id || null,   // V2: per-account books later
             currency: _plCur(t), pending: !!t.pending,
-          });
+          }); } catch (e) { if (e && e.code === '23505') continue; throw e; }   // NEW-3: a concurrent sync wrote it first
           added++;
         }
         cursor = sync.next_cursor; hasMore = !!sync.has_more;
@@ -10352,7 +10355,8 @@ app.post('/api/belvo/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
           if (!t || !t.id) continue;
           const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'belvo_txn_id'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, String(t.id), eid]);   // M60: this scope only
           if (dup) continue;
-          await db.insert('personal_transactions', belvoTxnToRow(t, uid, eid, personal, _pCur));
+          try { await db.insert('personal_transactions', belvoTxnToRow(t, uid, eid, personal, _pCur)); }
+          catch (e) { if (e && e.code === '23505') continue; throw e; }   // NEW-3: a concurrent sync wrote it first
           added++;
         }
         hasMore = !Array.isArray(j) && !!j.next;

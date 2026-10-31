@@ -859,7 +859,12 @@ window._ffExportPdf = function(rows, filename, title, more){
       var ttl = title || String(filename || 'Report').replace(/\.(csv|pdf)$/, '');
       doc.setFontSize(16); doc.text(String(ttl), 40, 40);
       doc.setFontSize(9); doc.setTextColor(120);
-      doc.text('FinFlow · ' + new Date().toLocaleDateString(), 40, 56);
+      // NEW-4 (live retest 2026-10-30): the header named only "FinFlow" and the VIEWER's clock / locale date, so an exported
+      // statement did not say whose books it was. Now: the business, FinFlow, and the business's today (server clock).
+      var _ent = (window.ENTITIES || []).find(function(e){ return e.active; });
+      var _bt = (typeof window._businessToday === 'function' && window._businessToday()) || '';
+      var _btLbl = _bt && window.FinFlowDates ? window.FinFlowDates.fmtLabel(_bt, { year: true }) : _bt;
+      doc.text([_ent && _ent.name, 'FinFlow', _btLbl].filter(Boolean).join(' · '), 40, 56);
       var _tblOpts = { styles: { fontSize: 9, cellPadding: 5 }, headStyles: { fillColor: [201,168,76], textColor: 20 }, alternateRowStyles: { fillColor: [245,242,235] }, margin: { left: 40, right: 40 } };
       doc.autoTable(Object.assign({ head: head, body: body, startY: 72 }, _tblOpts));
       (more || []).forEach(function(sec){

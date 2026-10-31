@@ -5876,7 +5876,7 @@ async function loadBankingFromDB(){
         type: (r.tx_type || r.type)==='credit'?'credit':'debit',
         _iso,   // raw YYYY-MM-DD for month filtering (display `date` below is localized)
         date: _iso ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(_iso) : _iso) : 'Today',   // F195: TZ-safe calendar date
-        cat: r.category||'Other',
+        cat: (window.FinFlowCategories&&window.FinFlowCategories.businessCategory) ? window.FinFlowCategories.businessCategory(r.category) : (r.category||'Other'),   // E2E-4b: never a provider code on screen
       };
     });
     // V2 (D7): the linked banks' accounts with the bank's own balance, and the books' cash to compare with. Either read

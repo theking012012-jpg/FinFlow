@@ -15,6 +15,9 @@
  *          person's own categories. Seed (stored as a bank feed stores them): Groceries 320 · FOOD_AND_DRINK 50 ·
  *          FOOD_AND_DRINK 25 · TRANSFER_OUT 500. Correct breakdown: Groceries 320, Dining out 75 (transfer not spending).
  *          Bug: "Food" 320 + "Other" 75 (the codes fold into Other) — the categories never shown by name.
+ *   E2E-4b A BUSINESS bank line's provider code reads — and books, via Bank Rec "Book as expense" — as the business
+ *          list's name (FOOD_AND_DRINK 42 → Meals); a transfer line is refused as an expense (FA-B8). Bug: booked as
+ *          "FOOD_AND_DRINK", and the 500 transfer booked as spending (expenses +542 instead of +42).
  *   E2E-5  The dashboard Investments card has one format whichever writer paints it (it flipped "$2,610" → "$2.6K").
  *   E2E-6  The sign-in screen makes no data request: zero 401s / red console lines signed out (bug: one per boot
  *          loader), and signing in through the form still loads the business.
@@ -155,6 +158,26 @@ runBrowser('E2E 2026-10-30 fixes — draft invoices · lock refusal · payroll c
       ['Groceries', 'Rent/Mortgage', 'Salary']);
     eq('E2E-4 personalCategory keeps the person\'s own names', ['Groceries', 'Healthcare', 'My hobby', 'Uncategorized', ''].map(x => FC.personalCategory(x)), ['Groceries', 'Healthcare', 'My hobby', 'Other', 'Other']);
     eq('E2E-4 a mapped transfer is still a transfer (not spending)', require('../../public/finflow-dates.js').personalTxKind({ category: FC.personalCategory('TRANSFER_OUT'), tx_type: 'expense' }), 'transfer');
+  }
+
+  // ── E2E-4b business bank lines: provider code → the business list; a transfer is not an expense ─────────────
+  {
+    const eid = (await c.query(`SELECT id FROM entities WHERE user_id=$1 ORDER BY id LIMIT 1`, [uid])).rows[0].id;
+    const bl = async (category, amount, d) => (await c.query(`INSERT INTO personal_transactions (user_id, entity_id, data, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id`,
+      [uid, eid, { description: 'biz ' + category, category, amount, tx_type: 'debit', tx_date: d, source: 'banking' }])).rows[0].id;
+    const meal = await bl('FOOD_AND_DRINK', 42, '2026-10-08'), xfer = await bl('TRANSFER_OUT', 500, '2026-10-09');
+    eq('E2E-4b businessCategory(Plaid / Belvo / own)', [['FOOD_AND_DRINK'], ['BANK_FEES'], ['RENT_AND_UTILITIES', 'RENT_AND_UTILITIES_RENT'], ['GENERAL_SERVICES', 'GENERAL_SERVICES_INSURANCE'], ['TRANSFER_OUT'], ['Transport & Travel'], ['Software'], ['Uncategorized'], ['WEIRD_CODE']].map(a => FC.businessCategory(a[0], a[1])),
+      ['Meals', 'Bank Fees', 'Rent', 'Insurance', 'Transfer', 'Travel', 'Software', 'Uncategorized', 'Other']);
+    const expBefore = Number((await year()).expenses);
+    const r1 = await http.request('POST', '/api/bank-reconciliation/book-expense', { banking_id: meal });
+    eq('E2E-4b Book as expense: a FOOD_AND_DRINK line books as Meals', r1.json && r1.json.expense && r1.json.expense.category, 'Meals', 'FOOD_AND_DRINK');
+    const r2 = await http.request('POST', '/api/bank-reconciliation/book-expense', { banking_id: xfer });
+    eq('E2E-4b Book as expense: a transfer line is refused (not an expense)', [r2.status, r2.json && r2.json.code], [400, 'NOT_AN_EXPENSE'], [200, undefined]);
+    eq('E2E-4b expenses (year) rose by the meal only', Math.round((Number((await year()).expenses) - expBefore) * 100) / 100, 42, 542);
+    await page.evaluate(async () => { showPage('banking'); if (typeof loadBankingFromDB === 'function') await loadBankingFromDB(); });
+    await wait(600);
+    const bcats = await page.evaluate(() => (typeof bankTxns !== 'undefined' ? bankTxns : []).map(t => t.cat).sort());
+    A('E2E-4b Banking list: no provider code on screen', bcats.length >= 2 && !bcats.some(x => /^[A-Z0-9_]+_[A-Z0-9_]+$/.test(x)), JSON.stringify(bcats));
   }
 
   // ── E2E-5 investments card: one format ──────────────────────────────────────────────────────────────────────

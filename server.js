@@ -8995,9 +8995,8 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
             tx_date: t.date || new Date().toISOString().slice(0, 10),
             // E2E-4: a Personal line takes the app's category (FinFlowCategories.personalCategory); the bank's own code is
             // kept beside it. A business line keeps the code as before (business categories are chosen when it is booked).
-            category: personal
-              ? FinFlowCategories.personalCategory(t.personal_finance_category && t.personal_finance_category.primary, t.personal_finance_category && t.personal_finance_category.detailed)
-              : ((t.personal_finance_category && t.personal_finance_category.primary) || 'Other'),
+            category: (personal ? FinFlowCategories.personalCategory : FinFlowCategories.businessCategory)(   // E2E-4 / E2E-4b
+              t.personal_finance_category && t.personal_finance_category.primary, t.personal_finance_category && t.personal_finance_category.detailed),
             provider_category: (t.personal_finance_category && t.personal_finance_category.detailed) || (t.personal_finance_category && t.personal_finance_category.primary) || null,
             source: 'banking', plaid_txn_id: t.transaction_id, plaid_account_id: t.account_id || null,   // V2: per-account books later
             currency: _plCur(t), pending: !!t.pending,
@@ -10257,7 +10256,7 @@ function belvoTxnToRow(t, uid, entityId, personal = false, fallbackCurrency = nu
     amount: Math.abs(Number(t && t.amount) || 0),
     ..._bankTx(personal, typ === 'OUTFLOW'),   // M60: Personal rows speak income / expense
     tx_date: String(_d).slice(0, 10),
-    category: personal ? FinFlowCategories.personalCategory(t && t.category) : ((t && t.category) || 'Other'),   // E2E-4
+    category: (personal ? FinFlowCategories.personalCategory : FinFlowCategories.businessCategory)(t && t.category),   // E2E-4 / E2E-4b
     provider_category: (t && t.category) || null,
     source: 'banking', belvo_txn_id: t && t.id,
     // M62: a line in Personal carries a currency — the bank's own, else the person's bank currency.
@@ -11531,11 +11530,16 @@ app.post('/api/bank-reconciliation/book-expense', requireAuth, wrap(async (req, 
   if (g.done) return res.json({ ok: true, duplicate: true, reconcile_state: g.done.reconcile_state });
   const row = g.row;
   const _bxDate = row.tx_date || row.date || await entityTodayYmd(row.entity_id);
+  // E2E-4b: the expense takes a BUSINESS category — a provider code stored on an older line (FOOD_AND_DRINK …) is read
+  // through the one mapper; a move between accounts is not an expense (FA-B8: refused at every expense writer).
+  const _bxCat = FinFlowCategories.businessCategory((req.body && req.body.category) || row.category || 'Other');
+  { const _ne = FinFlowCategories.notAnExpense(_bxCat);
+    if (_ne) return res.status(400).json({ error: _ne + '. Mark this line Ignore in Bank Rec, or match it to a bill.', code: 'NOT_AN_EXPENSE' }); }
   if (await refuseIfLocked(res, scopeId(req), row.entity_id, _bxDate)) return;
   const { row: expense } = await db.insert('expenses', {
     user_id: scopeId(req), entity_id: row.entity_id,
     description: String(row.description || 'Bank transaction').slice(0, 300),
-    category: String((req.body && req.body.category) || row.category || 'Other').slice(0, 60),
+    category: String(_bxCat).slice(0, 60),
     amount: parseFloat(row.amount) || 0, deductible: 'no',
     expense_date: _bxDate,
     idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),

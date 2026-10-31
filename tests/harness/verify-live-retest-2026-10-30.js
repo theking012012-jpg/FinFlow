@@ -3,8 +3,8 @@
  * verify-live-retest-2026-10-30 — the defects the full live re-test of 2026-10-30 found (NEW-1 … NEW-5), executed in a
  * real browser on the real /app against the real server and a scratch Postgres (Rule 3).
  *
- * RUN WITH THE EVENING CLOCK (the live failure needs it):
- *   SWEEP_PIN_ISO=2026-10-31T01:30:00.000Z node -r ./tests/harness/clock-oct.js tests/harness/verify-live-retest-2026-10-30.js
+ * It pins its own EVENING clock (the live failure needs it), so it runs the same standalone and in the sweep:
+ *   node -r ./tests/harness/clock.js tests/harness/verify-live-retest-2026-10-30.js
  * The server's clock is then 01:30 UTC on 31 Oct = 21:30 on 30 Oct in New York (a US business). Rule 10 seed corollary:
  * a noon pin cannot tell the UTC day from the business's day; this one can.
  *
@@ -18,6 +18,13 @@
  *   NEW-5  Connections: a provider not set up on this server says "Not set up yet" (bug: "Available"); the header
  *          counts connected / ready / not set up (bug: "17 live connections" with none connected).
  */
+// Own clock (both under the sweep's clock.js July pin and standalone): this harness is dated the evening of 30 Oct 2026 in New York, so it pins the
+// process clock to 2026-10-31T01:30:00.000Z before the server boots — the server, sessions and every date default read this instant.
+// The real Date is recovered from under clock.js's PinnedDate (it extends the real one). SWEEP-safe.
+{ const _Real = Object.getPrototypeOf(Date) !== Function.prototype ? Object.getPrototypeOf(Date) : Date;
+  const _PIN = _Real.parse(process.env.SWEEP_PIN_ISO || '2026-10-31T01:30:00.000Z');
+  class _Pinned extends _Real { constructor(...a) { if (!a.length) { super(_PIN); return; } super(...a); } static now() { return _PIN; } }
+  global.Date = _Pinned; }
 const { runBrowser } = require('./browserKit.js');
 
 runBrowser('Live re-test 2026-10-30 — NEW-1 … NEW-5', async ({ open, A, eq, J, http, base }) => {

@@ -1469,10 +1469,8 @@ If you cannot find a field, use null. Be concise.`;
     );
     const months = tierForAccountant(parseInt(countRes.rows[0].count) || 0).referralMonths;
     const originSql = requireOrigin === 'client' ? `requested_by = 'client'` : `requested_by IS DISTINCT FROM 'client'`;
-    // NEW-12: one active accountant per client. Refuse with the name of the accountant who has access (the unique index
-    // idx_acc_clients_one_active is the guarantee; this check is only for the readable answer).
-    const other = await _otherActiveAccountant(conn, userId, accountantId);
-    if (other) return { conflict: other };
+    // Owner decision 2026-11-01: a client may work with SEVERAL accountants (a bookkeeper and a tax accountant, say) —
+    // each listed in My Accountant with its own access and its own revoke, so none is ever hidden (the NEW-12 defect).
     await conn.query('BEGIN');
     try {
       const upd = await conn.query(`
@@ -1484,26 +1482,10 @@ If you cannot find a field, use null. Be concise.`;
       if (!upd.rows[0]) { await conn.query('ROLLBACK'); return null; }
       await _bookReferralMonth(conn, accountantId, userId);   // N79: same rules as the monthly run
       await conn.query('COMMIT');
-    } catch (e) {
-      try { await conn.query('ROLLBACK'); } catch (_) {}
-      if (e && e.code === '23505' && /idx_acc_clients_one_active/.test(String(e.constraint || e.message))) {   // NEW-12: a concurrent activation won
-        return { conflict: (await _otherActiveAccountant(pool, userId, accountantId)) || 'another accountant' };
-      }
-      throw e;
-    }
+    } catch (e) { try { await conn.query('ROLLBACK'); } catch (_) {} throw e; }
     await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', newData: { by: requireOrigin === 'client' ? 'accountant' : 'client' }, req });
     return { months };
   }
-  // NEW-12: the name of the accountant (other than `exceptId`) who already has ACTIVE access to this client, or null.
-  async function _otherActiveAccountant(conn, userId, exceptId) {
-    const { rows: [r] } = await conn.query(
-      `SELECT trim(a.first_name || ' ' || a.last_name) AS name FROM accountant_clients ac JOIN accountants a ON a.id = ac.accountant_id
-        WHERE ac.user_id = $1 AND ac.status = 'active' AND ac.accountant_id <> $2 LIMIT 1`, [userId, exceptId || 0]);
-    return r ? (r.name || 'another accountant') : null;
-  }
-  const _oneAccountantMsg = (name, who) => who === 'client'
-    ? `${name} already has access to your books. FinFlow links one accountant at a time — revoke ${name}'s access in My Accountant first.`
-    : `This client already works with another accountant on FinFlow. They need to end that link before you can be approved.`;
   // Why an accountant-side approve failed: not found vs waiting on the client's consent.
   async function _approveRefusal(accountantId, userId, res) {
     const { rows: [r] } = await pool.query(`SELECT status, requested_by FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2`, [userId, accountantId]);
@@ -2106,13 +2088,14 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       FROM accountant_clients ac
       JOIN accountants a ON a.id = ac.accountant_id
       WHERE ac.user_id = $1 AND ac.status IN ('active', 'pending')
-      ORDER BY (ac.status = 'active') DESC, ac.invited_at DESC   -- NEW-12: the accountant who HAS access, before any newer pending link
-      LIMIT 1
+      ORDER BY (ac.status = 'active') DESC, ac.invited_at DESC
     `, [req.session.userId]);
     // No accountant linked yet — return an empty object (200) rather than 404
     // so the client renders an empty state instead of treating it as an error.
-    if (!result.rows[0]) return res.json({});
-    return res.json(result.rows[0]);
+    if (!result.rows[0]) return res.json({ accountants: [] });
+    // EVERY link (owner decision 2026-11-01: several accountants, none hidden); the first is kept at the top level for
+    // callers that read one.
+    return res.json(Object.assign({}, result.rows[0], { accountants: result.rows }));
   }));
 
   // ── CLIENT: APPROVE / DECLINE A REFERRAL LINK (N78) ──────────────────────
@@ -2125,7 +2108,6 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const conn = await pool.connect();
     try {
       const done = await _activateLink(conn, accountantId, req.session.userId, req, { requireOrigin: 'referral' });
-      if (done && done.conflict) return res.status(409).json({ error: _oneAccountantMsg(done.conflict, 'client'), code: 'ONE_ACCOUNTANT' });   // NEW-12
       if (!done) return res.status(404).json({ error: 'No pending referral link with this accountant.' });
       return res.json({ success: true });
     } finally { conn.release(); }
@@ -2231,8 +2213,6 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       if (until > max) return res.status(400).json({ error: 'Access can be set to end at most two years from today.' });
       expiresAt = _endOfDayIn(until, tz);
     }
-    const other = await _otherActiveAccountant(pool, uid, inv.accountant_id);
-    if (other) return res.status(409).json({ error: _oneAccountantMsg(other, 'client'), code: 'ONE_ACCOUNTANT' });
     const { rows: [cur] } = await pool.query(`SELECT status FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`, [inv.accountant_id, uid]);
     if (cur && cur.status === 'active') return res.status(409).json({ error: `${inv.accountant_name} already has access to your books.` });
     const entityAccess = JSON.stringify({ entities: ents, personal: 'none' });
@@ -2247,7 +2227,6 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const conn = await pool.connect();
     let done;
     try { done = await _activateLink(conn, inv.accountant_id, uid, req, { requireOrigin: 'referral' }); } finally { conn.release(); }
-    if (done && done.conflict) return res.status(409).json({ error: _oneAccountantMsg(done.conflict, 'client'), code: 'ONE_ACCOUNTANT' });
     if (!done) return res.status(409).json({ error: 'The invitation could not be accepted. Refresh and try again.' });
     await pool.query(`UPDATE accountant_invites SET status = 'accepted', responded_at = NOW(), user_id = $2 WHERE id = $1`, [inviteId, uid]);
     // Other pending invitations to this person from the same accountant are settled by this one.
@@ -2283,13 +2262,13 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // audit trail — the same record the Audit page reads.
   app.get('/api/accountants/my-accountant/activity', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
-    const { rows: [link] } = await pool.query(`SELECT accountant_id FROM accountant_clients WHERE user_id = $1 AND status = 'active' LIMIT 1`, [req.session.userId]);
-    if (!link) return res.json([]);
+    const { rows: links } = await pool.query(`SELECT accountant_id FROM accountant_clients WHERE user_id = $1 AND status = 'active' AND ($2::int IS NULL OR accountant_id = $2)`, [req.session.userId, _reqAccId(req)]);
+    if (!links.length) return res.json([]);
     const { rows } = await pool.query(
-      `SELECT a.id, a.table_name, a.action, a.entity_id, a.changed_at, e.data->>'name' AS business
+      `SELECT a.id, a.table_name, a.action, a.entity_id, a.changed_at, a.actor_id AS accountant_id, e.data->>'name' AS business
          FROM audit_trail a LEFT JOIN entities e ON e.id = a.entity_id
-        WHERE a.user_id = $1 AND a.actor_type = 'accountant' AND a.actor_id = $2
-        ORDER BY a.changed_at DESC LIMIT 50`, [req.session.userId, link.accountant_id]);
+        WHERE a.user_id = $1 AND a.actor_type = 'accountant' AND a.actor_id = ANY($2::int[])
+        ORDER BY a.changed_at DESC LIMIT 50`, [req.session.userId, links.map(l => l.accountant_id)]);
     res.json(rows);
   }));
 
@@ -2326,11 +2305,17 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       }
       accountWide = access_level;   // legacy grant → entity_access stays NULL (cleared below)
     }
+    // Several accountants: the change is for ONE of them. With more than one active, the client must say which.
+    const _accId = _reqAccId(req);
+    if (_accId == null) {
+      const { rows: [n] } = await pool.query(`SELECT count(*)::int AS n FROM accountant_clients WHERE user_id = $1 AND status = 'active'`, [req.session.userId]);
+      if (n.n > 1) return res.status(400).json({ error: 'You work with more than one accountant — say which one this access is for.', code: 'WHICH_ACCOUNTANT' });
+    }
     const { rows: [row] } = await pool.query(
       `UPDATE accountant_clients SET access_level = $1, entity_access = $2::jsonb
-        WHERE user_id = $3 AND status = 'active'
+        WHERE user_id = $3 AND status = 'active' AND ($4::int IS NULL OR accountant_id = $4)
         RETURNING accountant_id, access_level, entity_access`,
-      [accountWide, entityAccessJson, req.session.userId]
+      [accountWide, entityAccessJson, req.session.userId, _accId]
     );
     if (!row) return res.status(404).json({ error: 'No active accountant to update.' });
     // F90: audit the owner-initiated access change on their own account.
@@ -2344,18 +2329,21 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // (owner-scoped by req.session.userId) — a client can only ever read/write the conversation
   // with the accountant they are actually linked to. sender is hard-set 'client' server-side;
   // the browser cannot forge it. Mirrors the accountant routes above for real-time + receipts.
-  const _clientLink = async (userId) => {
+  // Several accountants (owner decision 2026-11-01): a client route names the accountant (accountantId in the query or
+  // body); without one it is the most recent active link (a client with one accountant needs nothing new).
+  const _reqAccId = req => { const v = parseInt((req.query && req.query.accountantId) || (req.body && req.body.accountantId), 10); return Number.isInteger(v) && v > 0 ? v : null; };
+  const _clientLink = async (userId, accountantId = null) => {
     const { rows } = await pool.query(
       `SELECT accountant_id, accountant_last_read FROM accountant_clients
-        WHERE user_id = $1 AND status = 'active' ORDER BY invited_at DESC LIMIT 1`,
-      [userId]
+        WHERE user_id = $1 AND status = 'active' AND ($2::int IS NULL OR accountant_id = $2) ORDER BY invited_at DESC LIMIT 1`,
+      [userId, accountantId]
     ).catch(() => ({ rows: [] }));
     return rows[0] || null;
   };
 
   app.get('/api/accountants/my-accountant/messages', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
-    const link = await _clientLink(req.session.userId);
+    const link = await _clientLink(req.session.userId, _reqAccId(req));
     if (!link) return res.json({ messages: [], otherLastRead: null, accountantId: null });
     const accId = link.accountant_id;
     const { rows } = await pool.query(
@@ -2382,7 +2370,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const content = String(req.body.content || req.body.message || '').trim().slice(0, 2000);
     if (!content) return res.status(400).json({ error: 'Message required.' });
-    const link = await _clientLink(req.session.userId);
+    const link = await _clientLink(req.session.userId, _reqAccId(req));
     if (!link) return res.status(404).json({ error: 'No linked accountant.' });
     const accId = link.accountant_id;
     const row = await pool.query(
@@ -2399,7 +2387,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 
   app.post('/api/accountants/my-accountant/typing', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).end();
-    const link = await _clientLink(req.session.userId);
+    const link = await _clientLink(req.session.userId, _reqAccId(req));
     if (!link) return res.status(404).end();
     _chatBroadcast(_convKey(link.accountant_id, req.session.userId), 'typing', { by: 'client' }, { exceptSide: 'client' });
     res.json({ ok: true });
@@ -2407,7 +2395,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 
   app.get('/api/accountants/my-accountant/stream', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).end();
-    const link = await _clientLink(req.session.userId);
+    const link = await _clientLink(req.session.userId, _reqAccId(req));
     if (!link) return res.status(404).end();
     _openSse(res);
     const key = _convKey(link.accountant_id, req.session.userId);
@@ -2422,7 +2410,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // the text-message endpoints; one authorized download path serves either party of the conversation.
   app.post('/api/accountants/my-accountant/attach', apiLimiter, wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
-    const link = await _clientLink(req.session.userId);
+    const link = await _clientLink(req.session.userId, _reqAccId(req));
     if (!link) return res.status(404).json({ error: 'No linked accountant.' });
     const accId = link.accountant_id;
     const a = _decodeAttachment(req.body);
@@ -2523,7 +2511,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // Client side
   app.get('/api/accountants/my-accountant/proposals', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
-    const link = await _clientLink(req.session.userId);
+    const link = await _clientLink(req.session.userId, _reqAccId(req));
     if (!link) return res.json({ proposals: [], accountantId: null });
     const { rows } = await pool.query(
       `SELECT id,title,scope,fee_cents,currency,billing,status,accepted_at,declined_at,created_at
@@ -2597,7 +2585,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // Client side
   app.get('/api/accountants/my-accountant/tasks', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
-    const link = await _clientLink(req.session.userId);
+    const link = await _clientLink(req.session.userId, _reqAccId(req));
     if (!link) return res.json({ tasks: [], accountantId: null });
     const { rows } = await pool.query(
       `SELECT id,title,detail,due_date,status,done_at,created_at FROM accountant_tasks
@@ -2680,8 +2668,6 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       `SELECT status FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
       [accountantId, req.session.userId]
     );
-    { const other = await _otherActiveAccountant(pool, req.session.userId, Number(accountantId));   // NEW-12: one at a time
-      if (other) return res.status(409).json({ error: _oneAccountantMsg(other, 'client'), code: 'ONE_ACCOUNTANT' }); }
     if (existing.rows[0]) {
       const s = existing.rows[0].status;
       if (s === 'active')   return res.status(409).json({ error: 'You are already linked to this accountant.' });
@@ -2753,8 +2739,6 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       // F17: referral months FROZEN at approval, from the shared tier ladder (inside _activateLink).
       // N78: only a CLIENT-initiated request can be approved by the accountant.
       const done = await _activateLink(conn, req.session.accountantId, userId, req, { requireOrigin: 'client' });
-      // NEW-12: the accountant is not told WHO the client's accountant is — only that one exists.
-      if (done && done.conflict) return res.status(409).json({ error: _oneAccountantMsg(done.conflict, 'accountant'), code: 'ONE_ACCOUNTANT' });
       if (!done) return _approveRefusal(req.session.accountantId, userId, res);
       const months = done.months;
 

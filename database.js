@@ -477,23 +477,9 @@ async function initDB() {
       )`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_acc_invites_one_pending ON accountant_invites (accountant_id, email) WHERE status = 'pending'`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_invites_email ON accountant_invites (email) WHERE status = 'pending'`);
-    // NEW-12: ONE active accountant per client, enforced at the write (Rule 9). My Accountant shows one link, so a second
-    // activation hid the first accountant's still-live books access (the client could neither see nor revoke it). GUARDED
-    // like idx_bank_line_*: where a client already has two active links the index is NOT built and a warning names the
-    // read-only lister — never a failed deploy, never a silent change (Rule 8). Mirrored by
-    // scripts/migrations/2026-11-01-one-active-accountant.sql.
-    await client.query(`
-      DO $oa$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_acc_clients_one_active') THEN
-          IF EXISTS (SELECT 1 FROM accountant_clients WHERE status = 'active' GROUP BY user_id HAVING count(*) > 1) THEN
-            RAISE WARNING 'idx_acc_clients_one_active NOT created: a client has two active accountants — run tools/launch/list-multi-active-accountants.js';
-          ELSE
-            CREATE UNIQUE INDEX idx_acc_clients_one_active ON accountant_clients (user_id) WHERE status = 'active';
-          END IF;
-        END IF;
-      END
-      $oa$`);
+    // NEW-12 index REMOVED (owner decision 2026-11-01: a client may work with several accountants, each listed with its
+    // own access and revoke — nothing hidden). Dropped where an earlier deploy built it.
+    await client.query(`DROP INDEX IF EXISTS idx_acc_clients_one_active`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_earnings (

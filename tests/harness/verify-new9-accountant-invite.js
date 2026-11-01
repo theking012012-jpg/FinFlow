@@ -97,16 +97,22 @@ runBrowser('NEW-9 — accountant invitation → in-app request the client approv
   const actUi = await page.evaluate(async () => { await window.loadAccountantActivity(); return document.getElementById('my-acc-activity-list').innerText; });
   A('…shown on My Accountant as "Opened your books"', /Opened your books/.test(actUi), JSON.stringify(actUi));
 
-  // one accountant at a time: B's invitation cannot be accepted while A has access
+  // several accountants (owner decision 2026-11-01): B's invitation can be accepted beside A — both listed, each its own scope
   await AB.post('/api/accountants/invite', { email: OWNER });
   const invB = ((await http.get('/api/accountants/my-accountant/invites')).json || []).find(x => x.first_name === 'Sasha');
-  const accB409 = await http.post(`/api/accountants/my-accountant/invites/${invB.id}/accept`, { entity_access: { entities: { [e1.id]: 'view' } } });
-  eq('accepting a second accountant while A has access → 409 ONE_ACCOUNTANT', [accB409.status, (accB409.json || {}).code], [409, 'ONE_ACCOUNTANT']);
-  A('…naming A', /Robin Ledger/.test((accB409.json || {}).error || ''), JSON.stringify(accB409.json));
-  // decline B
-  eq('the client declines B', (await http.post(`/api/accountants/my-accountant/invites/${invB.id}/decline`, {})).status, 200);
-  eq('B\'s list: declined', ((await AB.get('/api/accountants/invites')).json || []).map(x => x.status), ['declined']);
-  eq('B has no link', (await c.query(`SELECT count(*)::int n FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`, [accB, uid])).rows[0].n, 0);
+  eq('accepting a second accountant beside A → 200', (await http.post(`/api/accountants/my-accountant/invites/${invB.id}/accept`, { entity_access: { entities: { [e2.id]: 'view' } } })).status, 200);
+  eq('…both are listed in My Accountant', (((await http.get('/api/accountants/my-accountant')).json || {}).accountants || []).map(a => a.first_name).sort(), ['Robin', 'Sasha']);
+  eq('…B sees only business 2, A still only business 1', [(((await AB.get(`/api/accountants/clients/${uid}/books?period=year`)).json || {}).entities || []).map(x => x.id), (((await AA.get(`/api/accountants/clients/${uid}/books?period=year`)).json || {}).entities || []).map(x => x.id)], [[e2.id], [e1.id]]);
+  await http.post('/api/accountants/my-accountant/revoke', { accountantId: accB });
+  // decline: a third accountant's invitation
+  const accC = await mkAcc('n9-c@finflow.test', 'Toni');
+  const AC = new HarnessHttp(base, { xff: '203.0.113.94' });
+  eq('accountant C signs in', (await AC.post('/api/accountants/login', { email: 'n9-c@finflow.test', password: PW })).status, 200);
+  await AC.post('/api/accountants/invite', { email: OWNER });
+  const invC = ((await http.get('/api/accountants/my-accountant/invites')).json || []).find(x => x.first_name === 'Toni');
+  eq('the client declines C', (await http.post(`/api/accountants/my-accountant/invites/${invC.id}/decline`, {})).status, 200);
+  eq('C\'s list: declined', ((await AC.get('/api/accountants/invites')).json || []).map(x => x.status), ['declined']);
+  eq('C has no link', (await c.query(`SELECT count(*)::int n FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`, [accC, uid])).rows[0].n, 0);
 
   // the end date ends access by itself (move it into the past; the next accountant request sweeps it)
   await c.query(`UPDATE accountant_clients SET access_expires_at = $3 WHERE accountant_id = $1 AND user_id = $2`, [accA, uid, new Date(Date.now() - 60000)]);

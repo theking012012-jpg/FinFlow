@@ -222,8 +222,8 @@ window.filterAccountants = function() {
         ${a.has_pricing ? '<span data-style="font-size:10px;background:rgba(200,164,74,0.08);color:var(--acc,#c8a44a);border:1px solid rgba(200,164,74,0.25);border-radius:4px;padding:2px 7px">💰 Transparent Pricing</span>' : ''}
       </div>
       <div data-style="display:flex;gap:8px">
-        ${linkedAccountant && linkedAccountant.id === a.id
-          ? `<button class="btn btn-outline" data-style="flex:1;justify-content:center;font-size:12px;padding:7px;opacity:0.7;cursor:default" disabled>${linkedAccountant.status === 'pending' ? '⏳ Pending approval' : '✓ Linked'}</button>`
+        ${(myAccountants.find(x => Number(x.id) === Number(a.id)) || (linkedAccountant && Number(linkedAccountant.id) === Number(a.id) && linkedAccountant))
+          ? `<button class="btn btn-outline" data-style="flex:1;justify-content:center;font-size:12px;padding:7px;opacity:0.7;cursor:default" disabled>${(myAccountants.find(x => Number(x.id) === Number(a.id)) || linkedAccountant).status === 'pending' ? '⏳ Pending approval' : '✓ Linked'}</button>`
           : `<button class="btn btn-primary" data-style="flex:1;justify-content:center;font-size:12px;padding:7px" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" data-arg-id="${Number(a.id)}" data-on-click="requestAccountant(Number(this.dataset.argId), this.dataset.name)">Request access</button>`
         }
         <button class="btn btn-ghost" data-style="font-size:12px;padding:7px;color:var(--t3)" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" data-arg-id="${Number(a.id)}" data-on-click="event.stopPropagation();reportAccountant(Number(this.dataset.argId), this.dataset.name)" title="Report">⚑</button>
@@ -234,13 +234,24 @@ window.filterAccountants = function() {
 
 // ── 5. MY ACCOUNTANT LOGIC ────────────────────────────────────────────────────
 let linkedAccountant = null;
+// Several accountants (owner decision 2026-11-01): every link is listed; one is open at a time, and every call the panels
+// below make names THAT accountant (accountantId), so a bookkeeper's chat, access and activity never mix with a tax
+// accountant's.
+let myAccountants = [];
+let _selAccId = null;
+function _accUrl(u) { const id = linkedAccountant && linkedAccountant.id; return id ? u + (u.indexOf('?') >= 0 ? '&' : '?') + 'accountantId=' + Number(id) : u; }
+window._accUrl = _accUrl;
 
 async function loadMyAccountant() {
   loadAccountantInvites();   // NEW-9
   try {
     const res = await fetch('/api/accountants/my-accountant', { credentials: 'include' });
     if (res.ok) {
-      linkedAccountant = await res.json();
+      const d = await res.json();
+      myAccountants = Array.isArray(d.accountants) ? d.accountants : (d && d.id ? [d] : []);
+      linkedAccountant = myAccountants.find(a => Number(a.id) === Number(_selAccId)) || myAccountants[0] || null;
+      _selAccId = linkedAccountant ? linkedAccountant.id : null;
+      renderAccountantList();
       if (linkedAccountant && linkedAccountant.id) {
         renderLinkedAccountant();
         filterAccountants(); // re-render directory cards with correct button state
@@ -248,6 +259,29 @@ async function loadMyAccountant() {
     }
   } catch(e) { /* not linked */ }
 }
+// The list of every accountant (shown when there is more than one); choosing one opens its card, access, chat, activity.
+function renderAccountantList() {
+  let box = document.getElementById('my-acc-list');
+  const content = document.getElementById('my-acc-content');
+  if (!box && content) { box = document.createElement('div'); box.id = 'my-acc-list'; box.style.cssText = 'display:none;margin-bottom:12px'; content.parentNode.insertBefore(box, content); }
+  if (!box) return;
+  if (myAccountants.length < 2) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.innerHTML = '<div data-style="font-size:12px;color:var(--t3);margin-bottom:6px">Your accountants (' + myAccountants.length + ') — each has its own access, which you can change or revoke on its own.</div>'
+    + '<div data-style="display:flex;gap:8px;flex-wrap:wrap">' + myAccountants.map(a => {
+      const on = Number(a.id) === Number(_selAccId);
+      return '<button class="btn btn-sm' + (on ? ' btn-gold' : '') + '" data-arg-id="' + Number(a.id) + '" data-on-click="selectAccountant(Number(this.dataset.argId))">'
+        + esc(((a.first_name || '') + ' ' + (a.last_name || '')).trim()) + (a.firm ? ' · ' + esc(a.firm) : '') + (a.status === 'pending' ? ' · pending' : '') + '</button>';
+    }).join('') + '</div>';
+}
+window.selectAccountant = function (id) {
+  const a = myAccountants.find(x => Number(x.id) === Number(id)); if (!a) return;
+  _selAccId = a.id; linkedAccountant = a;
+  try { if (typeof _acctSse !== 'undefined' && _acctSse) { _acctSse.close(); _acctSse = null; } } catch (_) {}
+  const t = document.getElementById('acct-chat-thread'); if (t) t.innerHTML = '';
+  renderAccountantList(); renderLinkedAccountant();
+  if (a.status === 'active') { if (typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages(); if (typeof window.loadMyProposals === 'function') window.loadMyProposals(); }
+};
 
 function renderLinkedAccountant() {
   const a = linkedAccountant;
@@ -329,7 +363,6 @@ async function loadAccountantInvites() {
       if (er.ok) ents = ((await er.json()) || []).map(x => ({ id: x.id, name: (x.data && (x.data.name || x.data.business_name)) || x.name || 'Business' })); } catch (_) {}
   }
   const today = (typeof window._personalToday === 'function' && window._personalToday()) || new Date().toISOString().slice(0, 10);
-  const linkedOther = linkedAccountant && linkedAccountant.status === 'active' ? linkedAccountant : null;
   box.innerHTML = _accInvites.map(inv => {
     const initials = ((inv.first_name || '?')[0] + (inv.last_name || '?')[0]).toUpperCase();
     const who = esc(((inv.first_name || '') + ' ' + (inv.last_name || '')).trim());
@@ -351,7 +384,6 @@ async function loadAccountantInvites() {
         <div data-style="font-size:13px;color:var(--t2);margin-bottom:10px">wants access to your business books. Nothing is shared until you approve. Choose what they can see — your personal finances are never part of this.</div>
         <div data-style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">${rows}</div>
         <label data-style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);margin-bottom:12px">Access ends <input type="date" class="finput" data-inv-until="${Number(inv.id)}" min="${esc(today)}" data-style="width:160px;font-size:12px;padding:5px 8px;margin:0"> <span data-style="color:var(--t3)">optional — leave empty to keep access until you revoke it</span></label>
-        ${linkedOther ? `<div data-style="font-size:12px;color:var(--amber,#c8a44a);margin-bottom:10px">${esc(((linkedOther.first_name || '') + ' ' + (linkedOther.last_name || '')).trim())} has access now. FinFlow links one accountant at a time — revoke their access below before approving.</div>` : ''}
         <div data-style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-gold btn-sm" data-arg-id="${Number(inv.id)}" data-on-click="respondAccountantInvite(Number(this.dataset.argId), true, this)">Approve access</button>
           <button class="btn btn-sm" data-arg-id="${Number(inv.id)}" data-on-click="respondAccountantInvite(Number(this.dataset.argId), false, this)">Decline</button>
@@ -397,7 +429,7 @@ async function loadAccountantActivity() {
   const wrap = document.getElementById('my-acc-activity'), list = document.getElementById('my-acc-activity-list');
   if (!wrap || !list) return;
   let rows = [];
-  try { const r = await fetch('/api/accountants/my-accountant/activity', { credentials: 'include' }); rows = r.ok ? await r.json() : []; } catch (_) {}
+  try { const r = await fetch(_accUrl('/api/accountants/my-accountant/activity'), { credentials: 'include' }); rows = r.ok ? await r.json() : []; } catch (_) {}
   wrap.style.display = '';
   if (!Array.isArray(rows) || !rows.length) { list.innerHTML = '<div data-style="color:var(--t3)">Nothing yet.</div>'; return; }
   list.innerHTML = rows.map(x => {
@@ -444,7 +476,7 @@ window.sendAcctAttachment = function(inputEl){
   var reader = new FileReader();
   reader.onload = function(){
     var dataB64 = String(reader.result||'');
-    fetch('/api/accountants/my-accountant/attach',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name:f.name,mime:f.type||'application/octet-stream',dataB64:dataB64})})
+    fetch(_accUrl('/api/accountants/my-accountant/attach'),{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name:f.name,mime:f.type||'application/octet-stream',dataB64:dataB64})})
       .then(function(r){ return r.ok?r.json():r.json().then(function(j){throw new Error(j.error||'Upload failed');}); })
       .then(function(row){ if(!_acctMsgs.some(function(m){return m.id===row.id;})){ _acctMsgs.push(row); renderAccountantMessages(); } })
       .catch(function(e){ if(typeof notify==='function') notify(e.message||'Upload failed', true); });
@@ -480,7 +512,7 @@ function renderAccountantMessages() {
 
 window.loadAccountantMessages = async function() {
   try {
-    const res = await fetch('/api/accountants/my-accountant/messages', {credentials:'include'});
+    const res = await fetch(_accUrl('/api/accountants/my-accountant/messages'), {credentials:'include'});
     if (!res.ok){
       if (res.status !== 401 && res.status !== 403) console.error('[AccountantMessages] load failed (HTTP '+res.status+')');
       return;
@@ -503,7 +535,7 @@ window.loadAccountantMessages = async function() {
 window.loadMyTasks = async function() {
   const el = document.getElementById('acct-tasks'); if (!el) return;
   try {
-    const r = await fetch('/api/accountants/my-accountant/tasks', {credentials:'include'});
+    const r = await fetch(_accUrl('/api/accountants/my-accountant/tasks'), {credentials:'include'});
     if (!r.ok) { el.style.display='none'; return; }
     const tasks = (await r.json()).tasks || [];
     if (!tasks.length) { el.style.display='none'; el.innerHTML=''; return; }
@@ -549,7 +581,7 @@ const _fmtFee = (cents, cur) => { const n = (Number(cents)||0)/100; return esc(c
 window.loadMyProposals = async function() {
   const el = document.getElementById('acct-proposals'); if (!el) return;
   try {
-    const r = await fetch('/api/accountants/my-accountant/proposals', {credentials:'include'});
+    const r = await fetch(_accUrl('/api/accountants/my-accountant/proposals'), {credentials:'include'});
     if (!r.ok) { el.style.display='none'; return; }
     const props = (await r.json()).proposals || [];
     if (!props.length) { el.style.display='none'; el.innerHTML=''; return; }
@@ -588,7 +620,7 @@ window.respondProposal = async function(id, action, btn) {
 
 async function refreshAccountantMessages() {
   try {
-    const res = await fetch('/api/accountants/my-accountant/messages', {credentials:'include'});
+    const res = await fetch(_accUrl('/api/accountants/my-accountant/messages'), {credentials:'include'});
     if (!res.ok) return;
     const data = await res.json();
     _acctMsgs = data.messages || [];
@@ -600,13 +632,13 @@ async function refreshAccountantMessages() {
 function openAccountantStream() {
   if (_acctSse) return;
   try {
-    _acctSse = new EventSource('/api/accountants/my-accountant/stream', { withCredentials: true });
+    _acctSse = new EventSource(_accUrl('/api/accountants/my-accountant/stream'), { withCredentials: true });
     _acctSse.addEventListener('message', (e) => {
       const d = JSON.parse(e.data);
       if (_acctMsgs.some(m => m.id === d.id)) return;
       _acctMsgs.push(d);
       renderAccountantMessages();
-      if (d.sender === 'accountant') { fetch('/api/accountants/my-accountant/messages',{credentials:'include'}).catch(()=>{}); }  // mark read
+      if (d.sender === 'accountant') { fetch(_accUrl('/api/accountants/my-accountant/messages'),{credentials:'include'}).catch(()=>{}); }  // mark read
     });
     _acctSse.addEventListener('read', (e) => {
       const d = JSON.parse(e.data);
@@ -640,7 +672,7 @@ window.onAccountantTyping = function() {
   const now = Date.now();
   if (now - _acctTypingAt < 2000) return;
   _acctTypingAt = now;
-  fetch('/api/accountants/my-accountant/typing', { method:'POST', credentials:'include' }).catch(()=>{});
+  fetch(_accUrl('/api/accountants/my-accountant/typing'), { method:'POST', credentials:'include' }).catch(()=>{});
 };
 
 window.sendMsgToAccountant = async function() {
@@ -651,7 +683,7 @@ window.sendMsgToAccountant = async function() {
   if (btn) btn.disabled = true;
   if (input) input.value = '';
   try {
-    const res = await fetch('/api/accountants/my-accountant/messages', {
+    const res = await fetch(_accUrl('/api/accountants/my-accountant/messages'), {
       method:'POST', credentials:'include',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({content})
@@ -778,7 +810,7 @@ window.updateAccPermission = async function(type, val) {
     level = (filingCb && filingCb.checked) ? 'filing' : 'view';
   }
   try {
-    const res = await fetch('/api/accountants/my-accountant/access', {
+    const res = await fetch(_accUrl('/api/accountants/my-accountant/access'), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ access_level: level }),
     });
@@ -838,7 +870,7 @@ window.saveAccessMatrix = async function() {
     else entities[sl.getAttribute('data-perm-id')] = sl.value;
   });
   try {
-    const res = await fetch('/api/accountants/my-accountant/access', {
+    const res = await fetch(_accUrl('/api/accountants/my-accountant/access'), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ entity_access: { entities, personal } }),
     });
@@ -868,6 +900,16 @@ window.revokeAccountant = async function() {
     ok = res.ok && !data.error;
   } catch (_) {}
   if (!ok) { if (typeof notify === 'function') notify((data && data.error) || 'Access was NOT revoked — could not reach FinFlow. Try again.', true); return; }
+  // Several accountants: only THIS one goes; another stays open if there is one.
+  myAccountants = myAccountants.filter(x => Number(x.id) !== Number(a.id));
+  if (myAccountants.length) {
+    try { if (_acctSse) { _acctSse.close(); _acctSse = null; } } catch (_) {}
+    window.selectAccountant(myAccountants[0].id);
+    if (typeof filterAccountants === 'function') filterAccountants();
+    if (typeof notify === 'function') notify('Accountant access revoked');
+    return;
+  }
+  renderAccountantList();
   linkedAccountant = null;
   const content = document.getElementById('my-acc-content');
   const access = document.getElementById('my-acc-access');

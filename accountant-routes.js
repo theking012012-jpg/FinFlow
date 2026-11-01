@@ -2063,6 +2063,24 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     return res.json({ success: true });
   }));
 
+  // ── CLIENT: REVOKE THEIR ACCOUNTANT'S ACCESS (NEW-11) ─────────────────────────────────────────────
+  // "Revoke access" on My Accountant only cleared the screen and toasted "revoked" — no request was made, so the
+  // accountant kept full books access while the client believed it was gone (fake success). This is the real revoke:
+  // the client's OWN link only (owner-scoped by session), whatever state it is in — an active link, a link the
+  // billing webhook SUSPENDED (so a later resubscription cannot bring it back: reactivation only lifts 'suspended'),
+  // or a pending one. Every accountant route checks status = 'active', so the next request is refused.
+  app.post('/api/accountants/my-accountant/revoke', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const accountantId = parseInt((req.body || {}).accountantId, 10);
+    if (!Number.isInteger(accountantId) || accountantId <= 0) return res.status(400).json({ error: 'accountantId required.' });
+    const r = await pool.query(
+      `UPDATE accountant_clients SET status = 'revoked' WHERE user_id = $1 AND accountant_id = $2 AND status IN ('active', 'suspended', 'pending') RETURNING status`,
+      [req.session.userId, accountantId]);
+    if (!r.rowCount) return res.status(404).json({ error: 'This accountant has no access to revoke.' });
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', action: 'CLIENT_REVOKE', field: 'status', newValue: 'revoked', newData: { by: 'client', accountant_id: accountantId }, req });
+    return res.json({ success: true });
+  }));
+
   // ── CLIENT: CHOOSE THEIR ACCOUNTANT'S ACCESS LEVEL — review (view) vs run the books (filing) ──
   // The OWNER (client session) decides what their linked accountant may do: 'view' = read-only
   // review; 'filing' = may post adjusting journal entries + lock periods. This is the real grant

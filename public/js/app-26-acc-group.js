@@ -727,7 +727,21 @@ window.saveAccessMatrix = async function() {
 };
 
 window.revokeAccountant = async function() {
-  if (!(await window._confirmModal('Are you sure you want to revoke this accountant\'s access?', {danger:true}))) return;
+  // NEW-11: the revoke is the SERVER's — the screen changes only after it confirms. (This used to clear the card and
+  // toast "revoked" without any request, so the accountant kept full access.)
+  const a = linkedAccountant;
+  if (!a || !a.id) return;
+  if (!(await window._confirmModal('Revoke ' + ((a.first_name || '') + ' ' + (a.last_name || '')).trim() + '\'s access to your books? They will lose access immediately.', {danger:true}))) return;
+  let data = {}, ok = false;
+  try {
+    const res = await fetch('/api/accountants/my-accountant/revoke', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountantId: Number(a.id) }),
+    });
+    data = await res.json().catch(() => ({}));
+    ok = res.ok && !data.error;
+  } catch (_) {}
+  if (!ok) { if (typeof notify === 'function') notify((data && data.error) || 'Access was NOT revoked — could not reach FinFlow. Try again.', true); return; }
   linkedAccountant = null;
   const content = document.getElementById('my-acc-content');
   const access = document.getElementById('my-acc-access');
@@ -737,6 +751,8 @@ window.revokeAccountant = async function() {
       <button class="btn btn-primary" data-style="font-size:13px" data-on-click="showPage('find-accountant',null)">Find an accountant →</button>
     </div>`;
   if (access) access.style.display = 'none';
+  ['acct-chat-panel', 'acct-proposals', 'acct-tasks'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  if (typeof filterAccountants === 'function') filterAccountants();
   if(typeof notify==='function') notify('Accountant access revoked');
 }
 

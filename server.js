@@ -14628,6 +14628,35 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   }
   totalCOGS = Math.round(totalCOGS * 100) / 100;
 
+  // FA-M11 (owner decision 2026-11-01): PRODUCT SALES — what the stocked products sold for, in the same window as their
+  // cost above: issued invoices' stocked lines (FA-B5c, qty × rate on the issue date; a draft is not a sale — Rule 11)
+  // and Stock Out sale documents (FA-B7 — an invoice or sales receipt carrying inventory_item_id). Per product: sales,
+  // the FIFO cost of the units SOLD (write-offs are shrinkage, not a sale's cost), margin.
+  const _salesBy = new Map();
+  const _addSale = (id, amt) => { if (id == null || !(amt > 0)) return; _salesBy.set(Number(id), (_salesBy.get(Number(id)) || 0) + amt); };
+  { const { rows: _inv } = await pool.query(
+      `SELECT data FROM invoices WHERE user_id = $1 AND ($2::int IS NULL OR entity_id IS NULL OR entity_id = $2) AND lower(COALESCE(data->>'status','')) <> 'draft'`, [uid, eid]);
+    for (const { data: d } of _inv) {
+      const day = d.issue_date || null; if (!inWin(day)) continue;
+      const lines = Array.isArray(d.line_items) ? d.line_items : [];
+      for (const l of lines) if (l && l.inventory_id) _addSale(l.inventory_id, (Number(l.qty) || 0) * (Number(l.rate) || 0));
+      if (d.inventory_item_id && !lines.some(l => l && l.inventory_id)) _addSale(d.inventory_item_id, Number(d.amount) || 0);
+    }
+    const { rows: _sr } = await pool.query(
+      `SELECT data FROM sales_receipts WHERE user_id = $1 AND ($2::int IS NULL OR entity_id IS NULL OR entity_id = $2) AND data->>'inventory_item_id' IS NOT NULL`, [uid, eid]);
+    for (const { data: d } of _sr) if (inWin(d.date || null)) _addSale(d.inventory_item_id, Number(d.amount) || 0);
+  }
+  const r2m = n => Math.round((n || 0) * 100) / 100;
+  for (const b of breakdown) {
+    b.sales = r2m(_salesBy.get(Number(b.inventory_id)) || 0);
+    b.cost_of_sales = r2m(b.cogs - b.write_off_cost);
+    b.margin = r2m(b.sales - b.cost_of_sales);
+    b.margin_pct = b.sales > 0 ? Math.round((b.margin / b.sales) * 1000) / 10 : null;
+  }
+  const productRevenue = r2m(breakdown.reduce((x, b) => x + b.sales, 0));
+  const productCostOfSales = r2m(breakdown.reduce((x, b) => x + b.cost_of_sales, 0));
+  const productGrossProfit = r2m(productRevenue - productCostOfSales);
+
   // N68: Revenue is the canonical figure (computeBooks — issue-based accrual, F32) for the SAME entity and
   // period as the COGS above. It was Σ PAID invoices of EVERY entity over ALL time (cash basis), so the
   // page's Gross Profit mixed two bases and two scopes.
@@ -14650,6 +14679,8 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   inventoryValue = Math.round(inventoryValue * 100) / 100;
   res.json({
     totalCOGS, grossProfit: Math.round((revenue - totalCOGS) * 100) / 100, revenue,
+    productRevenue, productCostOfSales, productGrossProfit,   // FA-M11
+    productMarginPct: productRevenue > 0 ? Math.round((productGrossProfit / productRevenue) * 1000) / 10 : null,
     breakdown, uncoveredItems, cogsMethod: 'fifo', inventoryValue, inventoryValueByItem,
   });
 }));

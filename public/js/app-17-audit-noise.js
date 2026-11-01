@@ -876,11 +876,13 @@ async function loadCOGS(){
     const gpEl=document.getElementById('cogs-gross-profit');
     const bdEl=document.getElementById('cogs-breakdown');
     if(totalEl)totalEl.textContent=S(parseFloat(data.totalCOGS||0));
-    if(revEl)revEl.textContent=S(parseFloat(data.revenue||0));
+    // FA-M11: the stocked products' own sales and margin (the business's total revenue / gross profit are on the P&L).
+    if(revEl)revEl.textContent=S(parseFloat(data.productRevenue!=null?data.productRevenue:0));
     if(gpEl){
-      const gp=parseFloat(data.grossProfit||0);
+      const gp=parseFloat(data.productGrossProfit!=null?data.productGrossProfit:0);
       gpEl.textContent=S(gp);
       gpEl.style.color=gp>=0?'var(--green)':'var(--red)';
+      const sub=document.getElementById('cogs-gp-sub'); if(sub) sub.textContent=data.productMarginPct!=null?('Margin '+data.productMarginPct+'%'):'Sales − their cost';
     }
     const breakdown=data.breakdown||[];
     if(bdEl){
@@ -890,7 +892,7 @@ async function loadCOGS(){
       bdEl.innerHTML=breakdown.length?warn+breakdown.map(b=>`
         <div data-style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd);font-size:12px">
           <span data-style="color:var(--t1)">${esc(b.name||b.inventory_id||'Item')}${b.no_cost_basis?` <span data-style="color:var(--red);font-size:10px">⚠ ${b.uncovered_units} unit(s) no cost basis</span>`:''}</span>
-          <span data-style="font-family:var(--font-mono);color:var(--t2)">${S(parseFloat(b.cogs||0))}</span>
+          <span data-style="font-family:var(--font-mono);color:var(--t2);text-align:right">${b.sales?('sold '+S(parseFloat(b.sales))+' · cost '+S(parseFloat(b.cost_of_sales||0))+' · margin '+S(parseFloat(b.margin||0))+(b.margin_pct!=null?' ('+b.margin_pct+'%)':'')):('cost '+S(parseFloat(b.cogs||0)))}${parseFloat(b.write_off_cost||0)>0?(' · written off '+S(parseFloat(b.write_off_cost))):''}</span>
         </div>`).join('')
         :'<div data-style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No COGS recorded yet. Record stock out movements to calculate.</div>';
     }

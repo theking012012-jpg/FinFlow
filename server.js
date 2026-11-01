@@ -2300,9 +2300,10 @@ async function invoiceStockShortfall(userId, inv, priorInvoiceId = null) {
 async function _undoStockMovement(userId, mv, req) {
   try { await reverseLedgerEntry(pool, { userId, sourceType: 'inventory_movement', sourceId: Number(mv.id) }); } catch (glErr) { console.error('[GL] invoice stock reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   await pool.query(`DELETE FROM inventory_movements WHERE id = $1 AND user_id = $2`, [mv.id, userId]);
+  const _delta = mv.type === 'return' ? -Number(mv.quantity) : Number(mv.quantity);   // undoing a return takes the units out again
   const { rows: [cur] } = await pool.query(
     `UPDATE inventory SET data = jsonb_set(data, '{units}', to_jsonb(COALESCE(NULLIF(data->>'units','')::numeric, 0) + $2::numeric)), updated_at = NOW() WHERE id = $1
-     RETURNING data->>'units' AS u, data->>'max_units' AS m, data->>'reorder_level' AS r`, [mv.inventory_id, Number(mv.quantity)]);
+     RETURNING data->>'units' AS u, data->>'max_units' AS m, data->>'reorder_level' AS r`, [mv.inventory_id, _delta]);
   if (cur) await db.updateById('inventory', Number(mv.inventory_id), { low_stock: FinFlowDates.isLowStock({ units: parseFloat(cur.u) || 0, reorder_level: cur.r, max_units: parseFloat(cur.m) || 200 }) ? 1 : 0 });
   try { await recordAudit(pool, { userId, entityId: mv.entity_id || null, table: 'inventory_movements', recordId: mv.id, action: 'DELETE', oldData: mv, req }); } catch (_) {}
 }
@@ -5964,6 +5965,66 @@ app.get('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   // F148: entity-scope (null-inclusive) now that credit notes carry entity_id.
   res.json(await db.allByUser('credit_notes', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
+// ── RETURNED STOCK ON A CREDIT NOTE (owner decision 2026-11-01) ───────────────────────────────────────────────────────
+// A credit note may say what came back: returns [{ inventory_id, qty, invoice_id? }]. Each line puts the units back into
+// stock at their ORIGINAL cost — the cost they left at on that invoice (its FA-B5c movements), else the product's latest
+// sale before the credit note's date — and takes that cost off cost of goods sold (Dr Inventory / Cr COGS, a 'return'
+// movement FIFO treats as a layer at that cost). Linked on the credit note (stock_returns); voiding or deleting the credit
+// note takes the units out again (refused if they are no longer on hand), and the product is re-costed.
+async function _returnUnitCost(userId, inventoryId, invoiceId, dateYmd) {
+  if (invoiceId) {
+    const { rows: mv } = await pool.query(`SELECT id, quantity FROM inventory_movements WHERE user_id = $1 AND inventory_id = $2 AND type = 'sale' AND idempotency_key LIKE $3`, [userId, inventoryId, 'invoice-stock:' + Number(invoiceId) + ':%']);
+    const q = mv.reduce((x, m) => x + Number(m.quantity), 0);
+    if (q > 0) {
+      const { rows: [c] } = await pool.query(`SELECT COALESCE(SUM(l.debit - l.credit), 0)::float AS c FROM ledger_lines l JOIN ledger_accounts a ON a.id = l.account_id AND a.code = '5000'
+        JOIN ledger_entries e ON e.id = l.entry_id AND e.status = 'posted' WHERE l.user_id = $1 AND e.source_type = 'inventory_movement' AND e.source_id = ANY($2::int[])`, [userId, mv.map(m => m.id)]);
+      return { unitCost: (Number(c.c) || 0) / q, soldOnInvoice: q };
+    }
+  }
+  const sales = (await fifoItemSales(pool, inventoryId)).filter(x => x.type === 'sale' && x.quantity > 0 && (!dateYmd || x.date <= dateYmd));
+  const last = sales[sales.length - 1];
+  return { unitCost: last ? last.cogs / last.quantity : 0, soldOnInvoice: null };
+}
+async function creditNoteStockReturns(userId, eid, cn, returns, req) {
+  if (!Array.isArray(returns) || !returns.length) return { lines: [] };
+  const out = [];
+  for (const [i, r] of returns.entries()) {
+    const invId = Number(r && r.inventory_id), qty = Number(r && r.qty), invoiceId = r && r.invoice_id ? Number(r.invoice_id) : null;
+    if (!Number.isInteger(invId) || invId <= 0 || !(qty > 0)) return { error: 'Each returned line needs a stocked product and a quantity.' };
+    const item = await ownedBy('inventory', invId, userId);
+    if (!item || !(item.entity_id == null || eid == null || Number(item.entity_id) === Number(eid))) return { error: 'A returned product is not in this business\'s inventory.', code: 'LINE_ITEM' };
+    const { unitCost, soldOnInvoice } = await _returnUnitCost(userId, invId, invoiceId, String(cn.date || '').slice(0, 10));
+    if (soldOnInvoice != null) {
+      const { rows: [prev] } = await pool.query(`SELECT COALESCE(SUM((r->>'qty')::numeric), 0)::float AS q FROM credit_notes cn2, jsonb_array_elements(COALESCE(cn2.data->'stock_returns', '[]'::jsonb)) r
+        WHERE cn2.user_id = $1 AND lower(COALESCE(cn2.data->>'status','')) <> 'void' AND (r->>'invoice_id')::int = $2 AND (r->>'inventory_id')::int = $3`, [userId, invoiceId, invId]);
+      if (qty > soldOnInvoice - (Number(prev.q) || 0) + 1e-9) return { error: `Only ${soldOnInvoice - (Number(prev.q) || 0)} of ${item.name || 'this product'} can still come back on that invoice.`, code: 'RETURN_TOO_MANY' };
+    }
+    out.push({ inventory_id: invId, qty, invoice_id: invoiceId, unit_cost: Math.round(unitCost * 10000) / 10000, item, _i: i });
+  }
+  const lines = [];
+  for (const l of out) {
+    const r = await recordStockMovement({ userId, item: l.item, entityId: eid, type: 'return', qty: l.qty, unitCost: l.unit_cost,
+      reference: String(cn.num || ('Credit note ' + cn.id)).slice(0, 100), notes: 'Returned — ' + String(cn.customer || '').slice(0, 120),
+      idem: ('cn-return:' + cn.id + ':' + l._i).slice(0, 64), date: String(cn.date || '').slice(0, 10) || null });
+    lines.push({ inventory_id: l.inventory_id, qty: l.qty, invoice_id: l.invoice_id, unit_cost: l.unit_cost, movement_id: r.movement.id });
+  }
+  await db.updateById('credit_notes', cn.id, { stock_returns: lines });
+  return { lines };
+}
+async function undoCreditNoteReturns(userId, cn, req) {
+  const lines = Array.isArray(cn && cn.stock_returns) ? cn.stock_returns : [];
+  // the returned units must still be on hand to take them out again
+  for (const l of lines) {
+    const { rows: [u] } = await pool.query(`SELECT data->>'name' AS n, COALESCE(NULLIF(data->>'units','')::numeric, 0)::float AS u FROM inventory WHERE id = $1`, [l.inventory_id]);
+    if (u && u.u + 1e-9 < Number(l.qty)) return { error: `The ${l.qty} ${u.n || 'units'} returned on this credit note are no longer all in stock (${u.u} on hand), so it can't be voided or deleted. Record the stock first, or issue a new invoice instead.`, code: 'RETURN_SOLD' };
+  }
+  for (const l of lines) {
+    const { rows: [mv] } = await pool.query(`SELECT * FROM inventory_movements WHERE id = $1 AND user_id = $2 AND type = 'return'`, [Number(l.movement_id), userId]);
+    if (mv) { await _undoStockMovement(userId, mv, req); await recostItemLedger(userId, Number(mv.inventory_id)); }
+  }
+  return { ok: true };
+}
+
 app.post('/api/credit-notes', requireAuth, lockGuard(LOCK_SPECS.credit_notes), wrap(async (req, res) => {
   const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
@@ -6008,6 +6069,14 @@ app.post('/api/credit-notes', requireAuth, lockGuard(LOCK_SPECS.credit_notes), w
   }
   row = await numberNewDoc('credit_notes', scopeId(req), row, num ? String(num).slice(0, 30) : null);   // FA-M6c
   row.customer_id = await linkDocContact('credit_notes', scopeId(req), row.entity_id, row.id, row.customer, req);   // FA-B4: a saved customer
+  // Returned stock (owner decision 2026-11-01): back into stock at its original cost. A refused line keeps no credit note.
+  if (Array.isArray(req.body && req.body.returns) && req.body.returns.length) {
+    let _rr;
+    try { _rr = await creditNoteStockReturns(scopeId(req), row.entity_id, row, req.body.returns, req); }
+    catch (e) { await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [row.id, scopeId(req)]); throw e; }
+    if (_rr.error) { await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [row.id, scopeId(req)]); return res.status(400).json({ error: _rr.error, code: _rr.code || 'RETURN' }); }
+    row.stock_returns = _rr.lines;
+  }
   await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a credit note is the REVENUE CONTRA (F58) — Dr Revenue (4000) /
   // Cr Accounts Receivable (1100) at its date, when status ∈ {Open,Applied} (Void contributes 0,
@@ -6043,6 +6112,12 @@ app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), l
   );
   const _cnRefuse = _cnchk ? await creditEditRefusal('credit_note', rowToObj(_cnchk), patch, scopeId(req)) : null;   // FA-M6b
   if (_cnRefuse) return res.status(409).json(_cnRefuse);
+  // Voiding a credit note that brought stock back takes those units out again (refused if they are no longer on hand).
+  if (_cnchk && patch.status === 'Void' && String((_cnchk.data || {}).status || '').toLowerCase() !== 'void') {
+    const _u = await undoCreditNoteReturns(scopeId(req), rowToObj(_cnchk), req);
+    if (_u.error) return res.status(409).json({ error: _u.error, code: _u.code });
+    if (Array.isArray((_cnchk.data || {}).stock_returns) && _cnchk.data.stock_returns.length) patch.stock_returns = [];
+  }
   if (_cnchk) {
     await db.updateById('credit_notes', _cnchk.id, patch);
     if (patch.customer != null) await relinkDocContact('credit_notes', scopeId(req), _cnchk.entity_id, _cnchk.id, _cnchk.data && _cnchk.data.customer, patch.customer, req);   // FA-B4b
@@ -6056,6 +6131,7 @@ app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), l
 app.delete('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), lockGuard(LOCK_SPECS.credit_notes), wrap(async (req, res) => {
   const { rows: [_cnold] } = await pool.query('SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   if (_cnold && await creditAppliedSoFar(pool, 'credit_note', _cnold.id, scopeId(req)) > 0) return res.status(409).json({ error: 'This credit note is applied to an invoice. Unapply it first, then delete it.', code: 'CREDIT_APPLIED' });   // FA-M6b
+  if (_cnold) { const _u = await undoCreditNoteReturns(scopeId(req), rowToObj(_cnold), req); if (_u.error) return res.status(409).json({ error: _u.error, code: _u.code }); }   // returned stock goes out again
   await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'credit_note', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] credit_note reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_cnold) await recordAudit(pool, { userId: scopeId(req), entityId: _cnold.entity_id || null, table: 'credit_notes', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_cnold), req });  // F90 Phase B
@@ -12495,7 +12571,7 @@ function fifoConsume(purchases, skipUnits, sellUnits) {
 const _MV_DAY_SQL = `COALESCE(movement_date, (moved_at AT TIME ZONE 'UTC')::date)`;
 async function _purchaseLayers(pool, inventoryId) {
   const { rows } = await pool.query(
-    `SELECT quantity, unit_cost FROM inventory_movements WHERE inventory_id=$1 AND type='purchase' ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`,
+    `SELECT quantity, unit_cost FROM inventory_movements WHERE inventory_id=$1 AND type IN ('purchase','return') ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`,   // stock returned on a credit note is a layer at its original cost
     [inventoryId]
   );
   return rows;
@@ -12558,6 +12634,11 @@ async function fifoItemSales(pool, inventoryId) {
     out.push({ date: s.mv_day, cogs, uncovered, quantity: q, type: s.type });   // quantity added for F25 period-scoped units_sold; type (M8): 'sale' | 'adjustment' (write-off)
     consumed += q;
   }
+  // Stock returned on a credit note: its cost comes OFF cost of goods sold on the return's date (and the units are a layer
+  // again, at that cost — _purchaseLayers). Appended AFTER the sales so callers pairing this list with the sale rows by
+  // position (the GL rebuild) are unaffected.
+  const { rows: rets } = await pool.query(`SELECT quantity, unit_cost, ${_MV_DAY_SQL}::text AS mv_day FROM inventory_movements WHERE inventory_id=$1 AND type='return' ORDER BY ${_MV_DAY_SQL} ASC, id ASC`, [inventoryId]);
+  for (const r of rets) { const q = parseFloat(r.quantity) || 0; out.push({ date: r.mv_day, cogs: -Math.round(q * (parseFloat(r.unit_cost) || 0) * 100) / 100, uncovered: 0, quantity: -q, type: 'return' }); }
   return out;
 }
 
@@ -13016,6 +13097,9 @@ async function backfillLedgerForUser(userId, opts = {}) {
       const { rows: purch } = await pool.query(`SELECT id, quantity, unit_cost, ${_MV_DAY_SQL}::text AS moved, COALESCE(contra_code, CASE WHEN reference = 'Opening stock' THEN '3100' ELSE '1000' END) AS contra FROM inventory_movements WHERE user_id=$1 AND inventory_id=$2 AND type='purchase' ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`, [userId, it.inventory_id]);   // M32: business day
       for (const p of purch) { const cap = Math.round((parseFloat(p.quantity) || 0) * (parseFloat(p.unit_cost) || 0) * 100) / 100; if (!(cap > 0)) continue;
         await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(p.moved), description: p.contra === '3100' ? 'Opening stock' : 'Inventory purchase', sourceType: 'inventory_movement', sourceId: p.id, idempotencyKey: 'inventory_movement:' + p.id, lines: [{ code: '1200', debit: cap, credit: 0 }, { code: p.contra, debit: 0, credit: cap }] }); }
+      const { rows: rets } = await pool.query(`SELECT id, quantity, unit_cost, ${_MV_DAY_SQL}::text AS moved FROM inventory_movements WHERE user_id=$1 AND inventory_id=$2 AND type='return'`, [userId, it.inventory_id]);
+      for (const r of rets) { const cap = Math.round((parseFloat(r.quantity) || 0) * (parseFloat(r.unit_cost) || 0) * 100) / 100; if (!(cap > 0)) continue;
+        await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(r.moved), description: 'Stock returned', sourceType: 'inventory_movement', sourceId: r.id, idempotencyKey: 'inventory_movement:' + r.id, lines: [{ code: '1200', debit: cap, credit: 0 }, { code: '5000', debit: 0, credit: cap }] }); }
       const sales = await fifoItemSales(pool, it.inventory_id);
       const { rows: saleRows } = await pool.query(`SELECT id, ${_MV_DAY_SQL}::text AS moved, type FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment') ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`, [it.inventory_id]);   // M8/M32: same rows + order as fifoItemSales
       for (let i = 0; i < saleRows.length && i < sales.length; i++) { const s = sales[i], m = saleRows[i]; const cogs = Math.round((s.cogs || 0) * 100) / 100; if (!(cogs > 0)) continue;
@@ -14401,7 +14485,7 @@ async function recordStockMovement({ userId, item, entityId = null, type, qty, u
   }
   const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m, data->>'reorder_level' AS r FROM inventory WHERE id = $1`, [item.id]);
   const _units = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
-  const newUnits = type === 'purchase' ? _units + qty : _units;   // FA-B7b: a sale / write-off was already taken off above
+  const newUnits = (type === 'purchase' || type === 'return') ? _units + qty : _units;   // FA-B7b: a sale / write-off was already taken off above; a return comes back in
   await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: FinFlowDates.isLowStock({ units: newUnits, reorder_level: _cur && _cur.r, max_units: _max }) ? 1 : 0 });   // G5: the one rule
   try {
     const _mDate = FinFlowDates._toYmd(movement.movement_date) || FinFlowDates._toYmd(movement.moved_at);   // M32
@@ -14411,6 +14495,13 @@ async function recordStockMovement({ userId, item, entityId = null, type, qty, u
         description: (type === 'adjustment' ? 'Inventory write-off — ' : 'COGS — sale of ') + String(item.name || '').slice(0, 80),
         sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
         lines: [{ code: '5000', debit: +cogs, credit: 0 }, { code: '1200', debit: 0, credit: +cogs }],
+      });
+    } else if (type === 'return') {   // stock returned on a credit note: back into Inventory at its original cost, off COGS
+      const _rc = Math.round(qty * (parseFloat(unitCost) || 0) * 100) / 100;
+      if (_rc > 0) await postLedgerEntry(pool, {
+        userId, entityId: _mvEnt, date: _mDate, description: 'Stock returned — ' + String(item.name || '').slice(0, 80),
+        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
+        lines: [{ code: '1200', debit: _rc, credit: 0 }, { code: '5000', debit: 0, credit: _rc }],
       });
     } else if (type === 'purchase') {
       const _cap = Math.round(qty * (parseFloat(unitCost) || 0) * 100) / 100;

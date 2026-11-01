@@ -3461,6 +3461,10 @@ function clearAIChat(){
       const d = document.getElementById('cn-date'); if (d) d.value = todayStr();
       const s = document.getElementById('cn-status'); if (s) s.value = 'Open';
       window._cnIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new credit note never reuses the last token
+      // Returned stock: this business's stocked products (owner decision 2026-11-01).
+      { const sel = document.getElementById('cn-return-item'), q = document.getElementById('cn-return-qty'); if (q) q.value = '';
+        if (sel) { sel.innerHTML = '<option value="">— nothing came back —</option>';
+          api('GET', '/api/inventory').then(rows => { (rows || []).forEach(r => { const o = document.createElement('option'); o.value = String(r.id); o.textContent = (r.name || 'Product') + ' (' + (parseFloat(r.units) || 0) + ' in stock)'; sel.appendChild(o); }); }).catch(() => {}); } }
       openModal('modal-credit-note');
     };
 
@@ -3485,7 +3489,11 @@ function clearAIChat(){
       const _cnSaveBtn = document.querySelector('#modal-credit-note .ff-save-btn');
       if (_cnSaveBtn) _cnSaveBtn.disabled = true;
       try {
-        const saved = await api('POST', '/api/credit-notes', { customer, amount, date, status, reason, idempotency_key: window._cnIdemKey });
+        // Returned stock (owner decision 2026-11-01): back into stock at its original cost, off cost of goods sold.
+        const _rItem = Number(document.getElementById('cn-return-item')?.value || 0), _rQty = parseFloat(document.getElementById('cn-return-qty')?.value || '0');
+        const _returns = (_rItem > 0 && _rQty > 0) ? [{ inventory_id: _rItem, qty: _rQty }] : undefined;
+        if (_rItem > 0 && !(_rQty > 0)) { notify('Enter how many came back', true); window._savingCreditNote = false; if (_cnSaveBtn) _cnSaveBtn.disabled = false; return; }
+        const saved = await api('POST', '/api/credit-notes', Object.assign({ customer, amount, date, status, reason, idempotency_key: window._cnIdemKey }, _returns ? { returns: _returns } : {}));
         _creditNotesData.unshift(saved.row || saved);
         window.creditNotes = _creditNotesData;
         window._cnIdemKey = null;   // success → the next credit note mints a fresh token

@@ -3162,6 +3162,11 @@
       </div>
     </div>
     <div class="field-wrap"><label class="field-label" for="cn-reason">Reason</label><input class="finput" id="cn-reason" placeholder="e.g. Return, billing error, service credit"></div>
+    <!-- Returned stock (owner decision 2026-11-01): optional — the units go back into stock at the cost they left at. -->
+    <div class="field-row">
+      <div class="field-wrap"><label class="field-label" for="cn-return-item">Stock returned (optional)</label><select class="finput" id="cn-return-item"><option value="">— nothing came back —</option></select></div>
+      <div class="field-wrap"><label class="field-label" for="cn-return-qty">Quantity</label><input class="finput" id="cn-return-qty" type="number" min="0" step="any" placeholder="0"></div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" data-on-click="closeModal('modal-credit-note')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" data-on-click="saveCreditNote()">Save credit note →</button>

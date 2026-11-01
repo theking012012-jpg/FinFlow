@@ -2784,6 +2784,17 @@ async function bankLedgerAccount(userId, entityId, provider, accountId) {
     ON CONFLICT (user_id, entity_id, code) DO NOTHING`, [userId, entityId, m.ledger_code, m.name, m.currency]);
   return m;
 }
+// NEW-14: a Bank Rec match goes with EITHER side. Deleting the matched invoice payment left the bank line "matched" to
+// nothing (in neither Bank Rec list); deleting the matched bank line left the payment "matched" (never matchable again).
+// Every delete of a payment or a bank line drops its matches here, and G15's cash move follows.
+async function dropBankMatches(userId, { paymentId = null, bankingId = null }) {
+  if (paymentId == null && bankingId == null) return;
+  const { rows } = await pool.query(
+    `DELETE FROM bank_reconciliation WHERE user_id = $1 AND (${paymentId != null ? 'invoice_payment_id = $2' : 'banking_id = $2'}) RETURNING id, banking_id, invoice_payment_id`,
+    [userId, paymentId != null ? Number(paymentId) : Number(bankingId)]);
+  for (const r of rows) { try { await recordAudit(pool, { userId, table: 'bank_reconciliation', recordId: r.id, action: 'DELETE', oldData: r, newData: { reason: paymentId != null ? 'payment deleted' : 'bank line deleted' } }); } catch (_) {} }
+  await syncBankLineCash(userId, rows.map(r => r.banking_id));
+}
 async function syncBankLineCash(userId, lineIds) {
   for (const id of [...new Set((lineIds || []).map(Number).filter(Boolean))]) {
     try {
@@ -7869,6 +7880,7 @@ app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
       error: 'This line is part of the reconciliation of ' + (_rc ? FinFlowDates.fmtLabel(_rc.d, { year: true }) + ' (statement balance ' + Number(_rc.b).toFixed(2) + ')' : 'a saved statement') + '. To change it, undo that reconciliation first (Reports → Bank Reconciliation).' });
   }
   await db.deleteById('personal_transactions', parseInt(req.params.id));
+  if (_bl.entity_id != null) await dropBankMatches(_bc.uid, { bankingId: parseInt(req.params.id) });   // NEW-14
   if (_bl.entity_id != null) await syncBankLineCash(_bc.uid, [parseInt(req.params.id)]);   // G15
   if (_bl.entity_id != null) await _auditRec(req, 'bank_lines', 'DELETE', _bl, null);   // FIX-3b — business lines only
   else await _persHist(req, _bl.user_id, 'bank_lines', 'DELETE', _bl, null);   // LC3c
@@ -9200,6 +9212,7 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
           const r = await _txRow(t.transaction_id); if (!r) continue;
           if (r.reconcile_state || r.reconciliation_id != null) { await db.updateById('personal_transactions', r.id, { plaid_removed: true }); flagged++; continue; }
           await db.deleteById('personal_transactions', r.id); removed++;
+          await dropBankMatches(uid, { bankingId: r.id });   // NEW-14: its match goes with it
           await syncBankLineCash(uid, [r.id]);   // G15: a removed line's cash move is reversed
         }
         for (const t of (sync.added || [])) {
@@ -11641,6 +11654,7 @@ app.delete('/api/invoice-payments/:id', requireAuth, lockGuard(LOCK_SPECS.invoic
   await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'invoice_payments', recordId: rows[0].id, action: 'DELETE', oldData: rows[0], req });   // FIX-3b
   await recalcInvoiceStatus(pool, rows[0].invoice_id, scopeId(req));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
+  await dropBankMatches(scopeId(req), { paymentId: Number(req.params.id) });   // NEW-14
   res.json({ ok: true });
 }));
 

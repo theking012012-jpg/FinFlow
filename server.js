@@ -9110,6 +9110,14 @@ async function _mutateSettingsBlob(uid, key, entityId, mutate, req = null) {
       `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1 FOR UPDATE`, [uid, key, eid]);
     let cur = null; try { cur = r && r.data && r.data.value ? JSON.parse(r.data.value) : null; } catch (_) { cur = null; }
     const next = await mutate(cur);
+    // LC3e-c (owner decision 2026-11-01): a BUSINESS service (Stripe, WiPay, a store, payroll, an accounting import…) is
+    // connected to a business. Every connect route already refuses first (_needsBusinessFirst, decision 3.6); this is the
+    // backstop AT THE WRITE (Rule 9) — every connector saves through here, so no path can store one with no business. Personal's own bank (belvo_conn at
+    // entity NULL) and clearing a legacy account-level blob are not affected.
+    if (eid == null && /_conn$/.test(key) && key !== 'belvo_conn' && _connIsLinked(next)) {
+      const e = new Error('Choose or create a business first — a connected service belongs to the business it serves.');
+      e.status = 400; e.expose = true; e.code = 'NO_BUSINESS_IN_VIEW'; throw e;
+    }
     const data = JSON.stringify(next);
     if (r) await client.query(`UPDATE user_settings SET data = data || jsonb_build_object('value', $2::text), updated_at = NOW() WHERE id = $1`, [r.id, data]);
     else await client.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())`, [uid, eid, { key, value: data }]);
@@ -9129,6 +9137,7 @@ async function _persBankLinkHist(uid, key, before, after, req) {
 }
 // LC3e — what a connection blob says about access, with every secret left out.
 const _CONN_MARKERS = ['access_token', 'account', 'stripe_user_id', 'account_number', 'company_id', 'connected', 'consumer_key'];
+const _connIsLinked = v => { const l = _connLinks(v); if (l) return l.length > 0; return !!(v && typeof v === 'object' && _CONN_MARKERS.some(k => v[k])); };   // LC3e-c
 const _connLinks = v => (Array.isArray(v) ? v : (v && Array.isArray(v.links) ? v.links : null));
 const _connState = v => {
   const links = _connLinks(v);
@@ -15456,7 +15465,7 @@ app.use((err, req, res, _next) => {
   // F157: honour a typed, client-safe status set upstream (e.g. db.insert's NO_ACTIVE_ENTITY 400).
   // Only errors explicitly marked `expose` leak their message; everything else stays a generic 500.
   if (err && err.expose === true && Number.isInteger(err.status)) {
-    return res.status(err.status).json({ error: err.message });
+    return res.status(err.status).json(Object.assign({ error: err.message }, (typeof err.code === 'string' && /^[A-Z][A-Z_]+$/.test(err.code)) ? { code: err.code } : {}));   // a typed code travels with it
   }
   console.error('[Unhandled Error]', err);
   captureErr(err, { requestId: req.id, path: req.path, method: req.method, userId: req.session && req.session.userId });
@@ -15627,3 +15636,4 @@ module.exports.pickRate = pickRate;                 // FX-live - pair resolution
 module.exports._pickDirectRate = _pickDirectRate;   // FX-live - direct-pair carry-forward/backward matcher (test surface)
 module.exports.refreshLiveFxRates = refreshLiveFxRates;   // FX-live - USD-base feed upsert, manual-wins, idempotent-per-day (test surface)
 module.exports._setResendClientForTest = c => { resendClient = c; };   // LC3d: harness seam — a capturing fake Resend, never the network
+module.exports._mutateSettingsBlob = _mutateSettingsBlob;   // LC3e-c: test surface (the one connection writer)

@@ -1918,7 +1918,10 @@
             // so the consolidated view renders "—", never a fabricated $0 for data that
             // actually failed to load (the report layer now throws instead of faking $0).
             .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-            .then(d => { e.data = { rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0 }; })
+            // NEW-7 (live retest 2026-10-30): a column the server could not fully convert (no rate for some of its dates —
+            // fxCoverage.complete false) summed those rows as 0 and showed "$0". It is marked incomplete and reads "—".
+            .then(d => { const _cov = d.fxCoverage; e.data = { rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0,
+              incomplete: !!(_cov && _cov.complete === false), missingRate: (_cov && _cov.complete === false && Array.isArray(_cov.unconvertible) && _cov.unconvertible[0]) ? (_cov.unconvertible[0].from + '→' + _cov.unconvertible[0].to) : null }; })
             .catch(() => { e.data = { unavailable: true }; });
         }))).then(() => {
           window._consolFetching = false;

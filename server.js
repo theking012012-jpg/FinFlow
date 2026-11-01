@@ -1911,6 +1911,7 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   Object.assign(_entExtra, _prof.patch);
   const { row } = await db.insert('entities', { user_id: scopeId(req), name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0, ..._entExtra });
   await recordAudit(pool, { userId: scopeId(req), entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await seedFxRatesForUser(scopeId(req));   // NEW-7: rates from the moment a business exists, not from the next daily run
   res.status(201).json(row);
 }));
 // F94 B3 — validate the per-entity opening cash balance for the runway. PURE + additive:
@@ -8236,6 +8237,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     const _intent = parseReportIntent(req.query);
     if (_intent.error) return res.status(400).json({ error: _intent.error });
     const { bookPeriod, monthIdxArg } = _intent;
+    if (req.query.display) await seedFxRatesForUser(uid);   // NEW-7: a converted view never waits for the next daily rates run
     // Canonical figures from computeBooks (the single source shared with the dashboard,
     // /books and the report routes) so every surface reconciles. Revenue/expenses/net all
     // include receipts, payments, payroll accrual + FIFO COGS.
@@ -14404,15 +14406,37 @@ async function latestFxRates(pool, userId) {
 // user entered by hand (source:'manual') is never clobbered. Stores EVERY supported currency the
 // feed returns (all of them, USD-base) so cross-via-USD covers all pairs for all entities; idempotent
 // per (user,pair,day). Best-effort — a feed outage leaves the last-good rates in place.
-async function refreshLiveFxRates() {
+// NEW-7 (live retest 2026-10-30): the feed ran at boot and then once a day for the accounts that existed at that moment, so
+// an account opened in between had NO rates until the next run — its second-currency business could not be converted
+// ("$0" in the consolidated view, "No rates yet" on the FX page). The last good feed is kept (one day), and an account
+// gets the rates the moment it needs them: when a business is created and when its FX page finds none.
+let _fxFeedCache = null;   // { at: ms, rates: {CUR: rate} }
+async function _fxFeed(fresh) {
+  if (!fresh && _fxFeedCache && Date.now() - _fxFeedCache.at < 24 * 60 * 60 * 1000) return _fxFeedCache.rates;
+  let resp;
+  try { resp = await fetch('https://open.er-api.com/v6/latest/USD', { signal: AbortSignal.timeout(6000) }); }   // never hold a request open on a slow feed
+  catch (e) { console.error('[fx-live] fetch failed:', e && e.message); return null; }
+  if (!resp || !resp.ok) { console.error('[fx-live] fetch failed:', resp && resp.status); return null; }
+  const data = await resp.json();
+  if (!data || data.result !== 'success' || !data.rates) { console.error('[fx-live] unexpected payload'); return null; }
+  _fxFeedCache = { at: Date.now(), rates: data.rates };
+  return data.rates;
+}
+async function seedFxRatesForUser(userId) {
   try {
-    const resp = await fetch('https://open.er-api.com/v6/latest/USD');
-    if (!resp || !resp.ok) { console.error('[fx-live] fetch failed:', resp && resp.status); return; }
-    const data = await resp.json();
-    if (!data || data.result !== 'success' || !data.rates) { console.error('[fx-live] unexpected payload'); return; }
-    const rates = data.rates;
+    const { rows: [h] } = await pool.query(`SELECT 1 FROM fx_rates WHERE user_id = $1 AND source = 'live' LIMIT 1`, [userId]);
+    if (h) return false;   // already has live rates — the daily run keeps them current
+    await refreshLiveFxRates(userId);
+    return true;
+  } catch (e) { console.error('[fx-live] seed for user ' + userId + ':', e && e.message); return false; }
+}
+async function refreshLiveFxRates(onlyUserId) {
+  try {
+    const rates = await _fxFeed(onlyUserId == null);   // the daily run always reads the feed; a single account may reuse it
+    if (!rates) return;
     const today = new Date().toISOString().slice(0, 10);
-    const { rows: us } = await pool.query(`SELECT DISTINCT user_id FROM entities WHERE user_id IS NOT NULL`);
+    const { rows: us } = onlyUserId != null ? { rows: [{ user_id: onlyUserId }] }
+      : await pool.query(`SELECT DISTINCT user_id FROM entities WHERE user_id IS NOT NULL`);
     // N67: ONE set-based statement per user (was 2–3 queries per currency per user — ~480 per user per refresh).
     // Same rules: only app-supported codes; manual-wins (a pair with a hand-entered rate is never touched);
     // today's live row is updated, else inserted. A rate outside the column's range is dropped up front (it
@@ -14459,6 +14483,7 @@ function computeUnrealised(tx, rateMap) {
 }
 
 app.get('/api/fx-rates', requireAuth, wrap(async (req, res) => {
+  await seedFxRatesForUser(scopeId(req));   // NEW-7: an account with none gets today's rates now
   const { rows } = await pool.query(
     `SELECT * FROM fx_rates WHERE user_id=$1 ORDER BY rate_date DESC, created_at DESC LIMIT 200`,
     [scopeId(req)]

@@ -434,8 +434,11 @@ function renderConsolPL(){
   pl.innerHTML = CONSOL_ROW_DEFS.map(row=>{
     const entityVals = ENTITIES.map(e=>{
       // F31: an entity whose data failed to load shows "—", never a fabricated $0.
-      const cell = (e.data && e.data.unavailable) ? '—' : fmtConsol(e.data[row.key], e.currency);
-      return `<span data-style="text-align:right;color:var(--t2);font-family:var(--font-mono)">${cell}</span>`;
+      // NEW-7: nor one the server could not convert (no rate yet) — "—" with the missing rate named, never "$0".
+      const _inc = e.data && e.data.incomplete;
+      const cell = (e.data && (e.data.unavailable || _inc)) ? '—' : fmtConsol(e.data[row.key], e.currency);
+      const _tip = _inc ? ` title="No ${esc(e.data.missingRate || 'exchange')} rate yet for some of this business's dates"` : '';
+      return `<span data-style="text-align:right;color:var(--t2);font-family:var(--font-mono)"${_tip}>${cell}</span>`;
     }).join('');
     const total = getConsolTotal(row.key);
     return `

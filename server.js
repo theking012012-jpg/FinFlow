@@ -7512,9 +7512,10 @@ async function runRecurringScheduler() {
       }
       try {
         const _invRow = await _fireRecurringOnce('recurring_invoices', r, 'invoices', {
-          // F88 step 6: stamp the due date on a business day for the entity's country (Modified Following);
-          // next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
-          client: r.client, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
+          // G16 (owner decision 2026-11-01): due on the scheduled issue date + this business's payment terms — the same
+          // rule as every other invoice (invoiceDueFromTerms) — then F88 step 6: moved onto a business day for the
+          // entity's country (Modified Following). next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
+          client: r.client, amount: r.amount, due_date: businessDayShift(await invoiceDueFromTerms(r.entity_id, r.next_run) || r.next_run, _entCountry.get(r.entity_id)),
           // N38 (Rule 10): the document is issued on its SCHEDULED calendar date (the entity-local day it fired
           // for). Without issue_date, recognition fell back to the UTC created_at instant, which for an entity
           // east of UTC is the PREVIOUS day — misfiling a 1st-of-month run into the prior month / fiscal year.
@@ -7546,8 +7547,9 @@ async function runRecurringScheduler() {
       }
       try {
         const _billRow = await _fireRecurringOnce('recurring_bills', r, 'bills', {
-          // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
-          vendor: r.vendor, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
+          // G16 (class, Rule 13): issue + this business's terms, as a bill entered by hand (FA-M5b); then the F88 step 6
+          // business-day shift (Modified Following, entity's country); anchor unadjusted.
+          vendor: r.vendor, amount: r.amount, due_date: businessDayShift(await invoiceDueFromTerms(r.entity_id, r.next_run) || r.next_run, _entCountry.get(r.entity_id)),
           issue_date: String(r.next_run).slice(0, 10),   // N38: issued on its scheduled date (see invoices above)
           status: 'unpaid', notes: `Auto-generated from recurring schedule`,
           recurring_bill_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match

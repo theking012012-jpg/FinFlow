@@ -127,8 +127,11 @@ async function main() {
     )).rows[0].id;
     // Country drives the shift; NO timezone on either ⇒ both resolve "today" in UTC (2026-07-25), isolating
     // step 6 from step 3. Same everything except `country`.
-    const eidUS   = await mkEntity({ name: 'US Co',   currency: 'USD', country: 'US', is_active: 0, sort_order: 0 });
-    const eidBare = await mkEntity({ name: 'Bare Co', currency: 'USD',                 is_active: 0, sort_order: 1 });
+    // G16 (2026-11-01): a recurring document is due on issue + the business's payment terms, THEN shifted. Terms 0
+    // ("due on receipt") make the due date the run date itself, so this harness keeps isolating the step-6 shift.
+    // (Terms other than 0 are verify-g16-recurring-terms.)
+    const eidUS   = await mkEntity({ name: 'US Co',   currency: 'USD', country: 'US', payment_terms: 0, is_active: 0, sort_order: 0 });
+    const eidBare = await mkEntity({ name: 'Bare Co', currency: 'USD',                 payment_terms: 0, is_active: 0, sort_order: 1 });
 
     const mkRecurBill = async (eid, data) => (await c.query(
       `INSERT INTO recurring_bills (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING id`,

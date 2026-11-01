@@ -108,7 +108,9 @@ async function main() {
 
     const g1 = await invFor('Recur Client A');
     A('DUE invoice template materialised exactly one invoice', Number(g1.n) === 1, `count=${g1.n}`);
-    A('  generated invoice carries the template due_date (2026-07-01)', g1.dd === '2026-07-01', `due=${g1.dd}`);
+    // G16 (2026-11-01): due = issue 2026-07-01 + the business's payment terms (none set → 30) = 2026-07-31 (a Friday;
+    // no country → no shift). Was: due on the run date (2026-07-01).
+    A('  generated invoice is due on issue + 30 days default terms (2026-07-31)', g1.dd === '2026-07-31', `due=${g1.dd}`);
     A('  generated invoice status = pending', g1.st === 'pending', `status=${g1.st}`);
     // F94: durable lineage link back to the recurring template (the F94 page reads this, never fuzzy-matches).
     const invLink = (await c.query(`SELECT data->>'recurring_invoice_id' AS rid FROM invoices WHERE data->>'client'='Recur Client A' LIMIT 1`)).rows[0];

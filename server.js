@@ -15598,11 +15598,22 @@ async function stripDeletedAccountDevices(now = new Date()) {
   return { people, rowsCleared };
 }
 
+// Website visitor IPs (page_views) are not kept forever either: after 30 days the IP address is removed. Every traffic
+// figure (unique visitors, views, countries, pages) keys on visitor_key and the stored country / city, so nothing the
+// Traffic page counts changes — only an old row's IP column shows '—'. Stated in the Privacy Policy.
+const VISITOR_IP_DAYS = 30;
+async function clearOldVisitorIps(now = new Date()) {
+  const r = await pool.query(`UPDATE page_views SET ip_address = NULL WHERE ip_address IS NOT NULL AND last_seen < $1`,
+    [new Date(now.getTime() - VISITOR_IP_DAYS * 86400000)]);
+  if (r.rowCount) console.log('[retention] removed ' + r.rowCount + ' website-visitor IP address(es) older than ' + VISITOR_IP_DAYS + ' days');
+  return r.rowCount;
+}
+
 const _jobs = {
   recurring: () => runExclusive(pool, 'recurring-scheduler', () => runRecurringScheduler()),
   fxLive:    () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates()),
   reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
-  billing:   () => runExclusive(pool, 'billing-daily', async () => { const r = await runBillingJob(); try { await stripDeletedAccountDevices(); } catch (e) { console.error('[retention] IP / device removal:', e.message); } return r; }),   // D-G: pending plan changes (+ retention, renewals) · LC3d-b
+  billing:   () => runExclusive(pool, 'billing-daily', async () => { const r = await runBillingJob(); try { await stripDeletedAccountDevices(); } catch (e) { console.error('[retention] IP / device removal:', e.message); } try { await clearOldVisitorIps(); } catch (e) { console.error('[retention] visitor IP removal:', e.message); } return r; }),   // D-G: pending plan changes (+ retention, renewals) · LC3d-b
   referrals: () => runExclusive(pool, 'referral-payouts', () => runReferralJob()),   // FA-L3d: book the month + send referral pay
   autoEmails: () => runExclusive(pool, 'auto-emails', () => runAutoEmails()),   // FA-B1: the customer emails a business turned on
 };
@@ -15705,4 +15716,5 @@ module.exports._pickDirectRate = _pickDirectRate;   // FX-live - direct-pair car
 module.exports.refreshLiveFxRates = refreshLiveFxRates;   // FX-live - USD-base feed upsert, manual-wins, idempotent-per-day (test surface)
 module.exports._setResendClientForTest = c => { resendClient = c; };   // LC3d: harness seam — a capturing fake Resend, never the network
 module.exports._mutateSettingsBlob = _mutateSettingsBlob;   // LC3e-c: test surface (the one connection writer)
-module.exports.stripDeletedAccountDevices = stripDeletedAccountDevices;   // LC3d-b: test surface (90-day device strip)
+module.exports.stripDeletedAccountDevices = stripDeletedAccountDevices;
+module.exports.clearOldVisitorIps = clearOldVisitorIps;   // retention: website visitor IPs after 30 days (test surface)   // LC3d-b: test surface (90-day device strip)

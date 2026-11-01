@@ -484,6 +484,11 @@
             <option value="business_users">Business Users</option>
             <option value="trial_users">Trial Users</option>
           </select>
+          <label for="bc-kind">Type</label>
+          <select id="bc-kind">
+            <option value="news">Product news — skips people who unsubscribed; includes an unsubscribe link</option>
+            <option value="service">Service notice — account, security, billing or terms changes; goes to everyone</option>
+          </select>
           <label for="bc-subject">Subject</label>
           <input type="text" id="bc-subject" placeholder="Email subject line">
           <label for="bc-message">Message</label>

@@ -1005,7 +1005,7 @@ async function sendBroadcast() {
   const res = await fetch('/api/admin/broadcast', {
     method:'POST', credentials:'include',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ audience, subject, message }),
+    body: JSON.stringify({ audience, subject, message, kind: document.getElementById('bc-kind').value }),
   });
   const data = await res.json();
   if (data.error) { toast(data.error,'error'); return; }
@@ -1014,7 +1014,7 @@ async function sendBroadcast() {
     toast(data.message || `Logged only — email not configured (${data.total} recipients).`, 'error');
     return;  // keep the draft so the admin can resend once email is configured
   }
-  const failMsg = data.failed ? ` · ${data.failed} failed` : '';
+  const failMsg = (data.failed ? ` · ${data.failed} failed` : '') + (data.skipped ? ` · ${data.skipped} unsubscribed, skipped` : '');
   toast(`Broadcast sent to ${data.sent}/${data.total} recipients${failMsg}`,'success');
   document.getElementById('bc-subject').value = '';
   document.getElementById('bc-message').value = '';

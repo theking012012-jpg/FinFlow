@@ -3881,6 +3881,23 @@ app.post('/api/contact', contactLimiter, wrap(async (req, res) => {
   res.json({ ok: true, id: row && row.id, topic });
 }));
 
+// Product-news unsubscribe (Privacy Policy, 2026-11). No sign-in: the link's HMAC proves the address. POST only — a mail
+// app's one-click (RFC 8058, List-Unsubscribe-Post) and the page's button both POST, so a link scanner that merely
+// fetches the URL unsubscribes nobody. resubscribe:true undoes it. Service notices are unaffected.
+const unsubscribeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, keyGenerator: _ipKey, standardHeaders: true, legacyHeaders: false, handler: _rlHandler });
+app.post('/api/unsubscribe', unsubscribeLimiter, wrap(async (req, res) => {
+  const optout = require('./email-optout');
+  const src = Object.assign({}, req.query || {}, req.body || {});
+  const email = optout.norm(src.e);
+  if (!email || !optout.valid(email, src.t)) return res.status(400).json({ error: 'This unsubscribe link is not valid.', code: 'BAD_LINK' });
+  if (src.resubscribe === true || src.resubscribe === 'true') {
+    await pool.query(`DELETE FROM email_optouts WHERE email = $1`, [email]);
+    return res.json({ ok: true, subscribed: true });
+  }
+  await pool.query(`INSERT INTO email_optouts (email, topic) VALUES ($1, 'news') ON CONFLICT (email) DO NOTHING`, [email]);
+  res.json({ ok: true, subscribed: false });
+}));
+
 app.post('/api/support', wrap(async (req, res) => {
   const _uid = req.session && req.session.userId;
   const _aid = req.session && req.session.accountantId;
@@ -7442,7 +7459,7 @@ app.get('/api/ai/cache', requireAuth, wrap(async (req, res) => {
 
 // ── ADMIN ROUTES ──────────────────────────────────────────────────────────────
 const registerAdminRoutes = require('./admin-routes');
-registerAdminRoutes(app, pool, stripe, resendClient);
+registerAdminRoutes(app, pool, stripe, () => resendClient);   // a getter: the client in use at send time
 
 // ── CLIENT ↔ ACCOUNTANT MESSAGES ─────────────────────────────────────────────
 app.get('/api/accountant-messages', requireAuth, wrap(async (req, res) => {

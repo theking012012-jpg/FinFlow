@@ -49,7 +49,10 @@ function requireOwner(req, res, next) {
     : res.status(403).json({ error: 'Only an owner can manage admin accounts.', code: 'OWNER_ONLY' })));
 }
 
-module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
+module.exports = function registerAdminRoutes(app, pool, stripe, resendClientOrGetter) {
+  // The email client is read when it is USED, not captured at registration: server.js passes a getter, so a client
+  // configured (or swapped by a harness seam) after boot is the one admin emails go through.
+  const _rc = () => (typeof resendClientOrGetter === 'function' ? resendClientOrGetter() : resendClientOrGetter);
   _adminPool = pool;
 
   // ── LC3g: THE admin audit write ──────────────────────────────────────────────────────────────────────────────
@@ -269,7 +272,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     try {
       const over = {};
       if (req.query.window) over.windowMinutes = parseInt(req.query.window, 10);
-      const _r = await notifyAnomalies(pool, resendClient, { over });
+      const _r = await notifyAnomalies(pool, _rc(), { over });
       await adminAudit(req, 'audit_anomalies_notify', 'security', null, { after: _r });   // LC3g
       res.json(_r);
     } catch (e) { console.error('[admin] audit-anomalies notify failed:', e.message); res.status(500).json({ error: 'Notify failed.' }); }
@@ -404,7 +407,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     await adminAudit(req, `accountant_${action}`, 'accountant', _accId, { notes: notes || '', before: _accBefore, after: _accAfter });   // LC3g
 
     // Send email notification if Resend configured
-    if (resendClient) {
+    if (_rc()) {
       const acc = await pool.query('SELECT email, first_name FROM accountants WHERE id = $1', [(parseInt(req.params.id, 10) || 0)]);
       if (acc.rows[0]) {
         const { email, first_name } = acc.rows[0];
@@ -419,7 +422,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
           ? emailHtml`<p>Hi ${first_name},</p><p>Thank you for applying to the FinFlow Professional Network. Unfortunately we were unable to verify your credentials at this time.</p>${notes ? emailHtml`<p>Notes: ${notes}</p>` : ''}<p>You're welcome to reapply once you have updated credentials.</p>`
           : emailHtml`<p>Hi ${first_name},</p><p>Your FinFlow accountant account status has been updated to: <strong>${newStatus}</strong>.</p>${notes ? emailHtml`<p>Reason: ${notes}</p>` : ''}`;
 
-        await resendClient.emails.send({
+        await _rc().emails.send({
           from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
           to: email,
           subject,
@@ -626,8 +629,8 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // report is being looked at. Tell the accountant → they are emailed the category and asked for their response; the
   // client is never named (the policy's 'unless that would put the client at risk' is the admin's call: don't press it).
   const _rptMail = async (to, subject, html) => {
-    if (!resendClient || !process.env.EMAIL_FROM || !to) return false;
-    try { await resendClient.emails.send({ from: process.env.EMAIL_FROM, to, subject, html: String(html), reply_to: process.env.SUPPORT_EMAIL || undefined }); return true; }
+    if (!_rc() || !process.env.EMAIL_FROM || !to) return false;
+    try { await _rc().emails.send({ from: process.env.EMAIL_FROM, to, subject, html: String(html), reply_to: process.env.SUPPORT_EMAIL || undefined }); return true; }
     catch (e) { console.error('[admin report email]', e.message); return false; }
   };
   app.post('/api/admin/reports/:id/acknowledge', requireAdmin, wrap(async (req, res) => {
@@ -979,11 +982,17 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // sending nothing. Now it actually delivers via Resend and reports the TRUE
   // counts. When Resend isn't configured it says so honestly (logged only, sent:0)
   // instead of claiming a delivery that never happened.
+  // Broadcasts are one of two kinds, chosen by the admin (Privacy Policy, 2026-11):
+  //   service — about the account, security, billing or these terms: goes to everyone in the audience;
+  //   news    — product news: skips every address that unsubscribed, and every email carries a one-click unsubscribe
+  //             link plus the List-Unsubscribe / List-Unsubscribe-Post headers mail apps use (RFC 8058).
+  // A missing kind is treated as news — the side that respects opt-outs.
+  const optout = require('./email-optout');
   app.post('/api/admin/broadcast', requireAdmin, wrap(async (req, res) => {
     const { audience, subject, message } = req.body || {};
+    const kind = (req.body || {}).kind === 'service' ? 'service' : 'news';
     if (!subject || !message) return res.status(400).json({ error: 'Subject and message are required.' });
 
-    // Recipient emails per audience (was COUNT(*); now selects addresses to send to).
     const recipientQueries = {
       all_users:      `SELECT data->>'email' AS email FROM users WHERE data->>'deleted' IS DISTINCT FROM 'true' AND data->>'email' IS NOT NULL`,
       all_accountants:`SELECT email FROM accountants WHERE status = 'verified' AND email IS NOT NULL`,
@@ -993,33 +1002,47 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     };
     const q = recipientQueries[audience] || recipientQueries.all_users;
     const rows = (await pool.query(q)).rows;
-    const recipients = [...new Set(rows.map(r => r.email).filter(Boolean))];
+    let recipients = [...new Set(rows.map(r => String(r.email || '').trim().toLowerCase()).filter(Boolean))];
+    let skipped = 0;
+    if (kind === 'news' && recipients.length) {
+      const out = new Set((await pool.query(`SELECT email FROM email_optouts WHERE email = ANY($1::text[])`, [recipients])).rows.map(r => r.email));
+      skipped = recipients.filter(e => out.has(e)).length;
+      recipients = recipients.filter(e => !out.has(e));
+    }
     const total = recipients.length;
+    const _log = { audience, kind, subject, total, skipped_unsubscribed: skipped };
 
     // No Resend key → honest "logged only", never a fake `sent`.
-    if (!resendClient) {
-      await adminAudit(req, 'broadcast', 'system', null, { notes: `${audience} (LOGGED ONLY — email not configured; ${total} would receive): ${subject}`,   // LC3g
-        after: { audience, subject, total, sent: 0, failed: 0, delivered: false } });
-      return res.json({ ok: true, sent: 0, failed: 0, total, logged: true,
+    if (!_rc()) {
+      await adminAudit(req, 'broadcast', 'system', null, { notes: `${kind} · ${audience} (LOGGED ONLY — email not configured; ${total} would receive${skipped ? ', ' + skipped + ' unsubscribed skipped' : ''}): ${subject}`,   // LC3g
+        after: Object.assign({}, _log, { sent: 0, failed: 0, delivered: false }) });
+      return res.json({ ok: true, sent: 0, failed: 0, total, skipped, kind, logged: true,
         message: `Email is not configured — nothing was sent. ${total} recipient(s) logged only.` });
     }
 
     // Deliver in chunks so a large audience doesn't fire thousands of calls at once.
     const from = process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>';
-    const html = `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow</h2><div style="white-space:pre-wrap;line-height:1.6">${String(message).replace(/[<>]/g, c => (c === '<' ? '&lt;' : '&gt;'))}</div></div>`;
+    const body = String(message).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+    const mail = (to) => {
+      const footer = kind === 'news'
+        ? `You get FinFlow product news because you have a FinFlow account. <a href="${optout.pageUrl(to)}" style="color:#c9a84c">Unsubscribe</a> in one click.`
+        : 'This is a service notice about your FinFlow account.';
+      const html = `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow</h2><div style="white-space:pre-wrap;line-height:1.6">${body}</div><p style="margin-top:28px;font-size:12px;color:#9a9278">${footer}</p></div>`;
+      const m = { from, to, subject, html };
+      if (kind === 'news') m.headers = { 'List-Unsubscribe': '<' + optout.oneClickUrl(to) + '>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' };
+      return m;
+    };
     let sent = 0, failed = 0;
     const CHUNK = 20;
     for (let i = 0; i < recipients.length; i += CHUNK) {
       const batch = recipients.slice(i, i + CHUNK);
-      const results = await Promise.allSettled(
-        batch.map(to => resendClient.emails.send({ from, to, subject, html }))
-      );
+      const results = await Promise.allSettled(batch.map(to => _rc().emails.send(mail(to))));
       for (const r of results) (r.status === 'fulfilled' ? sent++ : failed++);
     }
 
-    await adminAudit(req, 'broadcast', 'system', null, { notes: `${audience} (sent ${sent}/${total}, ${failed} failed): ${subject}`,   // LC3g
-      after: { audience, subject, total, sent, failed, delivered: true }, outcome: failed ? 'partial' : 'ok' });
-    return res.json({ ok: true, sent, failed, total });
+    await adminAudit(req, 'broadcast', 'system', null, { notes: `${kind} · ${audience} (sent ${sent}/${total}, ${failed} failed${skipped ? ', ' + skipped + ' unsubscribed skipped' : ''}): ${subject}`,   // LC3g
+      after: Object.assign({}, _log, { sent, failed, delivered: true }), outcome: failed ? 'partial' : 'ok' });
+    return res.json({ ok: true, sent, failed, total, skipped, kind });
   }));
 
   // ── PLATFORM HEALTH ───────────────────────────────────────────────────────
@@ -1182,10 +1205,10 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     await adminAudit(req, 'support_update', 'support_request', id, {   // LC3g
       before: { status: cur.data && cur.data.status, response: (cur.data && cur.data.response) || null }, after: { status: data.status, response: data.response || null } });
 
-    if (response && resendClient && data.email && process.env.EMAIL_FROM) {
+    if (response && _rc() && data.email && process.env.EMAIL_FROM) {
       const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       try {
-        await resendClient.emails.send({
+        await _rc().emails.send({
           from: process.env.EMAIL_FROM,
           to: data.email,
           subject: 'Re: ' + (data.subject || 'your FinFlow support request'),

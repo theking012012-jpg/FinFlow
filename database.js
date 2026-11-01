@@ -703,6 +703,12 @@ async function initDB() {
       CREATE OR REPLACE FUNCTION admin_log_immutable() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION 'admin_log is append-only: % is not permitted', TG_OP; END;
       $$ LANGUAGE plpgsql`);
+    // Product-news unsubscribes (mirrors scripts/migrations/2026-11-02-email-optouts.sql).
+    await client.query(`CREATE TABLE IF NOT EXISTS email_optouts (
+  email      TEXT PRIMARY KEY,
+  topic      TEXT NOT NULL DEFAULT 'news',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`);
     // LC3g-b: named admin accounts (own password + required 2FA); admin_log names who acted.
     // Mirrored by scripts/migrations/2026-11-02-named-admin-accounts.sql.
     await client.query(`CREATE TABLE IF NOT EXISTS admin_users (

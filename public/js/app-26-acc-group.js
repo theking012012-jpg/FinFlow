@@ -995,8 +995,11 @@ window.showPage = function(id, el) {
   }
 };
 
-// Boot — wait for auth before fetching directory or my-accountant
-window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true});
+// Boot — wait for auth before fetching directory or my-accountant.
+// NEW-13: this file runs inside the page's 'load' handler, and sign-in usually finishes FIRST — 'ff:authed' had already
+// fired, so this load never ran (no unread badge, no invitations until the page was opened). Run now if signed in.
+const _whenAuthed = function (fn) { if (window._ffAuthed) fn(); else window.addEventListener('ff:authed', fn, { once: true }); };
+_whenAuthed(function(){ loadDirectory(); });
 // NEW-9: the invitation e-mail links to /app?page=my-accountant — open it once signed in (only this page; nothing else
 // is navigable by URL).
 // Sign-in may already have happened before this file ran (ff:authed fired), so check _ffAuthed first.
@@ -1004,7 +1007,7 @@ window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true}
   let wanted = false; try { wanted = new URLSearchParams(location.search).get('page') === 'my-accountant'; } catch (_) {}
   if (!wanted) return;
   const go = function () { setTimeout(function () { showPage('my-accountant', null); }, 300); };
-  if (window._ffAuthed) go(); else window.addEventListener('ff:authed', go, { once: true });
+  _whenAuthed(go);
 })();
 
 })();

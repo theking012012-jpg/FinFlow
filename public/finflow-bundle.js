@@ -2294,6 +2294,7 @@
         // wired anywhere for this — if it's not set yet, the modal blocks/shows loading instead.
         if (data.today) window._serverToday = data.today;
         if (typeof window._primeServerClock === 'function') window._primeServerClock(data);   // NEW-2
+        if (typeof window._ffApplyLiveRates === 'function') window._ffApplyLiveRates();   // NEW-8: the server's rates, not the built-in table
         // F147: apply the restored user's plan/CURRENT_USER too — WAS MISSING here, so a page
         // reload left currentUserPlan at its 'trial' default and re-gated business users at the
         // entity cap of 1 (the "requires Business" modal). Same setter the login/register paths use.

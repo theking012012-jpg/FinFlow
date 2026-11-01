@@ -3446,6 +3446,29 @@ function openOwnerModal(){
 }
 
 // Safe fxConvert wrapper — works even if fxConvert not yet defined
+// NEW-8 (live retest 2026-10-30): Personal (and the display-currency switch) converted with the rate table BUILT INTO the
+// page (finflow-currency.js — TTD 6.80 forever), while the business side uses the server's live rates: two rate sources,
+// and one of them never moves. The page now takes the server's rates (the latest USD→X per currency: the live feed, or
+// a rate the person entered) into that table once signed in; the built-in figures remain only where no rate exists.
+async function _ffApplyLiveRates(){
+  try{
+    const r=await fetch('/api/fx-rates',{credentials:'include'}); if(!r.ok) return false;
+    const rows=await r.json(); if(!Array.isArray(rows)) return false;
+    const T=(typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES; if(!T) return false;
+    const seen={}; let n=0;
+    for(const x of rows){   // newest first (the route orders by rate_date DESC)
+      if(x.from_currency!=='USD'||seen[x.to_currency]) continue;
+      const v=parseFloat(x.rate); if(!(v>0)||!T[x.to_currency]) continue;
+      seen[x.to_currency]=1; T[x.to_currency].rate=v; T[x.to_currency].rateDate=String(x.rate_date||'').slice(0,10); n++;
+    }
+    window._ffLiveRatesApplied=n;
+    if(n && document.getElementById('page-personal')?.classList.contains('active') && typeof _applyPersFilter==='function') _applyPersFilter();
+    return n>0;
+  }catch(_){ return false; }
+}
+window._ffApplyLiveRates=_ffApplyLiveRates;
+window.addEventListener('ff:authed', function(){ _ffApplyLiveRates(); });
+
 function _safeFX(amount, from, to){
   // Use local CURRENCIES const (same script block) — window.CURRENCIES may not be set yet
   const r = (typeof CURRENCIES !== 'undefined' ? CURRENCIES : null) || window.CURRENCIES;

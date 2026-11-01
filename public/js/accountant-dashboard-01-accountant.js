@@ -253,6 +253,8 @@ function initUI() {
   const name = `${accountant.first_name} ${accountant.last_name}`;
   document.getElementById('nav-name').textContent = name;
   document.getElementById('first-name').textContent = accountant.first_name;
+  { const _h = new Date().getHours(), _g = document.getElementById('acct-greeting');   // NEW-10: the reader's own time of day
+    if (_g) _g.textContent = _h < 5 ? 'Good evening' : _h < 12 ? 'Good morning' : _h < 18 ? 'Good afternoon' : 'Good evening'; }
 
   const statusMap = { verified: '✓ Verified', pending: 'Pending review', rejected: 'Rejected', suspended: 'Suspended' };
   const avgRating = parseFloat(accountant.avg_rating) || 0;

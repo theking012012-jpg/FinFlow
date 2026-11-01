@@ -3319,7 +3319,7 @@ function saveOwnerPayroll(){
   renderPayroll();
 
   const entityNames = Object.entries(ownerPayrollByEntity).map(([i])=>ENTITIES[i]?.name||'Entity').join(', ');
-  notify(`Payroll saved for ${esc(entityNames)} — Personal Finance synced ✦`);
+  notify(`Payroll saved for ${esc(entityNames)} ✦ — your net salary reaches Personal when a payroll run is marked paid`);   // NEW-10
 }
 
 function removeOwnerFromPayroll(){
@@ -4050,7 +4050,7 @@ async function saveOwnerPayrollCard(){
     if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
     if(typeof renderPayroll==='function') renderPayroll();
     window.finflow?.refresh(['payroll','dashboard','personal-finance']);
-    notify('Payroll saved — Personal Finance synced ✦');
+    notify('Payroll saved ✦ — your net salary reaches Personal when a payroll run is marked paid');   // NEW-10: nothing crosses until a run is paid
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
 }
 

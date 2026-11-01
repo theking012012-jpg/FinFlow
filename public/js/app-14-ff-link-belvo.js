@@ -742,16 +742,18 @@ window.ffBankLinkForCountry = async function(country, scope, onDone){
   const cfg = async (path, key) => { try{ return !!(await (await fetch(path + _q,{credentials:'include'})).json())[key]; }catch(e){ return false; } };
   const manual = (why) => { if(typeof notify==='function') notify(why, true); };
   const IMPORT = ' — use “⬆ Import” to add an OFX/QFX/CSV statement from any bank.';
+  // NEW-10: the country by name ("Trinidad and Tobago"), not its code ("TT").
+  const _cn = (() => { try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(country) || country; } catch (_) { return country; } })();
   const region = window.ffBankRegion(country);
   if (region === 'belvo') {
     if (await cfg('/api/belvo/status','configured')) return window.ffLinkBelvo(onDone, null, scope);
-    return manual('Automatic bank linking for '+country+' (via Belvo) isn’t enabled yet'+IMPORT);
+    return manual('Automatic bank linking for '+_cn+' (via Belvo) isn’t enabled yet'+IMPORT);
   }
   if (region === 'plaid') {
     if (await cfg('/api/plaid/items','configured')) return window.ffLinkBank(onDone, null, scope);
-    return manual('Automatic bank linking for '+country+' (via Plaid) isn’t enabled yet'+IMPORT);
+    return manual('Automatic bank linking for '+_cn+' (via Plaid) isn’t enabled yet'+IMPORT);
   }
-  return manual('Automatic bank linking isn’t available'+(country?(' for '+country):'')+' yet'+IMPORT);
+  return manual('Automatic bank linking isn’t available'+(country?(' for '+_cn):'')+' yet'+IMPORT);
 };
 window.ffBankLinkFromPage = async function(){
   const ent = (window.ENTITIES||[]).find(e=>e.active) || (window.ENTITIES||[])[0] || {};

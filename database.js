@@ -806,7 +806,18 @@ async function initDB() {
     // only INSERT is ever permitted.
     await client.query(`
       CREATE OR REPLACE FUNCTION audit_trail_immutable() RETURNS trigger AS $$
-      BEGIN RAISE EXCEPTION 'audit_trail is append-only: % is not permitted', TG_OP; END;
+      BEGIN
+        -- LC3d-b (owner decision 2026-11-01): ONE narrow exception — 90 days after an account is deleted its sign-in IP
+        -- addresses and devices are removed. Allowed only inside that job's transaction for THAT person
+        -- (finflow.strip_pii = their id), and only when the change is exactly ip_address / user_agent → NULL; every
+        -- other column must be unchanged. A DELETE is never allowed.
+        IF TG_OP = 'UPDATE' AND current_setting('finflow.strip_pii', true) = OLD.user_id::text
+           AND NEW.ip_address IS NULL AND NEW.user_agent IS NULL
+           AND (to_jsonb(NEW) - 'ip_address' - 'user_agent') = (to_jsonb(OLD) - 'ip_address' - 'user_agent') THEN
+          RETURN NEW;
+        END IF;
+        RAISE EXCEPTION 'audit_trail is append-only: % is not permitted', TG_OP;
+      END;
       $$ LANGUAGE plpgsql`);
     await client.query(`DROP TRIGGER IF EXISTS audit_trail_no_mutate ON audit_trail`);
     await client.query(`CREATE TRIGGER audit_trail_no_mutate BEFORE UPDATE OR DELETE ON audit_trail

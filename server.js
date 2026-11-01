@@ -15530,11 +15530,42 @@ async function _runReconcileScan(resend) {
 // N72: every scheduled job runs in ONE replica at a time (job-lock.js — a Postgres advisory lock per job); the
 // other replicas skip that tick. They used to run every job in every replica.
 const { runExclusive } = require('./job-lock');
+// LC3d-b (owner decision 2026-11-01): the audit trail outlives a deleted account (N18 — the financial record), but the
+// person's sign-in IP addresses and devices are not kept forever: 90 days after ACCOUNT_DELETED they are removed from every
+// one of their audit rows (the trigger allows exactly that change, for that person, inside this transaction). The record
+// of WHAT happened stays; WHERE FROM goes. One system row records it. Idempotent (rows already cleared are not touched).
+const PII_RETENTION_DAYS = 90;
+async function stripDeletedAccountDevices(now = new Date()) {
+  const cutoff = new Date(now.getTime() - PII_RETENTION_DAYS * 86400000);
+  const { rows: due } = await pool.query(
+    `SELECT a.user_id FROM audit_trail a
+      WHERE a.action = 'ACCOUNT_DELETED' AND a.table_name = 'users' AND a.user_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = a.user_id)
+      GROUP BY a.user_id HAVING MAX(a.changed_at) <= $1
+         AND bool_or(EXISTS (SELECT 1 FROM audit_trail b WHERE b.user_id = a.user_id AND (b.ip_address IS NOT NULL OR b.user_agent IS NOT NULL)))`, [cutoff]);
+  let people = 0, rowsCleared = 0;
+  for (const { user_id } of due) {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`SELECT set_config('finflow.strip_pii', $1::text, true)`, [String(user_id)]);
+      const r = await c.query(`UPDATE audit_trail SET ip_address = NULL, user_agent = NULL WHERE user_id = $1 AND (ip_address IS NOT NULL OR user_agent IS NOT NULL)`, [user_id]);
+      await c.query(`INSERT INTO audit_trail (user_id, table_name, action, new_data, actor_type, actor_id) VALUES ($1, 'users', 'SECURITY_DATA_REMOVED', $2, 'system', NULL)`,
+        [user_id, JSON.stringify({ rows: r.rowCount, after_days: PII_RETENTION_DAYS })]);
+      await c.query('COMMIT');
+      people++; rowsCleared += r.rowCount;
+    } catch (e) { try { await c.query('ROLLBACK'); } catch (_) {} console.error('[retention] IP / device removal failed for user ' + user_id + ':', e.message); }
+    finally { c.release(); }
+  }
+  if (people) console.log('[retention] removed sign-in IPs / devices for ' + people + ' deleted account(s), ' + rowsCleared + ' audit rows');
+  return { people, rowsCleared };
+}
+
 const _jobs = {
   recurring: () => runExclusive(pool, 'recurring-scheduler', () => runRecurringScheduler()),
   fxLive:    () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates()),
   reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
-  billing:   () => runExclusive(pool, 'billing-daily', () => runBillingJob()),   // D-G: pending plan changes (+ retention, renewals)
+  billing:   () => runExclusive(pool, 'billing-daily', async () => { const r = await runBillingJob(); try { await stripDeletedAccountDevices(); } catch (e) { console.error('[retention] IP / device removal:', e.message); } return r; }),   // D-G: pending plan changes (+ retention, renewals) · LC3d-b
   referrals: () => runExclusive(pool, 'referral-payouts', () => runReferralJob()),   // FA-L3d: book the month + send referral pay
   autoEmails: () => runExclusive(pool, 'auto-emails', () => runAutoEmails()),   // FA-B1: the customer emails a business turned on
 };
@@ -15637,3 +15668,4 @@ module.exports._pickDirectRate = _pickDirectRate;   // FX-live - direct-pair car
 module.exports.refreshLiveFxRates = refreshLiveFxRates;   // FX-live - USD-base feed upsert, manual-wins, idempotent-per-day (test surface)
 module.exports._setResendClientForTest = c => { resendClient = c; };   // LC3d: harness seam — a capturing fake Resend, never the network
 module.exports._mutateSettingsBlob = _mutateSettingsBlob;   // LC3e-c: test surface (the one connection writer)
+module.exports.stripDeletedAccountDevices = stripDeletedAccountDevices;   // LC3d-b: test surface (90-day device strip)

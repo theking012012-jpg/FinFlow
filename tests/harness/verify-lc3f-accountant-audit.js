@@ -87,10 +87,13 @@ const PW = 'harness-password-not-a-secret';
     await since();
     await client.post('/api/accountants/review', { accountantId: accId, rating: 4, comment: 'Quick and clear' });
     await client.post('/api/accountants/report', { accountantId: accId, reason: 'Missed a deadline', category: 'service' });
+    // NEW-12 (2026-11-01): one accountant at a time — the client revokes Ada before asking Bo (asking while Ada has access
+    // is refused, so it would leave no ACCESS_REQUESTED). The revoke is itself on the client's trail (NEW-11).
+    await client.post('/api/accountants/my-accountant/revoke', { accountantId: accId });
     await client.post('/api/accountants/request-access', { accountantId: acc2 });
     t = await trail(clientId);
-    eq('review, report, access request → on the client trail', t.map(who), [['accountant_reviews', 'REVIEW', 'user'], ['accountant_reports', 'REPORT', 'user'], ['accountant_clients', 'ACCESS_REQUESTED', 'user']], []);
-    eq('…naming the accountant and the rating / category', [t[0] && t[0].new_data && [t[0].new_data.accountant_id, t[0].new_data.rating], t[1] && t[1].new_data && t[1].new_data.category, t[2] && t[2].new_data && t[2].new_data.accountant_id], [[accId, 4], 'service', acc2], null);
+    eq('review, report, revoke, access request → on the client trail', t.map(who), [['accountant_reviews', 'REVIEW', 'user'], ['accountant_reports', 'REPORT', 'user'], ['accountant_clients', 'CLIENT_REVOKE', 'user'], ['accountant_clients', 'ACCESS_REQUESTED', 'user']], []);
+    eq('…naming the accountant and the rating / category', [t[0] && t[0].new_data && [t[0].new_data.accountant_id, t[0].new_data.rating], t[1] && t[1].new_data && t[1].new_data.category, t[3] && t[3].new_data && t[3].new_data.accountant_id], [[accId, 4], 'service', acc2], null);
 
     // ── the accountant's own account (no client trail) ──
     await since();

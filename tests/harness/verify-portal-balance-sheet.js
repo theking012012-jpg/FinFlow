@@ -122,6 +122,8 @@ function checkStatement(tag, bs, exp) {
       JSON.stringify({ portal: [wideAll.totalAssets, wideAll.totalLiabilities, wideAll.equity], owner: [ownAll.totalAssets, ownAll.totalLiabilities, ownAll.equity] }));
 
     // ── accountant 2: fine-grained grant — entity A 'view', entity B 'none' ──
+    // NEW-12 (2026-11-01): one active accountant per client — the legacy accountant's link ends before the scoped one's starts.
+    await c.query(`UPDATE accountant_clients SET status = 'revoked' WHERE user_id = $1 AND status = 'active'`, [uid]);
     const scoped = await mkAcc('scoped', { entities: { [eA.id]: 'view', [eB.id]: 'none' }, personal: 'none' });
     const scAll = await books(scoped, '');
     checkStatement('scoped accountant, all permitted entities (= A only)', scAll, EXP_A);
@@ -130,6 +132,9 @@ function checkStatement(tag, bs, exp) {
     A('scoped accountant: hidden entity B by id → 403 (control)', scB.status === 403, 'status=' + scB.status);
 
     // ── rendered portal (legacy accountant, default All-entities view) ──
+    // NEW-12: one active accountant at a time — the scoped link ends and the legacy accountant's comes back.
+    await c.query(`UPDATE accountant_clients SET status = 'revoked' WHERE user_id = $1 AND status = 'active'`, [uid]);
+    await c.query(`UPDATE accountant_clients SET status = 'active' WHERE user_id = $1 AND accountant_id = (SELECT id FROM accountants WHERE email = 'l38-wide@finflow.test')`, [uid]);
     portal = await openPage(server.baseUrl, wide, `/accountant-client?client=${uid}`);
     await wait(6000);
     const d = portal.window.document;

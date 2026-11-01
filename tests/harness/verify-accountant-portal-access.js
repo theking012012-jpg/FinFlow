@@ -60,7 +60,8 @@ async function main() {
       [accId, clientId, level]
     );
     await link(accView, 'view');
-    await link(accFile, 'filing');
+    // NEW-12 (2026-11-01): one active accountant per client (unique index) — the filing accountant is linked after the view
+    // accountant's link ends (below), instead of both being active at once.
     // accNone: intentionally NO link.
 
     const http = new HarnessHttp(server.baseUrl);
@@ -88,6 +89,8 @@ async function main() {
 
     // ── FILING accountant: read + the two client-book mutations ──
     console.log('\n-- access_level = filing --');
+    await c.query(`UPDATE accountant_clients SET status = 'revoked' WHERE accountant_id = $1 AND user_id = $2`, [accView, clientId]);
+    await link(accFile, 'filing');
     await login('acc-file@finflow.test');
     const fBooks = await http.get(BOOKS);
     A('filing: GET books → 200', fBooks.status === 200, `status ${fBooks.status}`);

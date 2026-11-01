@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/ff-csp.js"></script><script src="/_gen/ff-handlers.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinFlow — Contact</title>
+<meta name="description" content="Contact FinFlow: questions, plans and pricing, privacy requests and security reports.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/terms-01.css">
+<link rel="stylesheet" href="/css/contact-01.css">
+<link rel="stylesheet" href="/css/phone-targets.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="/">FinFlow</a>
+  <a class="back" href="/">← Back to FinFlow</a>
+</header>
+<main>
+  <h1>Contact us</h1>
+  <p>Questions, plans and pricing, privacy requests and security reports all come here, and we reply by email.
+     Already have an account? You can also use <strong>Help → Contact support</strong> inside the app.</p>
+  <form class="cf" id="cf" novalidate data-on-submit="event.preventDefault();sendContact()">
+    <label for="cf-topic">What is it about?</label>
+    <select id="cf-topic">
+      <option value="general">General question</option>
+      <option value="sales">Plans and pricing</option>
+      <option value="privacy">Privacy request (access, correction, deletion, objection)</option>
+      <option value="security">Security report</option>
+      <option value="accountants">Accountant marketplace</option>
+    </select>
+    <label for="cf-name">Your name</label>
+    <input id="cf-name" autocomplete="name" maxlength="120">
+    <label for="cf-email">Your email (we reply here)</label>
+    <input id="cf-email" type="email" autocomplete="email" maxlength="200" required>
+    <label for="cf-message">Message</label>
+    <textarea id="cf-message" maxlength="5000" required></textarea>
+    <div class="hp" aria-hidden="true"><label for="cf-website">Leave this empty</label><input id="cf-website" tabindex="-1" autocomplete="off"></div>
+    <button type="submit" id="cf-send">Send</button>
+    <div class="cf-note" id="cf-note">We use what you send only to answer you. See the <a href="/privacy.html">Privacy Policy</a>.</div>
+    <div class="cf-msg" id="cf-msg" role="status" aria-live="polite"></div>
+  </form>
+</main>
+<footer>&#169; 2026 FinFlow · <a href="/terms.html">Terms</a> · <a href="/privacy.html">Privacy</a> · <a href="/security.html">Security</a></footer>
+<script src="/js/contact-01.js"></script>
+</body>
+</html>

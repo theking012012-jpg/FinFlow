@@ -5236,7 +5236,7 @@ function _ffShowTrialExpired(message){
    + 'Upgrade to make changes &#8599;</button>'
    + '<button id="ff-trial-dismiss" class="btn btn-ghost" data-style="width:100%;padding:9px;font-size:13px;margin-top:8px">Keep viewing (read-only)</button>'
    + '<div data-style="margin-top:14px;font-size:11px;color:var(--t3,#6b5c42)">'
-   + 'Questions? <a href="mailto:support@finflow.app" data-style="color:var(--acc,#c9a84c)">support@finflow.app</a></div>'
+   + 'Questions? <a href="#" id="ff-trial-help" data-style="color:var(--acc,#c9a84c)">Contact support</a></div>'
    + '</div>';
   document.body.appendChild(g);
   // F132: DISMISSABLE now. Reads work post-expiry, so dismissing lands on the user's real (read-only)
@@ -5250,6 +5250,8 @@ function _ffShowTrialExpired(message){
   };
   const dz = document.getElementById('ff-trial-dismiss');
   if(dz) dz.onclick = _close;
+  const hp = document.getElementById('ff-trial-help');   // FA-L §5: in-app support (allowed after expiry), no email address
+  if(hp) hp.onclick = function(e){ e.preventDefault(); _close(); if(typeof window.ffContactSupport === 'function') window.ffContactSupport(''); };
   g.addEventListener('click', function(e){ if(e.target === g) _close(); });   // backdrop dismiss
 }
 window._ffShowTrialExpired = _ffShowTrialExpired;
@@ -5263,10 +5265,10 @@ window.startUpgrade = async function(){
     const data = await res.json().catch(function(){ return {}; });
     if(res.ok && data && data.url){ window.location.href = data.url; return; }
     const msg = (data && data.error === 'Stripe not configured.')
-      ? 'Upgrades are opening soon — email support@finflow.app to upgrade now.'
-      : ((data && data.error) || 'Could not start checkout — email support@finflow.app.');
+      ? 'Upgrades are opening soon — contact support from Help to upgrade now.'
+      : ((data && data.error) || 'Could not start checkout — contact support from Help.');
     if(typeof notify === 'function') notify(msg, true);
-  }catch(e){ if(typeof notify === 'function') notify('Could not start checkout — email support@finflow.app.', true); }
+  }catch(e){ if(typeof notify === 'function') notify('Could not start checkout — contact support from Help.', true); }
 };
 
 // F34 Step 2: the display currency the dashboard renders business figures in. null ⇒ native (the

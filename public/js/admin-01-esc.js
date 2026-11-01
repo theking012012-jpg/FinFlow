@@ -186,7 +186,8 @@ async function loadSupport() {
         + '<span data-style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--t3)">'+esc(t.category)+'</span>'
         + '<span data-style="margin-left:auto;font-size:11px;color:var(--t3)">#'+t.id+' · '+esc(when)+'</span></div>'
         + '<div data-style="margin-top:8px;font-size:13px;color:var(--t2);white-space:pre-wrap">'+esc(t.message)+'</div>'
-        + (t.email ? '<div data-style="margin-top:6px;font-size:11.5px;color:var(--t3)">From: '+esc(t.email)+'</div>' : '')
+        + (t.email ? '<div data-style="margin-top:6px;font-size:11.5px;color:var(--t3)">From: '+(t.name ? esc(t.name)+' &lt;'+esc(t.email)+'&gt;' : esc(t.email))+'</div>' : '')
+        + (t.legalDue ? '<div data-style="margin-top:4px;font-size:11.5px;color:var(--red,#d9826b)">Privacy request — legal reply-by '+esc(String(t.legalDue).slice(0,10))+'</div>' : '')
         + resp
         + '<div data-style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
         + '<input id="sup-reply-'+t.id+'" placeholder="Write a reply (emails the sender if configured)…" data-style="flex:1;min-width:200px;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:8px 10px;font-size:12.5px">'

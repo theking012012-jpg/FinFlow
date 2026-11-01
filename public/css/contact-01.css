@@ -1,0 +1,14 @@
+/* FA-L §5: the public contact page — same look as the legal pages (terms-01.css), plus the form. */
+.cf label{display:block;font-size:13px;color:var(--text2);margin:16px 0 6px;}
+.cf input,.cf select,.cf textarea{width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);
+  font:inherit;font-size:14.5px;padding:11px 12px;min-height:44px;}
+.cf textarea{min-height:160px;resize:vertical;}
+.cf input:focus,.cf select:focus,.cf textarea:focus{outline:2px solid var(--gold);outline-offset:1px;}
+.cf .hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden;}
+.cf button{margin-top:20px;background:var(--gold);color:#14110a;border:0;border-radius:8px;padding:12px 26px;font:inherit;font-weight:500;
+  font-size:15px;cursor:pointer;min-height:44px;}
+.cf button[disabled]{opacity:.6;cursor:default;}
+.cf-note{font-size:13px;color:var(--text3);margin-top:10px;}
+.cf-msg{margin-top:16px;font-size:14.5px;}
+.cf-msg.err{color:#e08a7a;}
+.cf-msg.ok{color:var(--gold-light);}

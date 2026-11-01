@@ -1152,6 +1152,8 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
         message: r.data.message || '',
         category: r.data.category || 'general',
         email: r.data.email || '',
+        name: r.data.name || '',
+        legalDue: r.data.legal_due || null,   // FA-L §5: a privacy request's legal reply-by
         status: r.data.status || 'open',
         response: r.data.response || '',
         resolved_at: r.data.resolved_at || null,

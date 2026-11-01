@@ -34,7 +34,7 @@ window.acctHelp = function(){
     +'<div data-style="border-top:1px solid #2e2619;margin-top:16px;padding-top:14px"><div data-style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin-bottom:8px">Contact FinFlow</div>'
     +'<input id="ah-subject" placeholder="Subject" data-style="width:100%;box-sizing:border-box;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px;margin-bottom:8px">'
     +'<textarea id="ah-msg" placeholder="How can we help?" data-style="width:100%;box-sizing:border-box;min-height:80px;resize:vertical;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px"></textarea>'
-    +'<div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span data-style="font-size:11.5px;color:#6a5c44">or email <a href="mailto:support@finflow.app" data-style="color:#c9a84c">support@finflow.app</a></span><button id="ah-send" data-style="background:#c9a84c;color:#16120d;border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Send</button></div>'
+    +'<div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span data-style="font-size:11.5px;color:#6a5c44">We reply by email to your account address.</span><button id="ah-send" data-style="background:#c9a84c;color:#16120d;border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Send</button></div>'
     +'<div id="ah-status" data-style="font-size:12px;margin-top:6px"></div></div></div>';
   document.body.appendChild(ov);
   var close=function(){ try{ov.remove();}catch(e){} };

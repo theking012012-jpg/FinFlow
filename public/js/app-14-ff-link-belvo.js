@@ -506,7 +506,7 @@ function wireContact(){
   cel.innerHTML='<div data-style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:16px 17px"><div data-style="font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:8px">Still stuck? Contact us</div>'
     +'<input id="hc-subject" placeholder="Subject" data-style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:9px 11px;font-size:13px;margin-bottom:8px">'
     +'<textarea id="hc-msg" placeholder="How can we help?" data-style="width:100%;box-sizing:border-box;min-height:90px;resize:vertical;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:9px 11px;font-size:13px"></textarea>'
-    +'<div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span data-style="font-size:11.5px;color:var(--t3)">or email <a href="mailto:support@finflow.app" data-style="color:var(--acc)">support@finflow.app</a></span><button id="hc-send" class="btn btn-primary btn-sm">Send message</button></div>'
+    +'<div data-style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span data-style="font-size:11.5px;color:var(--t3)">We reply by email to your account address.</span><button id="hc-send" class="btn btn-primary btn-sm">Send message</button></div>'
     +'<div id="hc-status" data-style="font-size:12px;margin-top:6px"></div></div>';
   var btn=document.getElementById('hc-send');
   if(btn) btn.onclick=async function(){
@@ -554,6 +554,11 @@ var HELP_PALETTE_PAGES=[
   ['connections','API connections'],['my-accountant','My accountant'],['team','Team & roles'],['transaction-locking','Transaction locking'],
   ['settings','Settings'],['help','Help Center']
 ];
+// FA-L §5: one way into support from anywhere in the app — the Help page's form, optionally with a subject.
+window.ffContactSupport=function(subject){
+  if(typeof showPage==='function') showPage('help');
+  setTimeout(function(){ try{ wireContact(); var su=document.getElementById('hc-subject'); if(su){ if(subject) su.value=subject; su.scrollIntoView({block:'center'}); (subject?document.getElementById('hc-msg'):su).focus(); } }catch(_){} },350);
+};
 window.openHelpPalette=function(){
   if(document.getElementById('help-palette')) return;
   var ov=document.createElement('div'); ov.id='help-palette';

@@ -690,8 +690,12 @@ app.use((req, res, next) => {
 // ── ROOT ROUTES — registered BEFORE express.static so the static handler
 // can't auto-serve public/index.html at "/". "/" = marketing landing page,
 // "/app" = the FinFlow SPA.
+// FA-L §5: the landing's canonical / social-card links name the REAL public origin (appUrl, F29), never a domain
+// FinFlow does not serve.
+let _landingSrc = null;
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+  if (_landingSrc == null) _landingSrc = require('fs').readFileSync(path.join(__dirname, 'public', 'landing.html'), 'utf8');
+  res.type('html').send(_landingSrc.split('{{APP_URL}}').join(appUrl()));
 });
 app.get('/portal', (req, res) => {
   // FA-B10b: the customer portal. Its own strict policy (no inline code — portal.js / portal.css only), never indexed,
@@ -1048,7 +1052,9 @@ function saveSession(req) {
 
 // F132: read-POSTs that stay allowed in READ-ONLY mode — they compute + return, they do NOT mutate
 // the user's data (report generation + the COGS calculator). Paths are relative to the /api mount.
-const _READONLY_POST_OK = p => p.startsWith('/reports/') || p === '/cogs/calculate';
+// FA-L §5: asking for help is never a write to the books — an expired trial can still reach support (it used to get
+// 402 TRIAL_EXPIRED on the very form the trial-ended screen pointed to).
+const _READONLY_POST_OK = p => p.startsWith('/reports/') || p === '/cogs/calculate' || p === '/support' || p === '/contact';
 
 // Checks trial expiry — attaches req.userPlan for downstream use
 async function checkPlan(req, res, next) {
@@ -3844,6 +3850,37 @@ const EXPORT_TABLES = [
 // A real support channel (replaces the dead mailto): the user submits from inside the app, it is
 // stored server-side AND emailed to ADMIN_EMAIL, and the user can see their own requests. Best-effort
 // email — support still works before Resend / ADMIN_EMAIL are configured (the request is always stored).
+// ── PUBLIC CONTACT (FA-L §5 / LR29, owner decision 2026-11-01) ───────────────────────────────────────────────────────
+// The legal pages and the landing carry no email address and no company name. Anyone — a visitor, a prospective
+// customer, or a person who has DELETED their account and so cannot sign in to support — reaches FinFlow through this
+// form. It lands in the admin support inbox (actor 'visitor'); a reply is emailed to the address given. A privacy
+// request carries a legal reply-by of 30 days (GDPR's one month is the shortest of the regimes the policy names).
+const contactLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyGenerator: _ipKey, standardHeaders: true, legacyHeaders: false, handler: _rlHandler });
+const CONTACT_TOPICS = { general: 'General question', sales: 'Plans and pricing', privacy: 'Privacy request', security: 'Security report', accountants: 'Accountant marketplace' };
+app.post('/api/contact', contactLimiter, wrap(async (req, res) => {
+  const b = req.body || {};
+  if (String(b.website || '').trim()) return res.json({ ok: true });   // honeypot: a bot filled the hidden field — accept silently, store nothing
+  const name = String(b.name || '').trim().slice(0, 120);
+  const email = String(b.email || '').trim().toLowerCase().slice(0, 200);
+  const topic = Object.prototype.hasOwnProperty.call(CONTACT_TOPICS, b.topic) ? b.topic : 'general';
+  const message = String(b.message || '').trim().slice(0, 5000);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter an email address we can reply to.', code: 'EMAIL' });
+  if (message.length < 10) return res.status(400).json({ error: 'Tell us a little more (at least 10 characters).', code: 'MESSAGE' });
+  const _due = require('./support-sla').replyBy(Date.now(), (Plans.planFor('pro').support || { replyHours: 8 }).replyHours, process.env.SUPPORT_TZ || 'UTC');
+  const legalDue = topic === 'privacy' ? new Date(Date.now() + 30 * 86400000).toISOString() : null;
+  const subject = CONTACT_TOPICS[topic] + (name ? ' — ' + name : '');
+  const { row } = await db.insert('support_requests', { user_id: null, accountant_id: null, actor: 'visitor', name, subject, message, category: topic, email,
+    status: 'open', plan: null, reply_by: new Date(_due).toISOString(), legal_due: legalDue });
+  if (resendClient && process.env.ADMIN_EMAIL) {
+    try {
+      await resendClient.emails.send({ from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to: process.env.ADMIN_EMAIL,
+        subject: 'Contact form: ' + subject,
+        html: `<p><b>From:</b> ${_emailEsc(name)} &lt;${_emailEsc(email)}&gt;</p><p><b>Topic:</b> ${_emailEsc(CONTACT_TOPICS[topic])}${legalDue ? ' — legal reply-by ' + _emailEsc(legalDue.slice(0, 10)) : ''}</p><p>${_emailEsc(message).replace(/\n/g, '<br>')}</p>` });
+    } catch (e) { console.error('[contact] admin email failed:', e.message); }
+  }
+  res.json({ ok: true, id: row && row.id, topic });
+}));
+
 app.post('/api/support', wrap(async (req, res) => {
   const _uid = req.session && req.session.userId;
   const _aid = req.session && req.session.accountantId;

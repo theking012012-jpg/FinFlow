@@ -2341,6 +2341,17 @@ async function applyInvoiceStock(userId, inv, req) {
   // A backdated invoice can sit before sales already recorded — every sale of these products is re-costed by date.
   for (const id of new Set(lines.map(l => Number(l.inventory_id)))) await recostItemLedger(userId, id);
 }
+// FA-B5d: a document a Stock Out SALE made (FA-B7 — an invoice or a sales receipt, linked by inventory_movement_id) is
+// deleted with its stock: the movement is undone (units back, its COGS entry reversed) and the product's later sales are
+// re-costed. It used to remove the revenue and leave the stock out and its COGS booked (gross profit understated, stock
+// short). Documents made before this change carry the link too (FA-B7 always stored it).
+async function returnDocStock(userId, row, req) {
+  const mvId = row && row.inventory_movement_id; if (!mvId) return;
+  const { rows: [mv] } = await pool.query(`SELECT * FROM inventory_movements WHERE id = $1 AND user_id = $2 AND type = 'sale'`, [Number(mvId), userId]);
+  if (!mv) return;
+  await _undoStockMovement(userId, mv, req);
+  await recostItemLedger(userId, Number(mv.inventory_id));
+}
 // After an edit: when the stocked lines, issue date or issued/draft state changed, swap the movements.
 async function syncInvoiceStock(userId, before, after, req) {
   if (_stockSig(before) === _stockSig(after)) return;
@@ -2524,6 +2535,9 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   const _refuse = await docEditRefusal('invoice', row, patch, _paidSoFar.paid);
   if (_refuse) return res.status(409).json(_refuse);
   const _flipPaid = patch.status === 'paid' && String(row.status || '').toLowerCase() !== 'paid';
+  // FA-B5d: an invoice a Stock Out sale made cannot go back to draft — its stock left with it (delete it to put it back).
+  if (row.inventory_movement_id && patch.status === 'draft' && String(row.status || '').toLowerCase() !== 'draft')
+    return res.status(409).json({ error: 'This invoice was made by a Stock Out sale, and its stock left with it. To undo the sale, delete the invoice — the stock goes back.', code: 'STOCK_SALE_INVOICE' });
   // FA-B5c: the invoice as it will stand — its stocked lines may ask for no more than is on hand plus what it holds now.
   const _stockAfter = Object.assign({}, row, patch, { status: patch.status != null ? patch.status : row.status });
   { const _short = await invoiceStockShortfall(scopeId(req), _stockAfter, row.id); if (_short) return res.status(400).json(_short); }
@@ -2625,6 +2639,7 @@ app.delete('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wra
   await db.deleteById('invoices', parseInt(req.params.id));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   await returnInvoiceStock(scopeId(req), Number(req.params.id), req);   // FA-B5c: a deleted invoice's stock comes back
+  await returnDocStock(scopeId(req), row, req);   // FA-B5d: an invoice a Stock Out sale made
   logAudit(req, 'DELETE', 'invoices', row.id, row, null);
   res.json({ ok: true });
 }));
@@ -5779,6 +5794,7 @@ app.delete('/api/sales-receipts/:id', requireAuth, requireOwnedRow('sales_receip
   const { rows: [_srold] } = await pool.query('SELECT * FROM sales_receipts WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM sales_receipts WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'sales_receipt', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] sales_receipt reversal failed (shadow, non-fatal):', glErr && glErr.message); }
+  if (_srold) await returnDocStock(scopeId(req), rowToObj(_srold), req);   // FA-B5d: a receipt a Stock Out sale made
   if (_srold) await recordAudit(pool, { userId: scopeId(req), entityId: _srold.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_srold), req });  // F90 Phase B
   res.json({ ok: true });
 }));

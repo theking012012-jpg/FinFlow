@@ -14246,6 +14246,10 @@ async function recordStockMovement({ userId, item, entityId = null, type, qty, u
       });
     }
   } catch (glErr) { console.error('[GL] inventory movement posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  // FA-B5e: a movement dated before sales already recorded (a backdated sale or purchase) changes their FIFO cost — the
+  // ledger follows the by-date walk the reports use, so COGS stays in the right month (and the year ties).
+  if (FinFlowDates._toYmd(movement.movement_date) < (await pool.query(`SELECT COALESCE(MAX(${_MV_DAY_SQL})::text, '') AS d FROM inventory_movements WHERE inventory_id = $1 AND id <> $2`, [parseInt(item.id), movement.id])).rows[0].d)
+    await recostItemLedger(userId, parseInt(item.id));
   return { movement, cogs, units: newUnits };
 }
 

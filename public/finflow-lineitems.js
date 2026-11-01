@@ -22,15 +22,30 @@
 (function () {
   'use strict';
   function $(id) { return document.getElementById(id); }
-  // FA-B5: the business's saved items (Items page), one datalist shared by the three editors; refreshed on each new form.
-  var _items = [];
-  function itemByName(v) { var k = String(v || '').trim().toLowerCase(); if (!k) return null; for (var i = 0; i < _items.length; i++) if (String(_items[i].name || '').trim().toLowerCase() === k) return _items[i]; return null; }
+  // FA-B5: the business's saved items (Items page); FA-B5c: plus its STOCKED products (Inventory) on invoices and quotes —
+  // one list of what the business sells. Picking a stocked product links the line to it; issuing the invoice takes the
+  // stock out (FIFO cost). Bills list saved items only (stock is bought with Stock In). Refreshed on each new form.
+  var _items = [], _stock = [];
+  function _byName(list, v) { var k = String(v || '').trim().toLowerCase(); if (!k) return null; for (var i = 0; i < list.length; i++) if (String(list[i].name || '').trim().toLowerCase() === k) return list[i]; return null; }
+  function itemByName(v) { return _byName(_items, v); }
+  function stockByName(v) { return _byName(_stock, v); }
+  function _opt(value, label) { var o = document.createElement('option'); o.value = value; if (label) o.label = label; return o.outerHTML; }
+  function _fillLists() {
+    var dl = $('ff-items-dl'); if (!dl) { dl = document.createElement('datalist'); dl.id = 'ff-items-dl'; document.body.appendChild(dl); }
+    var bl = $('ff-items-bill-dl'); if (!bl) { bl = document.createElement('datalist'); bl.id = 'ff-items-bill-dl'; document.body.appendChild(bl); }
+    var itemOpts = _items.map(function (i) { return _opt(i.name, ''); }).join('');
+    dl.innerHTML = _stock.map(function (i) { return _opt(i.name, 'Stocked · ' + (parseFloat(i.units) || 0) + ' in stock'); }).join('') + itemOpts;
+    bl.innerHTML = itemOpts;
+  }
   function loadItems() {
     try {
       fetch('/api/items', { credentials: 'include' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
         _items = (Array.isArray(rows) ? rows : []).filter(function (i) { return i && i.name && String(i.status || 'Active').toLowerCase() !== 'inactive'; });
-        var dl = $('ff-items-dl'); if (!dl) { dl = document.createElement('datalist'); dl.id = 'ff-items-dl'; document.body.appendChild(dl); }
-        dl.innerHTML = _items.map(function (i) { var o = document.createElement('option'); o.value = i.name; return o.outerHTML; }).join('');
+        _fillLists();
+      }).catch(function () {});
+      fetch('/api/inventory', { credentials: 'include' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
+        _stock = (Array.isArray(rows) ? rows : []).filter(function (i) { return i && i.name; });
+        _fillLists();
       }).catch(function () {});
     } catch (_) {}
   }
@@ -43,7 +58,7 @@
   function makeLI(p) {
     var ROW = ''
       + '<tr class="' + p + '-li-row" data-style="border-bottom:1px solid var(--bd,#2a2318)">'
-      +   '<td data-style="padding:4px 6px 4px 0"><input class="finput ' + p + '-li-desc" list="ff-items-dl" autocomplete="off" placeholder="Item or service" aria-label="Item or service" data-style="font-size:13px;padding:6px 8px"></td>'
+      +   '<td data-style="padding:4px 6px 4px 0"><input class="finput ' + p + '-li-desc" list="' + (p === 'bill' ? 'ff-items-bill-dl' : 'ff-items-dl') + '" autocomplete="off" placeholder="' + (p === 'bill' ? 'Item or service' : 'Item, service or stocked product') + '" aria-label="Item or service" data-style="font-size:13px;padding:6px 8px"></td>'
       +   '<td data-style="padding:4px 6px"><input class="finput ' + p + '-li-qty" type="number" min="0" step="any" placeholder="1" data-style="font-size:13px;padding:6px 8px;text-align:center"></td>'
       +   '<td data-style="padding:4px 6px"><input class="finput ' + p + '-li-rate" type="number" min="0" step="any" placeholder="0.00" data-style="font-size:13px;padding:6px 8px;text-align:right"></td>'
       +   '<td class="' + p + '-li-line" data-style="padding:4px 6px;text-align:right;color:var(--t2,#b9ad93);font-size:13px;white-space:nowrap">—</td>'
@@ -56,6 +71,7 @@
     function readRow(tr) {
       return {
         itemId: tr.getAttribute('data-item-id') ? Number(tr.getAttribute('data-item-id')) : null,
+        stockId: tr.getAttribute('data-inventory-id') ? Number(tr.getAttribute('data-inventory-id')) : null,
         desc: (tr.querySelector('.' + p + '-li-desc') || {}).value || '',
         qty:  num((tr.querySelector('.' + p + '-li-qty')  || {}).value),
         rate: num((tr.querySelector('.' + p + '-li-rate') || {}).value),
@@ -70,7 +86,7 @@
       rowEls().forEach(function (tr) {
         var v = readRow(tr);
         var filled = v.desc.trim() !== '' || v.qty > 0 || v.rate > 0;
-        if (filled) out.push(Object.assign({ desc: v.desc.trim(), qty: v.qty, rate: v.rate }, v.itemId ? { item_id: v.itemId } : {}));
+        if (filled) out.push(Object.assign({ desc: v.desc.trim(), qty: v.qty, rate: v.rate }, v.stockId ? { inventory_id: v.stockId } : (v.itemId ? { item_id: v.itemId } : {})));
       });
       return out.length ? out : null;
     }
@@ -103,6 +119,15 @@
     // the selling price on invoices and quotes, the cost (else the price) on bills. Change the name and the link drops.
     function pickItem(input) {
       var tr = input.closest ? input.closest('.' + p + '-li-row') : null; if (!tr) return;
+      // FA-B5c: a stocked product (invoices and quotes) is checked first — it is the product the business holds.
+      var st = p === 'bill' ? null : stockByName(input.value);
+      if (st) {
+        tr.removeAttribute('data-item-id'); tr.setAttribute('data-inventory-id', String(st.id));
+        tr.title = 'Stocked product — ' + (parseFloat(st.units) || 0) + ' in stock. Issuing the invoice takes it out of stock.';
+        var q0 = tr.querySelector('.' + p + '-li-qty'); if (q0 && !(num(q0.value) > 0)) q0.value = '1';
+        return;
+      }
+      tr.removeAttribute('data-inventory-id'); tr.title = '';
       var it = itemByName(input.value);
       if (!it) { tr.removeAttribute('data-item-id'); return; }
       tr.setAttribute('data-item-id', String(it.id));
@@ -149,6 +174,7 @@
         if (q) q.value = it && it.qty != null ? String(it.qty) : '';
         if (r) r.value = it && it.rate != null ? String(it.rate) : '';
         if (it && it.item_id) tr.setAttribute('data-item-id', String(it.item_id)); else tr.removeAttribute('data-item-id');
+        if (it && it.inventory_id) tr.setAttribute('data-inventory-id', String(it.inventory_id)); else tr.removeAttribute('data-inventory-id');   // FA-B5c
       });
       recompute();
     }

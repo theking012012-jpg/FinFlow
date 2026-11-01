@@ -2169,11 +2169,19 @@ const _LI_MAX_ROWS = 200;
 // FA-B5: every item a line names must be an item of this account, in this business (or one with no business).
 async function lineItemRefsError(uid, eid, items) {
   const ids = [...new Set((items || []).map(i => i && i.item_id).filter(Boolean))];
-  if (!ids.length) return null;
-  const { rows } = await pool.query(`SELECT id FROM items WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) AND id = ANY($3::int[])`, [uid, eid, ids]);
-  return rows.length === ids.length ? null : 'A line names an item that is not in this business\'s items. Pick it again from the list.';
+  if (ids.length) {
+    const { rows } = await pool.query(`SELECT id FROM items WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) AND id = ANY($3::int[])`, [uid, eid, ids]);
+    if (rows.length !== ids.length) return 'A line names an item that is not in this business\'s items. Pick it again from the list.';
+  }
+  // FA-B5c: a line can name a STOCKED product (inventory) of this business — invoicing it takes the stock out.
+  const sids = [...new Set((items || []).map(i => i && i.inventory_id).filter(Boolean))];
+  if (sids.length) {
+    const { rows } = await pool.query(`SELECT id FROM inventory WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) AND id = ANY($3::int[])`, [uid, eid, sids]);
+    if (rows.length !== sids.length) return 'A line names a stocked product that is not in this business\'s inventory. Pick it again from the list.';
+  }
+  return null;
 }
-function normalizeLineItems(raw) {
+function normalizeLineItems(raw, { allowStock = false } = {}) {
   if (raw == null) return { present: false, line_items: null, amount: null };
   if (!Array.isArray(raw)) return { error: 'line_items must be an array.' };
   if (raw.length === 0)    return { error: 'line_items cannot be empty when provided.' };
@@ -2188,7 +2196,12 @@ function normalizeLineItems(raw) {
     if (!Number.isFinite(rate) || rate < 0) return { error: 'line item rate must be a number ≥ 0.' };
     // FA-B5: a line picked from the items list carries its item (checked against this business by lineItemRefsError).
     const _iid = (it.item_id != null && /^[1-9][0-9]{0,9}$/.test(String(it.item_id))) ? Number(it.item_id) : null;
-    items.push(Object.assign({ desc: String(it.desc == null ? '' : it.desc).slice(0, 200), qty, rate }, _iid ? { item_id: _iid } : {}));
+    // FA-B5c: a STOCKED product (inventory) — only on invoices and quotes; a purchase of stock goes through Stock In.
+    const _sid = (it.inventory_id != null && /^[1-9][0-9]{0,9}$/.test(String(it.inventory_id))) ? Number(it.inventory_id) : null;
+    if (_sid && !allowStock) return { error: 'A stocked product is bought with Stock In on the Inventory page, not on this document.' };
+    if (_sid && _iid) return { error: 'A line is either a saved item or a stocked product, not both.' };
+    if (_sid && !(qty > 0)) return { error: 'A stocked product line needs a quantity.' };
+    items.push(Object.assign({ desc: String(it.desc == null ? '' : it.desc).slice(0, 200), qty, rate }, _iid ? { item_id: _iid } : {}, _sid ? { inventory_id: _sid } : {}));
     sum += qty * rate;
   }
   const amount = Math.round(sum * 100) / 100;
@@ -2256,10 +2269,93 @@ async function invoiceDueFromTerms(entityId, issueYmd) {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + terms)).toISOString().slice(0, 10);   // calendar arithmetic, no timezone involved
 }
+// ── FA-B5c (owner decision 2026-11-01): ONE product list — an invoice line can be a STOCKED product ───────────────
+// An issued invoice's stocked lines take the stock out: the same movement Stock Out records (FIFO cost, Dr COGS /
+// Cr Inventory, on the invoice's issue date — revenue and its cost in the same period), each linked to the invoice by
+// its idempotency key 'invoice-stock:<invoice>:<line>:<generation>'. A draft takes nothing (it is not issued — Rule 11).
+// The stock comes back when the invoice is deleted or returned to draft, and an edit that changes the stocked lines,
+// the issue date or the issued/draft state swaps the old movements for new ones — so stock on hand, FIFO layers, COGS
+// and the ledger always match the invoices as they stand. Stock leaves only if it is on hand (checked before the
+// invoice is written, and again AT the write by recordStockMovement's conditional decrement — Rule 9).
+const _stockLinesOf = inv => (Array.isArray(inv && inv.line_items) ? inv.line_items : []).map((l, i) => ({ ...l, _i: i })).filter(l => l && l.inventory_id && Number(l.qty) > 0);
+const _stockRecognised = inv => String((inv && inv.status) || '').toLowerCase() !== 'draft';
+const _stockSig = inv => _stockRecognised(inv) ? JSON.stringify([String((inv && inv.issue_date) || '').slice(0, 10), _stockLinesOf(inv).map(l => [l.inventory_id, Number(l.qty)])]) : '[]';
+async function _invoiceStockMovements(userId, invoiceId) {
+  const { rows } = await pool.query(`SELECT * FROM inventory_movements WHERE user_id = $1 AND idempotency_key LIKE $2 ORDER BY id`, [userId, 'invoice-stock:' + Number(invoiceId) + ':%']);
+  return rows;
+}
+// Units this invoice holds now, per product — an edit may re-use them.
+async function _heldByInvoice(userId, invoiceId) {
+  const held = new Map();
+  if (invoiceId != null) for (const m of await _invoiceStockMovements(userId, invoiceId)) held.set(Number(m.inventory_id), (held.get(Number(m.inventory_id)) || 0) + Number(m.quantity));
+  return held;
+}
+// Refuse BEFORE writing when a stocked line asks for more than is on hand (plus what this invoice already holds).
+async function invoiceStockShortfall(userId, inv, priorInvoiceId = null) {
+  if (!_stockRecognised(inv)) return null;
+  const need = new Map();
+  for (const l of _stockLinesOf(inv)) need.set(Number(l.inventory_id), (need.get(Number(l.inventory_id)) || 0) + Number(l.qty));
+  if (!need.size) return null;
+  const held = await _heldByInvoice(userId, priorInvoiceId);
+  const { rows } = await pool.query(`SELECT id, data->>'name' AS name, COALESCE(NULLIF(data->>'units','')::numeric, 0)::float AS u FROM inventory WHERE user_id = $1 AND id = ANY($2::int[])`, [userId, [...need.keys()]]);
+  for (const r of rows) {
+    const have = r.u + (held.get(r.id) || 0), want = need.get(r.id);
+    if (want > have + 1e-9) return { error: `Only ${have} of ${r.name || 'this product'} in stock — this invoice needs ${want}. Record the purchase with Stock In first, or invoice fewer.`, code: 'INSUFFICIENT_STOCK', inventory_id: r.id, in_stock: have, needed: want };
+  }
+  return null;
+}
+async function _undoStockMovement(userId, mv, req) {
+  try { await reverseLedgerEntry(pool, { userId, sourceType: 'inventory_movement', sourceId: Number(mv.id) }); } catch (glErr) { console.error('[GL] invoice stock reversal failed (shadow, non-fatal):', glErr && glErr.message); }
+  await pool.query(`DELETE FROM inventory_movements WHERE id = $1 AND user_id = $2`, [mv.id, userId]);
+  const { rows: [cur] } = await pool.query(
+    `UPDATE inventory SET data = jsonb_set(data, '{units}', to_jsonb(COALESCE(NULLIF(data->>'units','')::numeric, 0) + $2::numeric)), updated_at = NOW() WHERE id = $1
+     RETURNING data->>'units' AS u, data->>'max_units' AS m, data->>'reorder_level' AS r`, [mv.inventory_id, Number(mv.quantity)]);
+  if (cur) await db.updateById('inventory', Number(mv.inventory_id), { low_stock: FinFlowDates.isLowStock({ units: parseFloat(cur.u) || 0, reorder_level: cur.r, max_units: parseFloat(cur.m) || 200 }) ? 1 : 0 });
+  try { await recordAudit(pool, { userId, entityId: mv.entity_id || null, table: 'inventory_movements', recordId: mv.id, action: 'DELETE', oldData: mv, req }); } catch (_) {}
+}
+async function returnInvoiceStock(userId, invoiceId, req, { recost = true } = {}) {
+  const mvs = await _invoiceStockMovements(userId, invoiceId);
+  for (const mv of mvs) await _undoStockMovement(userId, mv, req);
+  if (recost) for (const id of new Set(mvs.map(m => Number(m.inventory_id)))) await recostItemLedger(userId, id);   // later sales' FIFO cost changed
+  return mvs;
+}
+async function applyInvoiceStock(userId, inv, req) {
+  if (!_stockRecognised(inv)) return;
+  const lines = _stockLinesOf(inv); if (!lines.length) return;
+  const gen = Date.now().toString(36);
+  const done = [];
+  try {
+    for (const l of lines) {
+      const item = await ownedBy('inventory', l.inventory_id, userId);
+      if (!item) { const e = new Error('A stocked product on this invoice no longer exists.'); e.status = 400; e.code = 'LINE_ITEM'; throw e; }
+      const out = await recordStockMovement({ userId, item, entityId: inv.entity_id != null ? inv.entity_id : null, type: 'sale', qty: Number(l.qty),
+        reference: String(inv.number || ('Invoice ' + inv.id)).slice(0, 100), notes: 'Invoiced to ' + String(inv.client || '').slice(0, 120),
+        idem: ('invoice-stock:' + inv.id + ':' + l._i + ':' + gen).slice(0, 64), date: String(inv.issue_date || '').slice(0, 10) || null });
+      done.push(out.movement);
+      try { await recordAudit(pool, { userId, entityId: out.movement.entity_id || null, table: 'inventory_movements', recordId: out.movement.id, action: 'CREATE', newData: out.movement, req }); } catch (_) {}
+    }
+  } catch (e) {
+    for (const mv of done.reverse()) { try { await _undoStockMovement(userId, mv, req); } catch (_) {} }   // all of this invoice's stock, or none
+    throw e;
+  }
+  // A backdated invoice can sit before sales already recorded — every sale of these products is re-costed by date.
+  for (const id of new Set(lines.map(l => Number(l.inventory_id)))) await recostItemLedger(userId, id);
+}
+// After an edit: when the stocked lines, issue date or issued/draft state changed, swap the movements.
+async function syncInvoiceStock(userId, before, after, req) {
+  if (_stockSig(before) === _stockSig(after)) return;
+  const old = await returnInvoiceStock(userId, after.id, req, { recost: false });
+  try { await applyInvoiceStock(userId, after, req); }
+  catch (e) { try { await applyInvoiceStock(userId, before, req); } catch (_) {} throw e; }   // put the previous stock back as it was
+  // Products dropped from the invoice are re-costed too (the ones still on it were re-costed by applyInvoiceStock).
+  const still = new Set(_stockLinesOf(after).map(l => Number(l.inventory_id)));
+  for (const id of new Set(old.map(m => Number(m.inventory_id)))) if (!still.has(id) || !_stockRecognised(after)) await recostItemLedger(userId, id);
+}
+
 app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
   // F194: when line_items are supplied, the DERIVED Σ qty×rate is the canonical amount (Rule 2).
-  const _li = normalizeLineItems(req.body?.line_items);
+  const _li = normalizeLineItems(req.body?.line_items, { allowStock: true });   // FA-B5c
   if (_li.error) return res.status(400).json({ error: _li.error });
   { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   const _effAmount = _li.present ? _li.amount : amount;
@@ -2340,6 +2436,8 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   // Batch 8 (B1c): an invoice left without a due date is due on issue date + THIS business's payment terms (Settings;
   // 30 days until the owner sets them — what the Settings field has always shown). A calendar date: string in, string out.
   const _dueYmd = due_date || await invoiceDueFromTerms(eid, _issueYmd);
+  // FA-B5c: a stocked line asks for no more than is on hand (refused before anything is written).
+  if (_li.present) { const _short = await invoiceStockShortfall(scopeId(req), { status: _invCreateStatus, line_items: _li.line_items }); if (_short) return res.status(400).json(_short); }
   let row;
   try {
     ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: _dueYmd||null, status: _invCreateStatus, notes: notes.slice(0,500), issue_date: _issueYmd, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
@@ -2355,6 +2453,14 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   }
   row.number = await assignInvoiceNumber(pool, scopeId(req), eid, row.id);   // B1b: before the audit row, so it records the number
   row.customer_id = await linkDocContact('invoices', scopeId(req), eid, row.id, client, req);   // batch 9: the client is a saved customer of this business
+  // FA-B5c: an issued invoice's stocked lines take the stock out (FIFO cost, on its issue date). If that fails at the
+  // write (another sale took the last units in between), the invoice is not kept — no invoice without its stock.
+  try { await applyInvoiceStock(scopeId(req), row, req); }
+  catch (e) {
+    await db.deleteById('invoices', row.id);
+    if (e && e.code === 'INSUFFICIENT_STOCK') return res.status(400).json({ error: e.message, code: e.code });
+    throw e;
+  }
   logAudit(req, 'CREATE', 'invoices', row.id, null, row);
   // GL Phase 2 (dual-write shadow): an ISSUED invoice is Dr AR / Cr Revenue at its issue date —
   // mirrors computeBooks' issue-based accrual (draft is not recognized, so posts nothing). Best-effort:
@@ -2395,7 +2501,7 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   const patch = {};
   const { client, amount, due_date, status, notes, issue_date } = req.body || {};
   // F194: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
-  const _li = normalizeLineItems(req.body?.line_items);
+  const _li = normalizeLineItems(req.body?.line_items, { allowStock: true });   // FA-B5c
   if (_li.error) return res.status(400).json({ error: _li.error });
   { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   if (client != null) { patch.client = String(client).trim().slice(0, 200); if (!patch.client) return res.status(400).json({ error: 'client required.' }); }
@@ -2418,6 +2524,9 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   const _refuse = await docEditRefusal('invoice', row, patch, _paidSoFar.paid);
   if (_refuse) return res.status(409).json(_refuse);
   const _flipPaid = patch.status === 'paid' && String(row.status || '').toLowerCase() !== 'paid';
+  // FA-B5c: the invoice as it will stand — its stocked lines may ask for no more than is on hand plus what it holds now.
+  const _stockAfter = Object.assign({}, row, patch, { status: patch.status != null ? patch.status : row.status });
+  { const _short = await invoiceStockShortfall(scopeId(req), _stockAfter, row.id); if (_short) return res.status(400).json(_short); }
   if (patch.status === 'paid') delete patch.status;   // recalcInvoiceStatus derives it from the payments
   await db.updateById('invoices', row.id, patch);
   if (patch.client != null) await relinkDocContact('invoices', scopeId(req), row.entity_id, row.id, row.client, patch.client, req);   // FA-B4b: the link follows a renamed client
@@ -2431,6 +2540,9 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   }
   const { rows: [_iur] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _iur ? rowToObj(_iur) : {};
+  // FA-B5c: stocked lines, issue date or issued/draft changed → the stock movements follow (old ones back, new ones out).
+  try { await syncInvoiceStock(scopeId(req), row, updated, req); }
+  catch (e) { console.error('[FA-B5c] invoice stock sync failed after the pre-check:', e && e.message); if (e && e.code === 'INSUFFICIENT_STOCK') return res.status(409).json({ error: e.message + ' The invoice was saved; its stock was left as it was before this edit.', code: e.code }); throw e; }
   logAudit(req, 'UPDATE', 'invoices', row.id, row, updated);
   // GL Phase 2 (shadow) - keep the ledger in lockstep with the edited invoice: a flip to/from 'draft'
   // recognises/de-recognises it, and an amount/issue-date edit trues-up its lines. Best-effort.
@@ -2512,6 +2624,7 @@ app.delete('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wra
   if (_blk) return res.status(409).json(_blk);
   await db.deleteById('invoices', parseInt(req.params.id));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice reversal failed (shadow, non-fatal):', glErr && glErr.message); }
+  await returnInvoiceStock(scopeId(req), Number(req.params.id), req);   // FA-B5c: a deleted invoice's stock comes back
   logAudit(req, 'DELETE', 'invoices', row.id, row, null);
   res.json({ ok: true });
 }));
@@ -4452,7 +4565,7 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   // F194 Phase 2b: when line_items are supplied, the DERIVED Σ qty×rate is the canonical amount
   // (Rule 2, same as invoices). Quotes are document-only — NOT recognized revenue, so no money-path
   // leg keys on this; the derived amount is purely the quote total.
-  const _li = normalizeLineItems(req.body?.line_items);
+  const _li = normalizeLineItems(req.body?.line_items, { allowStock: true });   // FA-B5c: a quote may name a stocked product (stock moves only when invoiced)
   if (_li.error) return res.status(400).json({ error: _li.error });
   { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   const _effAmount = _li.present ? _li.amount : amount;
@@ -4476,7 +4589,7 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   const patch = {};
   const b = req.body || {};
   // F194 Phase 2b: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
-  const _li = normalizeLineItems(b.line_items);
+  const _li = normalizeLineItems(b.line_items, { allowStock: true });   // FA-B5c
   if (_li.error) return res.status(400).json({ error: _li.error });
   { const _ie = await lineItemRefsError(scopeId(req), req.entityId || null, _li.line_items); if (_ie) return res.status(400).json({ error: _ie, code: 'LINE_ITEM' }); }   // FA-B5
   if (b.client      != null) { patch.client = String(b.client).trim().slice(0, 200); if (!patch.client) return res.status(400).json({ error: 'client required' }); }
@@ -12313,6 +12426,31 @@ async function fifoItemSales(pool, inventoryId) {
     consumed += q;
   }
   return out;
+}
+
+// FA-B5c: RE-COST one product's sale / write-off postings from the FIFO walk (the same walk as fifoItemSales — by
+// movement date, then entry order). A sale's ledger cost was fixed when it was recorded; when a movement is removed or
+// replaced (an invoice deleted, edited, returned to draft) the later sales' FIFO cost changes, and the ledger must
+// follow or it drifts from the COGS the reports show (glReconcile compares them). Each movement's entry is trued-up in
+// place (resyncDocLedger); a movement whose cost becomes 0 has its entry reversed. Best-effort, like every GL leg.
+async function recostItemLedger(userId, inventoryId) {
+  try {
+    const purchases = await _purchaseLayers(pool, inventoryId);
+    const { rows: [item] } = await pool.query(`SELECT data->>'name' AS name FROM inventory WHERE id = $1`, [inventoryId]);
+    const { rows: mvs } = await pool.query(
+      `SELECT id, entity_id, quantity, type, ${_MV_DAY_SQL}::text AS mv_day FROM inventory_movements
+        WHERE inventory_id = $1 AND type IN ('sale','adjustment') ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`, [inventoryId]);
+    let consumed = 0;
+    for (const m of mvs) {
+      const q = parseFloat(m.quantity) || 0;
+      const { cogs } = fifoConsume(purchases, consumed, q);
+      consumed += q;
+      const c = Math.round((+cogs || 0) * 100) / 100;
+      await resyncDocLedger(pool, { userId, entityId: m.entity_id, sourceType: 'inventory_movement', sourceId: m.id, idempotencyKey: 'inventory_movement:' + m.id,
+        date: String(m.mv_day).slice(0, 10), description: (m.type === 'adjustment' ? 'Inventory write-off — ' : 'COGS — sale of ') + String((item && item.name) || '').slice(0, 80),
+        recognized: c > 0, lines: [{ code: '5000', debit: c, credit: 0 }, { code: '1200', debit: 0, credit: c }] });
+    }
+  } catch (glErr) { console.error('[GL] FIFO re-cost failed (shadow, non-fatal):', glErr && glErr.message); }
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

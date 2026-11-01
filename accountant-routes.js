@@ -396,7 +396,9 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
     for (const [k, v] of Object.entries(ent)) {
       if (/^[1-9][0-9]*$/.test(String(k)) && _ACCESS_LEVELS.has(v)) out.entities[String(k)] = v;
     }
-    if (_ACCESS_LEVELS.has(obj.personal)) out.personal = obj.personal;
+    // Personal is VIEW at most (owner decision 2026-11-01): there is nothing to post in Personal, and a 'filing' there only
+    // raised the account-wide mirror to filing for legacy readers.
+    if (_ACCESS_LEVELS.has(obj.personal)) out.personal = obj.personal === 'filing' ? 'view' : obj.personal;
     return out;
   }
   // Effective access level for one business entity, honoring the legacy sentinel.
@@ -996,6 +998,11 @@ If you cannot find a field, use null. Be concise.`;
     // + live portfolio; app-main.js:computePersNetWorth) so the two reconcile by construction.
     let _personal = null;
     if (_canRead(_personalLvl)) {
+      // The client sees when an accountant opened their Personal finances (at most once an hour) — owner decision 2026-11-01.
+      try {
+        const { rows: [_pv] } = await pool.query(`SELECT 1 FROM audit_trail WHERE user_id = $1 AND actor_type = 'accountant' AND actor_id = $2 AND action = 'PERSONAL_VIEWED' AND changed_at > NOW() - INTERVAL '1 hour' LIMIT 1`, [userId, req.session.accountantId]);
+        if (!_pv) await _audit(pool, { userId: parseInt(userId), table: 'personal', action: 'PERSONAL_VIEWED', req });
+      } catch (_) {}
       const [ptx, pacc, phold] = await Promise.all([
         // M26 (money audit 2026-10-09): PERSONAL rows only — entity_id IS NULL, the same wall the owner's own
         // Personal page uses (GET /api/personal-transactions). Business bank-feed rows carry an entity_id and were
@@ -1368,7 +1375,7 @@ If you cannot find a field, use null. Be concise.`;
   //     has a FinFlow account; the accountant's invitation list shows the same "Waiting" for both until the person acts.
   //   • one pending invitation per accountant + address (unique index — Rule 9); a resend inside 10 minutes sends nothing.
   //   • 25 invitations per accountant per 24 h; an invitation expires after 14 days.
-  //   • Personal finances are never part of an invitation (the wall) — a client can change that later themselves.
+  //   • Personal finances are shared only if the client ticks them — a separate choice, view only (owner decision 2026-11-01).
   const INVITE_DAYS = 14, INVITES_PER_DAY = 25;
   const _normEmail = e => String(e || '').trim().toLowerCase();
   const _emailOk = e => e.length <= 254 && /^[^\s@<>()"',;:]+@[^\s@<>()"',;:]+\.[a-z]{2,}$/i.test(e);
@@ -1405,7 +1412,7 @@ If you cannot find a field, use null. Be concise.`;
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px;">
             <h2 style="color:#c9a84c;font-size:22px;margin-bottom:8px;">${who} would like to work with you on FinFlow</h2>
             <p style="color:#9a9278;margin-bottom:20px;">${who} from <strong style="color:#f0ead6">${accountant.firm || 'their firm'}</strong> (verified by FinFlow) has asked for access to your business books.</p>
-            <p style="color:#9a9278;margin-bottom:24px;">Nothing is shared until you approve. You choose which businesses they see, whether they can only view or also post entries, and — if you like — the date their access ends. Your personal finances are never part of this. You can revoke access at any time.</p>
+            <p style="color:#9a9278;margin-bottom:24px;">Nothing is shared until you approve. You choose which businesses they see, whether they can only view or also post entries, whether to let them view your personal finances (a separate, optional choice), and — if you like — the date their access ends. You can revoke access at any time.</p>
             <a href="${reviewUrl}" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Review the request →</a>
             <p style="color:#5a5540;font-size:11px;margin-top:24px;">The request expires in ${INVITE_DAYS} days. If you don't know ${who}, ignore this e-mail — nothing happens unless you approve.</p>
           </div>`
@@ -2188,7 +2195,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!Number.isInteger(inviteId) || inviteId <= 0) return res.status(400).json({ error: 'Invalid invitation.' });
     const inv = await _myInvite(uid, inviteId);
     if (!inv) return res.status(404).json({ error: 'This invitation is no longer available (it may have expired).' });
-    // Scope: businesses only — Personal is never part of an accountant's invitation (the wall); the client can change
+    // Scope: the client's own businesses, plus Personal only if ticked (view only — below). Personal never mixes into a
+    // business figure: the portal shows it in its own section (M26). Previously Personal was never offered; the client can change
     // that later in Access permissions. Only this client's own businesses are kept.
     const body = req.body || {};
     const want = (body.entity_access && typeof body.entity_access === 'object' && body.entity_access.entities) || {};
@@ -2200,7 +2208,9 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       if (v !== 'none' && v !== 'view' && v !== 'filing') return res.status(400).json({ error: 'Access is none, view or filing.' });
       if (v !== 'none') ents[String(k)] = v;
     }
-    if (!Object.keys(ents).length) return res.status(400).json({ error: 'Choose at least one business to share — or decline the invitation.', code: 'NO_BUSINESS' });
+    // Personal finances (owner decision 2026-11-01): shared only when the client ticks it — its own choice, VIEW only.
+    const personal = (body.entity_access && body.entity_access.personal === 'view') ? 'view' : 'none';
+    if (!Object.keys(ents).length && personal === 'none') return res.status(400).json({ error: 'Choose at least one business or your personal finances to share — or decline the invitation.', code: 'NO_BUSINESS' });
     // Optional end date: the client's calendar date, today or later, at most two years ahead.
     let expiresAt = null, until = null;
     if (body.access_until) {
@@ -2215,7 +2225,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     }
     const { rows: [cur] } = await pool.query(`SELECT status FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`, [inv.accountant_id, uid]);
     if (cur && cur.status === 'active') return res.status(409).json({ error: `${inv.accountant_name} already has access to your books.` });
-    const entityAccess = JSON.stringify({ entities: ents, personal: 'none' });
+    const entityAccess = JSON.stringify({ entities: ents, personal });
     const anyFiling = Object.values(ents).includes('filing');
     await pool.query(
       `INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total, requested_by, entity_access, access_level, access_expires_at)

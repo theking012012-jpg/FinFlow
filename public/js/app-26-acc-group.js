@@ -347,7 +347,7 @@ function renderLinkedAccountant() {
 
 // ── NEW-9: INVITATIONS FROM ACCOUNTANTS ────────────────────────────────────────────────────────────────────────
 // An accountant who invited this person by e-mail. Nothing is shared until they approve here — choosing which
-// businesses, at what level, and optionally the date access ends. Personal finances are never part of an invitation.
+// businesses, at what level, optionally their personal finances (view only, off unless ticked), and optionally the date access ends.
 let _accInvites = [];
 async function loadAccountantInvites() {
   const box = document.getElementById('my-acc-invites');
@@ -381,8 +381,10 @@ async function loadAccountantInvites() {
             <div data-style="font-size:12px;color:var(--t3)">${esc(inv.firm || '')}${inv.country ? ' · ' + esc(inv.country) : ''}${inv.specialisation ? ' · ' + esc(inv.specialisation) : ''}</div>
           </div>
         </div>
-        <div data-style="font-size:13px;color:var(--t2);margin-bottom:10px">wants access to your business books. Nothing is shared until you approve. Choose what they can see — your personal finances are never part of this.</div>
+        <div data-style="font-size:13px;color:var(--t2);margin-bottom:10px">wants access to your books. Nothing is shared until you approve — choose exactly what they can see.</div>
         <div data-style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">${rows}</div>
+        <div data-style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin:4px 0 6px">Personal finances — separate from your businesses</div>
+        <label data-style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border:1px solid var(--bd);border-radius:8px;margin-bottom:10px;font-size:13px;color:var(--t1)"><input type="checkbox" data-inv-personal="${Number(inv.id)}" data-style="margin-top:2px"><span>Let them view my personal finances <span data-style="display:block;font-size:11px;color:var(--t3)">Net worth, personal income &amp; accounts — view only. Shown to them on its own, never added into a business. Off unless you tick it.</span></span></label>
         <label data-style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);margin-bottom:12px">Access ends <input type="date" class="finput" data-inv-until="${Number(inv.id)}" min="${esc(today)}" data-style="width:160px;font-size:12px;padding:5px 8px;margin:0"> <span data-style="color:var(--t3)">optional — leave empty to keep access until you revoke it</span></label>
         <div data-style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-gold btn-sm" data-arg-id="${Number(inv.id)}" data-on-click="respondAccountantInvite(Number(this.dataset.argId), true, this)">Approve access</button>
@@ -408,9 +410,10 @@ window.respondAccountantInvite = async function (inviteId, approve, btn) {
       const lvl = document.querySelector(`select[data-inv-lvl="${id}"][data-inv-id="${inviteId}"]`);
       entities[id] = (lvl && lvl.value) || 'view';
     });
-    if (!Object.keys(entities).length) { if (typeof notify === 'function') notify('Tick at least one business to share — or decline the invitation.', true); return; }
+    const personal = (document.querySelector(`input[data-inv-personal="${inviteId}"]`) || {}).checked ? 'view' : 'none';
+    if (!Object.keys(entities).length && personal === 'none') { if (typeof notify === 'function') notify('Tick at least one business or your personal finances to share — or decline the invitation.', true); return; }
     const until = (document.querySelector(`input[data-inv-until="${inviteId}"]`) || {}).value || '';
-    body = { entity_access: { entities }, access_until: until || null };
+    body = { entity_access: { entities, personal }, access_until: until || null };
   }
   if (btn) btn.disabled = true;
   try {
@@ -424,7 +427,7 @@ window.respondAccountantInvite = async function (inviteId, approve, btn) {
     await loadMyAccountant();
   } catch (e) { if (typeof notify === 'function') notify('Could not update the invitation', true); if (btn) btn.disabled = false; }
 };
-const _ACT_LABEL = { BOOKS_VIEWED: 'Opened your books', CREATE: 'Added a record', UPDATE: 'Changed a record', DELETE: 'Deleted a record', VOID: 'Voided a record', LOCK: 'Locked a period', UNLOCK: 'Unlocked a period', MESSAGE: 'Sent you a message', MESSAGE_ATTACH: 'Sent you a file', FLAG: 'Flagged an item for you', TASK_ASSIGNED: 'Asked you for something', TASK_DELETED: 'Withdrew a request', PROPOSAL_SENT: 'Sent you a proposal', PROPOSAL_WITHDRAWN: 'Withdrew a proposal', NOTIFY_CLIENT: 'Sent you a notification', CHECKLIST_UPDATE: 'Updated your checklist', NOTE_UPDATE: 'Updated their notes on your books', BILL_CLIENT: 'Sent you a bill' };
+const _ACT_LABEL = { BOOKS_VIEWED: 'Opened your books', PERSONAL_VIEWED: 'Opened your personal finances', CREATE: 'Added a record', UPDATE: 'Changed a record', DELETE: 'Deleted a record', VOID: 'Voided a record', LOCK: 'Locked a period', UNLOCK: 'Unlocked a period', MESSAGE: 'Sent you a message', MESSAGE_ATTACH: 'Sent you a file', FLAG: 'Flagged an item for you', TASK_ASSIGNED: 'Asked you for something', TASK_DELETED: 'Withdrew a request', PROPOSAL_SENT: 'Sent you a proposal', PROPOSAL_WITHDRAWN: 'Withdrew a proposal', NOTIFY_CLIENT: 'Sent you a notification', CHECKLIST_UPDATE: 'Updated your checklist', NOTE_UPDATE: 'Updated their notes on your books', BILL_CLIENT: 'Sent you a bill' };
 async function loadAccountantActivity() {
   const wrap = document.getElementById('my-acc-activity'), list = document.getElementById('my-acc-activity-list');
   if (!wrap || !list) return;
@@ -856,7 +859,9 @@ window.renderAccessMatrix = async function() {
   let html = '';
   if (!ents.length) html += '<div data-style="font-size:12px;color:var(--t3)">No businesses yet.</div>';
   for (const e of ents) html += rowHtml(_esc(e.name), 'Business', sel(e.id, entLvl(e.id), 'entity'));
-  html += rowHtml('Personal finances', 'Net worth, personal income &amp; accounts', sel('personal', perLvl(), 'personal'));
+  // Personal: None or View (owner decision 2026-11-01 — nothing to post there, so no "Filing").
+  const _pSel = '<select data-perm-kind="personal" data-perm-id="personal" data-on-change="saveAccessMatrix()" class="finput" data-style="width:118px;font-size:12px;padding:5px 8px">' + opt('none', perLvl() === 'filing' ? 'view' : perLvl()) + opt('view', perLvl() === 'filing' ? 'view' : perLvl()) + '</select>';
+  html += rowHtml('Personal finances', 'Net worth, personal income &amp; accounts — view only, never added into a business', _pSel);
   wrap.innerHTML = html;
 };
 

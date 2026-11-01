@@ -61,7 +61,8 @@ runBrowser('NEW-9 — accountant invitation → in-app request the client approv
   const card = await page.evaluate(async () => { showPage('my-accountant'); await window.loadAccountantInvites(); await new Promise(r => setTimeout(r, 400));
     const box = document.getElementById('my-acc-invites'); return { shown: box.style.display !== 'none', text: box.innerText.replace(/\s+/g, ' '), ents: [...box.querySelectorAll('input[data-inv-ent]')].map(x => x.getAttribute('data-inv-ent')) }; });
   A('the invitation card is on My Accountant', card.shown && /Robin Ledger/.test(card.text) && /Verified by FinFlow/.test(card.text), card.text.slice(0, 200));
-  A('…and says personal finances are never part of it', /personal finances are never part of this/.test(card.text));
+  A('…with Personal as its own, separate choice', /Personal finances — separate from your businesses/i.test(card.text) && /view only/i.test(card.text), card.text.slice(0, 400));
+  eq('…NOT ticked by default', await page.evaluate((id) => document.querySelector(`input[data-inv-personal="${id}"]`).checked, inv.json[0].id), false);
   eq('…offering each of the client\'s businesses', card.ents.sort(), [String(e1.id), String(e2.id)].sort());
 
   // approving with nothing ticked is refused on the page and at the server
@@ -137,7 +138,17 @@ runBrowser('NEW-9 — accountant invitation → in-app request the client approv
   // personal is never granted through an invitation, whatever is sent
   const acc2 = await http.post(`/api/accountants/my-accountant/invites/${inv2.id}/accept`, { entity_access: { entities: { [e2.id]: 'filing' }, personal: 'filing' } });
   eq('accept with "personal: filing" in the body', acc2.status, 200);
-  eq('…personal stays none; business 2 at filing', (await c.query(`SELECT entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`, [accA, uid])).rows[0].entity_access, { entities: { [e2.id]: 'filing' }, personal: 'none' });
+  eq('…"filing" is not a Personal level: personal stays none; business 2 at filing', (await c.query(`SELECT entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`, [accA, uid])).rows[0].entity_access, { entities: { [e2.id]: 'filing' }, personal: 'none' });
+  // Personal shared when ticked (owner decision 2026-11-01): view only, shown on its own, its opening recorded
+  await c.query(`UPDATE accountant_clients SET status = 'revoked' WHERE accountant_id = $1 AND user_id = $2`, [accA, uid]);
+  await AA.post('/api/accountants/invite', { email: OWNER });
+  const inv3 = ((await http.get('/api/accountants/my-accountant/invites')).json || []).find(x => x.first_name === 'Robin');
+  eq('accept with ONLY Personal ticked (a personal-tax accountant) → 200', (await http.post(`/api/accountants/my-accountant/invites/${inv3.id}/accept`, { entity_access: { entities: {}, personal: 'view' } })).status, 200);
+  eq('…stored: no business, personal view', (await c.query(`SELECT entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`, [accA, uid])).rows[0].entity_access, { entities: {}, personal: 'view' });
+  const pb = (await AA.get(`/api/accountants/clients/${uid}/books?period=year`)).json || {};
+  eq('the accountant sees Personal on its own, and no business', [pb.personalAccess, !!pb.personal, (pb.entities || []).length], ['view', true, 0]);
+  eq('the client\'s activity shows Personal was opened', (((await http.get('/api/accountants/my-accountant/activity')).json) || []).filter(x => x.action === 'PERSONAL_VIEWED').length, 1);
+  eq('Access settings cap Personal at view ("filing" → view)', ((await http.put('/api/accountants/my-accountant/access?accountantId=' + accA, { entity_access: { entities: {}, personal: 'filing' } })).json || {}).entity_access, { entities: {}, personal: 'view' });
 
   // a person who signs up later with the invited address sees the invitation
   const NEWPW = 'n9-new-user-pw-1!A';

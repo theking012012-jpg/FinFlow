@@ -5,8 +5,7 @@
 <script src="/ff-csp.js"></script><script src="/_gen/ff-handlers.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FinFlow — Security</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/fonts.css">
 <link rel="stylesheet" href="/css/security-01.css">
 <link rel="stylesheet" href="/css/phone-targets.css">
 </head>
@@ -43,7 +42,7 @@
   <p>Every FinFlow administrator signs in with their own named account, their own password and required two-factor authentication; a two-factor code works only once. Every administrator action is recorded with who did it, in a log the database will not let anyone edit or delete, and any change to your account also appears in your own audit trail as "FinFlow support".</p>
 
   <h2>The application</h2>
-  <p>Our pages run under a strict Content-Security-Policy that blocks inline script, which defends against cross-site scripting. Cookies are HTTP-only and protected against cross-site request forgery. Website visitors' IP addresses are deleted after 30 days.</p>
+  <p>Our pages run under a strict Content-Security-Policy that blocks inline script, which defends against cross-site scripting. Cookies are HTTP-only and protected against cross-site request forgery. Fonts and scripts are served by FinFlow itself, so loading a page tells no third party you visited; the only outside scripts are Plaid's or Belvo's, loaded when you choose to connect a bank. Website visitors' IP addresses are deleted after 30 days.</p>
 
   <h2>Infrastructure</h2>
   <p>FinFlow runs on managed cloud infrastructure with a managed PostgreSQL database, connected over encrypted links. Card payments are handled by Stripe; we never see or store full card numbers.</p>

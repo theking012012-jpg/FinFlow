@@ -141,11 +141,11 @@ app.use((req, res, next) => {
     "default-src 'self'; " +
     "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +   // Plaid Link + Belvo widget SDKs
     "script-src-attr 'none'; " +   // no inline event-handler attribute, ever
-    "style-src 'self' https://fonts.googleapis.com; " +   // L22: 'self' for vendored stylesheets (/vendor/tabler-icons)
+    "style-src 'self'; " +   // L22: 'self' for vendored stylesheets (/vendor/tabler-icons) · NEW-19: fonts self-hosted (/css/fonts.css), no Google
     "style-src-attr 'none'; " +   // no style="…" attribute (styles are applied through element.style — allowed)
-    "font-src 'self' https://fonts.gstatic.com; " +
+    "font-src 'self'; " +   // NEW-19: /fonts/*.woff2
     "img-src 'self' data: blob:; " +
-    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +   // F49: dropped dead ws:/wss:. *.plaid.com/*.belvo.*: bank-link widgets
+    "connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +   // F49: dropped dead ws:/wss:. NEW-20: dropped the unused Yahoo endpoint. *.plaid.com/*.belvo.*: bank-link widgets
     "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; " +   // Plaid + Belvo render their flows in an iframe
     "frame-ancestors 'none'; " +
     "form-action 'self'; " +

@@ -579,6 +579,8 @@ window.requestAccountant = async function(accountantId, name) {
       filterAccountants();
       showPage('my-accountant', null);
       setTimeout(loadMyAccountant, 300);
+    } else if (data.code === 'ONE_ACCOUNTANT') {   // NEW-12: another accountant has access — say who, and what to do
+      if(typeof notify==='function') notify('⚠ ' + data.error, true);
     } else if (data.error?.includes('already')) {
       if(typeof notify==='function') notify('⚠ You are already linked to this accountant.');
       else alert(data.error);

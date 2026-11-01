@@ -221,11 +221,18 @@ async function suspendClientForUser(userId) {
 async function reactivateClientForUser(userId) {
   if (!userId) return;
   // Only while referral months remain — a cancelled stretch is not extended.
-  await pool.query(
-    `UPDATE accountant_clients SET status = 'active'
-      WHERE user_id = $1 AND status = 'suspended' AND referral_month < referral_months_total`,
-    [userId]
-  );
+  // NEW-12: one active accountant per client — lift the most recently activated suspended link, and only when no other
+  // link is active (the unique index idx_acc_clients_one_active would refuse a second; a refusal is logged, not thrown,
+  // so the subscription webhook still completes).
+  try {
+    await pool.query(
+      `UPDATE accountant_clients SET status = 'active'
+        WHERE id = (SELECT id FROM accountant_clients WHERE user_id = $1 AND status = 'suspended' AND referral_month < referral_months_total
+                     ORDER BY activated_at DESC NULLS LAST, id DESC LIMIT 1)
+          AND NOT EXISTS (SELECT 1 FROM accountant_clients WHERE user_id = $1 AND status = 'active')`,
+      [userId]
+    );
+  } catch (e) { if (e && e.code === '23505') console.warn('[reactivateClientForUser] user', userId, 'already has an active accountant — left suspended'); else throw e; }
 }
 
 // ── STRIPE WEBHOOK ────────────────────────────────────────────────────────────

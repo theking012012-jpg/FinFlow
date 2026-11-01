@@ -455,6 +455,23 @@ async function initDB() {
     // the CLIENT approves it. NULL = created before this column existed (origin unknown) — treated like
     // a referral (client approval required), the conservative reading. No existing row is modified.
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS requested_by VARCHAR(20)`);
+    // NEW-12: ONE active accountant per client, enforced at the write (Rule 9). My Accountant shows one link, so a second
+    // activation hid the first accountant's still-live books access (the client could neither see nor revoke it). GUARDED
+    // like idx_bank_line_*: where a client already has two active links the index is NOT built and a warning names the
+    // read-only lister — never a failed deploy, never a silent change (Rule 8). Mirrored by
+    // scripts/migrations/2026-11-01-one-active-accountant.sql.
+    await client.query(`
+      DO $oa$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_acc_clients_one_active') THEN
+          IF EXISTS (SELECT 1 FROM accountant_clients WHERE status = 'active' GROUP BY user_id HAVING count(*) > 1) THEN
+            RAISE WARNING 'idx_acc_clients_one_active NOT created: a client has two active accountants — run tools/launch/list-multi-active-accountants.js';
+          ELSE
+            CREATE UNIQUE INDEX idx_acc_clients_one_active ON accountant_clients (user_id) WHERE status = 'active';
+          END IF;
+        END IF;
+      END
+      $oa$`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_earnings (

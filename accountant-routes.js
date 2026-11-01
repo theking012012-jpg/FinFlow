@@ -1414,6 +1414,10 @@ If you cannot find a field, use null. Be concise.`;
     );
     const months = tierForAccountant(parseInt(countRes.rows[0].count) || 0).referralMonths;
     const originSql = requireOrigin === 'client' ? `requested_by = 'client'` : `requested_by IS DISTINCT FROM 'client'`;
+    // NEW-12: one active accountant per client. Refuse with the name of the accountant who has access (the unique index
+    // idx_acc_clients_one_active is the guarantee; this check is only for the readable answer).
+    const other = await _otherActiveAccountant(conn, userId, accountantId);
+    if (other) return { conflict: other };
     await conn.query('BEGIN');
     try {
       const upd = await conn.query(`
@@ -1425,10 +1429,26 @@ If you cannot find a field, use null. Be concise.`;
       if (!upd.rows[0]) { await conn.query('ROLLBACK'); return null; }
       await _bookReferralMonth(conn, accountantId, userId);   // N79: same rules as the monthly run
       await conn.query('COMMIT');
-    } catch (e) { try { await conn.query('ROLLBACK'); } catch (_) {} throw e; }
+    } catch (e) {
+      try { await conn.query('ROLLBACK'); } catch (_) {}
+      if (e && e.code === '23505' && /idx_acc_clients_one_active/.test(String(e.constraint || e.message))) {   // NEW-12: a concurrent activation won
+        return { conflict: (await _otherActiveAccountant(pool, userId, accountantId)) || 'another accountant' };
+      }
+      throw e;
+    }
     await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', newData: { by: requireOrigin === 'client' ? 'accountant' : 'client' }, req });
     return { months };
   }
+  // NEW-12: the name of the accountant (other than `exceptId`) who already has ACTIVE access to this client, or null.
+  async function _otherActiveAccountant(conn, userId, exceptId) {
+    const { rows: [r] } = await conn.query(
+      `SELECT trim(a.first_name || ' ' || a.last_name) AS name FROM accountant_clients ac JOIN accountants a ON a.id = ac.accountant_id
+        WHERE ac.user_id = $1 AND ac.status = 'active' AND ac.accountant_id <> $2 LIMIT 1`, [userId, exceptId || 0]);
+    return r ? (r.name || 'another accountant') : null;
+  }
+  const _oneAccountantMsg = (name, who) => who === 'client'
+    ? `${name} already has access to your books. FinFlow links one accountant at a time — revoke ${name}'s access in My Accountant first.`
+    : `This client already works with another accountant on FinFlow. They need to end that link before you can be approved.`;
   // Why an accountant-side approve failed: not found vs waiting on the client's consent.
   async function _approveRefusal(accountantId, userId, res) {
     const { rows: [r] } = await pool.query(`SELECT status, requested_by FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2`, [userId, accountantId]);
@@ -2030,7 +2050,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       FROM accountant_clients ac
       JOIN accountants a ON a.id = ac.accountant_id
       WHERE ac.user_id = $1 AND ac.status IN ('active', 'pending')
-      ORDER BY ac.invited_at DESC
+      ORDER BY (ac.status = 'active') DESC, ac.invited_at DESC   -- NEW-12: the accountant who HAS access, before any newer pending link
       LIMIT 1
     `, [req.session.userId]);
     // No accountant linked yet — return an empty object (200) rather than 404
@@ -2049,6 +2069,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const conn = await pool.connect();
     try {
       const done = await _activateLink(conn, accountantId, req.session.userId, req, { requireOrigin: 'referral' });
+      if (done && done.conflict) return res.status(409).json({ error: _oneAccountantMsg(done.conflict, 'client'), code: 'ONE_ACCOUNTANT' });   // NEW-12
       if (!done) return res.status(404).json({ error: 'No pending referral link with this accountant.' });
       return res.json({ success: true });
     } finally { conn.release(); }
@@ -2468,6 +2489,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       `SELECT status FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
       [accountantId, req.session.userId]
     );
+    { const other = await _otherActiveAccountant(pool, req.session.userId, Number(accountantId));   // NEW-12: one at a time
+      if (other) return res.status(409).json({ error: _oneAccountantMsg(other, 'client'), code: 'ONE_ACCOUNTANT' }); }
     if (existing.rows[0]) {
       const s = existing.rows[0].status;
       if (s === 'active')   return res.status(409).json({ error: 'You are already linked to this accountant.' });
@@ -2539,6 +2562,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       // F17: referral months FROZEN at approval, from the shared tier ladder (inside _activateLink).
       // N78: only a CLIENT-initiated request can be approved by the accountant.
       const done = await _activateLink(conn, req.session.accountantId, userId, req, { requireOrigin: 'client' });
+      // NEW-12: the accountant is not told WHO the client's accountant is — only that one exists.
+      if (done && done.conflict) return res.status(409).json({ error: _oneAccountantMsg(done.conflict, 'accountant'), code: 'ONE_ACCOUNTANT' });
       if (!done) return _approveRefusal(req.session.accountantId, userId, res);
       const months = done.months;
 

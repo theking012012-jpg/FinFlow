@@ -1,7 +1,8 @@
 'use strict';
 // ══════════════════════════════════════════════════════════════════════════════
 // FINFLOW ADMIN ROUTES
-// Protected by ADMIN_PASSWORD env var — set this before deploying
+// Named admin accounts (LC3g-b), each with its own password + required 2FA. Until an owner account exists, the
+// ADMIN_PASSWORD env var signs in as before.
 // ══════════════════════════════════════════════════════════════════════════════
 
 const crypto = require('crypto');
@@ -22,12 +23,34 @@ const { detectAuditAnomalies, notifyAnomalies } = require('./audit-anomalies');
 const { emailHtml } = require('./email-html'); // N85 — email bodies escape their interpolations
 const earningsFigures = require('./earnings-figures');   // FA-L3g: the one writer of the commission / earnings figures
 
-function requireAdmin(req, res, next) {
+// LC3g-b: a named admin's session is re-checked against admin_users on EVERY request, so disabling an account or
+// resetting its sign-in ends its live sessions at once (not at cookie expiry). The shared-password session
+// (adminId null) has no row to check.
+let _adminPool = null;
+async function requireAdmin(req, res, next) {
   if (!req.session.isAdmin) return res.status(401).json({ error: 'Admin login required.' });
+  if (req.session.adminId != null) {
+    try {
+      const { rows: [a] } = await _adminPool.query(`SELECT status, role, must_setup, name FROM admin_users WHERE id = $1`, [req.session.adminId]);
+      if (!a || a.status !== 'active' || a.must_setup) { req.session.isAdmin = false; return res.status(401).json({ error: 'Admin login required.' }); }
+      req.session.adminRole = a.role; req.session.adminName = a.name;
+    } catch (e) { return next(e); }
+  } else if (String(process.env.ADMIN_BREAK_GLASS || '').toLowerCase() !== 'true') {
+    // A shared-password session ends once a named owner account exists (the password is off from then on).
+    try {
+      const { rows: [o] } = await _adminPool.query(`SELECT count(*)::int n FROM admin_users WHERE role = 'owner' AND status = 'active' AND NOT must_setup`);
+      if (o.n > 0) { req.session.isAdmin = false; return res.status(401).json({ error: 'Sign in with your email — the shared admin password is off now that named admin accounts exist.', emailRequired: true }); }
+    } catch (e) { return next(e); }
+  }
   next();
+}
+function requireOwner(req, res, next) {
+  return requireAdmin(req, res, () => ((req.session.adminRole || (req.session.adminId == null ? 'owner' : null)) === 'owner' ? next()
+    : res.status(403).json({ error: 'Only an owner can manage admin accounts.', code: 'OWNER_ONLY' })));
 }
 
 module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
+  _adminPool = pool;
 
   // ── LC3g: THE admin audit write ──────────────────────────────────────────────────────────────────────────────
   // Every admin action goes through here: what, on what, before → after, outcome, and WHERE it came from (IP,
@@ -35,14 +58,17 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // the finest identity there is). admin_log is append-only at the database (admin_log_no_mutate). A failed write is
   // reported loudly, never swallowed.
   const _sessRef = req => (req.sessionID ? crypto.createHash('sha256').update(String(req.sessionID)).digest('hex').slice(0, 16) : null);
-  async function adminAudit(req, action, targetType, targetId, { notes = null, before = null, after = null, outcome = 'ok' } = {}) {
+  async function adminAudit(req, action, targetType, targetId, { notes = null, before = null, after = null, outcome = 'ok', as = null } = {}) {
+    const sess = (req.session || {});
+    const who = as || (sess.isAdmin ? { id: sess.adminId == null ? null : sess.adminId, name: sess.adminName || 'Shared admin password' } : { id: null, name: null });
     try {
       await pool.query(
-        `INSERT INTO admin_log (action, target_type, target_id, notes, ip, user_agent, session_ref, before_data, after_data, outcome, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+        `INSERT INTO admin_log (action, target_type, target_id, notes, ip, user_agent, session_ref, before_data, after_data, outcome, admin_id, admin_name, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
         [action, targetType || null, targetId == null ? null : (parseInt(targetId, 10) || null), notes == null ? null : String(notes).slice(0, 1000),
          req.clientIp || req.ip || null, String((req.get && req.get('user-agent')) || '').slice(0, 300) || null, _sessRef(req),   // LR26
-         before == null ? null : JSON.stringify(before), after == null ? null : JSON.stringify(after), outcome]);
+         before == null ? null : JSON.stringify(before), after == null ? null : JSON.stringify(after), outcome,
+         who.id, who.name]);   // LC3g-b: WHO acted
     } catch (e) { console.error('[admin] AUDIT WRITE FAILED for', action, targetType, targetId, ':', e.message); }
   }
   // LC3g (better than the standard): an admin change to a CUSTOMER's account also lands on that customer's own audit
@@ -52,8 +78,9 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     try {
       await pool.query(
         `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, old_data, new_data, actor_type, actor_id, ip_address)
-         VALUES ($1, NULL, 'users', $1, 'UPDATE', $2, $3, 'admin', NULL, $4)`,
-        [userId, oldData == null ? null : JSON.stringify(oldData), newData == null ? null : JSON.stringify(newData), req.clientIp || req.ip || null]);   // LR26
+         VALUES ($1, NULL, 'users', $1, 'UPDATE', $2, $3, 'admin', $5, $4)`,
+        [userId, oldData == null ? null : JSON.stringify(oldData), newData == null ? null : JSON.stringify(newData), req.clientIp || req.ip || null,
+         (req.session && req.session.adminId) || null]);   // LC3g-b: which admin   // LR26
     } catch (e) { console.error('[admin] customer trail write failed for user', userId, ':', e.message); }
   }
   const _userState = async id => (await pool.query(
@@ -70,9 +97,52 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     await adminAudit(req, 'failed_login', 'security', null, { notes: String(reason + ' from ' + (req.clientIp || req.ip || 'unknown')).slice(0, 500), outcome: 'refused' });
     return res.status(401).json(body);
   };
+  // LC3g-b (owner decision 2026-11-01): NAMED admin accounts. Each person has their own email, password and REQUIRED
+  // 2FA; a code is accepted once (a replayed code is refused); the log names who acted; an owner adds, disables and
+  // resets accounts. The shared ADMIN_PASSWORD keeps working only until an active OWNER account exists — then it is
+  // off (ADMIN_BREAK_GLASS=true re-opens it for an emergency, and that sign-in is logged as such).
+  const bcrypt = require('bcryptjs');
+  const totp = require('./totp');
+  const _DUMMY_HASH = bcrypt.hashSync('finflow-no-such-admin', 10);
+  const _tempPassword = () => crypto.randomBytes(12).toString('base64url');   // 16 chars, ~96 bits
+  const _activeOwnerCount = async () => Number((await pool.query(`SELECT count(*)::int n FROM admin_users WHERE role = 'owner' AND status = 'active' AND NOT must_setup`)).rows[0].n);
+  const _adminPublic = r => ({ id: r.id, email: r.email, name: r.name, role: r.role, status: r.status, twoFactor: !!r.totp_secret && !r.must_setup,
+    setupPending: !!r.must_setup, lastLoginAt: r.last_login_at, createdAt: r.created_at });
+
   app.post('/api/admin/login', adminLoginLimiter, wrap(async (req, res) => {
     const { password } = req.body || {};
+    const email = String((req.body || {}).email || '').trim().toLowerCase();
+    if (email) {
+      if (!password) return failedAdminLogin(req, res, 'Missing password for ' + email, { error: 'Invalid email or password.' });
+      const { rows: [acc] } = await pool.query(`SELECT * FROM admin_users WHERE lower(email) = $1`, [email]);
+      const ok = bcrypt.compareSync(String(password), acc ? acc.password_hash : _DUMMY_HASH);   // same work whether or not the account exists
+      if (!acc || !ok) return failedAdminLogin(req, res, 'Wrong email or password (' + email + ')', { error: 'Invalid email or password.' });
+      if (acc.status !== 'active') return failedAdminLogin(req, res, 'Disabled admin account (' + email + ')', { error: 'This admin account is disabled.' });
+      if (acc.must_setup) {
+        // First sign-in (or after a reset): choose your own password and set up 2FA before anything else.
+        const secret = totp.newSecret();
+        req.session.adminSetup = { id: acc.id, secret, at: Date.now() };
+        await new Promise((r, j) => req.session.save(e => (e ? j(e) : r())));
+        return res.json({ setupRequired: true, name: acc.name, secret, otpauth: totp.otpauthUri(secret, acc.email, 'FinFlow Admin') });
+      }
+      const { token } = req.body || {};
+      if (!token) return res.status(401).json({ error: 'Enter the 6-digit code from your authenticator app.', mfaRequired: true });
+      let secret = null; try { secret = totp.decSecret(acc.totp_secret); } catch (_) {}
+      const step = secret ? totp.verifyStep(String(token), secret) : null;
+      if (step == null) return failedAdminLogin(req, res, 'Correct password, invalid 2FA code (' + email + ')', { error: 'Invalid code.', mfaRequired: true });
+      if (acc.totp_last_step != null && step <= Number(acc.totp_last_step)) return failedAdminLogin(req, res, 'Reused 2FA code (' + email + ')', { error: 'That code was already used. Wait for the next one.', mfaRequired: true });
+      await pool.query(`UPDATE admin_users SET totp_last_step = $2, last_login_at = NOW() WHERE id = $1`, [acc.id, step]);
+      await require('./session-auth').establishSession(req, { isAdmin: true, adminId: acc.id, adminRole: acc.role, adminName: acc.name });   // N73
+      await adminAudit(req, 'admin_login', 'security', null, { notes: acc.name + ' <' + acc.email + '> — password + 2FA' });
+      return res.json({ success: true, name: acc.name, role: acc.role });
+    }
+    // The shared password (no email).
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+    const breakGlass = String(process.env.ADMIN_BREAK_GLASS || '').toLowerCase() === 'true';
+    if (!breakGlass && await _activeOwnerCount() > 0) {
+      return failedAdminLogin(req, res, 'Shared admin password used after named accounts were set up', {
+        error: 'Sign in with your email — the shared admin password is off now that named admin accounts exist.', emailRequired: true });
+    }
     if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'ADMIN_PASSWORD not configured.' });
     if (!password) return failedAdminLogin(req, res, 'Missing password', { error: 'Invalid password.' });
     try {
@@ -88,14 +158,32 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     if (ADMIN_TOTP_SECRET && ADMIN_TOTP_SECRET.trim()) {
       const { token } = req.body || {};
       if (!token) return res.status(401).json({ error: 'MFA code required.', mfaRequired: true });
-      let totp = null; try { totp = require('./totp'); } catch (_) {}
-      if (!totp || !totp.verify(String(token), ADMIN_TOTP_SECRET.trim())) {
+      if (!totp.verify(String(token), ADMIN_TOTP_SECRET.trim())) {
         return failedAdminLogin(req, res, 'Correct password, invalid MFA code', { error: 'Invalid MFA code.', mfaRequired: true });
       }
     }
-    await require('./session-auth').establishSession(req, { isAdmin: true });   // N73: fresh session id
-    await adminAudit(req, 'admin_login', 'security', null, { notes: ADMIN_TOTP_SECRET && ADMIN_TOTP_SECRET.trim() ? 'password + MFA' : 'password only' });   // LC3g
-    return res.json({ success: true });
+    const _name = breakGlass ? 'Shared admin password (break-glass)' : 'Shared admin password';
+    await require('./session-auth').establishSession(req, { isAdmin: true, adminId: null, adminRole: 'owner', adminName: _name });   // N73: fresh session id
+    await adminAudit(req, 'admin_login', 'security', null, { notes: (ADMIN_TOTP_SECRET && ADMIN_TOTP_SECRET.trim() ? 'password + MFA' : 'password only') + (breakGlass ? ' — BREAK-GLASS' : '') });   // LC3g
+    return res.json({ success: true, name: _name, role: 'owner' });
+  }));
+
+  // First sign-in / after a reset: the person's own password (12+ characters) and a working 2FA code, together.
+  app.post('/api/admin/setup', adminLoginLimiter, wrap(async (req, res) => {
+    const st = req.session.adminSetup;
+    if (!st || Date.now() - st.at > 15 * 60 * 1000) return res.status(401).json({ error: 'Setup expired — sign in again.' });
+    const { newPassword, token } = req.body || {};
+    if (!newPassword || String(newPassword).length < 12) return res.status(400).json({ error: 'Choose a password of at least 12 characters.', code: 'WEAK_PASSWORD' });
+    const { rows: [acc] } = await pool.query(`SELECT * FROM admin_users WHERE id = $1`, [st.id]);
+    if (!acc || acc.status !== 'active' || !acc.must_setup) return res.status(401).json({ error: 'Setup expired — sign in again.' });
+    if (bcrypt.compareSync(String(newPassword), acc.password_hash)) return res.status(400).json({ error: 'Choose a new password — not the temporary one.', code: 'SAME_PASSWORD' });
+    const step = totp.verifyStep(String(token || ''), st.secret);
+    if (step == null) return failedAdminLogin(req, res, '2FA setup code wrong (' + acc.email + ')', { error: 'That code did not match. Check the time on your phone and try the next code.', mfaRequired: true });
+    await pool.query(`UPDATE admin_users SET password_hash = $2, totp_secret = $3, totp_last_step = $4, must_setup = FALSE, last_login_at = NOW() WHERE id = $1`,
+      [acc.id, bcrypt.hashSync(String(newPassword), 12), totp.encSecret(st.secret), step]);
+    await require('./session-auth').establishSession(req, { isAdmin: true, adminId: acc.id, adminRole: acc.role, adminName: acc.name });   // N73 (drops adminSetup)
+    await adminAudit(req, 'admin_setup_complete', 'admin_user', acc.id, { notes: acc.name + ' <' + acc.email + '> set their own password and 2FA' });
+    return res.json({ success: true, name: acc.name, role: acc.role });
   }));
 
   app.post('/api/admin/logout', wrap(async (req, res) => {
@@ -104,7 +192,67 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     req.session.save(() => res.json({ ok: true }));
   }));
 
-  app.get('/api/admin/me', requireAdmin, (req, res) => res.json({ admin: true }));
+  // ── ADMIN ACCOUNTS (owners only) ────────────────────────────────────────────────────────────────────────────────
+  app.get('/api/admin/admins', requireOwner, wrap(async (req, res) => {
+    const { rows } = await pool.query(`SELECT * FROM admin_users ORDER BY status, role DESC, name`);
+    res.json({ admins: rows.map(_adminPublic), you: req.session.adminId == null ? null : req.session.adminId, sharedPasswordOn: (await _activeOwnerCount()) === 0 });
+  }));
+  app.post('/api/admin/admins', requireOwner, wrap(async (req, res) => {
+    const email = String((req.body || {}).email || '').trim().toLowerCase();
+    const name = String((req.body || {}).name || '').trim().slice(0, 120);
+    const role = (req.body || {}).role === 'owner' ? 'owner' : 'admin';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !name) return res.status(400).json({ error: 'Enter a name and a valid email.' });
+    const temp = _tempPassword();
+    let row;
+    try {
+      row = (await pool.query(`INSERT INTO admin_users (email, name, role, password_hash, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [email, name, role, bcrypt.hashSync(temp, 12), req.session.adminId == null ? null : req.session.adminId])).rows[0];
+    } catch (e) { if (e.code === '23505') return res.status(409).json({ error: 'An admin with that email already exists.', code: 'EXISTS' }); throw e; }
+    await adminAudit(req, 'admin_account_create', 'admin_user', row.id, { after: { email, name, role } });   // the temporary password is never logged
+    res.json({ admin: _adminPublic(row), tempPassword: temp });
+  }));
+  const _target = async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const { rows: [t] } = await pool.query(`SELECT * FROM admin_users WHERE id = $1`, [id]);
+    if (!t) { res.status(404).json({ error: 'Admin account not found.' }); return null; }
+    if (req.session.adminId != null && Number(req.session.adminId) === t.id) { res.status(400).json({ error: 'You cannot change your own account here.', code: 'SELF' }); return null; }
+    return t;
+  };
+  // Never leave the panel with no working owner — unless it was set up with none (then the shared password still works).
+  const _wouldStrandOwners = async (t) => t.role === 'owner' && t.status === 'active' && !t.must_setup && (await _activeOwnerCount()) <= 1;
+  app.post('/api/admin/admins/:id/disable', requireOwner, wrap(async (req, res) => {
+    const t = await _target(req, res); if (!t) return;
+    if (await _wouldStrandOwners(t)) return res.status(400).json({ error: 'This is the last active owner. Add another owner first.', code: 'LAST_OWNER' });
+    await pool.query(`UPDATE admin_users SET status = 'disabled' WHERE id = $1`, [t.id]);
+    await adminAudit(req, 'admin_account_disable', 'admin_user', t.id, { before: { status: t.status }, after: { status: 'disabled' }, notes: t.name + ' <' + t.email + '>' });
+    res.json({ ok: true });
+  }));
+  app.post('/api/admin/admins/:id/enable', requireOwner, wrap(async (req, res) => {
+    const t = await _target(req, res); if (!t) return;
+    await pool.query(`UPDATE admin_users SET status = 'active' WHERE id = $1`, [t.id]);
+    await adminAudit(req, 'admin_account_enable', 'admin_user', t.id, { before: { status: t.status }, after: { status: 'active' }, notes: t.name + ' <' + t.email + '>' });
+    res.json({ ok: true });
+  }));
+  // Lost phone / forgotten password: a new temporary password; they choose their own and set up 2FA again on next sign-in.
+  app.post('/api/admin/admins/:id/reset', requireOwner, wrap(async (req, res) => {
+    const t = await _target(req, res); if (!t) return;
+    if (await _wouldStrandOwners(t)) return res.status(400).json({ error: 'This is the last active owner. Add another owner first.', code: 'LAST_OWNER' });
+    const temp = _tempPassword();
+    await pool.query(`UPDATE admin_users SET password_hash = $2, totp_secret = NULL, totp_last_step = NULL, must_setup = TRUE WHERE id = $1`, [t.id, bcrypt.hashSync(temp, 12)]);
+    await adminAudit(req, 'admin_account_reset', 'admin_user', t.id, { notes: t.name + ' <' + t.email + '> — new temporary password, 2FA to set up again' });
+    res.json({ ok: true, tempPassword: temp });
+  }));
+  app.post('/api/admin/admins/:id/role', requireOwner, wrap(async (req, res) => {
+    const t = await _target(req, res); if (!t) return;
+    const role = (req.body || {}).role === 'owner' ? 'owner' : 'admin';
+    if (role === 'admin' && await _wouldStrandOwners(t)) return res.status(400).json({ error: 'This is the last active owner. Add another owner first.', code: 'LAST_OWNER' });
+    await pool.query(`UPDATE admin_users SET role = $2 WHERE id = $1`, [t.id, role]);
+    await adminAudit(req, 'admin_account_role', 'admin_user', t.id, { before: { role: t.role }, after: { role }, notes: t.name + ' <' + t.email + '>' });
+    res.json({ ok: true });
+  }));
+
+  app.get('/api/admin/me', requireAdmin, (req, res) => res.json({ admin: true, id: req.session.adminId == null ? null : req.session.adminId,
+    name: req.session.adminName || 'Shared admin password', role: req.session.adminRole || 'owner' }));
 
   // Read-only anomaly scan over the append-only audit trail (assume-breach / detect-fast).
   app.get('/api/admin/audit-anomalies', requireAdmin, async (req, res) => {

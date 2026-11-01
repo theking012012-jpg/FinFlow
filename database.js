@@ -703,6 +703,25 @@ async function initDB() {
       CREATE OR REPLACE FUNCTION admin_log_immutable() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION 'admin_log is append-only: % is not permitted', TG_OP; END;
       $$ LANGUAGE plpgsql`);
+    // LC3g-b: named admin accounts (own password + required 2FA); admin_log names who acted.
+    // Mirrored by scripts/migrations/2026-11-02-named-admin-accounts.sql.
+    await client.query(`CREATE TABLE IF NOT EXISTS admin_users (
+  id             SERIAL PRIMARY KEY,
+  email          TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  role           TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('owner','admin')),
+  password_hash  TEXT NOT NULL,
+  totp_secret    TEXT,
+  totp_last_step BIGINT,
+  must_setup     BOOLEAN NOT NULL DEFAULT TRUE,
+  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+  created_by     INTEGER,
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  last_login_at  TIMESTAMPTZ
+)`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (lower(email))`);
+    await client.query(`ALTER TABLE admin_log ADD COLUMN IF NOT EXISTS admin_id   INTEGER`);
+    await client.query(`ALTER TABLE admin_log ADD COLUMN IF NOT EXISTS admin_name TEXT`);
     await client.query(`DROP TRIGGER IF EXISTS admin_log_no_mutate ON admin_log`);
     await client.query(`CREATE TRIGGER admin_log_no_mutate BEFORE UPDATE OR DELETE ON admin_log
       FOR EACH ROW EXECUTE FUNCTION admin_log_immutable()`);

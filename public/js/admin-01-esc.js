@@ -19,25 +19,101 @@ let _currentAccId = null;
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
 async function adminLogin() {
   const pw = document.getElementById('admin-pw').value;
+  const email = (document.getElementById('admin-email').value || '').trim();
   const err = document.getElementById('login-err');
   err.textContent = '';
   try {
     const res = await fetch('/api/admin/login', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw, token: (document.getElementById('admin-otp').value || '').trim() || undefined }),
+      body: JSON.stringify({ email: email || undefined, password: pw, token: (document.getElementById('admin-otp').value || '').trim() || undefined }),
     });
     const data = await res.json();
+    if (data.setupRequired) {   // LC3g-b: first sign-in — own password + 2FA
+      document.getElementById('admin-signin').style.display = 'none';
+      document.getElementById('admin-setup').style.display = '';
+      document.getElementById('admin-setup-hello').textContent = 'Welcome, ' + data.name + ' — set up your admin sign-in';
+      document.getElementById('admin-setup-key').textContent = String(data.secret).replace(/(.{4})/g, '$1 ').trim();
+      document.getElementById('admin-setup-link').href = data.otpauth;
+      document.getElementById('admin-new-pw').focus();
+      return;
+    }
     if (data.error) {
       if (data.mfaRequired) { const o=document.getElementById('admin-otp'); o.style.display=''; o.focus(); }
+      if (data.emailRequired) document.getElementById('admin-email').focus();
       err.textContent = data.error;
       return;
     }
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').classList.add('visible');
-    boot();
+    enterAdminApp();
   } catch(e) { err.textContent = 'Connection error.'; }
 }
+
+async function adminFinishSetup() {
+  const err = document.getElementById('login-err'); err.textContent = '';
+  try {
+    const res = await fetch('/api/admin/setup', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPassword: document.getElementById('admin-new-pw').value, token: (document.getElementById('admin-setup-otp').value || '').trim() }) });
+    const data = await res.json();
+    if (data.error) { err.textContent = data.error; return; }
+    enterAdminApp();
+  } catch (e) { err.textContent = 'Connection error.'; }
+}
+
+let _me = null;
+async function enterAdminApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').classList.add('visible');
+  try { _me = await (await fetch('/api/admin/me', { credentials: 'include' })).json(); } catch (_) { _me = null; }
+  if (_me) {
+    document.getElementById('topbar-who').textContent = _me.name;
+    document.getElementById('nav-admins').style.display = _me.role === 'owner' ? '' : 'none';
+  }
+  boot();
+}
+
+// ── ADMIN ACCOUNTS (LC3g-b) ─────────────────────────────────────────────────────
+async function loadAdmins() {
+  const tb = document.getElementById('admins-tbody');
+  const r = await fetch('/api/admin/admins', { credentials: 'include' });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { tb.innerHTML = '<tr><td colspan="6" class="empty">' + esc(d.error || 'Could not load') + '</td></tr>'; return; }
+  document.getElementById('admins-note').textContent = d.sharedPasswordOn
+    ? 'The shared admin password still works. It turns off as soon as one owner account has finished its setup.'
+    : 'The shared admin password is off. Everyone signs in with their own email, password and 2FA.';
+  tb.innerHTML = d.admins.length ? d.admins.map(a => {
+    const self = d.you != null && d.you === a.id;
+    const status = a.status === 'disabled' ? 'Disabled' : (a.setupPending ? 'Waiting for first sign-in' : 'Active · 2FA on');
+    const btns = self ? 'you' : [
+      `<button class="btn-sm" data-arg-id="${a.id}" data-arg-act="${a.status === 'active' ? 'disable' : 'enable'}" data-on-click="adminAccountAction(Number(this.dataset.argId),this.dataset.argAct)">${a.status === 'active' ? 'Disable' : 'Enable'}</button>`,
+      `<button class="btn-sm" data-arg-id="${a.id}" data-on-click="adminAccountAction(Number(this.dataset.argId),'reset')">Reset sign-in</button>`,
+      `<button class="btn-sm" data-arg-id="${a.id}" data-arg-role="${a.role === 'owner' ? 'admin' : 'owner'}" data-on-click="adminAccountAction(Number(this.dataset.argId),'role',this.dataset.argRole)">${a.role === 'owner' ? 'Make admin' : 'Make owner'}</button>`].join(' ');
+    return `<tr><td class="primary">${esc(a.name)}</td><td>${esc(a.email)}</td><td>${a.role === 'owner' ? 'Owner' : 'Admin'}</td><td>${status}</td>
+      <td>${a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString() : '—'}</td><td>${btns}</td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty">No named admin accounts yet. Add yourself first, as an Owner.</td></tr>';
+}
+function _showTemp(name, email, temp) {
+  const el = document.getElementById('admins-temp');
+  el.style.display = '';
+  el.innerHTML = 'Temporary password for <b>' + esc(name) + '</b> (' + esc(email) + '): <code>' + esc(temp) + '</code><br>'
+    + 'Shown once. Give it to them privately; at first sign-in they choose their own password and set up 2FA.';
+}
+async function addAdminAccount() {
+  const name = document.getElementById('adm-new-name').value.trim(), email = document.getElementById('adm-new-email').value.trim(), role = document.getElementById('adm-new-role').value;
+  const r = await fetch('/api/admin/admins', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, role }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { alertMsg(d.error || 'Could not add'); return; }
+  document.getElementById('adm-new-name').value = ''; document.getElementById('adm-new-email').value = '';
+  _showTemp(d.admin.name, d.admin.email, d.tempPassword);
+  loadAdmins();
+}
+async function adminAccountAction(id, action, role) {
+  const r = await fetch('/api/admin/admins/' + id + '/' + action, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(role ? { role } : {}) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { alertMsg(d.error || 'Could not change'); return; }
+  if (d.tempPassword) { const row = (document.querySelector('#admins-tbody button[data-arg-id="' + id + '"]') || {}).closest ? document.querySelector('#admins-tbody button[data-arg-id="' + id + '"]').closest('tr') : null; _showTemp(row ? row.cells[0].innerText : 'this admin', row ? row.cells[1].innerText : '', d.tempPassword); }
+  loadAdmins();
+}
+function alertMsg(m) { const el = document.getElementById('admins-temp'); el.style.display = ''; el.textContent = m; }
 
 async function adminLogout() {
   await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' });
@@ -50,11 +126,7 @@ document.getElementById('admin-pw').addEventListener('keydown', e => { if(e.key=
 (async () => {
   try {
     const res = await fetch('/api/admin/me', { credentials: 'include' });
-    if (res.ok) {
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('app').classList.add('visible');
-      boot();
-    }
+    if (res.ok) enterAdminApp();
   } catch(e) {}
 })();
 
@@ -81,6 +153,7 @@ function showPage(name) {
     costs: loadCosts,
     log: loadLog,
     flags: loadFlags,
+    admins: loadAdmins,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -760,11 +833,12 @@ function renderLogRows(data) {
   document.getElementById('log-tbody').innerHTML = data.length ? data.map(l => `
     <tr>
       <td class="primary">${esc(l.action.replace(/_/g,' '))}</td>
+      <td>${esc(l.admin_name||'—')}</td>
       <td>${esc(l.target_type||'—')} ${l.target_id ? '#'+l.target_id : ''}</td>
       <td data-style="max-width:300px;word-break:break-word">${esc(l.notes||'—')}</td>
       <td>${new Date(l.created_at).toLocaleString()}</td>
     </tr>`).join('')
-  : '<tr><td colspan="4" class="empty">No entries</td></tr>';
+  : '<tr><td colspan="5" class="empty">No entries</td></tr>';
 }
 
 function applyLogFilters() {

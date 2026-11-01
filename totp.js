@@ -60,6 +60,19 @@ function verify(token, secretB32, atMs = Date.now()) {
   }
   return false;
 }
+/** LC3g-b: like verify, but returns the matched time-step (or null), so a caller can refuse a code already used. */
+function verifyStep(token, secretB32, atMs = Date.now()) {
+  const t = String(token || '').replace(/\s+/g,'');
+  if (!/^[0-9]{6}$/.test(t)) return null;
+  const key = base32Decode(secretB32);
+  const c = Math.floor(atMs / 1000 / PERIOD);
+  let hit = null;
+  for (const w of [-1, 0, 1]) {
+    const cand = _hotp(key, c + w);
+    if (cand.length === t.length && crypto.timingSafeEqual(Buffer.from(cand), Buffer.from(t)) && hit == null) hit = c + w;
+  }
+  return hit;
+}
 /** A fresh random base32 secret (20 bytes = 160 bits, the RFC-recommended size). */
 function newSecret() { return base32Encode(crypto.randomBytes(20)); }
 /** otpauth:// URI for authenticator apps (QR or manual key entry). */
@@ -96,4 +109,4 @@ function decSecret(stored) {
   throw lastErr || new Error('decrypt failed');
 }
 
-module.exports = { generate, verify, newSecret, otpauthUri, encSecret, decSecret, base32Encode, base32Decode };
+module.exports = { generate, verify, verifyStep, newSecret, otpauthUri, encSecret, decSecret, base32Encode, base32Decode };

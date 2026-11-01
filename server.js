@@ -3533,6 +3533,13 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
   if (b.phone          != null) patch.phone           = String(b.phone).slice(0,50);
   if (b.website        != null) patch.website         = String(b.website).slice(0,200);
   if (b.tax_id         != null) patch.tax_id          = String(b.tax_id).slice(0,50);
+  // NEW-6 (live retest 2026-10-30): the PERSON's timezone — whose day "today" is on the Personal side (a business has its
+  // own). The page saves the device's zone once; an IANA name, validated.
+  if (b.personal_timezone != null) {
+    const _ptz = String(b.personal_timezone).trim();
+    if (_ptz && _badTimezone(_ptz)) return res.status(400).json({ error: 'Invalid timezone. Use an IANA zone such as America/New_York.' });
+    patch.personal_timezone = _ptz || null;
+  }
   // F137-k: user-set income-tax rate (%). Persisted here so the Income Tax Estimate report AND the
   // accountant portal Tax Summary (accountant-routes.js reads settings.data.tax_rate) share one rate.
   // Clamped 0–100. Replaces the hardcoded 25% guess with the owner's own number.

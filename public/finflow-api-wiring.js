@@ -204,6 +204,13 @@
           if (el.tagName === 'SELECT' && val !== '' && ![...el.options].some(o => o.value === String(val))) el.add(new Option(String(val), String(val)));
           el.value = val;
         };
+        // NEW-6: the person's timezone for Personal's "today" — saved once from this device when none is set yet.
+        window._ffPersonalTz = s.personal_timezone || null;
+        if (!s.personal_timezone) {
+          try { const _dtz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (_dtz) fetch('/api/settings', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personal_timezone: _dtz }) })
+              .then(r => { if (r.ok) window._ffPersonalTz = _dtz; }).catch(() => {}); } catch (_) {}
+        }
         setField('s-biz-name', s.business_name);
         setField('s-industry', s.industry);
         setField('s-address',  s.address);

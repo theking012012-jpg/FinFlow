@@ -4149,8 +4149,19 @@ function _persMonthlyEquiv(amount,frequency){
 // Rule 10 (F87 class): the personal window is CALENDAR-date strings ('YYYY-MM-DD', inclusive of today) —
 // it used local-midnight Date bounds against new Date(t.date) (UTC midnight), so west of UTC a row dated the
 // 1st fell before the month start and dropped out of its own month.
+// NEW-6 (live retest 2026-10-30): Personal's today is the PERSON's day — it was the UTC day, so from 8 pm in New York
+// "Year"/"Month" ended tomorrow (a charge dated the 1st counted on the 31st, and Month jumped to the next month). The
+// person's saved timezone (settings.personal_timezone, saved once from this device), else this device's zone; on the
+// server's clock when known (NEW-2), never trusting the device's clock reading.
+function _personalTz(){ return window._ffPersonalTz || (Intl.DateTimeFormat().resolvedOptions().timeZone) || undefined; }
+window._personalTz = _personalTz;
+function _personalToday(){
+  const c=window._serverClock, now=c ? new Date(c.server + (Date.now() - c.local)) : new Date();
+  try { return window.FinFlowDates.resolvedToday(now, _personalTz()); } catch(_) { return window.FinFlowDates.resolvedToday(now); }
+}
+window._personalToday = _personalToday;
 function _persPeriodRange(){
-  const today=window.FinFlowDates.resolvedToday(new Date());
+  const today=_personalToday();
   const y=today.slice(0,4), m=parseInt(today.slice(5,7),10);
   if(window._persPeriod==='month') return{from:y+'-'+String(m).padStart(2,'0')+'-01',to:today};
   if(window._persPeriod==='quarter') return{from:y+'-'+String(Math.floor((m-1)/3)*3+1).padStart(2,'0')+'-01',to:today};

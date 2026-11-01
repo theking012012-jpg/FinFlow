@@ -994,7 +994,15 @@ If you cannot find a field, use null. Be concise.`;
       // rows each carry their own currency, and adding TT$ to US$ raw is not a number. `income` / `expense` are
       // given only when every row in the window shares one currency; otherwise they are null and the per-currency
       // figures are the answer.
-      const _ytdTo = new Date().toISOString().slice(0, 10), _ytdFrom = _ytdTo.slice(0, 4) + '-01-01';   // calendar strings (Rule 10)
+      // NEW-6 (live retest 2026-10-30): the window ends on the PERSON's today — it was the UTC day, so from 8 pm in New York
+      // tomorrow's dated rows (a Netflix charge on the 1st) counted in "year to date". The person's saved timezone, else
+      // their first business's, else UTC (Rule 10: whose day it is is never the server's).
+      const { rows: [_ptzRow] } = await pool.query(
+        `SELECT COALESCE(NULLIF((SELECT data->>'personal_timezone' FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1), ''),
+                         (SELECT data->>'timezone' FROM entities WHERE user_id = $1 AND COALESCE(data->>'timezone','') <> '' ORDER BY id LIMIT 1)) AS tz`, [userId]);
+      const _FDp = require('./public/finflow-dates.js');
+      let _ytdTo; try { _ytdTo = _FDp.resolvedToday(new Date(), (_ptzRow && _ptzRow.tz) || undefined); } catch (_) { _ytdTo = _FDp.resolvedToday(new Date()); }
+      const _ytdFrom = _ytdTo.slice(0, 4) + '-01-01';   // calendar strings (Rule 10)
       // FA-M14: the Personal page's own rule (FinFlowDates.personalTxKind — income / expense / transfer; transfers are
       // neither), applied to every row in the window. It was a SQL mirror of the income/expense split alone.
       const { rows: _pRows } = await pool.query(

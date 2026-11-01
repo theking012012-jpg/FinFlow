@@ -59,6 +59,20 @@ async function main() {
     eq('one audit row on e1\'s own business (UPDATE, system)', au.map(r => [r.entity_id, r.action, r.actor_type, r.p]), [[b1, 'UPDATE', 'system', String(pWeb)]]);
     const again = run();
     A('re-run: WOULD LINK 0', /WOULD LINK: 0\b/.test(again.out), again.out.slice(-200));
+
+    // ── the same rule, run ONCE on deploy by the migration runner (scripts/migrations/2026-11-01-lc1c-link-time-entries.sql)
+    await c.query(`UPDATE timesheet SET data = data - 'project_id' WHERE id = $1`, [e1]);   // back to unlinked
+    const auMax = (await c.query(`SELECT COALESCE(MAX(id), 0) AS m FROM audit_trail`)).rows[0].m;   // the trail is append-only — count what the migration adds
+    const f = '2026-11-01-lc1c-link-time-entries.sql';
+    await c.query(`DELETE FROM schema_migrations WHERE name = $1`, [f]).catch(() => {});
+    const app = require('../../database.js');
+    const m1 = await app.runMigrations(pool);
+    A('deploy: the LC1c migration applied once', m1.applied.includes(f) && !m1.failed.length, JSON.stringify(m1));
+    eq('deploy: the same links as the tool (only e1)', await pids(), [[e1, String(pWeb)], [e2, null], [e3, null], [e4, null], [e5, '999']]);
+    const au2 = (await c.query(`SELECT entity_id, action, actor_type, new_data->>'project_id' AS p, old_data->>'project_id' AS was FROM audit_trail WHERE table_name = 'timesheet' AND record_id = $1 AND id > $2`, [e1, auMax])).rows;
+    eq('deploy: one audit row (UPDATE, system, before had no project)', au2.map(r => [r.entity_id, r.action, r.actor_type, r.p, r.was]), [[b1, 'UPDATE', 'system', String(pWeb), null]]);
+    const m2 = await app.runMigrations(pool);
+    A('deploy again: not re-run (recorded in schema_migrations)', !m2.applied.includes(f), JSON.stringify(m2));
   } finally {
     try { await pool.end(); } catch (_) {}
     await s.stop();

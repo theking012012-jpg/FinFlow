@@ -127,6 +127,21 @@ function generateReferralCode(firstName, lastName) {
  *  session) so an admin suspend/reject revokes access immediately — a session
  *  alone is never sufficient; only status='verified' passes. Uses the module-level
  *  pool (_dbPool) since this helper is defined outside registerAccountantRoutes. */
+/** NEW-9: a client may give access UNTIL a date (access_expires_at — the instant their chosen day ends, in their zone).
+ *  Past it, the link becomes 'expired'. ONE mechanism: swept here for the accountant on every accountant request (so the
+ *  ~30 access checks that read status = 'active' all honour it without each being changed — Rule 2), and for the
+ *  client on every My Accountant read. Audited per link as ACCESS_EXPIRED (system actor). */
+async function _expireAccess(conn, { accountantId = null, userId = null }) {
+  if (accountantId == null && userId == null) return;
+  const col = accountantId != null ? 'accountant_id' : 'user_id';
+  const { rows } = await conn.query(
+    `UPDATE accountant_clients SET status = 'expired' WHERE ${col} = $1 AND status = 'active' AND access_expires_at IS NOT NULL AND access_expires_at <= $2
+     RETURNING user_id, accountant_id`, [accountantId != null ? accountantId : userId, new Date()]);   // the app's clock, as every date in FinFlow
+  for (const r of rows) {
+    try { await conn.query(`INSERT INTO audit_trail (user_id, table_name, action, field_name, new_value, new_data, actor_type, actor_id) VALUES ($1, 'accountant_clients', 'ACCESS_EXPIRED', 'status', 'expired', $2, 'system', NULL)`,
+      [r.user_id, JSON.stringify({ accountant_id: r.accountant_id })]); } catch (_) {}
+  }
+}
 async function requireAccountant(req, res, next) {
   if (!req.session.accountantId) {
     return res.status(401).json({ error: 'Accountant login required.' });
@@ -136,6 +151,7 @@ async function requireAccountant(req, res, next) {
     if (!rows[0] || rows[0].status !== 'verified') {
       return res.status(403).json({ error: 'Your accountant account is pending review or is not active.' });
     }
+    await _expireAccess(_dbPool, { accountantId: req.session.accountantId });
     next();
   } catch (e) {
     console.error('[requireAccountant] status check failed:', e.message);
@@ -865,6 +881,11 @@ If you cannot find a field, use null. Be concise.`;
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access to this client.' });
+    // NEW-9: the client can see when their accountant opened the books — recorded at most once an hour (not every refresh).
+    try {
+      const { rows: [_rv] } = await pool.query(`SELECT 1 FROM audit_trail WHERE user_id = $1 AND actor_type = 'accountant' AND actor_id = $2 AND action = 'BOOKS_VIEWED' AND changed_at > NOW() - INTERVAL '1 hour' LIMIT 1`, [userId, req.session.accountantId]);
+      if (!_rv) await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'BOOKS_VIEWED', req });
+    } catch (_) {}
     const _accountWide = access.rows[0].access_level;
     const _scope = await _clientScope(parseInt(userId), access.rows[0]);
     const _ea = _scope.ea;   // null = legacy (all entities)
@@ -1338,55 +1359,89 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
   // ── 9. INVITE CLIENT ──────────────────────────────────────────────────────
+  // ── 7b. INVITE A CLIENT BY E-MAIL (NEW-9) ─────────────────────────────────────────────────────────────────────
+  // The invitation is a ROW (accountant_invites), not just an e-mail. It matches a FinFlow account by e-mail: an existing
+  // user sees it in My Accountant the next time they sign in; a new one sees it after signing up with that address. It
+  // becomes access only when that person approves it, choosing which businesses and at what level, and optionally an
+  // end date. Better than an e-mail-only invite:
+  //   • NO ACCOUNT ENUMERATION — the answer (status, body, e-mail sent or not) is identical whether or not the address
+  //     has a FinFlow account; the accountant's invitation list shows the same "Waiting" for both until the person acts.
+  //   • one pending invitation per accountant + address (unique index — Rule 9); a resend inside 10 minutes sends nothing.
+  //   • 25 invitations per accountant per 24 h; an invitation expires after 14 days.
+  //   • Personal finances are never part of an invitation (the wall) — a client can change that later themselves.
+  const INVITE_DAYS = 14, INVITES_PER_DAY = 25;
+  const _normEmail = e => String(e || '').trim().toLowerCase();
+  const _emailOk = e => e.length <= 254 && /^[^\s@<>()"',;:]+@[^\s@<>()"',;:]+\.[a-z]{2,}$/i.test(e);
   app.post('/api/accountants/invite', requireAccountant, apiLimiter, wrap(async (req, res) => {
-    const { email, name } = req.body || {};
+    const email = _normEmail((req.body || {}).email);
+    const name = String((req.body || {}).name || '').trim().slice(0, 120);
     if (!email) return res.status(400).json({ error: 'Client email required.' });
+    if (!_emailOk(email)) return res.status(400).json({ error: 'That does not look like an e-mail address.' });
+    const { rows: [accountant] } = await pool.query('SELECT * FROM accountants WHERE id = $1', [req.session.accountantId]);
+    if (!accountant || accountant.status !== 'verified') return res.status(403).json({ error: 'Only verified accountants can invite clients.' });
+    if (_normEmail(accountant.email) === email) return res.status(400).json({ error: 'That is your own address.' });
+    const { rows: [cnt] } = await pool.query(`SELECT count(*)::int AS n FROM accountant_invites WHERE accountant_id = $1 AND created_at > NOW() - INTERVAL '24 hours'`, [accountant.id]);
+    if (cnt.n >= INVITES_PER_DAY) return res.status(429).json({ error: `You can send ${INVITES_PER_DAY} invitations a day. Try again tomorrow.`, code: 'INVITE_LIMIT' });
 
-    const acc = await pool.query('SELECT * FROM accountants WHERE id = $1', [req.session.accountantId]);
-    if (!acc.rows[0] || acc.rows[0].status !== 'verified') {
-      return res.status(403).json({ error: 'Only verified accountants can invite clients.' });
-    }
+    // Lazily expire this accountant's stale invitations, then one pending row per address (the unique index decides).
+    await pool.query(`UPDATE accountant_invites SET status = 'expired' WHERE accountant_id = $1 AND status = 'pending' AND expires_at <= $2`, [accountant.id, new Date()]);
+    const { rows: [inv] } = await pool.query(
+      `INSERT INTO accountant_invites (accountant_id, email, name, expires_at) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (accountant_id, email) WHERE status = 'pending' DO UPDATE SET name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE accountant_invites.name END
+       RETURNING id, (xmax = 0) AS created, created_at`, [accountant.id, email, name, new Date(Date.now() + INVITE_DAYS * 86400000)]);
+    const recentResend = !inv.created && (Date.now() - new Date(inv.created_at).getTime()) < 10 * 60 * 1000;
+    await _audit(pool, { userId: null, table: 'accountant_invites', recordId: inv.id, action: inv.created ? 'INVITE_SENT' : 'INVITE_RESENT', newData: { accountant_id: accountant.id }, req });
 
-    const accountant = acc.rows[0];
-    const refUrl = `${appUrl()}/register?ref=${accountant.referral_code}`;
-
-    // Send email via Resend (reuse existing resendClient). LR23: the invite IS the e-mail — never answer "sent" when it
-    // was not (no e-mail service configured, or Resend refused it).
-    if (!resendClient) return res.status(503).json({ error: 'E-mail is not set up yet, so the invitation was not sent.', code: 'EMAIL_NOT_SENT' });
-    try {
-      await resendClient.emails.send({
-        from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
-        to: email,
-        subject: `${accountant.first_name} ${accountant.last_name} invited you to FinFlow`,
-        html: String(emailHtml`
+    // Which e-mail to send is decided by whether the address has an account — but nothing about that reaches the
+    // response: both e-mails are sent the same way and the answer below never depends on it.
+    const { rows: [existing] } = await pool.query(`SELECT id FROM users WHERE lower(data->>'email') = $1 AND data->'deleted' IS NULL LIMIT 1`, [email]);
+    let emailSent = false;
+    if (!recentResend && resendClient) {
+      const who = `${accountant.first_name} ${accountant.last_name}`.trim();
+      const reviewUrl = `${appUrl()}/app?page=my-accountant`;
+      const refUrl = `${appUrl()}/register?ref=${encodeURIComponent(accountant.referral_code || '')}`;
+      const body = existing
+        ? emailHtml`
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px;">
+            <h2 style="color:#c9a84c;font-size:22px;margin-bottom:8px;">${who} would like to work with you on FinFlow</h2>
+            <p style="color:#9a9278;margin-bottom:20px;">${who} from <strong style="color:#f0ead6">${accountant.firm || 'their firm'}</strong> (verified by FinFlow) has asked for access to your business books.</p>
+            <p style="color:#9a9278;margin-bottom:24px;">Nothing is shared until you approve. You choose which businesses they see, whether they can only view or also post entries, and — if you like — the date their access ends. Your personal finances are never part of this. You can revoke access at any time.</p>
+            <a href="${reviewUrl}" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Review the request →</a>
+            <p style="color:#5a5540;font-size:11px;margin-top:24px;">The request expires in ${INVITE_DAYS} days. If you don't know ${who}, ignore this e-mail — nothing happens unless you approve.</p>
+          </div>`
+        : emailHtml`
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px;">
             <h2 style="color:#c9a84c;font-size:24px;margin-bottom:8px;">You've been invited to FinFlow</h2>
-            <p style="color:#9a9278;margin-bottom:20px;">
-              ${accountant.first_name} ${accountant.last_name} from <strong style="color:#f0ead6">${accountant.firm}</strong>
-              has invited ${name || 'you'} to manage your finances on FinFlow.
-            </p>
-            <p style="color:#9a9278;margin-bottom:24px;">
-              Start your free 30-day trial — no credit card required.
-              ${accountant.first_name} will have access to your books to help with your filing and accounting needs.
-            </p>
-            <a href="${refUrl}" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
-              Start free trial →
-            </a>
-            <p style="color:#5a5540;font-size:11px;margin-top:24px;">
-              FinFlow is a platform connecting businesses with accounting professionals.
-              FinFlow does not provide accounting services.
-            </p>
-          </div>
-        `),
-      });
-    } catch (e) {
-      console.error('[accountant invite] e-mail not sent:', e && e.message);
-      return res.status(502).json({ error: 'The invitation e-mail could not be sent. Check the address and try again.', code: 'EMAIL_NOT_SENT' });
+            <p style="color:#9a9278;margin-bottom:20px;">${who} from <strong style="color:#f0ead6">${accountant.firm || 'their firm'}</strong> has invited ${name || 'you'} to manage your finances on FinFlow.</p>
+            <p style="color:#9a9278;margin-bottom:24px;">Start your free 30-day trial — no credit card required. Sign up with this e-mail address and you'll see ${accountant.first_name}'s request; nothing is shared until you approve it.</p>
+            <a href="${refUrl}" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start free trial →</a>
+            <p style="color:#5a5540;font-size:11px;margin-top:24px;">FinFlow is a platform connecting businesses with accounting professionals. FinFlow does not provide accounting services.</p>
+          </div>`;
+      try {
+        await resendClient.emails.send({
+          from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to: email,
+          subject: existing ? `${who} would like access to your FinFlow books` : `${who} invited you to FinFlow`,
+          html: String(body),
+        });
+        emailSent = true;
+      } catch (e) { console.error('[accountant invite] e-mail not sent:', e && e.message); }
     }
-
-    return res.json({ success: true, message: `Invitation sent to ${email}` });
+    // LR23 honesty, without enumeration: the invitation is SAVED either way (it reaches the person in the app by e-mail
+    // match), so the answer says exactly that — and whether the e-mail went.
+    return res.json({ success: true, emailSent,
+      message: emailSent ? `Invitation sent to ${email}.`
+        : recentResend ? `Invitation to ${email} is already waiting — sent a few minutes ago.`
+        : `Invitation saved for ${email}, but the e-mail could not be sent. Ask them to sign in to FinFlow (or sign up with this address) to see it.` });
   }));
 
+  // The accountant's own invitations — the same states for every address ("Waiting" until the person acts).
+  app.get('/api/accountants/invites', requireAccountant, wrap(async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT id, email, name, created_at, expires_at, responded_at,
+              CASE WHEN status = 'pending' AND expires_at <= $2 THEN 'expired' ELSE status END AS status
+         FROM accountant_invites WHERE accountant_id = $1 ORDER BY created_at DESC LIMIT 100`, [req.session.accountantId, new Date()]);
+    res.json(rows);
+  }));
 
   // ── 8. LINK CLIENT — REMOVED (F1 cross-tenant breach) ──────────────────────
   // This route was the sole writer of users.data.accountant_id and let any verified
@@ -2040,9 +2095,10 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // ── CLIENT: GET MY LINKED ACCOUNTANT ──────────────────────────────────────
   app.get('/api/accountants/my-accountant', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    await _expireAccess(pool, { userId: req.session.userId });   // NEW-9: an end date that has passed ends the link
     const result = await pool.query(`
       SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.specialisation, a.experience, a.bio,
-             ac.status, ac.access_level, ac.entity_access, COALESCE(ac.requested_by, 'referral') AS requested_by,
+             ac.status, ac.access_level, ac.entity_access, COALESCE(ac.requested_by, 'referral') AS requested_by, ac.access_expires_at,
              (SELECT COUNT(*)::int FROM accountant_messages m
                WHERE m.accountant_id = ac.accountant_id AND m.user_id = ac.user_id
                  AND m.sender = 'accountant'
@@ -2100,6 +2156,141 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!r.rowCount) return res.status(404).json({ error: 'This accountant has no access to revoke.' });
     await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', action: 'CLIENT_REVOKE', field: 'status', newValue: 'revoked', newData: { by: 'client', accountant_id: accountantId }, req });
     return res.json({ success: true });
+  }));
+
+  // ── CLIENT: INVITATIONS FROM ACCOUNTANTS (NEW-9) ─────────────────────────────────────────────────────────────
+  // Matched by the signed-in person's e-mail. Only invitations that are pending, unexpired and from an accountant who is
+  // STILL verified are shown (an accountant suspended since sending cannot gain access through an old invitation).
+  const _myEmail = async (userId) => { const { rows: [u] } = await pool.query(`SELECT lower(data->>'email') AS e FROM users WHERE id = $1`, [userId]); return u && u.e; };
+  const _myInvite = async (userId, inviteId) => {
+    const email = await _myEmail(userId); if (!email) return null;
+    const { rows: [r] } = await pool.query(
+      `SELECT i.id, i.accountant_id, trim(a.first_name || ' ' || a.last_name) AS accountant_name FROM accountant_invites i JOIN accountants a ON a.id = i.accountant_id
+        WHERE i.id = $1 AND i.email = $2 AND i.status = 'pending' AND i.expires_at > $3 AND a.status = 'verified'`, [inviteId, email, new Date()]);
+    return r || null;
+  };
+  app.get('/api/accountants/my-accountant/invites', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const email = await _myEmail(req.session.userId); if (!email) return res.json([]);
+    const { rows } = await pool.query(
+      `SELECT i.id, i.created_at, i.expires_at, a.id AS accountant_id, a.first_name, a.last_name, a.firm, a.country, a.specialisation, a.experience
+         FROM accountant_invites i JOIN accountants a ON a.id = i.accountant_id
+        WHERE i.email = $1 AND i.status = 'pending' AND i.expires_at > $2 AND a.status = 'verified'
+        ORDER BY i.created_at DESC`, [email, new Date()]);
+    res.json(rows.map(r => Object.assign(r, { verified: true })));
+  }));
+  // The end of a calendar day in a timezone, as an instant: the first instant of the NEXT day there (Rule 10 — the date
+  // is the client's calendar date; the instant is where it ends for THEM). Two-pass offset resolution handles DST.
+  function _endOfDayIn(ymd, tz) {
+    const [y, m, d] = ymd.split('-').map(Number);
+    const guess = Date.UTC(y, m - 1, d + 1);
+    const offsetAt = (t) => {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        .formatToParts(new Date(t)).reduce((o, p) => (o[p.type] = p.value, o), {});
+      return Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second) - t;
+    };
+    let t = guess - offsetAt(guess); t = guess - offsetAt(t);
+    return new Date(t);
+  }
+  const _clientTz = async (userId) => {
+    const { rows: [r] } = await pool.query(
+      `SELECT COALESCE(NULLIF((SELECT data->>'personal_timezone' FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1), ''),
+                       (SELECT data->>'timezone' FROM entities WHERE user_id = $1 AND COALESCE(data->>'timezone','') <> '' ORDER BY id LIMIT 1)) AS tz`, [userId]);
+    const tz = (r && r.tz) || 'UTC';
+    try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz; } catch (_) { return 'UTC'; }
+  };
+  app.post('/api/accountants/my-accountant/invites/:id/accept', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const uid = req.session.userId;
+    const inviteId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(inviteId) || inviteId <= 0) return res.status(400).json({ error: 'Invalid invitation.' });
+    const inv = await _myInvite(uid, inviteId);
+    if (!inv) return res.status(404).json({ error: 'This invitation is no longer available (it may have expired).' });
+    // Scope: businesses only — Personal is never part of an accountant's invitation (the wall); the client can change
+    // that later in Access permissions. Only this client's own businesses are kept.
+    const body = req.body || {};
+    const want = (body.entity_access && typeof body.entity_access === 'object' && body.entity_access.entities) || {};
+    const { rows: mine } = await pool.query(`SELECT id FROM entities WHERE user_id = $1`, [uid]);
+    const own = new Set(mine.map(r => String(r.id)));
+    const ents = {};
+    for (const [k, v] of Object.entries(want)) {
+      if (!own.has(String(k))) continue;
+      if (v !== 'none' && v !== 'view' && v !== 'filing') return res.status(400).json({ error: 'Access is none, view or filing.' });
+      if (v !== 'none') ents[String(k)] = v;
+    }
+    if (!Object.keys(ents).length) return res.status(400).json({ error: 'Choose at least one business to share — or decline the invitation.', code: 'NO_BUSINESS' });
+    // Optional end date: the client's calendar date, today or later, at most two years ahead.
+    let expiresAt = null, until = null;
+    if (body.access_until) {
+      until = String(body.access_until).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(until) || isNaN(Date.parse(until + 'T00:00:00Z'))) return res.status(400).json({ error: 'Access end date must be a date.' });
+      const tz = await _clientTz(uid);
+      const today = require('./public/finflow-dates.js').resolvedToday(new Date(), tz);
+      const max = new Date(Date.parse(today + 'T00:00:00Z') + 730 * 86400000).toISOString().slice(0, 10);
+      if (until < today) return res.status(400).json({ error: 'Access end date is in the past.' });
+      if (until > max) return res.status(400).json({ error: 'Access can be set to end at most two years from today.' });
+      expiresAt = _endOfDayIn(until, tz);
+    }
+    const other = await _otherActiveAccountant(pool, uid, inv.accountant_id);
+    if (other) return res.status(409).json({ error: _oneAccountantMsg(other, 'client'), code: 'ONE_ACCOUNTANT' });
+    const { rows: [cur] } = await pool.query(`SELECT status FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`, [inv.accountant_id, uid]);
+    if (cur && cur.status === 'active') return res.status(409).json({ error: `${inv.accountant_name} already has access to your books.` });
+    const entityAccess = JSON.stringify({ entities: ents, personal: 'none' });
+    const anyFiling = Object.values(ents).includes('filing');
+    await pool.query(
+      `INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total, requested_by, entity_access, access_level, access_expires_at)
+       VALUES ($1, $2, 'pending', 0, 'invite', $3::jsonb, $4, $5)
+       ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'pending', requested_by = 'invite', entity_access = EXCLUDED.entity_access,
+         access_level = EXCLUDED.access_level, access_expires_at = EXCLUDED.access_expires_at, invited_at = NOW()
+       WHERE accountant_clients.status <> 'active'`,
+      [inv.accountant_id, uid, entityAccess, anyFiling ? 'filing' : 'view', expiresAt]);
+    const conn = await pool.connect();
+    let done;
+    try { done = await _activateLink(conn, inv.accountant_id, uid, req, { requireOrigin: 'referral' }); } finally { conn.release(); }
+    if (done && done.conflict) return res.status(409).json({ error: _oneAccountantMsg(done.conflict, 'client'), code: 'ONE_ACCOUNTANT' });
+    if (!done) return res.status(409).json({ error: 'The invitation could not be accepted. Refresh and try again.' });
+    await pool.query(`UPDATE accountant_invites SET status = 'accepted', responded_at = NOW(), user_id = $2 WHERE id = $1`, [inviteId, uid]);
+    // Other pending invitations to this person from the same accountant are settled by this one.
+    await pool.query(`UPDATE accountant_invites SET status = 'accepted', responded_at = NOW(), user_id = $3 WHERE accountant_id = $1 AND email = $2 AND status = 'pending'`, [inv.accountant_id, await _myEmail(uid), uid]);
+    await _audit(pool, { userId: uid, table: 'accountant_clients', action: 'INVITE_ACCEPTED', newData: { accountant_id: inv.accountant_id, entity_access: JSON.parse(entityAccess), access_until: until }, req });
+    // Tell the accountant (best-effort — the access is already granted).
+    try {
+      const { rows: [a] } = await pool.query(`SELECT email, first_name FROM accountants WHERE id = $1`, [inv.accountant_id]);
+      if (a && a.email && resendClient) {
+        const cn = await _clientDisplayName(uid);
+        resendClient.emails.send({ from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to: a.email, subject: `${cn} accepted your invitation`,
+          html: String(emailHtml`<p>Hi ${a.first_name || 'there'},</p><p><strong>${cn}</strong> accepted your invitation on FinFlow and chose what you can see.</p><p><a href="${appUrl()}/accountant">Open your dashboard →</a></p>`) }).catch(() => {});
+      }
+    } catch (_) {}
+    res.json({ success: true, access_expires_at: expiresAt, access_until: until });
+  }));
+  app.post('/api/accountants/my-accountant/invites/:id/decline', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const inviteId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(inviteId) || inviteId <= 0) return res.status(400).json({ error: 'Invalid invitation.' });
+    const inv = await _myInvite(req.session.userId, inviteId);
+    if (!inv) return res.status(404).json({ error: 'This invitation is no longer available.' });
+    await pool.query(`UPDATE accountant_invites SET status = 'declined', responded_at = NOW(), user_id = $2 WHERE id = $1`, [inviteId, req.session.userId]);
+    // A pending referral link from the same accountant (the person signed up through the invitation's link) goes too.
+    await pool.query(`DELETE FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending' AND requested_by IS DISTINCT FROM 'client'`, [req.session.userId, inv.accountant_id]);
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_invites', recordId: inviteId, action: 'INVITE_DECLINED', newData: { accountant_id: inv.accountant_id }, req });
+    res.json({ success: true });
+  }));
+
+  // ── CLIENT: WHAT MY ACCOUNTANT DID (NEW-9) ────────────────────────────────────────────────────────────────────
+  // Every audited action the linked accountant took on this client's books (journal entries, period locks, notes on
+  // the books, …) plus when they opened the books (BOOKS_VIEWED, recorded at most once an hour). From the append-only
+  // audit trail — the same record the Audit page reads.
+  app.get('/api/accountants/my-accountant/activity', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const { rows: [link] } = await pool.query(`SELECT accountant_id FROM accountant_clients WHERE user_id = $1 AND status = 'active' LIMIT 1`, [req.session.userId]);
+    if (!link) return res.json([]);
+    const { rows } = await pool.query(
+      `SELECT a.id, a.table_name, a.action, a.entity_id, a.changed_at, e.data->>'name' AS business
+         FROM audit_trail a LEFT JOIN entities e ON e.id = a.entity_id
+        WHERE a.user_id = $1 AND a.actor_type = 'accountant' AND a.actor_id = $2
+        ORDER BY a.changed_at DESC LIMIT 50`, [req.session.userId, link.accountant_id]);
+    res.json(rows);
   }));
 
   // ── CLIENT: CHOOSE THEIR ACCOUNTANT'S ACCESS LEVEL — review (view) vs run the books (filing) ──

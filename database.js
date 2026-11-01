@@ -455,6 +455,28 @@ async function initDB() {
     // the CLIENT approves it. NULL = created before this column existed (origin unknown) — treated like
     // a referral (client approval required), the conservative reading. No existing row is modified.
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS requested_by VARCHAR(20)`);
+    // NEW-9: a client can give an accountant access UNTIL a date (end of that day in the client's own timezone, stored as
+    // the instant). NULL = until revoked. Past it the link reads 'expired' (swept on every accountant request and every
+    // My Accountant read — one mechanism, so the ~30 access checks that read status = 'active' all honour it).
+    await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS access_expires_at TIMESTAMPTZ`);
+    // NEW-9: an accountant's invitation by e-mail. It matches a FinFlow account by e-mail when the person signs in (an
+    // existing user) or signs up later (a new one), and becomes access only when THAT person approves it, choosing
+    // which businesses and at what level. One pending invitation per accountant + address, at the write (Rule 9).
+    // The accountant is never told whether the address has an account (the answer is identical either way).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_invites (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
+        email         TEXT NOT NULL,
+        name          TEXT DEFAULT '',
+        status        VARCHAR(20) NOT NULL DEFAULT 'pending',
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at    TIMESTAMPTZ NOT NULL,
+        responded_at  TIMESTAMPTZ,
+        user_id       INTEGER
+      )`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_acc_invites_one_pending ON accountant_invites (accountant_id, email) WHERE status = 'pending'`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_invites_email ON accountant_invites (email) WHERE status = 'pending'`);
     // NEW-12: ONE active accountant per client, enforced at the write (Rule 9). My Accountant shows one link, so a second
     // activation hid the first accountant's still-live books access (the client could neither see nor revoke it). GUARDED
     // like idx_bank_line_*: where a client already has two active links the index is NOT built and a warning names the

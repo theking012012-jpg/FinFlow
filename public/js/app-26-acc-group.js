@@ -35,6 +35,9 @@ myAccPage.innerHTML = `
     <div data-style="font-size:13px;color:var(--t2)">Manage your accountant's access to your books</div>
   </div>
 
+  <!-- NEW-9: INVITATIONS FROM ACCOUNTANTS (approve with a chosen scope, or decline) -->
+  <div id="my-acc-invites" data-style="display:none;margin-bottom:1rem"></div>
+
   <!-- CURRENT ACCOUNTANT CARD -->
   <div id="my-acc-content">
     <div data-style="text-align:center;padding:3rem 1rem;color:var(--t3)">
@@ -76,10 +79,20 @@ myAccPage.innerHTML = `
       <div data-style="font-size:13px;font-weight:500;color:var(--t1);margin-bottom:1rem">Access permissions</div>
       <div data-style="font-size:11.5px;color:var(--t3);margin:-6px 0 12px">Choose what your accountant can see and do — for each business and for your personal finances, independently. <strong data-style="color:var(--t2)">None</strong> = fully hidden. <strong data-style="color:var(--t2)">View</strong> = read only. <strong data-style="color:var(--t2)">Filing</strong> = read, post entries &amp; lock periods.</div>
       <div id="acc-perm-matrix" data-style="display:flex;flex-direction:column;gap:8px"></div>
+      <div id="acc-perm-until" data-style="display:none;margin-top:10px;font-size:12px;color:var(--t2)"></div>
       <div data-style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--bd);display:flex;gap:8px">
         <button class="btn btn-ghost" data-style="font-size:12px" data-on-click="leaveReview(linkedAccountant&&linkedAccountant.id)">★ Leave a review</button>
         <button class="btn btn-ghost" data-style="font-size:12px;color:var(--danger)" data-on-click="revokeAccountant()">Revoke access</button>
       </div>
+    </div>
+  </div>
+
+  <!-- NEW-9: WHAT YOUR ACCOUNTANT DID (from the audit trail) -->
+  <div id="my-acc-activity" data-style="display:none;margin-top:1rem">
+    <div class="card" data-style="padding:1.25rem">
+      <div data-style="font-size:13px;font-weight:500;color:var(--t1);margin-bottom:4px">Your accountant's activity</div>
+      <div data-style="font-size:11.5px;color:var(--t3);margin-bottom:10px">Every change they made to your books, and when they opened them — from your audit trail.</div>
+      <div id="my-acc-activity-list" data-style="display:flex;flex-direction:column;gap:6px;font-size:12.5px"></div>
     </div>
   </div>
 </div>`;
@@ -223,6 +236,7 @@ window.filterAccountants = function() {
 let linkedAccountant = null;
 
 async function loadMyAccountant() {
+  loadAccountantInvites();   // NEW-9
   try {
     const res = await fetch('/api/accountants/my-accountant', { credentials: 'include' });
     if (res.ok) {
@@ -255,6 +269,7 @@ function renderLinkedAccountant() {
           <div data-style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
           <div data-style="font-size:12px;color:var(--t3);margin-top:2px">${a.requested_by === 'client'
             ? 'Your request is awaiting approval from this accountant.'
+            : a.requested_by === 'invite' ? 'This accountant invited you. They can see your books only if you approve.'
             : 'You joined through this accountant\'s referral link. They can see your books only if you approve.'}</div>
         </div>
         ${a.requested_by === 'client'
@@ -279,12 +294,121 @@ function renderLinkedAccountant() {
   if (access) access.style.display = 'block';
   // Render the per-entity + personal access matrix from the owner's current grant.
   if (typeof window.renderAccessMatrix === 'function') window.renderAccessMatrix();
+  // NEW-9: an access end date, and what the accountant did.
+  const untilEl = document.getElementById('acc-perm-until');
+  if (untilEl) {
+    if (a.access_expires_at) {
+      const last = new Date(new Date(a.access_expires_at).getTime() - 1);   // the end instant is the next day's start
+      untilEl.textContent = 'Access ends after ' + last.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) + ' — then it stops on its own.';
+      untilEl.style.display = '';
+    } else { untilEl.textContent = ''; untilEl.style.display = 'none'; }
+  }
+  loadAccountantActivity();
   // Badge unread on the nav item, but only auto-open the thread (which marks read) if the
   // client is actually on the My Accountant page — otherwise defer to showPage on navigation.
   setMyAccNavBadge(a.unread || 0);
   const onPage = document.getElementById('page-my-accountant')?.classList.contains('active');
   if (onPage && typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages();
 }
+
+// ── NEW-9: INVITATIONS FROM ACCOUNTANTS ────────────────────────────────────────────────────────────────────────
+// An accountant who invited this person by e-mail. Nothing is shared until they approve here — choosing which
+// businesses, at what level, and optionally the date access ends. Personal finances are never part of an invitation.
+let _accInvites = [];
+async function loadAccountantInvites() {
+  const box = document.getElementById('my-acc-invites');
+  if (!box) return;
+  try {
+    const r = await fetch('/api/accountants/my-accountant/invites', { credentials: 'include' });
+    _accInvites = r.ok ? await r.json() : [];
+  } catch (_) { _accInvites = []; }
+  if (!Array.isArray(_accInvites) || !_accInvites.length) { box.innerHTML = ''; box.style.display = 'none'; return; }
+  let ents = (window.ENTITIES || []).map(e => ({ id: e._dbId || e.id, name: e.name || e.business_name || 'Business' })).filter(e => e.id != null);
+  if (!ents.length) {
+    try { const er = await fetch('/api/entities', { credentials: 'include' });
+      if (er.ok) ents = ((await er.json()) || []).map(x => ({ id: x.id, name: (x.data && (x.data.name || x.data.business_name)) || x.name || 'Business' })); } catch (_) {}
+  }
+  const today = (typeof window._personalToday === 'function' && window._personalToday()) || new Date().toISOString().slice(0, 10);
+  const linkedOther = linkedAccountant && linkedAccountant.status === 'active' ? linkedAccountant : null;
+  box.innerHTML = _accInvites.map(inv => {
+    const initials = ((inv.first_name || '?')[0] + (inv.last_name || '?')[0]).toUpperCase();
+    const who = esc(((inv.first_name || '') + ' ' + (inv.last_name || '')).trim());
+    const exp = new Date(inv.expires_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    const rows = ents.length ? ents.map(e => `
+        <label data-style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border:1px solid var(--bd);border-radius:8px">
+          <span data-style="display:flex;align-items:center;gap:8px;min-width:0"><input type="checkbox" data-inv-ent="${Number(e.id)}" data-inv-id="${Number(inv.id)}"><span data-style="font-size:13px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.name)}</span></span>
+          <select class="finput" data-inv-lvl="${Number(e.id)}" data-inv-id="${Number(inv.id)}" data-style="width:150px;font-size:12px;padding:5px 8px"><option value="view">View only</option><option value="filing">Run the books</option></select>
+        </label>`).join('') : '<div data-style="font-size:12px;color:var(--t3)">Add a business first — an accountant works on business books.</div>';
+    return `
+      <div class="card" data-inv-card="${Number(inv.id)}" data-style="padding:1.25rem;border-color:var(--acc2,rgba(201,168,76,.45))">
+        <div data-style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+          <div data-style="width:44px;height:44px;border-radius:12px;background:var(--acc-bg);color:var(--acc-light);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-weight:600;flex-shrink:0">${esc(initials)}</div>
+          <div data-style="flex:1;min-width:0">
+            <div data-style="font-size:14px;font-weight:500;color:var(--t1)">${who} <span data-style="font-size:10px;color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,.35);border-radius:4px;padding:1px 6px;margin-left:4px">✓ Verified by FinFlow</span></div>
+            <div data-style="font-size:12px;color:var(--t3)">${esc(inv.firm || '')}${inv.country ? ' · ' + esc(inv.country) : ''}${inv.specialisation ? ' · ' + esc(inv.specialisation) : ''}</div>
+          </div>
+        </div>
+        <div data-style="font-size:13px;color:var(--t2);margin-bottom:10px">wants access to your business books. Nothing is shared until you approve. Choose what they can see — your personal finances are never part of this.</div>
+        <div data-style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">${rows}</div>
+        <label data-style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);margin-bottom:12px">Access ends <input type="date" class="finput" data-inv-until="${Number(inv.id)}" min="${esc(today)}" data-style="width:160px;font-size:12px;padding:5px 8px;margin:0"> <span data-style="color:var(--t3)">optional — leave empty to keep access until you revoke it</span></label>
+        ${linkedOther ? `<div data-style="font-size:12px;color:var(--amber,#c8a44a);margin-bottom:10px">${esc(((linkedOther.first_name || '') + ' ' + (linkedOther.last_name || '')).trim())} has access now. FinFlow links one accountant at a time — revoke their access below before approving.</div>` : ''}
+        <div data-style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-gold btn-sm" data-arg-id="${Number(inv.id)}" data-on-click="respondAccountantInvite(Number(this.dataset.argId), true, this)">Approve access</button>
+          <button class="btn btn-sm" data-arg-id="${Number(inv.id)}" data-on-click="respondAccountantInvite(Number(this.dataset.argId), false, this)">Decline</button>
+          <span data-style="font-size:11px;color:var(--t3);margin-left:auto">Expires ${esc(exp)}</span>
+        </div>
+      </div>`;
+  }).join('');
+  box.style.display = '';
+  // The same accountant's pending referral card (they signed up through the invitation's link) is replaced by this one.
+  if (linkedAccountant && linkedAccountant.status === 'pending' && _accInvites.some(i => Number(i.accountant_id) === Number(linkedAccountant.id))) {
+    const content = document.getElementById('my-acc-content'); if (content) content.innerHTML = '';
+  }
+}
+window.loadAccountantInvites = loadAccountantInvites;
+window.respondAccountantInvite = async function (inviteId, approve, btn) {
+  let body = {};
+  if (approve) {
+    const entities = {};
+    document.querySelectorAll(`input[data-inv-ent][data-inv-id="${inviteId}"]`).forEach(cb => {
+      if (!cb.checked) return;
+      const id = cb.getAttribute('data-inv-ent');
+      const lvl = document.querySelector(`select[data-inv-lvl="${id}"][data-inv-id="${inviteId}"]`);
+      entities[id] = (lvl && lvl.value) || 'view';
+    });
+    if (!Object.keys(entities).length) { if (typeof notify === 'function') notify('Tick at least one business to share — or decline the invitation.', true); return; }
+    const until = (document.querySelector(`input[data-inv-until="${inviteId}"]`) || {}).value || '';
+    body = { entity_access: { entities }, access_until: until || null };
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/accountants/my-accountant/invites/' + inviteId + '/' + (approve ? 'accept' : 'decline'), {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) { if (typeof notify === 'function') notify(data.error || 'Could not update the invitation', true); if (btn) btn.disabled = false; return; }
+    if (typeof notify === 'function') notify(approve ? 'Access approved ✓ — you can change or revoke it any time.' : 'Invitation declined');
+    linkedAccountant = null;
+    const content = document.getElementById('my-acc-content'); if (content && !approve) content.innerHTML = '';
+    await loadMyAccountant();
+  } catch (e) { if (typeof notify === 'function') notify('Could not update the invitation', true); if (btn) btn.disabled = false; }
+};
+const _ACT_LABEL = { BOOKS_VIEWED: 'Opened your books', CREATE: 'Added a record', UPDATE: 'Changed a record', DELETE: 'Deleted a record', VOID: 'Voided a record', LOCK: 'Locked a period', UNLOCK: 'Unlocked a period', MESSAGE: 'Sent you a message', MESSAGE_ATTACH: 'Sent you a file', FLAG: 'Flagged an item for you', TASK_ASSIGNED: 'Asked you for something', TASK_DELETED: 'Withdrew a request', PROPOSAL_SENT: 'Sent you a proposal', PROPOSAL_WITHDRAWN: 'Withdrew a proposal', NOTIFY_CLIENT: 'Sent you a notification', CHECKLIST_UPDATE: 'Updated your checklist', NOTE_UPDATE: 'Updated their notes on your books', BILL_CLIENT: 'Sent you a bill' };
+async function loadAccountantActivity() {
+  const wrap = document.getElementById('my-acc-activity'), list = document.getElementById('my-acc-activity-list');
+  if (!wrap || !list) return;
+  let rows = [];
+  try { const r = await fetch('/api/accountants/my-accountant/activity', { credentials: 'include' }); rows = r.ok ? await r.json() : []; } catch (_) {}
+  wrap.style.display = '';
+  if (!Array.isArray(rows) || !rows.length) { list.innerHTML = '<div data-style="color:var(--t3)">Nothing yet.</div>'; return; }
+  list.innerHTML = rows.map(x => {
+    const what = _ACT_LABEL[x.action] || String(x.action || '').replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase());
+    const where = x.business ? ' · ' + esc(x.business) : '';
+    const tbl = x.table_name && x.action !== 'BOOKS_VIEWED' && x.table_name !== 'accountant_clients' ? ' <span data-style="color:var(--t3)">(' + esc(String(x.table_name).replace(/_/g, ' ')) + ')</span>' : '';
+    const when = new Date(x.changed_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    return `<div data-style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)"><span>${esc(what)}${tbl}${where}</span><span data-style="color:var(--t3);white-space:nowrap">${esc(when)}</span></div>`;
+  }).join('');
+}
+window.loadAccountantActivity = loadAccountantActivity;
 
 // N78: a referral link (the user signed up through an accountant's link) grants books access only when
 // the CLIENT approves it here; declining removes the pending link.
@@ -753,7 +877,7 @@ window.revokeAccountant = async function() {
       <button class="btn btn-primary" data-style="font-size:13px" data-on-click="showPage('find-accountant',null)">Find an accountant →</button>
     </div>`;
   if (access) access.style.display = 'none';
-  ['acct-chat-panel', 'acct-proposals', 'acct-tasks'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  ['acct-chat-panel', 'acct-proposals', 'acct-tasks', 'my-acc-activity'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   if (typeof filterAccountants === 'function') filterAccountants();
   if(typeof notify==='function') notify('Accountant access revoked');
 }
@@ -873,6 +997,15 @@ window.showPage = function(id, el) {
 
 // Boot — wait for auth before fetching directory or my-accountant
 window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true});
+// NEW-9: the invitation e-mail links to /app?page=my-accountant — open it once signed in (only this page; nothing else
+// is navigable by URL).
+// Sign-in may already have happened before this file ran (ff:authed fired), so check _ffAuthed first.
+(function () {
+  let wanted = false; try { wanted = new URLSearchParams(location.search).get('page') === 'my-accountant'; } catch (_) {}
+  if (!wanted) return;
+  const go = function () { setTimeout(function () { showPage('my-accountant', null); }, 300); };
+  if (window._ffAuthed) go(); else window.addEventListener('ff:authed', go, { once: true });
+})();
 
 })();
 }); // end load listener

@@ -532,13 +532,31 @@ async function sendInvite() {
       body: JSON.stringify({ email, name }),
     });
     const data = await res.json();
-    if (data.error) { toast(data.error, 'error'); return; }
-    toast(`Invitation sent to ${email}`, 'success');
+    if (!res.ok || data.error) { toast(data.error || 'Could not send invite. Try again.', 'error'); return; }
+    // NEW-9: the server says exactly what happened (sent, already waiting, or saved without e-mail).
+    toast(data.message || `Invitation sent to ${email}`, data.emailSent === false ? 'info' : 'success');
     document.getElementById('invite-email').value = '';
     document.getElementById('invite-name').value = '';
+    loadInvites();
   } catch (e) {
     toast('Could not send invite. Try again.', 'error');
   }
+}
+
+// NEW-9: the invitations sent — "Waiting" until the person acts, whether or not they already use FinFlow.
+async function loadInvites() {
+  const body = document.getElementById('invites-body');
+  if (!body) return;
+  try {
+    const r = await fetch('/api/accountants/invites', { credentials: 'include' });
+    const rows = r.ok ? await r.json() : [];
+    if (!rows.length) { body.innerHTML = '<tr class="loading-row"><td colspan="4">No invitations yet.</td></tr>'; return; }
+    const d = v => v ? new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    const label = x => x.status === 'pending' ? 'Waiting · expires ' + d(x.expires_at)
+      : x.status === 'accepted' ? 'Accepted ' + d(x.responded_at)
+      : x.status === 'declined' ? 'Declined' : x.status === 'expired' ? 'Expired' : esc(x.status);
+    body.innerHTML = rows.map(x => `<tr><td class="primary">${esc(x.email)}</td><td>${esc(x.name || '—')}</td><td>${d(x.created_at)}</td><td>${label(x)}</td></tr>`).join('');
+  } catch (_) { body.innerHTML = '<tr class="loading-row"><td colspan="4">Could not load invitations.</td></tr>'; }
 }
 
 function copyRef() {
@@ -567,6 +585,7 @@ function showPage(name) {
   document.getElementById('page-' + name).classList.add('active');
   document.querySelector(`[data-on-click="showPage('${name}')"]`)?.classList.add('active');
   closeSidebar(); // collapse the mobile overlay after choosing a page
+  if (name === 'invite') loadInvites();   // NEW-9
 }
 
 // Mobile sidebar overlay toggle.

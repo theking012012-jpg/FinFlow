@@ -206,12 +206,21 @@
       </div>
       <div class="invite-box">
         <h3>Send invite by email</h3>
-        <p>Enter your client's email and we'll send them a personalised invite with your referral link attached.</p>
+        <p>Enter your client's email. If they already use FinFlow they get a request in their account; if not, an invitation to sign up. Either way they choose which businesses you see before anything is shared.</p>
         <div class="invite-row">
           <input type="email" id="invite-email" placeholder="client@example.com">
           <input type="text" id="invite-name" placeholder="Client name (optional)" data-style="max-width:200px">
           <button class="btn btn-gold" data-on-click="sendInvite()">Send invite →</button>
         </div>
+      </div>
+
+      <!-- NEW-9: the invitations this accountant has sent — the same states for every address -->
+      <div class="section-title">Sent invitations</div>
+      <div class="table-card" data-style="margin-bottom:24px">
+        <table>
+          <thead><tr><th>Email</th><th>Name</th><th>Sent</th><th>Status</th></tr></thead>
+          <tbody id="invites-body"><tr class="loading-row"><td colspan="4">No invitations yet.</td></tr></tbody>
+        </table>
       </div>
 
       <div class="ref-box">

@@ -39,6 +39,32 @@ Working rules for changing this codebase live in [`CLAUDE.md`](CLAUDE.md) — th
 
 ---
 
+## 🔴 LIVE RE-TEST 2026-10-30/31 — NEW rows (source: `COWORK_TEST_SCRIPT.md` re-run on live dab2 after E2E-1…6, new account cowork.test+2)
+
+Full script, new account (owner upgraded the plan and verified the test accountant in /admin), Plaid skipped by owner
+decision. **87 PASS · 5 FAIL · 1 BLOCKED · 2 SKIPPED** (11 Oct run: 81 / 19 / 5). Every money figure exact: Part 3.4 dashboard / P&L by
+month / balance sheet / overdue / tax (16,200 · 11,005 · 4,805 · 2,400 · 1,500; cash 2,495, equity 4,805; taxable 5,020
+→ 1,004); Island Traders TT$8,000 / 1,250 / 6,750; Personal 5,845 · net worth 15,946.30 (= 12,500 + 10 × 344.63);
+accountant Northwind view; Part 9 after the void 16,200 · 3,005 · 12,805 · 2,400; cash 10,495, equity 12,805, assets
+12,985; taxable 13,020 → 2,604; Personal income 1,845. Wall held across 9 pages; accountant default access none; 50 / 50
+pages; P&L CSV + PDF exact. Values: P_MSFT 521.91 · P_AAPL 344.63 · R 6.80 (built-in table — see NEW-8). FAILs: 8.3
+(NEW-5), 5.4 + 6.5a (NEW-6), 4.6 (NEW-7), 6.3 (NEW-9). BLOCKED: 4.6a (no all-businesses switcher view). Branch
+`fix/live-retest-2026-10-30` (PR #4), one commit per row; harnesses `verify-live-retest-2026-10-30` (RED 9 / 4 → 13 / 0)
+and `verify-live-retest-b-2026-10-31` (RED 17 / 3 → 20 / 0). Full 3× sweep: the owner's.
+
+| # | Source | Finding | Status |
+|---|---|---|---|
+| NEW-1 | 1.3c | Right after onboarding, Settings → Industry read "Technology" though "Media & Creative" was saved (Settings filled at boot, never re-read). | ✅ FIXED + VERIFIED — onboarding re-reads settings. |
+| NEW-2 | 2.2, 2.6e | Record Payment / Remit defaulted to the SERVER's UTC day — "tomorrow" from 8 pm in New York (Rule 10). | ✅ FIXED + VERIFIED — the business's today on the server's clock (`_businessToday`, auth responses carry `now`). |
+| NEW-3 | 3.1 | Two imports of one statement at the same moment wrote every line twice (4 → 8); import / Plaid / Belvo checked then inserted (Rule 9). | ✅ FIXED + VERIFIED — guarded unique indexes per source id + scope; writers count a refusal as "already there"; read-only lister `tools/launch/list-duplicate-bank-lines.js`; migration `2026-10-30-bank-line-source-keys.sql`. |
+| NEW-4 | 8.1 | PDF header said "FinFlow · <viewer's date>" — not whose books. (The "�" first reported was a decoding error in the test tool — withdrawn.) | ✅ FIXED + VERIFIED — "<business> · FinFlow · <business's date>". |
+| NEW-5 | 8.3 | Connections: every built provider read "Available" though 9 are not set up; header "17 live connections" with none connected. | ✅ FIXED + VERIFIED — Connected / Ready to connect / Not set up yet, honest header counts. |
+| NEW-6 | 5.4, 6.5a | Personal's "today" was the UTC day: from 8 pm New York a 1 Nov charge counted in "year to date" (410.49 for 394.50) on the Personal page AND the accountant portal; Month jumped to November. | ✅ FIXED + VERIFIED — `settings.personal_timezone` (saved once from the device); Personal page + portal end on the person's today. |
+| NEW-7 | 4.6 | A new account had NO exchange rates until the next daily feed run → TTD rows unconvertible, summed as 0, consolidated column "$0"; FX page "No rates yet" under "Rates update automatically every day". | ✅ FIXED + VERIFIED — rates seeded on business create / FX page / converted report (feed cached a day, 6 s timeout); an unconvertible column reads "—" naming the missing rate. |
+| NEW-8 | 5.4b | Personal (and the display-currency switch) converted with the rate table built into the page (TTD 6.80 forever) — a second, frozen rate source beside the server's live rates. | ✅ FIXED + VERIFIED — the page loads the server's latest USD→X rates into that table once signed in. |
+| NEW-9 | 6.3 | An accountant cannot invite an EXISTING FinFlow user: the invite is only a sign-up e-mail (here 502 — e-mail could not be sent). The client-request path works. | 🔒 **OWNER DECISION** — should an accountant's invite to an existing user create an in-app request the client approves? A new consent path (F1 cross-tenant history) — not built without approval. |
+| NEW-10 | (wording) | Accountant greeting hard-coded "Good morning"; accountant revenue captioned "Paid invoices" (issue-based, Rule 11); bank-link messages named the country by code ("TT"); the roster toast said "Personal Finance synced" before any run was paid. | ✅ FIXED + VERIFIED. |
+
 ## 🔴 FULL E2E TEST 2026-10-30 — E2E rows (source: `COWORK_TEST_SCRIPT.md` run on live dab2, 2026-10-29/30, Cowork)
 
 Live run of the full end-to-end script on production (owner Sam Owner, business Northwind Studio). Totals as run:

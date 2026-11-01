@@ -233,7 +233,7 @@ var HELP_ARTICLES = [
  {c:'Getting started', q:'Set up your business', s:['On first login the setup wizard captures your business name, industry, address, currency and country.','Each business you add is its own set of books; the dashboard consolidates them.','You can reopen this Help Center anytime from the sidebar.']},
  {c:'Getting started', q:'Read your dashboard', s:['Revenue, Expenses, Net profit and Outstanding show your live position for the selected period.','Use the period switcher to view month, quarter or year.','Investments are tracked separately from the books.']},
  {c:'Businesses & entities', q:'Add another business (entity)', s:['Sidebar → Account → Entities → add a business.','Set its name, currency and country — the timezone is inferred automatically.','Switch the active business from the entity picker at the top.']},
- {c:'Businesses & entities', q:'See all businesses combined', s:['Switch the entity picker to the consolidated view.','FinFlow converts each business to your base currency at each transaction’s own FX rate — no double-counting.']},
+ {c:'Businesses & entities', q:'See all businesses combined', s:['Open the business switcher (top of the sidebar) → All businesses — combined.','FinFlow converts each business to your base currency at each transaction’s own FX rate — no double-counting.']},
  {c:'Invoices & income', q:'Create an invoice', s:['Sidebar → Invoices → + New invoice.','Pick the customer, add line items, set issue and due dates.','Save — it posts to your books and shows in Outstanding until paid.']},
  {c:'Invoices & income', q:'Record a payment', s:['Open the invoice → Record payment.','Enter the amount and date; partial payments are supported.','Outstanding updates automatically.']},
  {c:'Invoices & income', q:'Send a pay link', s:['On an invoice choose Pay link to generate a hosted checkout via a connected processor.','Share the link; when it is paid it reconciles against the invoice.']},
@@ -298,7 +298,7 @@ var HELP_TOURS = {
   ]},
   'add-entity': { title:'Add another business', steps:[
     {page:'entities', sel:'button[data-on-click="openAddBizModal(event)"]', title:'Add a business', body:'Each business is its own set of books. Add one with its name, currency and country \u2014 the timezone is inferred automatically.'},
-    {page:'entities', sel:null, title:'Consolidate them', body:'Switch the entity picker to the consolidated view to see every business combined in your base currency, converted at each transaction\u2019s own FX rate.'}
+    {page:'entities', sel:null, title:'Consolidate them', body:'Open the business switcher \u2192 All businesses \u2014 combined to see every business together in one reporting currency, converted at each transaction\u2019s own FX rate.'}
   ]},
   'reconcile': { title:'Reconcile transactions', steps:[
     {page:'banking', sel:'button[data-on-click="openReconcileModal()"]', title:'Open Reconcile', body:'Match feed or imported lines against your invoices, bills and expenses.'},

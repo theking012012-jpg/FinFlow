@@ -247,6 +247,8 @@ function renderBusinessSwitcher(){
 
 function buildBizMenu(){
   const list = document.getElementById('biz-list');
+  // 4.6a: the all-businesses entry, when there is more than one business to combine.
+  const _all = document.getElementById('biz-all'); if (_all) _all.style.display = (Array.isArray(businesses) && businesses.length > 1) ? '' : 'none';
   list.innerHTML = businesses.map(b=>`
     <div data-arg-id="${b.id}" data-on-click="switchBusiness(this.dataset.argId)" data-style="display:flex;align-items:center;gap:9px;padding:8px 10px;cursor:pointer;transition:background .1s;
       background:${b.id===activeBizId?'var(--bg2)':''}"
@@ -262,6 +264,18 @@ function buildBizMenu(){
       ${b.id===activeBizId?'<span data-style="color:var(--acc);font-size:14px;flex-shrink:0">✓</span>':''}
     </div>`).join('');
 }
+
+// 4.6a: "All businesses — combined" opens the consolidated report (Businesses page): every business's revenue, costs
+// and profit converted to one reporting currency from the server's consolidation (/api/reports?entity_id=all). It is a
+// report, not a mode — the pages that work on one set of books (Banking, Invoices, Payroll, …) stay on the active
+// business, so nothing from one business is ever entered into or shown in another's books.
+function openConsolidatedView(e){
+  if (e) e.stopPropagation();
+  const m = document.getElementById('biz-menu'); if (m) m.style.display = 'none';
+  showPage('entities', null);
+  setTimeout(function(){ const c = document.getElementById('consol-card'); if (c && c.scrollIntoView) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250);
+}
+window.openConsolidatedView = openConsolidatedView;
 
 function switchBusiness(id){
   activeBizId = id;

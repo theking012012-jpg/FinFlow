@@ -302,11 +302,14 @@ unapplied 300 credit reduces only **Acme's** overdue (none), never another custo
 - 4.5c Island Traders' Business investments page does **not** show MSFT.
 - 4.5d Payroll in Island Traders is empty.
 
-### 4.6 All-businesses (consolidated) view, if the app has one
+### 4.6 All-businesses (consolidated) view
 
 - Open the FX page and write down the **USD ↔ TTD rate** shown (R = TTD per 1 USD).
-- In the all-businesses view: revenue ≈ 16,200 + 8,000 ÷ R (in USD). Net ≈ 4,805 + 6,750 ÷ R. Within $1 of rounding.
-- 4.6a The Banking page in the all-businesses view shows **no** bank lines, and "Link bank" asks you to choose a business first.
+- Open the business switcher (top of the sidebar) → **All businesses — combined**. The Businesses page opens at the
+  Consolidated P&L. Revenue ≈ 16,200 + 8,000 ÷ R (in USD). Net ≈ 4,805 + 6,750 ÷ R. Within $1 of rounding.
+- 4.6a The switcher shows "All businesses — combined" only when you have two or more businesses. It is a report, not a
+  mode: Banking, Invoices, Payroll and the other day-to-day pages stay on the business that is active in the switcher —
+  Northwind's bank lines never appear while Island Traders is active, and the other way round.
 
 ---
 

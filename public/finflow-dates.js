@@ -267,7 +267,7 @@
     CA: 'CAD', US: 'USD', MX: 'MXN', GT: 'GTQ', BZ: 'BZD', SV: 'USD', HN: 'HNL', NI: 'NIO', CR: 'CRC', PA: 'PAB',
     BR: 'BRL', AR: 'ARS', CO: 'COP', CL: 'CLP', PE: 'PEN', VE: 'VES', EC: 'USD', BO: 'BOB', PY: 'PYG', UY: 'UYU',
     GY: 'GYD', SR: 'SRD', TT: 'TTD', JM: 'JMD', BB: 'BBD', BS: 'BSD', DO: 'DOP', HT: 'HTG', GD: 'XCD', LC: 'XCD',
-    VC: 'XCD', AG: 'XCD', DM: 'XCD', KN: 'XCD', CU: 'CUP', PR: 'USD', GB: 'GBP', IE: 'EUR', FR: 'EUR', DE: 'EUR',
+    VC: 'XCD', AG: 'XCD', DM: 'XCD', KN: 'XCD', PR: 'USD', GB: 'GBP', IE: 'EUR', FR: 'EUR', DE: 'EUR',
     ES: 'EUR', PT: 'EUR', IT: 'EUR', NL: 'EUR', BE: 'EUR', SE: 'SEK', NO: 'NOK', DK: 'DKK', FI: 'EUR', PL: 'PLN',
     CH: 'CHF', AT: 'EUR', GR: 'EUR',
   };

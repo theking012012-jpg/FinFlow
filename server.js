@@ -35,6 +35,7 @@ const { buildSegments } = require('./segments'); // Classes & Locations segment 
 const apiKeys = require('./api-keys'); // public API key helpers (pure: generate/hash/mask)
 // Segment tag (Classes & Locations): trim to 80 chars; empty/absent -> undefined so the row stays untagged.
 const _segTag = (v) => { const t = (v == null ? '' : String(v)).trim().slice(0, 80); return t || undefined; };
+const Sanctions = require('./sanctions');   // Terms §11: the one list of comprehensively embargoed countries
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
 const { requirePerm } = require('./rbac');                // F5 Step 4 — per-route RBAC (matrix in rbac.js)
 const pgSession = require('connect-pg-simple')(session);
@@ -1895,6 +1896,7 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   if (_badTimezone(timezone)) return res.status(400).json({ error: 'Invalid timezone. Use an IANA zone such as America/Toronto.' });
   if (_badCountry(country)) return res.status(400).json({ error: 'Invalid country code. Use a 2-letter ISO code such as CA.' });
+  { const _emb = Sanctions.embargoed(country); if (_emb) return res.status(400).json(Sanctions.refusal(_emb)); }   // Terms §11 — at the write
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
   const _dup = await findRecentDuplicate('entities', scopeId(req), null, { textMatch: { name: name.trim().slice(0,100) } });
   if (_dup) return res.status(200).json(_dup);
@@ -1940,6 +1942,7 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   if (_badTimezone(timezone)) return res.status(400).json({ error: 'Invalid timezone. Use an IANA zone such as America/Toronto.' });
   if (_badCountry(country)) return res.status(400).json({ error: 'Invalid country code. Use a 2-letter ISO code such as CA.' });
+  { const _emb = Sanctions.embargoed(country); if (_emb) return res.status(400).json(Sanctions.refusal(_emb)); }   // Terms §11 — at the write
   // F196 Tier 2: per-entity letterhead profile. Only the keys actually sent are patched, so a
   // profile save cannot blank name/currency/color and a rename cannot blank the profile.
   const _prof = normalizeEntityProfile(req.body || {});
@@ -9427,6 +9430,7 @@ app.put('/api/personal-bank', requireAuth, wrap(async (req, res) => {
   if ('country' in b) {
     const country = _norm(b.country);
     if (country != null && !/^[A-Z]{2}$/.test(country)) return res.status(400).json({ error: 'country must be a 2-letter country code.' });
+    { const _emb = Sanctions.embargoed(country); if (_emb) return res.status(400).json(Sanctions.refusal(_emb)); }   // Terms §11
     await _mutateSettingsBlob(uid, 'pers_bank_country', null, () => country);
   }
   if ('currency' in b) {

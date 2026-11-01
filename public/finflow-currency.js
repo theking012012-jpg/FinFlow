@@ -188,7 +188,7 @@
   'Antigua & Barbuda':'XCD','Dominica':'XCD','Grenada':'XCD',
   'St Kitts & Nevis':'XCD','St Lucia':'XCD','St Vincent':'XCD',
   'Guyana':'GYD','Bahamas':'BSD','Haiti':'HTG','Dominican Republic':'DOP',
-  'Cuba':'CUP','Bermuda':'BMD','Cayman Islands':'KYD','Aruba':'AWG',
+  'Bermuda':'BMD','Cayman Islands':'KYD','Aruba':'AWG',
   'Suriname':'SRD','Panama':'PAB','Costa Rica':'CRC','Guatemala':'GTQ',
   'Honduras':'HNL','Nicaragua':'NIO',
   'Mozambique':'MZN','Zambia':'ZMW','Botswana':'BWP','Namibia':'NAD',

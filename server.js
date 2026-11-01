@@ -13545,9 +13545,41 @@ async function glBalanceSheet(userId, entityId, opts = {}) {
     subledger: { ar: r2(books.outstanding), ap: r2(books.accountsPayableNet) },
     journalAdjustments: { ar: r2(jb.ar), ap: r2(jb.ap) },
   };
+  presentDepositsAndPrepayments(res, books);   // G13
   if (consolidated) {
     res.baseCurrency = f.base; res.consolidated = true; res.fxCoverage = f.fxCoverage;
     if (f.asc830) { res.cta = f.asc830.cta; res.asc830 = f.asc830; }   // ASC 830 supplementary (GAAP CTA)
+  }
+  return res;
+}
+// G13 (owner decision 2026-11-01; the V1 pattern for the other control accounts): money held for or from a counterparty
+// is shown as what it is, not netted into a control account.
+//   · Vendor prepayments (asset) — per vendor, credits / payments beyond what is billed (computeBooks.vendorPrepayments);
+//     plus any debit left on Accounts Payable itself (a bill paid before it is issued).
+//   · Customer deposits (liability) — per customer, credit notes beyond what is owed (computeBooks.customerCredits); plus
+//     any credit left on Accounts Receivable itself (a payment before the invoice is issued, an overpayment).
+// The ledger is untouched: the control account is grossed up by the same amount it moves to its own line, and both
+// totals rise by it, so assets − liabilities (equity) is exactly what the ledger says.
+function presentDepositsAndPrepayments(res, books) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const prepay = r2(Math.max(Number(books.vendorPrepayments) || 0, -(Number(res.accountsPayable) || 0), 0));
+  const deposits = r2(Math.max(Number(books.customerCredits) || 0, -(Number(res.accountsReceivable) || 0), 0));
+  res.vendorPrepayments = prepay; res.customerDeposits = deposits;
+  if (prepay >= 0.005) {
+    res.accountsPayable = r2((Number(res.accountsPayable) || 0) + prepay);
+    res.totalAssets = r2(res.totalAssets + prepay); res.totalLiabilities = r2(res.totalLiabilities + prepay);
+    if (res.lines) {
+      const ap = res.lines.liabilities.find(l => l.key === 'ap'); if (ap) ap.amount = res.accountsPayable;
+      res.lines.assets.push({ key: 'vendorPrepayments', label: 'Vendor prepayments', amount: prepay });
+    }
+  }
+  if (deposits >= 0.005) {
+    res.accountsReceivable = r2((Number(res.accountsReceivable) || 0) + deposits);
+    res.totalAssets = r2(res.totalAssets + deposits); res.totalLiabilities = r2(res.totalLiabilities + deposits);
+    if (res.lines) {
+      const ar = res.lines.assets.find(l => l.key === 'ar'); if (ar) ar.amount = res.accountsReceivable;
+      res.lines.liabilities.push({ key: 'customerDeposits', label: 'Customer deposits', amount: deposits });
+    }
   }
   return res;
 }
@@ -14012,6 +14044,19 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     v => Math.max(0, num(v.amount) - num(v.applied)), _vcDate, 'ap');   // FA-M6b: the applied part is already off its bill
   const accountsPayableNet = r2(_apGross - _apCredits);
   const accountsPayable = r2(Math.max(0, accountsPayableNet));
+  // G13 (owner decision 2026-11-01): VENDOR PREPAYMENTS — per vendor, credits (and payments) beyond what is billed are an
+  // ASSET the business holds with that vendor, not a negative payable netted against what it owes everyone else. Same
+  // rows, same FX path as the AP above, grouped by vendor; Σ of the vendors in credit.
+  const _vKey = x => String((x && x.vendor) || '').trim().toLowerCase();
+  const _apBills = (bills || []).filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()) && (function(){ const _y = FinFlowDates._toYmd(_billDate(b)); return _y != null && _y <= _today; })());
+  const _apVcs = (vendorCredits || []).filter(v => RECOGNIZED_CREDIT.has((v.status || '').toLowerCase()) && (function(){ const _y = FinFlowDates._toYmd(_vcDate(v)); return _y != null && _y <= _today; })());
+  let vendorPrepayments = 0;
+  for (const k of new Set(_apVcs.map(_vKey))) {
+    const net = sumFX(_apBills.filter(b => _vKey(b) === k), b => Math.max(0, num(b.amount) - num(b.amount_paid)), _billDate, 'ap')
+              - sumFX(_apVcs.filter(v => _vKey(v) === k), v => Math.max(0, num(v.amount) - num(v.applied)), _vcDate, 'ap');
+    if (net < 0) vendorPrepayments += -net;
+  }
+  vendorPrepayments = r2(vendorPrepayments);
 
   // ── COGS (FIFO, F6) — PERIOD-SCOPED (F25) ──
   // COGS is a P&L figure, so it must match revenue's period: Month/Quarter show only that
@@ -14082,6 +14127,18 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     cn => Math.max(0, num(cn.amount) - num(cn.applied)), _cnDate, 'ar'   // FA-M6b: the applied part is already off its invoice
   );
   const outstanding = r2(Math.max(0, _arGross - _arCreditContra));
+  // G13 (owner decision 2026-11-01): CUSTOMER CREDITS — per customer, open credit notes beyond what that customer owes are
+  // a LIABILITY (money owed back, or held against future invoices), not a smaller receivable for everyone else.
+  const _cKey = x => String((x && (x.client || x.customer)) || '').trim().toLowerCase();
+  const _arInv = issuedInv.filter(i => { const _y = FinFlowDates._toYmd(_invDate(i)); return _y != null && _y <= _today; });
+  const _arCns = creditNotes.filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase()) && (function(){ const _y = FinFlowDates._toYmd(_cnDate(cn)); return _y != null && _y <= _today; })());
+  let customerCredits = 0;
+  for (const k of new Set(_arCns.map(_cKey))) {
+    const net = sumFX(_arInv.filter(i => _cKey(i) === k), i => Math.max(0, num(i.amount) - num(i.amount_paid)), _invDate, 'ar')
+              - sumFX(_arCns.filter(cn => _cKey(cn) === k), cn => Math.max(0, num(cn.amount) - num(cn.applied)), _cnDate, 'ar');
+    if (net < 0) customerCredits += -net;
+  }
+  customerCredits = r2(customerCredits);
 
   // F204 — per-customer AR breakdown, built from the EXACT same recognized+D2 set and FX path as
   // `outstanding` above, so Σ(rows) == outstanding by construction (the F58 invariant). This lets the
@@ -14275,7 +14332,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, arCreditContra: r2(_arCreditContra), journalBalances, arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, vendorPrepayments, customerCredits, arCreditContra: r2(_arCreditContra), journalBalances, arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
     window: { start: winStart, end: winEnd, today: _today },   // L11: the resolved calendar window, so a caller can list exactly the rows these figures cover
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the

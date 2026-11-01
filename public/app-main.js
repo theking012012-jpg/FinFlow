@@ -5958,6 +5958,7 @@ async function loadBankingFromDB(){
     // The books' cash (a full balance sheet on the server) is read only when the Banking page is actually OPEN —
     // renderBanking fetches it on demand. Reading it here ran that heavy computation at EVERY sign-in.
     window._bankBooksCash = undefined;
+    window._bankAcctBooks = undefined;   // G15: per-account books, read on demand like the cash above
     if(typeof renderBanking==='function') renderBanking();
   } catch(e){
     // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch
@@ -6016,17 +6017,37 @@ function renderBanking(){
   window._refreshDashboardUI?.();
   const al=document.getElementById('bank-accounts-list');
   const _asOf = v => { if(!v) return ''; const d=new Date(v); return isNaN(d) ? '' : 'as of '+d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); };
+  // G15: each account's own books balance (its cash account 1000-NN = the lines reconciled to it), read on demand while the
+  // Banking page is open. The rest of the bank balance is explained: lines not yet matched, lines ignored, and the balance
+  // the account had before the feed's first line.
+  const _bkOpen0=!!(document.getElementById('page-banking')||{classList:{contains:()=>false}}).classList.contains('active');
+  if(window._bankAcctBooks===undefined && (bankAccounts||[]).length && _bkOpen0 && !window._bankAcctBooksLoading){
+    window._bankAcctBooksLoading=true;
+    fetch('/api/banking/accounts-books',{credentials:'include'}).then(r=>r.ok?r.json():null)
+      .then(j=>{ window._bankAcctBooks = j && Array.isArray(j.accounts) ? j.accounts : null; })
+      .catch(()=>{ window._bankAcctBooks = null; })
+      .finally(()=>{ window._bankAcctBooksLoading=false; if(typeof renderBanking==='function') renderBanking(); });
+  }
+  const _acctBooks = id => (window._bankAcctBooks||[]).find(x => String(x.account_id) === String(id)) || null;
+  const _acctLine = a => { const b=_acctBooks(a.account_id); if(!b) return '';
+    if(!b.compared) return '<div data-style="font-size:10.5px;color:var(--t3);margin-top:3px">In '+esc(b.currency)+' — kept apart from your books\' currency, not compared.</div>';
+    const parts=['In your books'+(b.ledger_code?' ('+esc(b.ledger_code)+')':'')+': <strong>'+_m2(b.books,b.currency)+'</strong>'];
+    if(b.unmatched_lines) parts.push('<a href="#" data-on-click="showPage(\'bank-rec\');return false">'+b.unmatched_lines+' not yet matched</a>: '+_m2(b.unmatched_total,b.currency));
+    if(b.ignored_lines) parts.push(b.ignored_lines+' ignored: '+_m2(b.ignored_total,b.currency));
+    if(b.before_feed!=null && Math.abs(b.before_feed)>=0.005) parts.push('before the feed began: '+_m2(b.before_feed,b.currency));
+    else if(b.before_feed!=null) parts.push('<span data-style="color:var(--green)">fully explained ✓</span>');
+    return '<div class="bank-acct-books" data-style="font-size:10.5px;color:var(--t3);margin-top:3px">'+parts.join(' · ')+'</div>'; };
   if(al)al.innerHTML=bankAccounts.map(a=>`
     <div data-style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
       <div data-style="display:flex;align-items:center;gap:10px">
         <div data-style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
-        <div><div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(a.bank||'Bank')}${a.mask?' · ****'+esc(a.mask):''}${a.subtype?' · '+esc(a.subtype):''}</div></div>
+        <div><div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(a.bank||'Bank')}${a.mask?' · ****'+esc(a.mask):''}${a.subtype?' · '+esc(a.subtype):''}</div>${_acctLine(a)}</div>
       </div>
       <div data-style="text-align:right"><div data-style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${a.current!=null?_m2(a.current,a.currency):'—'}</div><div data-style="font-size:10px;color:var(--t3)">${a.available!=null&&a.available!==a.current?_m2(a.available,a.currency)+' available · ':''}${esc(_asOf(a.as_of))}</div></div>
     </div>`).join('');
-  // V2: ONE honest comparison — the books hold a single cash account per business (bank lines do not record a per-account
-  // ledger yet), so the bank total in the BUSINESS's currency is set against the cash in the books, with the difference and
-  // the way to explain it (Bank Rec). Accounts in other currencies are named, never folded in.
+  // V2: the business-level comparison — the bank total in the BUSINESS's currency against ALL the cash in the books (every
+  // cash account), with the difference and the way to explain it (Bank Rec). G15 adds each account's own line above.
+  // Accounts in other currencies are named, never folded in.
   let cmp=document.getElementById('bank-books-compare');
   if(al && !cmp){ cmp=document.createElement('div'); cmp.id='bank-books-compare'; cmp.style.cssText='font-size:12px;color:var(--t2);padding:10px 0 2px;line-height:1.6'; al.parentNode.insertBefore(cmp, al.nextSibling); }
   if(cmp){

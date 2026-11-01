@@ -2740,10 +2740,76 @@ app.put('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(a
 // so it never re-surfaced in the to-do list: the money had left the bank and was in no expense and no list.
 // Every delete of a record a bank line points at releases that line back to "unmatched".
 async function releaseBankLines(userId, state, refId) {
-  await pool.query(
+  const { rows } = await pool.query(
     `UPDATE personal_transactions SET data = data - 'reconcile_state' - 'reconcile_ref' - 'reconcile_bill_id', updated_at = NOW()
-      WHERE user_id = $1 AND data->>'reconcile_state' = $2 AND data->>'reconcile_ref' = $3::text`,
+      WHERE user_id = $1 AND data->>'reconcile_state' = $2 AND data->>'reconcile_ref' = $3::text RETURNING id`,
     [userId, state, String(refId)]);
+  await syncBankLineCash(userId, rows.map(r => r.id));   // G15: the released line's cash goes back to Cash
+}
+
+// ── G15 (owner decision 2026-11-01): EACH LINKED BANK ACCOUNT IS ITS OWN CASH ACCOUNT IN THE BOOKS ─────────────────────
+// Every cash event still posts to Cash (1000) exactly as before. When a bank-feed line is MATCHED (to an invoice payment,
+// booked as an expense, or paid against a bill), its amount moves from Cash to that bank account's own cash account
+// (1000-NN): money in Dr 1000-NN / Cr 1000, money out Dr 1000 / Cr 1000-NN — keyed to the line ('bank_line_cash:<id>'),
+// trued-up or reversed whenever the line is matched, unmatched, released or ignored. So total cash never changes (the
+// balance sheet's Cash line counts every cash account), no P&L figure moves, and each account's books balance is exactly
+// what has been reconciled to it — the per-account bank-vs-books comparison. A line in a currency other than the
+// business's stays in Cash (the comparison names those accounts as not compared). Lines with no account (CSV import,
+// lines synced before 2026-10-23) stay in Cash — nothing is backfilled (Rule 8).
+async function _bankAccountInfo(userId, entityId, provider, accountId) {
+  if (provider !== 'plaid') return null;
+  const { items } = await _getPlaidItemsE(userId, entityId);   // the one reader of the linked-bank blob
+  for (const it of items) for (const a of (Array.isArray(it.accounts) ? it.accounts : [])) {
+    if (String(a.account_id) === String(accountId)) return { name: a.name, mask: a.mask, currency: a.currency, current: a.current, institution: it.institution_name, as_of: a.as_of };
+  }
+  return null;
+}
+async function bankLedgerAccount(userId, entityId, provider, accountId) {
+  const find = async () => (await pool.query(`SELECT * FROM bank_ledger_accounts WHERE entity_id = $1 AND provider = $2 AND provider_account_id = $3`, [entityId, provider, String(accountId)])).rows[0] || null;
+  let m = await find(); if (m) return m;
+  const info = await _bankAccountInfo(userId, entityId, provider, accountId) || {};
+  const { rows: [ent] } = await pool.query(`SELECT data->>'currency' AS c FROM entities WHERE id = $1`, [entityId]);
+  const cur = (info.currency || (ent && ent.c) || 'USD').toUpperCase();
+  const name = ('Bank — ' + [info.institution, info.name].filter(Boolean).join(' ') + (info.mask ? ' ••' + info.mask : '')).slice(0, 120).replace(/ — $/, ' account');
+  for (let attempt = 0; attempt < 5 && !m; attempt++) {
+    const { rows: [n] } = await pool.query(`SELECT count(*)::int AS n FROM bank_ledger_accounts WHERE user_id = $1 AND entity_id = $2`, [userId, entityId]);
+    const code = '1000-' + String(n.n + 1 + attempt).padStart(2, '0');
+    try {
+      await pool.query(`INSERT INTO bank_ledger_accounts (user_id, entity_id, provider, provider_account_id, ledger_code, name, mask, currency) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        ON CONFLICT (entity_id, provider, provider_account_id) DO NOTHING`, [userId, entityId, provider, String(accountId), code, name, info.mask || null, cur]);
+    } catch (e) { if (e.code !== '23505') throw e; continue; }   // a code taken by a concurrent create — next number
+    m = await find();
+  }
+  if (m) await pool.query(`INSERT INTO ledger_accounts (user_id, entity_id, code, name, type, normal, currency, is_system) VALUES ($1,$2,$3,$4,'asset','debit',$5,TRUE)
+    ON CONFLICT (user_id, entity_id, code) DO NOTHING`, [userId, entityId, m.ledger_code, m.name, m.currency]);
+  return m;
+}
+async function syncBankLineCash(userId, lineIds) {
+  for (const id of [...new Set((lineIds || []).map(Number).filter(Boolean))]) {
+    try {
+      const { rows: [r] } = await pool.query(`SELECT id, entity_id, data FROM personal_transactions WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!r) { await reverseLedgerEntry(pool, { userId, sourceType: 'bank_line_cash', sourceId: id }); continue; }   // the line is gone — so is its cash move
+      if (r.entity_id == null || !r.data || r.data.source !== 'banking') continue;   // business bank-feed lines only (never Personal)
+      const d = r.data;
+      const acct = d.plaid_account_id ? { provider: 'plaid', id: d.plaid_account_id } : null;
+      const { rows: [mt] } = await pool.query(`SELECT 1 FROM bank_reconciliation WHERE user_id = $1 AND banking_id = $2 LIMIT 1`, [userId, id]);
+      const matched = !!mt || d.reconcile_state === 'expense' || d.reconcile_state === 'bill';
+      const amt = Math.round(Math.abs(parseFloat(d.amount) || 0) * 100) / 100;
+      let m = null, sameCur = false;
+      if (acct && matched && amt > 0) {
+        m = await bankLedgerAccount(userId, r.entity_id, acct.provider, acct.id);
+        const { rows: [ent] } = await pool.query(`SELECT data->>'currency' AS c FROM entities WHERE id = $1`, [r.entity_id]);
+        sameCur = !!m && String(m.currency || '').toUpperCase() === String((ent && ent.c) || 'USD').toUpperCase();
+      }
+      const inflow = String(d.tx_type || 'debit') === 'credit';
+      const code = m ? m.ledger_code : '1000-00';
+      await resyncDocLedger(pool, { userId, entityId: r.entity_id, sourceType: 'bank_line_cash', sourceId: id, idempotencyKey: 'bank_line_cash:' + id,
+        date: String(d.tx_date || d.date || '').slice(0, 10) || FinFlowDates._toYmd(new Date()),
+        description: 'Bank line reconciled to ' + (m ? m.name : 'its account') + ' — ' + String(d.description || '').slice(0, 60),
+        recognized: !!(m && sameCur && matched && amt > 0),
+        lines: inflow ? [{ code, debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] : [{ code: '1000', debit: amt, credit: 0 }, { code, debit: 0, credit: amt }] });
+    } catch (glErr) { console.error('[GL] bank line cash sync failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
 }
 
 app.delete('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(async (req, res) => {
@@ -7803,6 +7869,7 @@ app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
       error: 'This line is part of the reconciliation of ' + (_rc ? FinFlowDates.fmtLabel(_rc.d, { year: true }) + ' (statement balance ' + Number(_rc.b).toFixed(2) + ')' : 'a saved statement') + '. To change it, undo that reconciliation first (Reports → Bank Reconciliation).' });
   }
   await db.deleteById('personal_transactions', parseInt(req.params.id));
+  if (_bl.entity_id != null) await syncBankLineCash(_bc.uid, [parseInt(req.params.id)]);   // G15
   if (_bl.entity_id != null) await _auditRec(req, 'bank_lines', 'DELETE', _bl, null);   // FIX-3b — business lines only
   else await _persHist(req, _bl.user_id, 'bank_lines', 'DELETE', _bl, null);   // LC3c
   res.json({ ok: true });
@@ -9127,11 +9194,13 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
           if (r.reconcile_state || r.reconciliation_id != null) { await db.updateById('personal_transactions', r.id, { plaid_changed: _fields(t) }); flagged++; continue; }   // B7b: a reconciled line is flagged too
           const f = _fields(t); if (!f.tx_date) delete f.tx_date;
           await db.updateById('personal_transactions', r.id, f); modified++;
+          await syncBankLineCash(uid, [r.id]);   // G15: a changed amount / date follows into its account
         }
         for (const t of (sync.removed || [])) {
           const r = await _txRow(t.transaction_id); if (!r) continue;
           if (r.reconcile_state || r.reconciliation_id != null) { await db.updateById('personal_transactions', r.id, { plaid_removed: true }); flagged++; continue; }
           await db.deleteById('personal_transactions', r.id); removed++;
+          await syncBankLineCash(uid, [r.id]);   // G15: a removed line's cash move is reversed
         }
         for (const t of (sync.added || [])) {
           // Idempotency on Plaid's transaction_id (stable), not a time window.
@@ -11618,6 +11687,41 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
   res.json({ unmatchedBanking, unmatchedPayments, matched, unmatchedDebits: _debits, openBills: _openBills, handled });
 }));
 
+// G15: per-ACCOUNT bank vs books for the business in view. For each linked account: the bank's own balance, the account's
+// books balance (its own cash account 1000-NN = every line reconciled to it), the lines on it not yet matched, and what
+// is left — the balance the account already had before the feed's first line (an opening balance, not an error).
+app.get('/api/banking/accounts-books', requireAuth, wrap(async (req, res) => {
+  const uid = scopeId(req), eid = req.entityId;
+  if (eid == null) return res.json({ accounts: [] });   // a business's books only (never Personal)
+  const { rows: [ent] } = await pool.query(`SELECT data->>'currency' AS c FROM entities WHERE id = $1 AND user_id = $2`, [eid, uid]);
+  if (!ent) return res.json({ accounts: [] });
+  const bizCur = String(ent.c || 'USD').toUpperCase();
+  const { items } = await _getPlaidItemsE(uid, eid);
+  const out = [];
+  for (const it of items) for (const a of (Array.isArray(it.accounts) ? it.accounts : [])) {
+    const { rows: [m] } = await pool.query(`SELECT ledger_code FROM bank_ledger_accounts WHERE entity_id = $1 AND provider = 'plaid' AND provider_account_id = $2`, [eid, String(a.account_id)]);
+    const books = m ? Number((await pool.query(
+      `SELECT COALESCE(SUM(l.debit - l.credit), 0)::float AS b FROM ledger_lines l JOIN ledger_accounts la ON la.id = l.account_id
+        JOIN ledger_entries e ON e.id = l.entry_id AND e.status = 'posted' WHERE l.user_id = $1 AND l.entity_id = $2 AND la.code = $3`, [uid, eid, m.ledger_code])).rows[0].b) : 0;
+    const { rows: lines } = await pool.query(
+      `SELECT pt.id, pt.data->>'amount' AS amount, pt.data->>'tx_type' AS t, pt.data->>'reconcile_state' AS rs,
+              EXISTS (SELECT 1 FROM bank_reconciliation br WHERE br.user_id = pt.user_id AND br.banking_id = pt.id) AS matched
+         FROM personal_transactions pt WHERE pt.user_id = $1 AND pt.entity_id = $2 AND pt.data->>'source' = 'banking' AND pt.data->>'plaid_account_id' = $3`, [uid, eid, String(a.account_id)]);
+    const signed = l => (l.t === 'credit' ? 1 : -1) * Math.abs(parseFloat(l.amount) || 0);
+    const open = lines.filter(l => !l.matched && l.rs !== 'expense' && l.rs !== 'bill' && l.rs !== 'ignored');
+    const ignored = lines.filter(l => l.rs === 'ignored');
+    const r2 = n => Math.round(n * 100) / 100;
+    const cur = String(a.currency || bizCur).toUpperCase(), compared = cur === bizCur;
+    const unmatched = r2(open.reduce((x, l) => x + signed(l), 0)), ign = r2(ignored.reduce((x, l) => x + signed(l), 0));
+    out.push({ account_id: a.account_id, name: a.name, mask: a.mask, institution: it.institution_name, currency: cur, compared,
+      ledger_code: m ? m.ledger_code : null, bank: a.current != null ? r2(a.current) : null, books: r2(books),
+      matched_lines: lines.length - open.length - ignored.length, unmatched_lines: open.length, unmatched_total: unmatched,
+      ignored_lines: ignored.length, ignored_total: ign,
+      before_feed: (compared && a.current != null) ? r2(a.current - books - unmatched - ign) : null });
+  }
+  res.json({ currency: bizCur, accounts: out });
+}));
+
 app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {
   const { banking_id, invoice_payment_id } = req.body || {};
   if (!banking_id || !invoice_payment_id) return res.status(400).json({ error: 'banking_id and invoice_payment_id required' });
@@ -11641,6 +11745,7 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
     [scopeId(req), req.entityId || null, parseInt(banking_id), parseInt(invoice_payment_id)]
   );
   await _auditRec(req, 'bank_reconciliation', 'CREATE', null, rows[0]);   // FIX-3b
+  await syncBankLineCash(scopeId(req), [parseInt(banking_id)]);   // G15
   res.status(201).json(rows[0]);
 }));
 
@@ -11697,6 +11802,7 @@ app.post('/api/bank-reconciliation/book-expense', requireAuth, wrap(async (req, 
   });
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id, table: 'expenses', recordId: expense.id, action: 'CREATE', newData: expense, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'expense', reconcile_ref: expense.id });
+  await syncBankLineCash(scopeId(req), [bankingId]);   // G15
   // GL Phase 2 (dual-write): a bank debit booked as an expense posts EXACTLY like POST /api/expenses —
   // Dr Operating Expenses / Cr Cash at the expense date, keyed 'expense:'+id (so it is identical to what
   // the backfill would produce; db.insert above bypasses the route's own posting). Best-effort.
@@ -11746,6 +11852,7 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
   await recalcBillStatus(pool, billId, scopeId(req));
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'bill', reconcile_ref: payment.id, reconcile_bill_id: billId });
+  await syncBankLineCash(scopeId(req), [bankingId]);   // G15
   // GL Phase 2 (dual-write): a bank debit matched to a bill SETTLES AP, EXACTLY like a linked
   // POST /api/payments-made — Dr Accounts Payable / Cr Cash, to the bill's entity, keyed
   // 'payment_made:'+id (the bill already accrued the expense; no double count). Best-effort.
@@ -11772,6 +11879,7 @@ app.post('/api/bank-reconciliation/ignore', requireAuth, wrap(async (req, res) =
   if (row.reconcile_state) return res.json({ ok: true, duplicate: true, reconcile_state: row.reconcile_state });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'ignored' });
   await _auditRec(req, 'bank_lines', 'UPDATE', row, Object.assign({}, row, { reconcile_state: 'ignored' }));   // FIX-3b
+  await syncBankLineCash(scopeId(req), [bankingId]);   // G15 (an ignored line holds no reconciled cash)
   res.json({ ok: true, ignored: true });
 }));
 
@@ -11830,6 +11938,7 @@ app.post('/api/bank-reconciliation/match-batch', requireAuth, wrap(async (req, r
     }
     await client.query('COMMIT');
     for (const _br of rows) await _auditRec(req, 'bank_reconciliation', 'CREATE', null, _br);   // FIX-3b
+    await syncBankLineCash(scopeId(req), rows.map(r => r.banking_id));   // G15
     res.status(201).json({ matched: rows.length, skipped: skipped.length, rows });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch (_) {}
@@ -11940,6 +12049,7 @@ app.delete('/api/bank-reconciliation/:id', requireAuth, wrap(async (req, res) =>
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   await _auditRec(req, 'bank_reconciliation', 'DELETE', rows[0], null);   // FIX-3b
+  await syncBankLineCash(scopeId(req), [rows[0].banking_id]);   // G15: unmatched → its cash goes back to Cash
   res.json({ ok: true });
 }));
 
@@ -13285,7 +13395,7 @@ const GL_SOURCE_TABLES = Object.assign({
   invoice: 'invoices', invoice_paidgap: 'invoices', invoice_payment: 'invoice_payments', expense: 'expenses',
   bill: 'bills', bill_paidgap: 'bills', bill_payment: 'payments_made', credit_note: 'credit_notes', vendor_credit: 'vendor_credits',
   sales_receipt: 'sales_receipts', journal: 'journals', payroll_run: 'payroll_runs', inventory_movement: 'inventory_movements',
-  fx_settle: 'fx_transactions',
+  fx_settle: 'fx_transactions', bank_line_cash: 'personal_transactions',   // G15: traced to its bank line
 }, Object.fromEntries(PAYROLL_CASH_SOURCE_TYPES.map(t => [t, 'payroll_runs'])));
 async function glSourceGateChecks(userId, entityIds) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
@@ -13477,6 +13587,7 @@ const JOURNAL_BS_LEDGER_CODES = { J1100: 'ar', J2000: 'ap', J1200: 'inventory', 
 // Owner direction (2026-10-08): the JE template's 2200 "Tax Payable" posts to J2200 → the Tax Payable line (system
 // 2100 is the ledger's Tax Payable). Every account NOT named here — the template's 2100 "Credit Card", 1500
 // "Equipment", equity, any typed code — is its own line under its ledger name (balanceSheetLines).
+const BANK_LEDGER_CODE_RE = /^1000-\d{2,}$/;   // G15: per-bank-account cash accounts
 const BS_LINE_SECTION = { cash: 'asset', ar: 'asset', inventory: 'asset', ap: 'liability', taxPayable: 'liability', payrollLiabilities: 'liability' };
 const BS_LINE_LABEL = { cash: 'Cash & Equivalents', ar: 'Accounts Receivable', inventory: 'Inventory', ap: 'Accounts Payable', taxPayable: 'Tax Payable', payrollLiabilities: 'Payroll Liabilities' };
 const BS_NAMED_LINE = Object.assign(
@@ -13497,7 +13608,8 @@ function balanceSheetLines(accounts) {
     if (a.type === 'income' || a.type === 'expense') { earnings -= net; continue; }   // income credit-, expense debit-natural
     if (!other[a.type]) continue;
     const amt = a.type === 'asset' ? net : -net;
-    const k = BS_NAMED_LINE[a.code];
+    // G15: a linked bank account's own cash account (1000-NN) is cash — the Cash line is every cash account together.
+    const k = BS_NAMED_LINE[a.code] || (BANK_LEDGER_CODE_RE.test(String(a.code || '')) ? 'cash' : null);
     if (k && BS_LINE_SECTION[k] === a.type) { named[k] += amt; continue; }
     const code = String(a.code || '').replace(/^J/, '');
     other[a.type].push({ key: 'acct:' + a.code, code, label: String(a.name || '').trim() || ('Account ' + code), amount: amt });

@@ -1006,6 +1006,23 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_accounts_user ON ledger_accounts(user_id)`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_accounts_uniq ON ledger_accounts(user_id, entity_id, code)`);
+    // G15 (owner decision 2026-11-01): each linked bank account is its own cash account in the business's ledger
+    // (code 1000-NN, an asset that the balance sheet counts as cash). One row per business + provider account.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS bank_ledger_accounts (
+        id                  SERIAL PRIMARY KEY,
+        user_id             INTEGER NOT NULL,
+        entity_id           INTEGER NOT NULL,
+        provider            TEXT NOT NULL,
+        provider_account_id TEXT NOT NULL,
+        ledger_code         TEXT NOT NULL,
+        name                TEXT,
+        mask                TEXT,
+        currency            TEXT,
+        created_at          TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (entity_id, provider, provider_account_id),
+        UNIQUE (user_id, entity_id, ledger_code)
+      )`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS ledger_entries (

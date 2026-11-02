@@ -820,6 +820,8 @@ app.set('trust proxy', 1);
 // history) uses the visitor's address — the same one the rate limiters key on (_clientIp) — never req.ip, which with
 // `trust proxy: 1` is the nearest proxy hop (a Railway / Cloudflare edge).
 app.use((req, res, next) => { req.clientIp = _clientIp(req); next(); });
+// F90: every request runs inside its own audit context — who is acting reaches the database with each write (audit-context.js).
+app.use(require('./audit-context').middleware);
 app.use(session({
   store: new pgSession({
     pool,
@@ -4427,6 +4429,7 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
   const params = [scopeId(req)];
   let q = `SELECT a.id, a.user_id, a.entity_id, a.table_name, a.record_id, a.action, a.field_name,
                   a.old_value, a.new_value, a.old_data, a.new_data, a.actor_type, a.actor_id, a.changed_at AS created_at,
+                  a.changed_fields, a.source, a.request_id,
                   ${AUDIT_ACTOR_SQL.name}
              FROM audit_trail a ${AUDIT_ACTOR_SQL.joins} WHERE a.user_id = $1`;
   if (req.entityId != null) {
@@ -4440,7 +4443,8 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
   const lim = Math.min(Math.max(parseInt(limit) || 500, 1), 10000);
   q += ` ORDER BY a.changed_at DESC LIMIT ${lim}`;
   const { rows } = await pool.query(q, params);
-  res.json({ total: rows.length, rows });
+  const merged = require('./audit-trigger').mergeEvents(rows);   // F90: a named event + its row change = one line
+  res.json({ total: merged.length, rows: merged });
 }));
 
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────
@@ -11252,7 +11256,7 @@ app.post('/api/customers/:id/portal-link', requireAuth, requirePerm('books:write
       VALUES ($1, $2, $3, $4, $5, NOW() + ($6 || ' days')::interval) RETURNING *`, [uid, cust.entity_id, cust.id, _portalHash(token), encTok(token), String(PORTAL_DAYS)]));
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
-  await _auditRec(req, 'customers', 'UPDATE', cust, Object.assign({}, cust, { portal_link: 'shared', portal_link_expires: row.expires_at }));
+  await _auditRec(req, 'customers', 'PORTAL_LINK_SHARED', cust, Object.assign({}, cust, { portal_link: 'shared', portal_link_expires: row.expires_at }));   // F90: a named event on the customer (the link row itself is recorded by the database)
   res.status(201).json({ link: _portalLinkOut(row) });
 }));
 
@@ -11260,7 +11264,7 @@ app.delete('/api/customers/:id/portal-link', requireAuth, requirePerm('books:wri
   const cust = await _portalOwnCustomer(req, res); if (!cust) return;
   const { rowCount } = await pool.query(`UPDATE customer_portal_links SET revoked_at = NOW() WHERE user_id = $1 AND customer_id = $2 AND revoked_at IS NULL`, [scopeId(req), cust.id]);
   if (!rowCount) return res.status(404).json({ error: 'This customer has no portal link.' });
-  await _auditRec(req, 'customers', 'UPDATE', cust, Object.assign({}, cust, { portal_link: 'revoked' }));
+  await _auditRec(req, 'customers', 'PORTAL_LINK_REVOKED', cust, Object.assign({}, cust, { portal_link: 'revoked' }));   // F90: a named event
   res.json({ ok: true });
 }));
 
@@ -11370,20 +11374,27 @@ app.post('/api/dlocal/webhook', async (req, res) => {
 // no route or bug can alter/erase a recorded change. `auditLog()` and `logAudit()` are thin
 // back-compat wrappers so existing call sites did not have to change while the two old tables merged
 // into one trail. A req-less caller (e.g. the F92 side-effect recalcs) is attributed to 'system'.
+// F90: a CREATE / UPDATE / DELETE (or a RECALC) of a row in an audited table is recorded BY THE DATABASE, in the same
+// transaction as the change (audit-trigger.js) — writing it here too would record it twice. Every other event (sign-in,
+// approve, mark paid, message, …) is still written here.
+const _AUDITED_BY_DB = new Set(require('./audit-trigger').AUDITED_TABLES);
+const _ROW_CHANGE_ACTIONS = new Set(['CREATE', 'UPDATE', 'DELETE', 'RECALC']);
 async function recordAudit(pool, { userId = null, entityId = null, table, recordId = null, action, field = null, oldValue = null, newValue = null, oldData = null, newData = null, req = null, actorType: actorOverride = null }) {
   try {
+    if (_AUDITED_BY_DB.has(table) && _ROW_CHANGE_ACTIONS.has(String(action || '').toUpperCase())) return;
     let actorType = 'system', actorId = userId;
     if (req && req.session && req.session.accountantId) { actorType = 'accountant'; actorId = req.session.accountantId; }
     else if (req && req.session && req.session.userId)  { actorType = 'user';       actorId = req.session.userId; }
     if (actorOverride) { actorType = actorOverride; if (actorOverride === 'anonymous') actorId = null; }   // LC3d: e.g. a failed sign-in
     const _ua = req && typeof req.get === 'function' ? String(req.get('user-agent') || '').slice(0, 300) || null : null;   // LC3d
     await pool.query(
-      `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, old_data, new_data, actor_type, actor_id, ip_address, user_agent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, old_data, new_data, actor_type, actor_id, ip_address, user_agent, source, request_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [userId, entityId, table, recordId, action, field,
        oldValue == null ? null : String(oldValue), newValue == null ? null : String(newValue),
        oldData ? JSON.stringify(oldData) : null, newData ? JSON.stringify(newData) : null,
-       actorType, actorId, (req && (req.clientIp || req.ip)) || null, _ua]   // LR26
+       actorType, actorId, (req && (req.clientIp || req.ip)) || null, _ua,   // LR26
+       require('./audit-context').source(), require('./audit-context').requestId()]   // F90: the request / job it came from — pairs this event with the row changes it made
     );
   } catch (e) { console.error('[audit] recordAudit failed:', e.message); }
 }
@@ -11434,7 +11445,7 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
   if (req.query.record_id != null && /^\d+$/.test(String(req.query.record_id))) { params.push(String(req.query.record_id)); q += ` AND a.record_id::text = $${params.length}`; }
   q += ` ORDER BY a.changed_at DESC LIMIT 500`;
   const { rows } = await pool.query(q, params);
-  res.json(rows);
+  res.json(require('./audit-trigger').mergeEvents(rows));   // F90: a named event + its row change = one line
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -15670,13 +15681,14 @@ async function clearOldVisitorIps(now = new Date()) {
   return r.rowCount;
 }
 
+const _asSystem = require('./audit-context').asSystem;   // F90: a job's writes are recorded as FinFlow (automatic), source job:<name>
 const _jobs = {
-  recurring: () => runExclusive(pool, 'recurring-scheduler', () => runRecurringScheduler()),
-  fxLive:    () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates()),
-  reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
-  billing:   () => runExclusive(pool, 'billing-daily', async () => { const r = await runBillingJob(); try { await stripDeletedAccountDevices(); } catch (e) { console.error('[retention] IP / device removal:', e.message); } try { await clearOldVisitorIps(); } catch (e) { console.error('[retention] visitor IP removal:', e.message); } try { await require('./idempotency.js').purgeOld(pool); } catch (e) { console.error('[retention] idempotency keys:', e.message); } return r; }),   // D-G: pending plan changes (+ retention, renewals) · LC3d-b
-  referrals: () => runExclusive(pool, 'referral-payouts', () => runReferralJob()),   // FA-L3d: book the month + send referral pay
-  autoEmails: () => runExclusive(pool, 'auto-emails', () => runAutoEmails()),   // FA-B1: the customer emails a business turned on
+  recurring: () => _asSystem('recurring-scheduler', () => runExclusive(pool, 'recurring-scheduler', () => runRecurringScheduler())),
+  fxLive:    () => _asSystem('fx-live-refresh', () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates())),
+  reconcile: (resend) => _asSystem('gl-reconcile-scan', () => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend))),
+  billing:   () => _asSystem('billing-daily', () => runExclusive(pool, 'billing-daily', async () => { const r = await runBillingJob(); try { await stripDeletedAccountDevices(); } catch (e) { console.error('[retention] IP / device removal:', e.message); } try { await clearOldVisitorIps(); } catch (e) { console.error('[retention] visitor IP removal:', e.message); } try { await require('./idempotency.js').purgeOld(pool); } catch (e) { console.error('[retention] idempotency keys:', e.message); } return r; })),   // D-G: pending plan changes (+ retention, renewals) · LC3d-b
+  referrals: () => _asSystem('referral-payouts', () => runExclusive(pool, 'referral-payouts', () => runReferralJob())),   // FA-L3d: book the month + send referral pay
+  autoEmails: () => _asSystem('auto-emails', () => runExclusive(pool, 'auto-emails', () => runAutoEmails())),   // FA-B1: the customer emails a business turned on
 };
 // FA-L3d: book this month's referral pay and send it by Stripe Connect transfer (referral-payouts.js — idempotent,
 // so the hourly tick, the CRON_SECRET route and a second replica can all run it safely).

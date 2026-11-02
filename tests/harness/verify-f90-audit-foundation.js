@@ -4,8 +4,8 @@
  *   1. APPEND-ONLY — the DB trigger blocks UPDATE and DELETE on audit_trail (immutable).
  *   2. ONE TRAIL — logAudit (was the separate audit_log table) now writes to audit_trail; audit_log
  *      receives nothing new.
- *   3. ATTRIBUTION — a user's route write is actor_type='user'; a req-less side-effect (recalc) is
- *      actor_type='system'.
+ *   3. ATTRIBUTION — a user's route write is actor_type='user'; a side effect of it (the payment's recalc) is
+ *      attributed to that same user, with the route as its source (F90, 2026-11-02 — it was 'system').
  *   4. SNAPSHOTS — a CREATE records new_data (the record snapshot).
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-f90-audit-foundation.js
@@ -63,8 +63,10 @@ const LOGIN = { email: 'f90@finflow.test', password: 'harness-password-not-a-sec
     // ── side-effect recalc → actor 'system' ──
     const invId = mk.json.id ?? mk.json._dbId;
     await http.post('/api/invoice-payments', { invoice_id: invId, amount: 400, payment_date: '2026-06-20' });
-    const recalc = (await c.query(`SELECT * FROM audit_trail WHERE user_id=$1 AND table_name='invoices' AND action='RECALC'`, [uid])).rows;
-    A('side-effect recalc is attributed actor_type=system', recalc.length >= 1 && recalc[0].actor_type === 'system', JSON.stringify(recalc[0] && { at: recalc[0].actor_type }));
+    // F90 (2026-11-02): the side effect is recorded by the database in the payment's transaction, attributed to the
+    // PERSON whose payment caused it (it used to be an anonymous 'system' RECALC row), with the route as its source.
+    const recalc = (await c.query(`SELECT * FROM audit_trail WHERE user_id=$1 AND table_name='invoices' AND action='UPDATE' AND 'amount_paid' = ANY(changed_fields)`, [uid])).rows;
+    A('side-effect recalc is attributed to the person who recorded the payment (user), source POST /api/invoice-payments', recalc.length >= 1 && recalc[0].actor_type === 'user' && recalc[0].actor_id === uid && recalc[0].source === 'web POST /api/invoice-payments', JSON.stringify(recalc[0] && { at: recalc[0].actor_type, src: recalc[0].source }));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);
   } catch (e) {

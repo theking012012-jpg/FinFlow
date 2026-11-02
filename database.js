@@ -56,6 +56,38 @@ const pool = new Pool({
 
 pool.on('error', (err) => console.error('[PG] Unexpected pool error', err));
 
+// F90 — who is making a change goes to Postgres on the SAME connection, right before any write to an audited table
+// (audit-trigger.js WRITE_RE) and when a client is checked out for a transaction, so the audit trigger can record it in
+// the same transaction as the change. Always SET (to '' outside any request or job) so a connection never carries the
+// previous caller's identity. Session-level setting: this relies on a SESSION-mode pooler (Supabase session pooler,
+// CLAUDE.md) — under a transaction-mode pooler the SET and the write could land on different server connections.
+{
+  const _actx = require('./audit-context');
+  const { WRITE_RE: _AUDIT_WRITE } = require('./audit-trigger');
+  const _SET_CTX = `SELECT set_config('finflow.ctx', $1, false)`;
+  const _origConnect = pool.connect.bind(pool);
+  const _origQuery = pool.query.bind(pool);
+  pool.connect = function (cb) {
+    if (typeof cb === 'function') return _origConnect(cb);   // pg-pool's own query() path (callback style) — untouched
+    const ctx = _actx.current();
+    return _origConnect().then(async (client) => {
+      try { await client.query(_SET_CTX, [ctx]); } catch (e) { client.release(e); throw e; }
+      return client;
+    });
+  };
+  pool.query = function (text, params, cb) {
+    const sql = typeof text === 'string' ? text : (text && text.text) || '';
+    if (typeof params === 'function' || typeof cb === 'function' || !_AUDIT_WRITE.test(sql)) return _origQuery(text, params, cb);
+    const ctx = _actx.current();
+    return _origConnect().then(async (client) => {
+      let err;
+      try { await client.query(_SET_CTX, [ctx]); return await client.query(text, params); }
+      catch (e) { err = e; throw e; }
+      finally { client.release(err && !err.code ? err : undefined); }
+    });
+  };
+}
+
 const TABLES = [
   'users', 'entities', 'invoices', 'expenses', 'customers', 'inventory',
   'payroll', 'personal_transactions', 'goals', 'holdings', 'user_settings',
@@ -1322,6 +1354,10 @@ async function initDB() {
       UPDATE timesheet t SET entity_id = (SELECT MIN(e.id) FROM entities e WHERE e.user_id = t.user_id)
        WHERE t.entity_id IS NULL AND EXISTS (SELECT 1 FROM entities e2 WHERE e2.user_id = t.user_id);
     `);
+
+    // F90 — the audit trail at the write: one trigger on every table holding a business's books / records / access
+    // (audit-trigger.js). Mirrored by scripts/migrations/2026-11-02-audit-at-the-write.sql.
+    await require('./audit-trigger').ensureSchema(client);
 
     // LC3c — Personal's own append-only history (no business column; erased with the account). Schema only.
     // Mirrored by scripts/migrations/2026-10-21-personal-history.sql.

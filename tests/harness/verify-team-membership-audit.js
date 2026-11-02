@@ -37,7 +37,12 @@ const hashTok = t => crypto.createHash('sha256').update(String(t)).digest('hex')
       [ownerId, { name: 'Owner Co', currency: 'USD', is_active: 1 }])).rows[0].id;
     const owner = new HarnessHttp(server.baseUrl);
     if ((await owner.post('/api/auth/login', { email: 'l31-owner@finflow.test', password: PW })).status !== 200) throw new Error('login');
-    const trail = async (id) => (await c.query(`SELECT action, actor_type, actor_id, user_id, old_data, new_data, old_value, new_value FROM audit_trail WHERE table_name='team_members' AND record_id=$1 ORDER BY id`, [id])).rows;
+    // F90 (2026-11-02): what the OWNER SEES — the record's history from /api/audit-trail, where one action is one event
+    // (the database's row change + the route's named event, paired by request). Oldest first.
+    const trail = async (id) => {
+      const r = await owner.get('/api/audit-trail?table=team_members&record_id=' + id);
+      return (Array.isArray(r.json) ? r.json : []).slice().reverse();
+    };
     const allTrail = async () => JSON.stringify((await c.query(`SELECT old_data, new_data, old_value, new_value FROM audit_trail WHERE table_name='team_members'`)).rows);
 
     const m = await owner.post('/api/team', { name: 'Direct Member', email: 'direct@finflow.test', role: 'viewer' });
@@ -73,7 +78,11 @@ const hashTok = t => crypto.createHash('sha256').update(String(t)).digest('hex')
     const ac = await joiner.post('/api/team/accept', { token: 'TOKEN-L31', name: 'Joiner', password: PW });
     const memberUid = (await c.query(`SELECT data->>'member_user_id' AS u FROM team_members WHERE id=$1`, [sid])).rows[0].u;
     t = await trail(sid);
-    A('POST /api/team/accept ⇒ one ACCEPT row, actor = the new member, on the OWNER\'s account', ac.status === 200 && t.length === 1 && t[0].action === 'ACCEPT' && Number(t[0].user_id) === ownerId && String(t[0].actor_id) === String(memberUid),
+    // (the pending invite above was seeded straight into the database by this harness — F90 records that too, as its own
+    // event from 'database'; the accept is the one event that follows it)
+    const _acc = t.filter(r => r.action === 'ACCEPT'), _other = t.filter(r => r.action !== 'ACCEPT');
+    A('POST /api/team/accept ⇒ one ACCEPT event, actor = the new member, on the OWNER\'s account (the only other event: the seed, from the database)', ac.status === 200 && _acc.length === 1 && Number(_acc[0].user_id) === ownerId && String(_acc[0].actor_id) === String(memberUid)
+      && _other.length === 1 && _other[0].action === 'CREATE' && _other[0].source === 'database',
       'status=' + ac.status + ' trail=' + JSON.stringify(t.map(r => [r.action, r.user_id, r.actor_type, r.actor_id])) + ' member=' + memberUid);
 
     const all = await allTrail();

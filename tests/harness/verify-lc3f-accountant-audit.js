@@ -52,7 +52,10 @@ const PW = 'harness-password-not-a-secret';
     eq('accountant signs in', (await acct.post('/api/accountants/login', { email: 'lc3f-acct@finflow.test', password: PW })).status, 200);
     let mark = 0;
     const since = async () => { mark = (await c.query(`SELECT COALESCE(MAX(id),0) m FROM audit_trail`)).rows[0].m; };
-    const trail = async uid => (await c.query(`SELECT table_name, action, actor_type, actor_id, old_value, new_value, old_data, new_data FROM audit_trail WHERE id > $1 AND user_id IS NOT DISTINCT FROM $2 ORDER BY id`, [mark, uid])).rows;
+    // F90 (2026-11-02): the client's trail AS IT IS SHOWN — the database records each row change, the route its named event;
+    // the trail reader (audit-trigger.js mergeEvents, used by /api/audit-log and /api/audit-trail) shows them as one.
+    const _merge = require('../../audit-trigger.js').mergeEvents;
+    const trail = async uid => _merge((await c.query(`SELECT id, table_name, record_id, action, actor_type, actor_id, old_value, new_value, old_data, new_data, changed_at, changed_fields, source, request_id FROM audit_trail WHERE id > $1 AND user_id IS NOT DISTINCT FROM $2 ORDER BY id DESC`, [mark, uid])).rows).reverse();
     const who = r => [r.table_name, r.action, r.actor_type];
 
     // ── client side → the client's own trail ──

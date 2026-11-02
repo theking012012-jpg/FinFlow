@@ -2426,6 +2426,33 @@ Moving Q3's later months into the past would require a different pinned clock, w
 ---
 
 ### F90 🟡 MEDIUM — Audit trail — **FOUNDATION rebuilt to accounting standard 2026-08-07 (Phase A, executed); coverage sweep = Phase B**
+**2026-11-02 — part 1 ✅ FIXED + VERIFIED: the trail is written AT THE DATABASE, in the same transaction as every change.**
+Measured first (`tests/harness/auditShadow.js` — an independent shadow trigger on every table, over 54 harnesses, 3,075 app row changes):
+payments (`invoice_payments` 5 of 30 inserts), stock movements (13 of 22), FX rates, period locks, credit-note edits, bill-payment
+edits, team invites and accountant access changes landed with **no audit row**; a failed `recordAudit()` was swallowed while the
+change committed; a change made outside the app left no trace; and any new route could ship unrecorded (route-level calls only).
+Now (`audit-trigger.js`, `audit-context.js`, `database.js`, migration `2026-11-02-audit-at-the-write.sql`):
+- an AFTER ROW trigger on the 39 tables that hold a business's books, records and access writes one `audit_trail` row per real
+  change — before / after (the JSONB `data` keys beside the typed columns), `changed_fields`, who (`finflow.ctx`, sent by the app on
+  the same connection right before each write), `source` ("web POST /api/…", "api_key:N …", "job:recurring-scheduler", "database")
+  and `request_id`; the change and its record commit or roll back together; a new route needs nothing to be recorded;
+- left out on purpose (stated in `audit-trigger.js`): Personal (own history, the wall), the derived GL postings, security / settings
+  tables (route-level, secrets kept out), operational tables; the app's own bookkeeping (`updated_at`, the business in view, number
+  counters, the number / contact linked at creation, read receipts, the restock marker) is not a change anyone made;
+- secrets (`*token*`, `*_hash`, `password`, `totp`) and file bytes never enter a snapshot; an account being erased records one
+  `ACCOUNT_DELETED`, not a copy of every row;
+- `recordAudit()` no longer writes CRUD rows for those tables (no duplicates); the routes' named events (APPROVE, INVITE, MARK_PAID,
+  CLIENT_REVOKE, …) are still written and are paired with their row change (same request) into ONE event on the Audit page and in
+  History (`mergeEvents`); a side effect (a payment's recalc) is attributed to the person who caused it, not "system";
+- jobs run as the system with their name; the owner-run test-data purge tool identifies itself (`tool:purge-test-data`).
+Executed: `verify-f90-audit-at-the-write` **RED 7 failed / 6 passed on `15faec3` → GREEN 13/0** (battery of 15 change kinds: every
+app row change has its own row; who / IP / source on a payment; an audit write that cannot happen stops the expense — 5xx, no row;
+a direct database edit recorded as system / database; the recurring job named; one row on account deletion). Restated to the new
+contract (each green): f90-audit-foundation 10/0, f92-recalc-audit 8/0, fix3-audit-coverage 15/0, fix3b-audit-money-routes 19/0,
+lc3f-accountant-audit 17/0, team-membership-audit 7/0, c29-audit-filters 9/0 (new options for the newly recorded tables; it was
+failing on HEAD too), a6-test-data-purge 17/0. Related: 360 harnesses re-run (every write path changed): all green after the restatements above, plus b1b / fam5c numbers (the number given at creation is part of the creation event), fab10b portal links (named events PORTAL_LINK_SHARED / REVOKED), lc1c link tool + migration and b1b number tool (the tools / migration identify themselves; the database writes their rows), g3 doc-edit guard; load flakes green alone (fam2, fam12, m34, m46).
+**Load-bearing (infrastructure):** `finflow.ctx` is a SESSION setting sent before each write — it relies on the session-mode pooler.
+Under a transaction-mode pooler the SET and the write could reach different server connections (attribution would be wrong).
 **Status:** 🟢 **Phase A DONE (executed 10/10) — the trail is now accounting-grade; Phase B (coverage) in progress.** Owner ruled 2026-08-07: "the one that's perfect for an accounting app, up to standard." Built:
 - **IMMUTABLE / append-only** — a DB trigger (`audit_trail_no_mutate`, database.js) RAISES on any `UPDATE`/`DELETE` of `audit_trail`, so no route, bug, or actor can alter or erase a recorded change. Only `INSERT` is permitted (proven: UPDATE/DELETE both throw).
 - **ONE TRAIL** — the two parallel tables are unified: `logAudit()` (was writing whole-record snapshots to the separate `audit_log` JSONB table) and `auditLog()` are now thin wrappers over a single `recordAudit()` that writes only to `audit_trail`. `audit_log` receives nothing new. All 19 existing call sites unchanged.

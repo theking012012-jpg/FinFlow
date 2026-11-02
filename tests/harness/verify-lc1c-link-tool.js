@@ -55,7 +55,7 @@ async function main() {
     eq('only e1 linked (to "website build"); e2 ambiguous, e3 no match, e4 other business, e5 untouched',
       await pids(), [[e1, String(pWeb)], [e2, null], [e3, null], [e4, null], [e5, '999']]);
     eq('e1 keeps its label', (await c.query(`SELECT data->>'project' p FROM timesheet WHERE id = $1`, [e1])).rows[0].p, 'Website Build');
-    const au = (await c.query(`SELECT entity_id, action, actor_type, new_data->>'project_id' AS p FROM audit_trail WHERE table_name = 'timesheet' AND record_id = $1`, [e1])).rows;
+    const au = (await c.query(`SELECT entity_id, action, actor_type, new_data->>'project_id' AS p FROM audit_trail WHERE table_name = 'timesheet' AND record_id = $1 AND action <> 'CREATE'`, [e1])).rows;   // F90: the entry this harness seeded straight into the database is recorded too — its creation is not the tool's
     eq('one audit row on e1\'s own business (UPDATE, system)', au.map(r => [r.entity_id, r.action, r.actor_type, r.p]), [[b1, 'UPDATE', 'system', String(pWeb)]]);
     const again = run();
     A('re-run: WOULD LINK 0', /WOULD LINK: 0\b/.test(again.out), again.out.slice(-200));

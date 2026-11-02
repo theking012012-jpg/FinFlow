@@ -32,9 +32,12 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
       const nw = await J('POST', '/api/entities', { name: 'Northwind', currency: 'USD', timezone: 'UTC', country: 'US' });
       await J('POST', '/api/entities/' + nw.id + '/activate', {});
       eid = nw.id;
-      const trail = async (table, id) => (await client.query(
-        `SELECT action, user_id, entity_id, actor_type, actor_id, old_data, new_data FROM audit_trail
-          WHERE user_id = $1 AND table_name = $2 AND ($3::int IS NULL OR record_id = $3) ORDER BY id`, [userId, table, id == null ? null : id])).rows;
+      // F90 (2026-11-02): the record's trail AS SHOWN — the database's row changes and the route's named events, one event
+      // per action (audit-trigger.js mergeEvents; the number a quote is given right after creation is part of its creation).
+      const _merge = require('../../audit-trigger.js').mergeEvents;
+      const trail = async (table, id) => _merge((await client.query(
+        `SELECT id, table_name, record_id, action, user_id, entity_id, actor_type, actor_id, old_data, new_data, changed_at, changed_fields, source, request_id FROM audit_trail
+          WHERE user_id = $1 AND table_name = $2 AND ($3::int IS NULL OR record_id = $3) ORDER BY id DESC`, [userId, table, id == null ? null : id])).rows).reverse();
       const shape = rows => rows.map(r => [r.action, r.user_id === userId && r.actor_type === 'user' && r.actor_id === userId, r.entity_id === eid]);
 
       // ── quotes ──
@@ -71,7 +74,9 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
       t = await trail('budget_targets', null);
       eq('budget targets: CREATE then UPDATE, on Northwind', shape(t), [['CREATE', true, true], ['UPDATE', true, true]], []);
       const _s = o => o ? Object.keys(o).sort().map(k => k + '=' + o[k]).join(' ') : null;   // JSONB does not keep key order
-      eq('budget UPDATE records Software 400 → 650 and the new Travel 90', t[1] ? [_s(t[1].old_data), _s(t[1].new_data)] : null, ['Software=400', 'Software=650 Travel=90'], null);
+      // F90: the database records the row as it is — the targets are its `targets` object (a route used to write that object alone)
+      const _tg = o => o ? (o.targets || o) : null;
+      eq('budget UPDATE records Software 400 → 650 and the new Travel 90', t[1] ? [_s(_tg(t[1].old_data)), _s(_tg(t[1].new_data))] : null, ['Software=400', 'Software=650 Travel=90'], null);
     } });
 
     // ── SPA: the Audit page filters and lists them ──

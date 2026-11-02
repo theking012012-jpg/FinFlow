@@ -103,8 +103,10 @@ async function main() {
 
     const tb = (await c.query(`SELECT COALESCE(SUM(debit),0)::float AS d, COALESCE(SUM(credit),0)::float AS cr FROM ledger_lines WHERE user_id=$1`, [uid])).rows[0];
     A('12 trial balance ties', Math.abs(tb.d - tb.cr) < 0.01, JSON.stringify(tb));
-    const recalcAudit = (await c.query(`SELECT COUNT(*)::int AS n FROM audit_trail WHERE user_id=$1 AND action='RECALC' AND table_name='invoices' AND record_id::text=$2::text`, [uid, iA.id])).rows[0].n;
-    A('13 each status change an edit causes is audited (RECALC rows on INV-A)', recalcAudit >= 2, 'RECALC rows=' + recalcAudit);
+    // F90 (2026-11-02): the database records each status change as an UPDATE of the invoice row (status among its
+    // changed fields), in the edit's own transaction — it used to be a separate RECALC row.
+    const recalcAudit = (await c.query(`SELECT COUNT(*)::int AS n FROM audit_trail WHERE user_id=$1 AND action='UPDATE' AND table_name='invoices' AND record_id::text=$2::text AND 'status' = ANY(changed_fields)`, [uid, iA.id])).rows[0].n;
+    A('13 each status change an edit causes is audited (UPDATE rows with status changed, on INV-A)', recalcAudit >= 2, 'status-change rows=' + recalcAudit);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   finally { if (server && server.close) await server.close(); await scratch.stop(); }
   console.log('\n' + '-'.repeat(78));

@@ -78,7 +78,9 @@ async function main() {
     A('8  the database itself refuses a second NW-0010 in Northwind (unique index)', dbRefused);
     const all = (await c.query(`SELECT data->>'number' AS n FROM invoices WHERE user_id=$1 AND entity_id=$2`, [uid, eA])).rows.map(r => r.n);
     A('8b no Northwind invoice is without a number', all.length > 0 && all.every(n => !!n), JSON.stringify(all));
-    eq('8c the audit row for a created invoice records its number', ((await c.query(`SELECT new_data->>'number' AS n FROM audit_trail WHERE user_id=$1 AND table_name='invoices' AND action='CREATE' AND record_id::text=$2::text`, [uid, String(first[0].id)])).rows[0] || {}).n, 'INV-0001', null);
+    // F90 (2026-11-02): the database records the creation and the number given right after it (same request); the trail
+    // as shown (/api/audit-trail) is ONE creation event carrying the number.
+    eq('8c the creation event on the invoice\'s history records its number', (((await http.get('/api/audit-trail?table=invoices&record_id=' + first[0].id)).json || []).find(e => e.action === 'CREATE') || { new_data: {} }).new_data.number, 'INV-0001', null);
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   finally { if (server && server.close) await server.close(); await scratch.stop(); }
   console.log('\n' + '-'.repeat(78));

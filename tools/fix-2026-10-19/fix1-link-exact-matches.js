@@ -53,6 +53,8 @@ const CANDIDATES_SQL = `
     }
     if (!Number.isInteger(expect)) { console.error('REFUSED: --apply needs --expect N (the WOULD LINK count from the dry run you reviewed).'); process.exitCode = 2; return; }
     await c.query('BEGIN');
+    // F90: who is making these changes, for the audit trigger — this tool, as the system (one id for the whole run)
+    await c.query(`SELECT set_config('finflow.ctx', $1, true)`, [JSON.stringify({ t: 'system', a: null, ip: null, ua: null, src: 'tool:fix1-link-exact-matches', rid: require('crypto').randomUUID() })]);
     const { rows } = await c.query(CANDIDATES_SQL + ' FOR UPDATE OF t');
     if (rows.length !== expect) {
       await c.query('ROLLBACK');
@@ -64,10 +66,7 @@ const CANDIDATES_SQL = `
         `UPDATE timesheet SET data = data || jsonb_build_object('project_id', $2::int), updated_at = NOW()
           WHERE id = $1 AND data->>'project_id' IS NULL RETURNING data`, [r.id, r.project_id]);
       if (!nu) throw new Error('entry ' + r.id + ' changed during the run');
-      await c.query(
-        `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, old_data, new_data, actor_type, actor_id)
-         VALUES ($1, $2, 'timesheet', $3, 'UPDATE', $4, $5, 'system', NULL)`,
-        [r.user_id, r.entity_id, r.id, JSON.stringify(r.old_data), JSON.stringify(nu.data)]);
+      // F90: the database records this change itself (audit trigger), as this tool — see the set_config above
     }
     await c.query('COMMIT');
     console.log(`APPLIED: linked ${rows.length} time entr${rows.length === 1 ? 'y' : 'ies'} (one audit row each).`);

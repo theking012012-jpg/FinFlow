@@ -72,7 +72,8 @@ async function main() {
 
     const all = (await c.query(`SELECT data->>'num' AS n FROM bills WHERE user_id=$1 AND entity_id=$2`, [uid, eA])).rows.map(r => r.n);
     A('8  every Northwind bill has a number and no two are the same', all.length === 13 && all.every(n => !!n) && new Set(all).size === all.length, JSON.stringify(all));
-    eq('8b the audit row for a created bill records its number', ((await c.query(`SELECT new_data->>'num' AS n FROM audit_trail WHERE user_id=$1 AND table_name='bills' AND action='CREATE' AND record_id::text=$2::text`, [uid, String(first[0].id)])).rows[0] || {}).n, 'BILL-0001');
+    // F90 (2026-11-02): the creation and the number given right after it are one creation event on the bill's history
+    eq('8b the creation event on the bill\'s history records its number', (((await http.get('/api/audit-trail?table=bills&record_id=' + first[0].id)).json || []).find(e => e.action === 'CREATE') || { new_data: {} }).new_data.num, 'BILL-0001');
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   finally { if (server && server.close) await server.close(); await scratch.stop(); }
   console.log('\n' + '-'.repeat(78));

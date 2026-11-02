@@ -17,6 +17,8 @@ function _auditFlatten(o){
   for(const k of Object.keys(o)){
     const v=o[k];
     if(k==='data'&&v&&typeof v==='object'&&!Array.isArray(v)) Object.assign(out,_auditFlatten(v));
+    // F90: a budget's targets are one object on the row ({Software: 400, …}) — one line per target, as before
+    else if(k==='targets'&&v&&typeof v==='object'&&!Array.isArray(v)) Object.assign(out,v);
     else out[k]=v;
   }
   return out;

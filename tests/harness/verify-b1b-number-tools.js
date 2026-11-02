@@ -72,7 +72,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     const seq = async e => (await c.query(`SELECT (data->>'invoice_seq')::int AS s FROM entities WHERE id=$1`, [e])).rows[0].s;
     eq('5d the counters moved on (A 4, B 8) so the next new invoice cannot repeat a number', [await seq(eA), await seq(eB)], [4, 8]);
     eq('5e duplicates are NOT touched (owner\'s decision): C still X-1, X-1', [await n(c1), await n(c2)], ['X-1', 'X-1']);
-    eq('5f one audit row per numbered invoice (actor system)', (await c.query(`SELECT count(*)::int AS n FROM audit_trail WHERE table_name='invoices' AND field_name='number' AND actor_type='system'`)).rows[0].n, 4);
+    eq('5f one audit row per numbered invoice (actor system)', (await c.query(`SELECT count(*)::int AS n FROM audit_trail WHERE table_name='invoices' AND 'number' = ANY(changed_fields) AND actor_type='system' AND source = 'tool:number-existing-invoices'`)).rows[0].n, 4);   // F90: recorded by the database, as the tool
     const D2 = run(NUM);
     eq('6  a second dry run → WOULD NUMBER 0 (idempotent)', /WOULD NUMBER: 0/.test(D2.stdout), true, D2.stdout.slice(-200));
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }

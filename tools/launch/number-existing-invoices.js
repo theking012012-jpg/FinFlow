@@ -37,6 +37,8 @@ const TODO_SQL = `
     await c.connect();
     if (!apply) await c.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY');   // dry run cannot write, by construction
     await c.query('BEGIN');
+    // F90: who is making these changes, for the audit trigger — this tool, as the system (one id for the whole run)
+    if (apply) await c.query(`SELECT set_config('finflow.ctx', $1, true)`, [JSON.stringify({ t: 'system', a: null, ip: null, ua: null, src: 'tool:number-existing-invoices', rid: require('crypto').randomUUID() })]);
     const { rows } = await c.query(TODO_SQL + (apply ? ' FOR UPDATE OF i' : ''));
     if (apply && !Number.isInteger(expect)) { await c.query('ROLLBACK'); console.error('REFUSED: --apply needs --expect N (the WOULD NUMBER count from the dry run you reviewed).'); process.exitCode = 2; return; }
     if (apply && rows.length !== expect) { await c.query('ROLLBACK'); console.error(`REFUSED: ${rows.length} invoices would be numbered now, but --expect ${expect}. The data changed since your dry run — run it again and review it.`); process.exitCode = 3; return; }
@@ -66,8 +68,7 @@ const TODO_SQL = `
     for (const p of plan) {
       const { rows: [nu] } = await c.query(`UPDATE invoices SET data = data || jsonb_build_object('number', $2::text), updated_at = NOW() WHERE id = $1 AND data->>'number' IS NULL RETURNING data`, [p.r.id, p.number]);
       if (!nu) throw new Error('invoice ' + p.r.id + ' changed during the run');
-      await c.query(`INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, actor_type, actor_id)
-                     VALUES ($1, $2, 'invoices', $3, 'UPDATE', 'number', NULL, $4, 'system', NULL)`, [p.r.user_id, p.r.entity_id, p.r.id, p.number]);
+      // F90: the database records this change itself (audit trigger), as this tool — see the set_config below
     }
     for (const [k, st] of ents) {
       const [uid, eid] = k.split(':').map(Number);

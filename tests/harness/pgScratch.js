@@ -195,6 +195,7 @@ async function _finishScratch({ port, dataDir, logLines, keep, pgStop }) {
   const stop = async () => {
     if (stopped) return;
     stopped = true;
+    if (process.env.FF_AUDIT_SHADOW_OUT) { try { await require('./auditShadow.js').report(client); } catch { /* measurement only */ } }
     try { await client.end(); } catch { /* ignore */ }
     await pgStop();
   };

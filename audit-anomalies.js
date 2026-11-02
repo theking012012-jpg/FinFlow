@@ -55,7 +55,7 @@ async function detectAuditAnomalies(pool, over = {}) {
   const sp = await pool.query(
     `SELECT actor_type, actor_id, COUNT(*) AS n
        FROM audit_trail
-      WHERE actor_id IS NOT NULL AND ${since}
+      WHERE actor_id IS NOT NULL AND ${since} AND table_name IS DISTINCT FROM 'payroll_run_lines'   -- F90: a run's lines are part of the run, not separate actions
       GROUP BY actor_type, actor_id HAVING COUNT(*) >= $1
       ORDER BY n DESC`, [t.activity]);
   for (const r of sp.rows) anomalies.push({
@@ -68,7 +68,7 @@ async function detectAuditAnomalies(pool, over = {}) {
   const md = await pool.query(
     `SELECT actor_type, actor_id, COUNT(*) AS n
        FROM audit_trail
-      WHERE action = 'DELETE' AND actor_id IS NOT NULL AND ${since}
+      WHERE action = 'DELETE' AND actor_id IS NOT NULL AND ${since} AND table_name IS DISTINCT FROM 'payroll_run_lines'
       GROUP BY actor_type, actor_id HAVING COUNT(*) >= $1
       ORDER BY n DESC`, [t.massDelete]);
   for (const r of md.rows) anomalies.push({

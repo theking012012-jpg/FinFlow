@@ -62,6 +62,8 @@ async function initSchema(scratchUrl) {
   const { scrubbed } = installEnv(scratchUrl);
   const database = require('../../database.js');
   await database.initDB();
+  // F90 measurement (opt-in, scratch only): shadow every real row change so audit coverage can be measured.
+  if (process.env.FF_AUDIT_SHADOW_OUT) await require('./auditShadow.js').install(database.pool);
   return { database, pool: database.pool, scrubbed };
 }
 
@@ -79,6 +81,7 @@ async function bootServer(scratchUrl) {
 
   const database = require('../../database.js');
   await database.initDB();
+  if (process.env.FF_AUDIT_SHADOW_OUT) await require('./auditShadow.js').install(database.pool);   // F90 measurement (opt-in)
 
   const app = require('../../server.js');
 

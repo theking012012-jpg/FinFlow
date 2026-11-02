@@ -18,8 +18,12 @@ const LOGIN = { email: 'f92@finflow.test', password: 'harness-password-not-a-sec
 (async () => {
   let scratch, server, pass = 0, fail = 0;
   const A = (n, ok, d) => { if (ok) { pass++; console.log(`  PASS  ${n}`); } else { fail++; console.log(`  FAIL  ${n}${d ? '\n          ' + d : ''}`); } };
+  // F90 (2026-11-02): the side-effect status change is recorded BY THE DATABASE as an UPDATE of the invoice / bill row,
+  // in the payment's own transaction, attributed to the person who recorded the payment (source = the payment route).
+  // new_value is shown as "<status> / <amount_paid>" — the same words the RECALC row used.
   const auditRows = async (c, uid, table) =>
-    (await c.query(`SELECT action, new_value FROM audit_trail WHERE user_id=$1 AND table_name=$2 AND action='RECALC'`, [uid, table])).rows;
+    (await c.query(`SELECT action, actor_type, source, (new_data->>'status') || ' / ' || (new_data->>'amount_paid') AS new_value FROM audit_trail
+                     WHERE user_id=$1 AND table_name=$2 AND action='UPDATE' AND 'status' = ANY(changed_fields) AND 'amount_paid' = ANY(changed_fields)`, [uid, table])).rows;
 
   try {
     scratch = await startScratchPostgres({ keep: false });
@@ -48,7 +52,7 @@ const LOGIN = { email: 'f92@finflow.test', password: 'harness-password-not-a-sec
     const inv = (await c.query(`SELECT data->>'status' s, data->>'amount_paid' p FROM invoices WHERE id=$1`, [invId])).rows[0];
     A('invoice recalc happened (partial / 400)', inv.s === 'partial' && Math.round(parseFloat(inv.p)) === 400, JSON.stringify(inv));
     const ia = await auditRows(c, uid, 'invoices');
-    A('recalcInvoiceStatus is AUDITED (RECALC entry exists) [pre-fix: none]', ia.length >= 1, `rows=${ia.length}`);
+    A('recalcInvoiceStatus is AUDITED (an UPDATE of status + amount_paid, by the person who recorded the payment, from POST /api/invoice-payments) [pre-fix: none]', ia.length >= 1 && ia.every(r => r.actor_type === 'user' && r.source === 'web POST /api/invoice-payments'), JSON.stringify(ia));
     A('audit entry records the movement (new_value contains "partial / 400")', ia.some(r => /partial/.test(r.new_value) && /400/.test(r.new_value)),
       JSON.stringify(ia.map(r => r.new_value)));
 
@@ -56,7 +60,7 @@ const LOGIN = { email: 'f92@finflow.test', password: 'harness-password-not-a-sec
     const p2 = await http.post('/api/payments-made', { vendor: 'V', amount: 200, date: '2026-06-20', bill_id: billId });
     A('record bill payment 200 → 2xx', p2.status >= 200 && p2.status < 300, `status ${p2.status}`);
     const ba = await auditRows(c, uid, 'bills');
-    A('recalcBillStatus is AUDITED (RECALC entry exists) [pre-fix: none]', ba.length >= 1, `rows=${ba.length}`);
+    A('recalcBillStatus is AUDITED (an UPDATE of status + amount_paid, from POST /api/payments-made) [pre-fix: none]', ba.length >= 1 && ba.every(r => r.actor_type === 'user' && r.source === 'web POST /api/payments-made'), JSON.stringify(ba));
     A('bill audit entry records the movement (partial / 200)', ba.some(r => /partial/.test(r.new_value) && /200/.test(r.new_value)),
       JSON.stringify(ba.map(r => r.new_value)));
 

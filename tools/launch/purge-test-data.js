@@ -90,7 +90,11 @@ async function plan(c) {
   return { found: f, fp: fingerprint(f), steps, refused };
 }
 
-const audit = (c, uid, eid, table, id, action, oldData, newData) => c.query(
+// F90: a row change on an audited table is recorded BY THE DATABASE (audit-trigger.js), in this transaction, as the
+// system with source "tool:purge-test-data" (set below) — writing it here too would record it twice. Named events
+// (VOID) and tables the database does not record (support_requests) are still written here.
+const _AUDITED_BY_DB = new Set(require('../../audit-trigger.js').AUDITED_TABLES);
+const audit = (c, uid, eid, table, id, action, oldData, newData) => (_AUDITED_BY_DB.has(table) && ['CREATE', 'UPDATE', 'DELETE'].includes(action)) ? Promise.resolve() : c.query(
   `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, old_data, new_data, actor_type, actor_id)
    VALUES ($1,$2,$3,$4,$5,$6,$7,'system',NULL)`, [uid, eid, table, id, action, oldData ? JSON.stringify(oldData) : null, newData ? JSON.stringify(newData) : null]);
 const persHist = (c, uid, kind, action, before) => c.query(
@@ -156,7 +160,11 @@ if (require.main === module) {
     try {
       await c.connect();
       if (!doApply) await c.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY');   // the dry run cannot write
-      else await c.query('BEGIN');
+      else {
+        await c.query('BEGIN');
+        // F90: who is making these changes, for the audit trigger — this tool, as the system (one id for the whole run)
+        await c.query(`SELECT set_config('finflow.ctx', $1, true)`, [JSON.stringify({ t: 'system', a: null, ip: null, ua: null, src: 'tool:purge-test-data', rid: require('crypto').randomUUID() })]);
+      }
       const p = await plan(c);
       console.log((doApply ? 'APPLY' : 'DRY RUN — nothing changed') + ` · ${p.steps.length} steps · fingerprint ${p.fp}`);
       console.table(p.steps.map(s => ({ do: s.kind === 'money' ? 'reverse + delete' : s.kind === 'run-void' ? 'VOID run (+ reversals, owner salary out)' : s.kind === 'budget-key' ? 'remove key "Software"' : 'delete', table: s.table, id: s.id, account: s.row.user_id, business: s.row.entity_id })));

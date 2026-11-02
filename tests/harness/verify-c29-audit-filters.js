@@ -39,6 +39,8 @@ function written() {
     // FIX-3: _auditRec(req, TABLE, ACTION, old, new) — the JSONB-record wrapper over recordAudit (server.js).
     for (const m of s.matchAll(/\b_auditRec\(req,\s*'([a-z_]+)',\s*'([A-Z_]+)'/g)) { tables.add(m[1]); actions.add(m[2]); if (!onTable.has(m[2])) onTable.set(m[2], new Set()); onTable.get(m[2]).add(m[1]); }
   }
+  // F90: the database itself records every row change on these tables (audit-trigger.js) — they are recorded tables too.
+  for (const t of require(path.join(ROOT, 'audit-trigger.js')).AUDITED_TABLES) tables.add(t);
   tables.delete('accountants');   // user_id NULL — never on an owner's trail
   // SW3: an action written ONLY on those rows (CONDUCT_ACCEPT — an accountant accepting the Conduct Policy) can never
   // appear on an owner's Audit page either, so an option for it would always show nothing. Exempt for the same reason.
@@ -60,7 +62,7 @@ run('C29 — audit-log filters find what they name', async ({ w, d, settle, eq, 
 
   const pay = await pick(tableOpts.find(v => v.split(',').includes('payroll_runs')) || 'payroll', 'all');
   A('Payroll filter shows the payroll run (bug: nothing)', pay.some(r => r[1] === 'payroll_runs'), JSON.stringify([...new Set(pay.map(r => r[1]))]));
-  eq('…and only payroll events (runs + roster, C29b)', [...new Set(pay.map(r => r[1]))].filter(t => t !== 'payroll_runs' && t !== 'payroll'), []);
+  eq('…and only payroll events (runs, their lines, roster — C29b, F90)', [...new Set(pay.map(r => r[1]))].filter(t => !['payroll_runs', 'payroll_run_lines', 'payroll'].includes(t)), []);
   A('…its CREATE and APPROVE', ['CREATE', 'APPROVE'].every(a => pay.some(r => r[3] === a)), JSON.stringify(pay.map(r => r[3])));
 
   const recv = await pick(tableOpts.find(v => v.split(',').includes('invoice_payments')) || 'invoice_payments', 'all');

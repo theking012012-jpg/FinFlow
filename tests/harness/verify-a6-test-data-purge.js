@@ -131,8 +131,9 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
 
     // 3 lock
     const lockId = (await c.query(`INSERT INTO lock_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING id`, [uid, eid, { enabled: 1, lock_date: '2026-07-12' }])).rows[0].id;
+    const fL = await fullFp();   // F90: the lock this harness just inserted straight into the database is itself recorded on the trail
     const Lk = run(PURGE, ['--apply', '--expect', fp]);
-    eq('3  record inside a LOCKED period → refused (4), nothing changed', [Lk.status, /LOCKED period/.test(Lk.out), await fullFp() === f0], [4, true, true]);
+    eq('3  record inside a LOCKED period → refused (4), nothing changed', [Lk.status, /LOCKED period/.test(Lk.out), await fullFp() === fL], [4, true, true]);
     await c.query(`DELETE FROM lock_settings WHERE id = $1`, [lockId]);
 
     // 4–7 apply
@@ -149,7 +150,7 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     eq('6  budget row: Rent 60,000 kept, Software gone', (await c.query(`SELECT data->'targets' t FROM budget_targets WHERE user_id = $1`, [uid])).rows.map(r => r.t), [{ Rent: 60000 }]);
     const L2 = run(LIST);
     eq('7  lister now finds 0', (L2.out.match(/(\d+) test records/) || [])[1], '0');
-    const au = (await c.query(`SELECT table_name, action FROM audit_trail WHERE actor_type = 'system' AND (old_data->>'purge' IS NOT NULL OR table_name = 'budget_targets') ORDER BY table_name, action`)).rows.map(r => r.table_name + ' ' + r.action);
+    const au = (await c.query(`SELECT table_name, action FROM audit_trail WHERE actor_type = 'system' AND (old_data->>'purge' IS NOT NULL OR (source = 'tool:purge-test-data' AND (action = 'DELETE' OR table_name = 'budget_targets'))) ORDER BY table_name, action`)).rows.map(r => r.table_name + ' ' + r.action);
     eq('7  audit rows for the business removals', au.sort(), ['accountant_clients DELETE', 'bills DELETE', 'bills DELETE', 'budget_targets UPDATE', 'expenses DELETE', 'invoice_payments DELETE',
       'invoices DELETE', 'invoices DELETE', 'payments_made DELETE', 'payroll_runs VOID', 'projects DELETE', 'quotes DELETE', 'sales_receipts DELETE', 'support_requests DELETE', 'timesheet DELETE',
       'customers DELETE', 'customers DELETE', 'customers DELETE', 'customers DELETE', 'vendors DELETE', 'vendors DELETE'].sort());

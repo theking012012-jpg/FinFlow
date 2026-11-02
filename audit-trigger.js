@@ -142,6 +142,8 @@ function mergeEvents(rows) {
   }
   const out = loose.slice();
   for (const g of groups) {
+    // within one request, entry order is the id (rows written in one transaction share its timestamp)
+    g.rows.sort((x, y) => (x.id || 0) - (y.id || 0));
     const ch = g.rows.filter(isRowChange), named = g.rows.filter(r => !isRowChange(r));
     if (!ch.length) { out.push(...named); continue; }
     const first = ch[0], last = ch[ch.length - 1], ev = Object.assign({}, last);

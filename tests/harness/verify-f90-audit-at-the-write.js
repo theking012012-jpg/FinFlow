@@ -109,6 +109,15 @@ const A = (n, ok, d) => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : '
     const job = (await c.query(`SELECT actor_type, to_jsonb(audit_trail)->>'source' AS source FROM audit_trail WHERE table_name = 'invoices' AND action = 'CREATE' AND new_data->>'client' = 'Monthly Co' ORDER BY id DESC LIMIT 1`)).rows[0] || {};
     eq('the invoice the recurring job raised: system, job:recurring-scheduler', [job.actor_type, job.source], ['system', 'job:recurring-scheduler']);
 
+    // ── the rows of one transaction share its timestamp: the reader must order them by id, whatever order they arrive in
+    // (the recurring job's invoice showed as "edited" when its CREATE and its number came back in id order). Unit, executed.
+    const { mergeEvents } = require('../../audit-trigger.js');
+    const T = '2026-07-25T16:00:00.000Z';
+    const tie = mergeEvents([
+      { id: 6, table_name: 'invoices', record_id: 1, action: 'CREATE', source: 'job:x', request_id: 'r1', changed_at: T, new_data: { amount: 80 } },
+      { id: 7, table_name: 'invoices', record_id: 1, action: 'UPDATE', source: 'job:x', request_id: 'r1', changed_at: T, changed_fields: ['number'], old_data: { amount: 80 }, new_data: { amount: 80, number: 'INV-0001' } }]);
+    eq('two rows of one transaction (same timestamp, given oldest first) read as ONE creation carrying the number (bug: "UPDATE")', tie.map(e => [e.action, e.new_data && e.new_data.number]), [['CREATE', 'INV-0001']], [['UPDATE', 'INV-0001']]);
+
     // ── erasing an account records ONE event, not a copy of every row it held ──
     const n0 = (await c.query(`SELECT count(*)::int n FROM audit_trail WHERE user_id = $1`, [uid])).rows[0].n;
     const del = await http.request('DELETE', '/api/auth/account', { password: PW });

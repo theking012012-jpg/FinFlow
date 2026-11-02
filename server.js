@@ -11443,7 +11443,7 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
   if (action && action !== 'all') { params.push(action); q += ` AND a.action = $${params.length}`; }
   // Batch 7: one record's own history (the document's "History" section) — read only, same permission.
   if (req.query.record_id != null && /^\d+$/.test(String(req.query.record_id))) { params.push(String(req.query.record_id)); q += ` AND a.record_id::text = $${params.length}`; }
-  q += ` ORDER BY a.changed_at DESC LIMIT 500`;
+  q += ` ORDER BY a.changed_at DESC, a.id DESC LIMIT 500`;   // F90: entries of one transaction share its timestamp — id breaks the tie
   const { rows } = await pool.query(q, params);
   res.json(require('./audit-trigger').mergeEvents(rows));   // F90: a named event + its row change = one line
 }));

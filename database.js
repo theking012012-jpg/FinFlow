@@ -1233,7 +1233,31 @@ async function initDB() {
             ('invoices','chk_invoices_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''pending'',''overdue'',''partial'',''paid'',''draft'')'),
             ('bills','chk_bills_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''unpaid'',''due_soon'',''overdue'',''partial'',''paid'')'),
             ('credit_notes','chk_credit_notes_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''open'',''applied'',''void'')'),
-            ('vendor_credits','chk_vendor_credits_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''open'',''applied'',''void'')')
+            ('vendor_credits','chk_vendor_credits_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''open'',''applied'',''void'')'),
+            -- F79 completion (2026-11-02): every other status column and every JSONB status the app writes. Each list is
+            -- what the code WRITES (read from every INSERT/UPDATE and form, not guessed — Rule 11); '' counts as absent.
+            -- NOT VALID like the rows above: old rows are listed by tools/launch/list-status-violations.js, never changed.
+            ('accountant_clients','chk_accountant_clients_status','COALESCE(status, '''') = '''' OR lower(status) IN (''pending'',''active'',''suspended'',''revoked'',''expired'',''rejected'')'),
+            ('accountant_earnings','chk_accountant_earnings_status','COALESCE(status, '''') = '''' OR lower(status) IN (''awaiting_payment'',''pending'',''paid'',''refunded'')'),
+            ('accountant_invites','chk_accountant_invites_status','COALESCE(status, '''') = '''' OR lower(status) IN (''pending'',''accepted'',''declined'',''expired'')'),
+            ('accountant_proposals','chk_accountant_proposals_status','COALESCE(status, '''') = '''' OR lower(status) IN (''pending'',''accepted'',''declined'',''withdrawn'')'),
+            ('accountant_reports','chk_accountant_reports_status','COALESCE(status, '''') = '''' OR lower(status) IN (''open'',''dismissed'',''resolved'')'),
+            ('accountant_tasks','chk_accountant_tasks_status','COALESCE(status, '''') = '''' OR lower(status) IN (''open'',''done'')'),
+            ('accountants','chk_accountants_status','COALESCE(status, '''') = '''' OR lower(status) IN (''pending'',''verified'',''rejected'',''suspended'')'),
+            ('auto_email_log','chk_auto_email_log_status','COALESCE(status, '''') = '''' OR lower(status) IN (''claimed'',''sent'')'),
+            ('bank_reconciliation','chk_bank_reconciliation_status','COALESCE(status, '''') = '''' OR lower(status) IN (''matched'')'),
+            ('bank_reconciliations','chk_bank_reconciliations_status','COALESCE(status, '''') = '''' OR lower(status) IN (''complete'',''undone'')'),
+            ('flagged_transactions','chk_flagged_transactions_status','COALESCE(status, '''') = '''' OR lower(status) IN (''open'',''resolved'')'),
+            ('fx_transactions','chk_fx_transactions_status','COALESCE(status, '''') = '''' OR lower(status) IN (''open'',''settled'')'),
+            ('ledger_entries','chk_ledger_entries_status','COALESCE(status, '''') = '''' OR lower(status) IN (''posted'',''reversed'')'),
+            ('referral_payouts','chk_referral_payouts_status','COALESCE(status, '''') = '''' OR lower(status) IN (''claimed'',''sent'',''failed'')'),
+            ('quotes','chk_quotes_status','COALESCE(data->>''status'', '''') = '''' OR lower(data->>''status'') IN (''pending'',''accepted'',''declined'',''converted'')'),
+            ('recurring_invoices','chk_recurring_invoices_status','COALESCE(data->>''status'', '''') = '''' OR lower(data->>''status'') IN (''active'',''paused'',''completed'')'),
+            ('recurring_bills','chk_recurring_bills_status','COALESCE(data->>''status'', '''') = '''' OR lower(data->>''status'') IN (''active'',''paused'',''completed'')'),
+            ('recurring_personal_transactions','chk_recurring_personal_transactions_status','COALESCE(data->>''status'', '''') = '''' OR lower(data->>''status'') IN (''active'',''paused'',''completed'')'),
+            ('team_members','chk_team_members_status','COALESCE(data->>''status'', '''') = '''' OR lower(data->>''status'') IN (''pending'',''active'')'),
+            ('support_requests','chk_support_requests_status','COALESCE(data->>''status'', '''') = '''' OR lower(data->>''status'') IN (''open'',''resolved'')'),
+            ('customers','chk_customers_status','COALESCE(data->>''status'', '''') = '''' OR lower(data->>''status'') IN (''active'',''inactive'',''prospect'')')
           ) AS v(tbl, cname, expr)
         LOOP
           IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = rec.cname) THEN

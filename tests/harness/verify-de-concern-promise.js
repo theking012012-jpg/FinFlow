@@ -1,4 +1,6 @@
 'use strict';
+// RESTATED 2026-11-02 (F79): the accountant seed used status 'approved', which the app never writes (approving sets
+// 'verified' — admin-routes statusMap). The new status constraint refuses the fabricated value; the seed now uses the real one.
 /*
  * verify-de-concern-promise.js — D-E. Reporting a concern about an accountant: the client was told "Our team reviews
  * reports within 24 hours", while the conduct policy (conduct.html §9, which accountants agree to) promises FinFlow
@@ -44,7 +46,7 @@ const { HarnessHttp } = require('./httpClient.js');
     console.log('\n' + '='.repeat(78) + '\n  D-E — the concern-report promise is one promise, and it is tracked\n' + '='.repeat(78) + '\n');
     const PW = 'de-pw-1';
     const uid = (await c.query(`INSERT INTO users (user_id,entity_id,data) VALUES (NULL,NULL,$1) RETURNING id`, [{ email: 'client@de.test', name: 'Casey Client', role: 'owner', plan: 'business', password: bcrypt.hashSync(PW, 10) }])).rows[0].id;
-    const acc = (await c.query(`INSERT INTO accountants (email, password_hash, first_name, last_name, referral_code, status) VALUES ('ada@de.test','x','Ada','Ledger','DEREF1','approved') RETURNING id`)).rows[0].id;
+    const acc = (await c.query(`INSERT INTO accountants (email, password_hash, first_name, last_name, referral_code, status) VALUES ('ada@de.test','x','Ada','Ledger','DEREF1','verified') RETURNING id`)).rows[0].id;
     const user = new HarnessHttp(base, { xff: '203.0.113.61' });
     A('client login 200', (await user.post('/api/auth/login', { email: 'client@de.test', password: PW })).status === 200);
     const r = await user.post('/api/accountants/report', { accountantId: acc, reason: 'Missed two filing dates', category: 'service' });

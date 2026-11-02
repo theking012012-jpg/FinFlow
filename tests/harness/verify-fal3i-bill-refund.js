@@ -1,4 +1,6 @@
 'use strict';
+// RESTATED 2026-11-02 (F79): the accountant seed used status 'approved', which the app never writes (approving sets
+// 'verified' — admin-routes statusMap). The new status constraint refuses the fabricated value; the seed now uses the real one.
 /*
  * verify-fal3i-bill-refund.js — FA-L3i. A refunded (or lost-dispute) accountant bill kept counting: charge.refunded only
  * reversed invoice payments, so the earning stayed 'paid' and the accountant's Total Earned and FinFlow's Commission
@@ -32,7 +34,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
       const header = stripe.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_WEBHOOK_SECRET });
       return fetch(server.baseUrl + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': header }, body: payload });
     };
-    const acc = (await c.query(`INSERT INTO accountants (email, password_hash, first_name, last_name, referral_code, status) VALUES ('l3i@x.test','x','Ada','L','L3IREF','approved') RETURNING id`)).rows[0].id;
+    const acc = (await c.query(`INSERT INTO accountants (email, password_hash, first_name, last_name, referral_code, status) VALUES ('l3i@x.test','x','Ada','L','L3IREF','verified') RETURNING id`)).rows[0].id;
     const earn = async (pi, billed, comm, net) => (await c.query(`INSERT INTO accountant_earnings (accountant_id, type, amount_cents, billed_cents, commission_cents, stripe_fee_cents, status, payment_intent_id, period_month)
       VALUES ($1,'service_commission',$2,$3,$4,$5,'paid',$6,date_trunc('month', NOW())::date) RETURNING id`, [acc, net, billed, comm, billed - comm - net, pi])).rows[0].id;
     await earn('pi_l3i_a', 10000, 1000, 8710);

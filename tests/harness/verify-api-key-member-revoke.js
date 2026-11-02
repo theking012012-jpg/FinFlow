@@ -23,6 +23,7 @@ const { HarnessHttp } = require('./httpClient.js');
 let pass = 0, fail = 0;
 const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fail++, console.log('  FAIL  ' + name + (d ? '\n          ' + d : ''))); };
 
+let eq_del;
 async function main() {
   const scratch = await startScratchPostgres({ keep: false });
   const c = scratch.client;
@@ -46,9 +47,13 @@ async function main() {
     console.log('  MEMBER-MINTED API KEYS DIE WITH THE MEMBER\'S ACCESS');
     console.log('='.repeat(78));
     A('control: member key works while the member is an admin', (await v1(mKey)) === 200);
-    await c.query(`UPDATE team_members SET data = data || '{"status":"revoked"}' WHERE id=$1`, [tm]);
+    // RESTATED 2026-11-02 (F79): the app never writes status 'revoked' for a member — removing one DELETES the row
+    // (DELETE /api/team/:id). The old seed set a value the product cannot produce; F79's constraint now refuses it.
+    // The member is removed through the real route, then comes back through a real row (active, viewer).
+    eq_del = await ho.request('DELETE', '/api/team/' + tm);
+    A('owner removes the member through the app (DELETE /api/team/:id)', eq_del.status === 200 || eq_del.status === 204, 'status ' + eq_del.status);
     A('member revoked → their key → 401 (bug: 200)', (await v1(mKey)) === 401);
-    await c.query(`UPDATE team_members SET data = data || '{"status":"active","role":"viewer"}' WHERE id=$1`, [tm]);
+    await c.query(`INSERT INTO team_members (user_id,entity_id,data) VALUES ($1,NULL,$2)`, [O, { email: 'kr-admin@finflow.test', role: 'viewer', status: 'active', member_user_id: String(M) }]);
     A('member back but only a viewer → key still 401 (bug: 200)', (await v1(mKey)) === 401);
     A('control: the owner\'s key keeps working', (await v1(oKey)) === 200);
   } finally {

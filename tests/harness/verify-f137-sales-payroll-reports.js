@@ -52,7 +52,9 @@ process.on('uncaughtException', (e) => {
     const { window, http, settle } = boot;
 
     for (let i = 0; i < 250 && typeof window.generateReport !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
-    await settle(14, 100);
+    // NEW-22: wait for the page to go QUIET (its boot loads answered), not a fixed 1.4 s — see verify-fam8.
+    const quiet = await boot.idle({ timeoutMs: 60000 });
+    if (!quiet) console.log('  (page did not go quiet within 60 s — asserting on what is there)');
     A('runtime winner present: window.generateReport', typeof window.generateReport === 'function');
 
     const fmt = (typeof window._fmtMoneyNative === 'function')
@@ -61,7 +63,7 @@ process.on('uncaughtException', (e) => {
     const flatten = s => (s || '').replace(/\s+/g, '');
     const bodyOf = async (reportName) => {
       await window.generateReport(reportName);
-      await settle(25, 60);
+      await boot.idle({ timeoutMs: 60000 }); await settle(3, 50);
       const el = window.document.getElementById('rpt-body');
       return { raw: el ? (el.textContent || '') : '', flat: flatten(el ? el.textContent : '') };
     };

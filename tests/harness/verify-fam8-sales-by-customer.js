@@ -37,10 +37,14 @@ process.on('uncaughtException', (e) => { const s = String(e && e.message || e); 
     });
     const { window, settle } = boot;
     for (let i = 0; i < 250 && typeof window.generateReport !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
-    await settle(14, 100);
+    // NEW-22: wait until the page has gone QUIET (its boot loads answered), not a fixed 1.4 s — the report reads the
+    // invoices the page loaded, and on a busy machine /api/invoices answered after the fixed wait (the report then showed
+    // receipts and credit notes only: Total $50). A real user opens Reports on a loaded page.
+    const quiet = await boot.idle({ timeoutMs: 60000 });
+    if (!quiet) console.log('  (page did not go quiet within 60 s — asserting on what is there)');
     try { window.currentPeriod = 'year'; } catch (_) {}
     await window.generateReport('Sales by Customer');
-    await settle(25, 60);
+    await boot.idle({ timeoutMs: 60000 }); await settle(3, 50);
     const body = window.document.getElementById('rpt-body');
     const txt = (body ? body.textContent : '').replace(/\s+/g, ' ');
     const money = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });

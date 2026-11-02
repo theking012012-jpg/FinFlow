@@ -76,7 +76,12 @@ async function main() {
       const r = layer.route; if (!r || !r.methods.put || typeof r.path !== 'string') continue;
       const m = /^\/api\/([a-z-]+)\/:id$/.exec(r.path); if (m) putRoutes.push([r.path, TABLE_OF[m[1]] || m[1].replace(/-/g, '_')]);
     }
-    const STATUS_OF = { bills: 'unpaid', credit_notes: 'Open', vendor_credits: 'Open' };   // chk_<table>_status vocabularies (schema)
+    // Rule 11: each table's status vocabulary is READ FROM THE SCHEMA (its chk_<table>_status CHECK, F79) — the first
+    // value it allows — never guessed (a guessed 'pending' is refused by customers, payroll_runs, …).
+    const STATUS_OF = {};
+    for (const r of (await c.query(`SELECT conrelid::regclass::text AS t, pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname LIKE 'chk\\_%\\_status' ESCAPE '\\'`)).rows) {
+      const m = /IN \(\s*'([^']+)'/.exec(r.d) || /ARRAY\[\s*'([^']+)'/.exec(r.d); if (m) STATUS_OF[r.t] = m[1];
+    }
     const seedRow = (table) => { const d = { status: STATUS_OF[table] || 'pending', date: '2026-07-01', issue_date: '2026-07-01', expense_date: '2026-07-01', due_date: '2026-08-01', email: 'seed@finflow.test' }; TEXT.forEach(k => { d[k] = 'Orig'; }); NUM.forEach(k => { d[k] = 100; }); d.type = 'service'; return d; };
     const probed = [], classBad = [], skipped = [];
     for (const [path, table] of putRoutes) {

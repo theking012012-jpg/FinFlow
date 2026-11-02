@@ -2460,6 +2460,14 @@ schedule", "directly in the database, outside the app"). Under every document (i
 Executed: `verify-f90b-history-panel` (Chromium; business in Asia/Tokyo) **RED 7 failed then crash on `ba06384` → GREEN 14/0**.
 It caught a part-1 reader bug, fixed first in its own commit (`665bc36`: a job's invoice read "edited" — rows of one
 transaction share a timestamp). Related: 24 document / expenses / payroll / journal harnesses green.
+**2026-11-02 — part 3 ✅ FIXED + VERIFIED: the Audit log is a report.** Before: the newest 500 entries and nothing older, no person /
+date / search filter, and a CSV that copied the rows on screen (an export of "everything" stopped at 500). Now: filters for who,
+From / To on the BUSINESS's calendar days (`changed_at AT TIME ZONE` the business's zone — Rule 10), words in the record, the
+table group and the action (applied to paired events); "Load older entries" pages through all of it; `GET /api/audit-log/export`
+returns the whole filtered trail (up to 50,000 entries) as CSV — one line per changed field, times in the business's zone,
+formula-safe — or as the PDF on the page; every export is itself recorded (EXPORT, with its filters and size).
+Executed: `verify-f90c-audit-report` (Chromium; Tokyo business; entries at 16:30 UTC = 01:30 next day in Tokyo) **RED 11 failed
+on `4bde7bd` → GREEN 13/0**. Related: 33 audit harnesses green (one label restored: the "FinFlow support" badge, LC3g).
 **Load-bearing (infrastructure):** `finflow.ctx` is a SESSION setting sent before each write — it relies on the session-mode pooler.
 Under a transaction-mode pooler the SET and the write could reach different server connections (attribution would be wrong).
 **Status:** 🟢 **Phase A DONE (executed 10/10) — the trail is now accounting-grade; Phase B (coverage) in progress.** Owner ruled 2026-08-07: "the one that's perfect for an accounting app, up to standard." Built:

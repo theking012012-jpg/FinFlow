@@ -4415,36 +4415,88 @@ const AUDIT_ACTOR_SQL = {
   joins: `LEFT JOIN users u_act ON a.actor_type = 'user' AND u_act.id = a.actor_id
           LEFT JOIN accountants acc_act ON a.actor_type = 'accountant' AND acc_act.id = a.actor_id`,
 };
-app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
-  // Reads the REAL append-only trail (audit_trail). The old audit_log table has had zero writers since
-  // the F90 unification (logAudit -> recordAudit -> audit_trail), so this route used to serve a dead
-  // table and the Audit page showed nothing. Entity-scoped null-inclusive: events under the active
-  // entity + account-level events written with no active entity (entity_id NULL) + the account-level
-  // ALLOWLIST (entities, users) regardless of which business is active — so "business created" and
-  // "password changed" show on every business. Money events stay strictly per-business. lock_settings
-  // and team_members are per-entity now, so they are NOT in the allowlist (they scope like money); add
-  // them back only if they ever revert to account-level.
-  const ACCOUNT_LEVEL_TABLES = ['entities', 'users'];
-  const { limit = 500, type } = req.query;
+// F90 part 3 — the audit log as a report: who, what, when, filtered and exported. Shared by the page and the export.
+// Filters (all optional): type (table group, comma-separated) · action (comma-separated) · from / to (calendar dates,
+// read in the BUSINESS's time zone — Rule 10) · actor ("user:5", "accountant:3", "system", "admin", "anonymous") ·
+// record_id · q (words found in the record, its table or the action) · before (an entry id: the page before it).
+// Entity scope as before: the active business + account-level events (entity_id NULL) + the account-level tables.
+const AUDIT_ACCOUNT_LEVEL_TABLES = ['entities', 'users'];
+async function _auditQuery(req, { limit, forExport = false }) {
   const params = [scopeId(req)];
-  let q = `SELECT a.id, a.user_id, a.entity_id, a.table_name, a.record_id, a.action, a.field_name,
-                  a.old_value, a.new_value, a.old_data, a.new_data, a.actor_type, a.actor_id, a.changed_at AS created_at,
-                  a.changed_fields, a.source, a.request_id,
-                  ${AUDIT_ACTOR_SQL.name}
-             FROM audit_trail a ${AUDIT_ACTOR_SQL.joins} WHERE a.user_id = $1`;
+  let where = `a.user_id = $1`;
   if (req.entityId != null) {
     params.push(req.entityId);
-    const _al = ACCOUNT_LEVEL_TABLES.map(t => `'${t}'`).join(',');
-    q += ` AND (a.entity_id IS NULL OR a.entity_id = $${params.length} OR a.table_name IN (${_al}))`;
+    where += ` AND (a.entity_id IS NULL OR a.entity_id = $${params.length} OR a.table_name IN (${AUDIT_ACCOUNT_LEVEL_TABLES.map(t => `'${t}'`).join(',')}))`;
   }
-  // C29: a filter is a GROUP of tables (e.g. Payments = invoice_payments,payments_received), comma-separated. It
-  // used to be one exact name, and the page asked for names nothing writes ("payroll" — runs log as payroll_runs).
-  if (type && type !== 'all') { params.push(String(type).split(',').map(t => t.trim()).filter(Boolean)); q += ` AND a.table_name = ANY($${params.length})`; }
-  const lim = Math.min(Math.max(parseInt(limit) || 500, 1), 10000);
-  q += ` ORDER BY a.changed_at DESC LIMIT ${lim}`;
-  const { rows } = await pool.query(q, params);
-  const merged = require('./audit-trigger').mergeEvents(rows);   // F90: a named event + its row change = one line
-  res.json({ total: merged.length, rows: merged });
+  const qv = req.query || {};
+  const list = v => String(v).split(',').map(t => t.trim()).filter(Boolean);
+  if (qv.type && qv.type !== 'all') { params.push(list(qv.type)); where += ` AND a.table_name = ANY($${params.length})`; }
+  let tz = 'UTC';
+  if (req.entityId != null) { try { const { rows: [e] } = await pool.query(`SELECT data->>'timezone' AS tz FROM entities WHERE id = $1`, [req.entityId]); if (e && e.tz && !_badTimezone(e.tz)) tz = e.tz; } catch (_) {} }
+  const ymd = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : null;
+  if (ymd(qv.from)) { params.push(tz, ymd(qv.from)); where += ` AND (a.changed_at AT TIME ZONE $${params.length - 1})::date >= $${params.length}::date`; }
+  if (ymd(qv.to))   { params.push(tz, ymd(qv.to));   where += ` AND (a.changed_at AT TIME ZONE $${params.length - 1})::date <= $${params.length}::date`; }
+  const am = /^(user|accountant|admin|system|anonymous)(?::(\d+))?$/.exec(String(qv.actor || ''));
+  if (am) { params.push(am[1]); where += ` AND a.actor_type = $${params.length}`; if (am[2]) { params.push(Number(am[2])); where += ` AND a.actor_id = $${params.length}`; } }
+  if (qv.record_id != null && /^\d+$/.test(String(qv.record_id))) { params.push(Number(qv.record_id)); where += ` AND a.record_id = $${params.length}`; }
+  const words = String(qv.q || '').trim().slice(0, 80);
+  if (words) { params.push('%' + words.replace(/[%_\\]/g, m => '\\' + m) + '%'); where += ` AND (a.table_name ILIKE $${params.length} OR a.action ILIKE $${params.length} OR a.record_id::text = $${params.length + 1} OR a.old_data::text ILIKE $${params.length} OR a.new_data::text ILIKE $${params.length})`; params.push(words); }
+  if (qv.before != null && /^\d+$/.test(String(qv.before))) { params.push(Number(qv.before)); where += ` AND a.id < $${params.length}`; }
+  // one extra row past the page, so we know whether there is more; a few more so a named event's row changes come too
+  const { rows } = await pool.query(
+    `SELECT a.id, a.user_id, a.entity_id, a.table_name, a.record_id, a.action, a.field_name,
+            a.old_value, a.new_value, a.old_data, a.new_data, a.actor_type, a.actor_id, a.changed_at, a.changed_at AS created_at,
+            a.changed_fields, a.source, a.request_id, e.data->>'name' AS business,
+            ${AUDIT_ACTOR_SQL.name}
+       FROM audit_trail a ${AUDIT_ACTOR_SQL.joins} LEFT JOIN entities e ON e.id = a.entity_id
+      WHERE ${where} ORDER BY a.id DESC LIMIT ${limit + 1}`, params);
+  const more = rows.length > limit;
+  const page = more ? rows.slice(0, limit) : rows;
+  let merged = require('./audit-trigger').mergeEvents(page);
+  // the action filter applies to EVENTS (after pairing: "Approve" finds the approval with its field changes)
+  if (qv.action && qv.action !== 'all') { const acts = new Set(list(qv.action)); merged = merged.filter(e => acts.has(e.action)); }
+  return { rows: merged, more, next_before: more ? page[page.length - 1].id : null, tz, forExport };
+}
+app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
+  // Reads the REAL append-only trail (audit_trail). Entity-scoped null-inclusive (see _auditQuery).
+  const lim = Math.min(Math.max(parseInt(req.query.limit) || 500, 1), 2000);
+  const r = await _auditQuery(req, { limit: lim });
+  // the people (and automatic sources) that appear on this business's trail — the "Who" filter
+  const params = [scopeId(req)];
+  let w = `a.user_id = $1`;
+  if (req.entityId != null) { params.push(req.entityId); w += ` AND (a.entity_id IS NULL OR a.entity_id = $2 OR a.table_name IN (${AUDIT_ACCOUNT_LEVEL_TABLES.map(t => `'${t}'`).join(',')}))`; }
+  const { rows: actors } = await pool.query(
+    `SELECT DISTINCT a.actor_type, a.actor_id, ${AUDIT_ACTOR_SQL.name}
+       FROM audit_trail a ${AUDIT_ACTOR_SQL.joins} WHERE ${w} AND a.actor_type IS NOT NULL ORDER BY 3 LIMIT 100`, params);
+  res.json({ total: r.rows.length, rows: r.rows, more: r.more, next_before: r.next_before, timezone: r.tz,
+    actors: actors.map(x => ({ key: x.actor_type + (x.actor_id != null && ['user', 'accountant'].includes(x.actor_type) ? ':' + x.actor_id : ''), name: x.actor_name })) });
+}));
+// The whole filtered trail as a file — every matching entry (up to 50,000), one line per changed field, times in the
+// business's time zone. The export is itself recorded (EXPORT, on the audit trail — the mass-export alert counts it).
+app.get('/api/audit-log/export', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
+  const r = await _auditQuery(req, { limit: 50000, forExport: true });
+  const fmtWhen = ts => { try { const p = {}; new Intl.DateTimeFormat('en-GB', { timeZone: r.tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date(ts)).forEach(x => { p[x.type] = x.value; }); return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`; } catch (_) { return new Date(ts).toISOString(); } };
+  const how = s => { s = String(s || ''); return /^api_key:/.test(s) ? 'API key' : /^job:/.test(s) ? 'automatic (' + s.slice(4) + ')' : /^webhook/.test(s) ? 'payment provider' : /^tool:/.test(s) ? 'maintenance tool' : s === 'database' ? 'directly in the database' : s ? 'web app' : ''; };
+  const flat = o => { o = o || {}; const out = {}; for (const k of Object.keys(o)) { if (k === 'data' && o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) Object.assign(out, o[k]); else out[k] = o[k]; } return out; };
+  const val = v => v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+  const SKIP = new Set(['id', 'user_id', 'entity_id', 'created_at', 'updated_at', 'idempotency_key']);
+  const lines = [['When (' + r.tz + ')', 'Business', 'Record', 'Record id', 'Action', 'By', 'How', 'Field', 'Old value', 'New value', 'Entry id']];
+  for (const e of r.rows) {
+    const o = flat(e.old_data), n = flat(e.new_data);
+    const keys = (Array.isArray(e.changed_fields) && e.changed_fields.length ? e.changed_fields : [...new Set([...Object.keys(o), ...Object.keys(n)])]).filter(k => !SKIP.has(k) && val(o[k]) !== val(n[k]));
+    const base = [fmtWhen(e.changed_at), e.business || '', e.table_name || '', e.record_id == null ? '' : String(e.record_id), e.action || '', e.actor_name || '', how(e.source)];
+    if (!keys.length) lines.push([...base, e.field_name || '', e.old_value == null ? '' : String(e.old_value), e.new_value == null ? '' : String(e.new_value), String(e.id)]);
+    else for (const k of keys) lines.push([...base, k, val(o[k]), val(n[k]), String(e.id)]);
+  }
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'audit_trail', action: 'EXPORT', newData: { entries: r.rows.length, lines: lines.length - 1, format: req.query.format === 'json' ? 'json' : 'csv', filters: Object.fromEntries(Object.entries(req.query || {}).filter(([k]) => k !== 'format')) }, req });
+  if (req.query.format === 'json') return res.json({ timezone: r.tz, lines, truncated: r.more });
+  // a cell a spreadsheet would run as a formula (= + @, or - not followed by a digit) is made text
+  const _inj = c => /^(?:[=+@]|-(?!\d))/.test(c);
+  const csv = lines.map(l => l.map(c => { c = String(c); if (_inj(c)) c = "'" + c; return /[",\n\r]/.test(c) || /^'/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(',')).join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.csv"`);
+  if (r.more) res.setHeader('X-Audit-Truncated', '50000');
+  res.send('﻿' + csv);
 }));
 
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────

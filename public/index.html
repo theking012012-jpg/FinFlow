@@ -555,7 +555,7 @@
       <!-- AUDIT TRAIL PAGE -->
       <div class="page" id="page-audit">
         <div class="metrics-grid-3">
-          <div class="mc"><div class="mc-label">Events loaded</div><div class="mc-val" id="audit-event-count">—</div><div class="mc-change neutral">Last 500 entries</div></div>
+          <div class="mc"><div class="mc-label">Events loaded</div><div class="mc-val" id="audit-event-count">—</div><div class="mc-change neutral" id="audit-event-scope">Newest first</div></div>
           <div class="mc"><div class="mc-label">Last change</div><div class="mc-val" data-style="font-size:15px" id="audit-last-time">—</div><div class="mc-change neutral" id="audit-last-action">—</div></div>
           <div class="mc"><div class="mc-label">Retention</div><div class="mc-val">Full history</div><div class="mc-change up">All time</div></div>
         </div>
@@ -595,6 +595,7 @@
                 <option value="documents,templates,csv_import,codat_import">Documents &amp; imports</option>
                 <option value="users,settings,api_keys,support_requests,sso">Sign-ins &amp; account</option>
                 <option value="billing">Plan &amp; billing</option>
+                <option value="audit_trail">Audit log exports</option>
               </select>
               <select class="finput" id="audit-filter-action" data-style="font-size:11px;padding:4px 8px;width:auto" data-on-change="loadAuditTrail()">
                 <option value="all">All actions</option>
@@ -634,7 +635,17 @@
                 <option value="CLIENT_ACTIVATE,CLIENT_DECLINE,CLIENT_REJECT,CLIENT_SUSPEND,MESSAGE,MESSAGE_ATTACH,NOTE_UPDATE,NOTIFY_CLIENT,PROPOSAL_SENT,TASK_ASSIGNED,CHECKLIST_UPDATE,FLAG,BILL_CLIENT,PROPOSAL_WITHDRAWN,PROPOSAL_ACCEPTED,PROPOSAL_DECLINED,TASK_DELETED,TASK_DONE,TASK_REOPENED,ACCESS_REQUESTED,REVIEW,REPORT,KYC_STARTED,PAYOUT_RUN,PAYOUT_ACCOUNT_LINKED,BOOKS_VIEWED,PERSONAL_VIEWED,CLIENT_REVOKE,INVITE_ACCEPTED,INVITE_DECLINED">Accountant activity</option>
               </select>
               <button class="btn btn-ghost btn-sm" data-on-click="exportAuditCSV()">Export CSV</button>
+              <button class="btn btn-ghost btn-sm" data-on-click="exportAuditPDF()">Export PDF</button>
             </div>
+          </div>
+          <!-- F90 part 3: who, when, what — filter the whole trail (dates are the business's calendar days) -->
+          <div data-style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px">
+            <label data-style="font-size:11px;color:var(--t3)">From <input type="date" class="finput" id="audit-filter-from" data-style="font-size:11px;padding:3px 6px;width:auto" data-on-change="loadAuditTrail()"></label>
+            <label data-style="font-size:11px;color:var(--t3)">To <input type="date" class="finput" id="audit-filter-to" data-style="font-size:11px;padding:3px 6px;width:auto" data-on-change="loadAuditTrail()"></label>
+            <select class="finput" id="audit-filter-actor" data-style="font-size:11px;padding:4px 8px;width:auto" data-on-change="loadAuditTrail()" aria-label="Who">
+              <option value="">Everyone</option>
+            </select>
+            <input type="search" class="finput" id="audit-filter-q" placeholder="Search: a name, an amount, a record id…" data-style="font-size:11px;padding:4px 8px;min-width:200px;flex:1" data-on-change="loadAuditTrail()" aria-label="Search the audit log">
           </div>
           <div data-style="overflow-x:auto">
             <table data-style="width:100%;border-collapse:collapse;font-size:12px">
@@ -651,6 +662,7 @@
               <tbody id="audit-trail-body"><tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr></tbody>
             </table>
           </div>
+          <div data-style="display:flex;justify-content:center;margin-top:8px"><button class="btn btn-ghost btn-sm hidden" id="audit-load-more" data-on-click="loadAuditTrail(true)">Load older entries</button></div>
         </div>
       </div>
 

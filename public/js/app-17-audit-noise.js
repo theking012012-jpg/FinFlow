@@ -33,9 +33,11 @@ function _auditUnit(r,v){
   if(v==null||v==='') return v;
   return (r&&r.table_name==='budget_targets'&&/^-?\d+(\.\d+)?$/.test(String(v).trim())) ? String(v).trim()+' per year' : v;
 }
-function _auditDiff(action,oldRaw,newRaw){
+function _auditDiff(action,oldRaw,newRaw,changedFields){
   const o=_auditFlatten(_auditParse(oldRaw)), n=_auditFlatten(_auditParse(newRaw));
-  const keys=[...new Set([...Object.keys(o),...Object.keys(n)])].filter(k=>!_AUDIT_NOISE.has(k));
+  // F90: a recorded change names the fields that changed — list those (a budget's targets expand to one per target)
+  let keys=[...new Set([...Object.keys(o),...Object.keys(n)])].filter(k=>!_AUDIT_NOISE.has(k));
+  if(Array.isArray(changedFields)&&changedFields.length&&action!=='CREATE'&&action!=='DELETE'&&!changedFields.includes('targets')) keys=changedFields.filter(k=>!_AUDIT_NOISE.has(k));
   const changed=[];
   for(const k of keys){
     const ov=_auditVal(o[k]), nv=_auditVal(n[k]);
@@ -44,72 +46,111 @@ function _auditDiff(action,oldRaw,newRaw){
   if(!changed.length) changed.push({field:'—',old:'',new:''}); // payload-less events (e.g. CHANGE_PASSWORD)
   return changed;
 }
-async function loadAuditTrail(){
+// F90 part 3: the filters the server applies (table group, action, business-day range, who, search) — the same set the
+// page, the CSV and the PDF use, so an export is exactly what is on screen (all of it, not only what is loaded).
+function _auditParams(){
+  const v=id=>(document.getElementById(id)||{}).value||'';
+  const p=new URLSearchParams();
+  if(v('audit-filter-table')&&v('audit-filter-table')!=='all')p.set('type',v('audit-filter-table'));
+  if(v('audit-filter-action')&&v('audit-filter-action')!=='all')p.set('action',v('audit-filter-action'));
+  if(v('audit-filter-from'))p.set('from',v('audit-filter-from'));
+  if(v('audit-filter-to'))p.set('to',v('audit-filter-to'));
+  if(v('audit-filter-actor'))p.set('actor',v('audit-filter-actor'));
+  if(v('audit-filter-q').trim())p.set('q',v('audit-filter-q').trim());
+  return p;
+}
+function _auditHow(src){ src=String(src||''); return /^api_key:/.test(src)?'API key':/^job:/.test(src)?'automatic':/^webhook/.test(src)?'payment provider':/^tool:/.test(src)?'maintenance tool':src==='database'?'database, outside the app':''; }
+async function loadAuditTrail(append){
   const tbody=document.getElementById('audit-trail-body');
   const countEl=document.getElementById('audit-event-count');
   const lastTimeEl=document.getElementById('audit-last-time');
   const lastActEl=document.getElementById('audit-last-action');
+  const moreBtn=document.getElementById('audit-load-more');
   if(!tbody)return;
-  tbody.innerHTML='<tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
+  append=append===true;
+  if(!append){ tbody.innerHTML='<tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>'; window._auditLoaded=0; window._auditNextBefore=null; }
   try{
-    const tbl=document.getElementById('audit-filter-table')?.value||'all';
-    const act=document.getElementById('audit-filter-action')?.value||'all';
-    const params=new URLSearchParams();
+    const params=_auditParams();
     params.set('limit','500');
-    if(tbl&&tbl!=='all')params.set('type',tbl);           // /api/audit-log filters table via `type`
+    if(append&&window._auditNextBefore!=null)params.set('before',String(window._auditNextBefore));
     const res=await fetch('/api/audit-log?'+params.toString(),{credentials:'include'});
     if(!res.ok)throw new Error(res.status);
     const data=await res.json();
-    let events=Array.isArray(data)?data:(data.rows||[]);   // /api/audit-log returns {total, rows}
-    if(act&&act!=='all'){ const _acts=act.split(','); events=events.filter(r=>_acts.includes(r.action)); }  // action filtered client-side; C29: a value may be a group
-    if(countEl)countEl.textContent=events.length;
-    if(events.length&&lastTimeEl){
+    const events=Array.isArray(data)?data:(data.rows||[]);
+    window._auditNextBefore=data.next_before==null?null:data.next_before;
+    if(moreBtn)moreBtn.classList.toggle('hidden',!data.more);
+    // Who: the people and automatic sources on this business's trail (keeps the current choice)
+    const who=document.getElementById('audit-filter-actor');
+    if(who&&Array.isArray(data.actors)&&!append){
+      const cur=who.value;
+      who.innerHTML='<option value="">Everyone</option>'+data.actors.map(a=>`<option value="${esc(a.key)}">${esc(a.name||a.key)}</option>`).join('');
+      if(cur&&Array.from(who.options).some(o=>o.value===cur))who.value=cur;
+    }
+    window._auditLoaded=(append?window._auditLoaded||0:0)+events.length;
+    if(countEl)countEl.textContent=window._auditLoaded;
+    if(!append&&events.length&&lastTimeEl){
       const d=new Date(events[0].created_at);
       lastTimeEl.textContent=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       if(lastActEl)lastActEl.textContent=events[0].action||'—';
     }
-    if(!events.length){
+    if(!append&&!events.length){
       tbody.innerHTML='<tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
       return;
     }
     const actionBadge={CREATE:'b-green',UPDATE:'b-amber',DELETE:'b-red'};
-    tbody.innerHTML=events.map(r=>{
+    const html=events.map(r=>{
       const d=new Date(r.created_at);
       const dStr=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
       const badge=actionBadge[r.action]||'b-amber';
-      return _auditDiff(r.action,r.old_data,r.new_data).map(f=>`<tr data-style="border-bottom:1px solid var(--bd)">
+      const how=_auditHow(r.source);
+      return _auditDiff(r.action,r.old_data,r.new_data,r.changed_fields).map(f=>`<tr data-style="border-bottom:1px solid var(--bd)">
         <td data-style="padding:5px 8px;color:var(--t2);font-size:11px;white-space:nowrap">${esc(dStr)}</td>
         <td data-style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
         <td data-style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
         <td data-style="padding:5px 8px"><span class="badge ${badge}" data-style="font-size:9px">${esc(r.action||'')}</span>${r.actor_type==='admin'?'<span class="badge b-blue" data-style="font-size:9px;margin-left:4px" title="Changed by FinFlow support">FinFlow support</span>':''}</td>
-        <td data-style="padding:5px 8px;color:var(--t1);white-space:nowrap">${esc(r.actor_name||'—')}</td>
+        <td data-style="padding:5px 8px;color:var(--t1);white-space:nowrap">${esc(r.actor_name||'—')}${how?`<div data-style="font-size:10px;color:var(--t3)">${esc(how)}</div>`:''}</td>
         <td data-style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
         <td data-style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.old)||'')}">${esc(_auditUnit(r,f.old)||'—')}</td>
         <td data-style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_auditUnit(r,f.new)||'')}">${esc(_auditUnit(r,f.new)||'—')}</td>
       </tr>`).join('');
     }).join('');
+    if(append)tbody.insertAdjacentHTML('beforeend',html); else tbody.innerHTML=html;
   }catch(e){
-    tbody.innerHTML='<tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
+    if(!append)tbody.innerHTML='<tr><td colspan="8" data-style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail. '+(window._ffRetryBtn?window._ffRetryBtn('loadAuditTrail'):'')+'</td></tr>';
+    else if(typeof notify==='function')notify('Could not load older entries — try again.',true);
   }
 }
 
-function exportAuditCSV(){
-  const rows=document.querySelectorAll('#audit-trail-body tr');
-  if(!rows.length)return;
-  const headers=['Date','Table','Record ID','Action','By','Field','Old Value','New Value'];   // LR12: By
-  const lines=[headers.join(',')];
-  rows.forEach(tr=>{
-    const cells=tr.querySelectorAll('td');
-    if(cells.length<8)return;
-    const row=Array.from(cells).map(td=>'"'+td.textContent.replace(/"/g,'""')+'"');
-    lines.push(row.join(','));
-  });
-  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='audit-trail.csv';
-  a.click();
+// F90 part 3: the exports are the WHOLE filtered trail from the server (up to 50,000 entries), not the rows on screen.
+async function _auditFetchExport(fmt){
+  const p=_auditParams(); p.set('format',fmt);
+  const r=await fetch('/api/audit-log/export?'+p.toString(),{credentials:'include'});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r;
 }
+async function exportAuditCSV(){
+  try{
+    const r=await _auditFetchExport('csv');
+    const blob=await r.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='audit-log-'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},0);
+    if(r.headers.get('X-Audit-Truncated')&&typeof notify==='function')notify('The export holds the newest 50,000 entries — narrow the dates for older ones.',true);
+  }catch(e){ if(typeof notify==='function')notify('Export failed — '+(e&&e.message||e),true); }
+}
+async function exportAuditPDF(){
+  try{
+    const r=await _auditFetchExport('json');
+    const d=await r.json();
+    const lines=(d.lines||[]);
+    // When · Record · Action · By · How · Field · Old · New (the business and the entry id stay in the CSV)
+    const rows=lines.map(l=>[l[0],l[2]+(l[3]?' #'+l[3]:''),l[4],l[5],l[6],l[7],String(l[8]).slice(0,40),String(l[9]).slice(0,40)]);
+    if(rows.length<2){ if(typeof notify==='function')notify('Nothing to export for these filters.',true); return; }
+    window._ffExportPdf(rows,'audit-log-'+new Date().toISOString().slice(0,10)+'.pdf','Audit log');
+  }catch(e){ if(typeof notify==='function')notify('Export failed — '+(e&&e.message||e),true); }
+}
+window.exportAuditPDF=exportAuditPDF;
 
 // ── FEATURE 2: PARTIAL PAYMENTS — F113/F114/F115: the sole invoice-settle path ────
 // Replaces markInvoicePaid (deleted, finflow-api-wiring-medium.js). Opened with the FULL

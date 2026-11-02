@@ -102,6 +102,13 @@
       // Batch 8: this business's payment terms (30 until set — what the field has always shown).
       var _pt = document.getElementById('s-pay-terms');
       if (_pt) _pt.value = (ent && ent.payment_terms != null) ? String(ent.payment_terms) : '30';
+      // F88: the fiscal year is THIS business's (else the account's default) — repainted on every switch, and every
+      // period on the page follows it (the server resolves the same year itself; it no longer takes it from the page).
+      var _fy = document.getElementById('s-fy');
+      if (_fy) {
+        var _fyWant = (ent && ent.fiscal_year) || window._acctFiscalYear || 'January';
+        if (_fy.value !== _fyWant) { _fy.value = _fyWant; if (typeof window._ffFiscalMonthsChanged === 'function') { try { window._ffFiscalMonthsChanged(); } catch (_) {} } }
+      }
       if (typeof window._ffSyncOwnerAlert === 'function') window._ffSyncOwnerAlert();   // FA-B1: this business's overdue alert
       if (typeof window.updateBrandName === 'function') { try { window.updateBrandName(); } catch (_) {} }
     }
@@ -218,6 +225,7 @@
         setField('s-phone',    s.phone);
         setField('s-website',  s.website);
         setField('s-tax-id',   s.tax_id);
+        window._acctFiscalYear = s.fiscal_year || 'January';   // F88: the account default; the business's own wins (applyEntityProfileFields)
         setField('s-fy',       s.fiscal_year);
         if (typeof window._ffFiscalMonthsChanged === 'function') window._ffFiscalMonthsChanged();   // LC2b: the fiscal year just arrived — rebuild the months and repaint their labels
         // F196 Tier 2: the account blob above is ONE row per account, so on a multi-entity account it
@@ -277,7 +285,8 @@
           phone,
           website,
           tax_id,
-          fiscal_year,
+          // F88: fiscal_year is saved on the BUSINESS (entity PUT below), not account-wide — changing one business's
+          // year must not move the default every other business falls back to.
         });
         notify('Settings saved successfully ✦');
         // F196 Tier 2: the Business profile belongs to the ACTIVE ENTITY — write it there too, so a
@@ -302,7 +311,8 @@
             const _pfx = document.getElementById('s-inv-prefix');
             const _ptEl = document.getElementById('s-pay-terms');   // batch 8: payment terms travel with the prefix
             const _bpx = document.getElementById('s-bill-prefix');   // FA-M5c: the bill-number prefix travels with them
-            await api('PUT', '/api/entities/' + _ent._dbId, Object.assign({}, _profile, _pfx ? { invoice_prefix: _pfx.value.trim() } : {}, _bpx ? { bill_prefix: _bpx.value.trim() } : {}, _ptEl && _ptEl.value !== '' ? { payment_terms: _ptEl.value.trim() } : {}));
+            await api('PUT', '/api/entities/' + _ent._dbId, Object.assign({}, _profile, _pfx ? { invoice_prefix: _pfx.value.trim() } : {}, _bpx ? { bill_prefix: _bpx.value.trim() } : {}, _ptEl && _ptEl.value !== '' ? { payment_terms: _ptEl.value.trim() } : {}, fiscal_year ? { fiscal_year } : {}));   // F88: the fiscal year is this business's
+            if (fiscal_year) _ent.fiscal_year = fiscal_year;
             if (_pfx) _ent.invoice_prefix = _pfx.value.trim();
             if (_bpx) _ent.bill_prefix = _bpx.value.trim();
             if (_ptEl && _ptEl.value !== '') _ent.payment_terms = Number(_ptEl.value);

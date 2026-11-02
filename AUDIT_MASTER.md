@@ -2524,7 +2524,8 @@ Additional weight specific to this product: FinFlow is **accounting software wit
 ---
 
 ### F89 🟠 HIGH — Period boundaries are derived from the BROWSER clock; the server does not disagree — **NEW (2026-07-23, read-only verified)**
-**Status:** OPEN. Its own finding, adjacent to F87.
+**Status (2026-11-02):** the fiscal-year START half is now the business's (F88 2a, executed). The "today" half was covered by F87's string-date periods (confirmed by READING only — not re-executed for this row). Kept open until a harness pins a browser clock different from the server's and compares figures.
+**Was:** OPEN. Its own finding, adjacent to F87.
 
 `_fyContext()` (`app-main.js:1721`) derives the entire fiscal calendar from the client machine's clock:
 ```js
@@ -2541,8 +2542,12 @@ return { fyStartIdx, fyStartYear, monthsInFY, curFyIdx: …, now };
 
 ---
 
-### F88 🟠 HIGH — The viewer-dependence CLASS: per-user settings applied to per-entity books — **NEW (2026-07-23, read-only survey)**
-**Status:** OPEN — survey, for the consolidation spec. F87 is one instance; this records the shape and the other candidates.
+### F88 🟠 HIGH — The viewer-dependence CLASS: per-user settings applied to per-entity books — **2a FISCAL YEAR ✅ FIXED + VERIFIED 2026-11-02 (per business); 2b display currency stays labelled-by-design; 2c timezone ✅ (F87/F191)**
+**Status (2026-11-02):** **2a fixed.** The fiscal year is now a property of the **business** — `entities.data.fiscal_year` (a month name), saved from Settings through `PUT /api/entities/:id` (anything else → 400 `BAD_FISCAL_YEAR`) and no longer through `/api/settings`. Every server reader resolves it from the business in view with ONE resolver, `businessFyStartIdx(userId, entityId)` (server.js): `computeBooks`, `glFinancials`, `glReconcile`, `glConsolidated`, `glProfitLoss`, `glBalanceSheet`, `parseReportIntent`'s two callers (`/api/reports`, `/api/reports/profit-loss`), `/api/tax-filing`, `/api/cogs`, `_glPeriodArgs` (4 GL routes), vendor YTD, `/api/v1` summary, the AI books context, and the accountant portal's per-client reads (`_scopeBooks`, per-entity summaries, reconcile). **A request can no longer choose the fiscal year** — `?fyStart` is ignored — so two readers of one business (owner, member, accountant, API key) get one figure. An account with no saved business fiscal year falls back to the account's (then January). The page shows the active business's fiscal year in Settings and switches it with the business (`applyEntityProfileFields`; the ENTITIES mapping now carries `fiscal_year`). Existing rows are untouched (Rule 8): a business with no `fiscal_year` keeps today's figures (the account value).
+**Executed:** `verify-f88-fiscal-year-per-business` **RED 9 failed / 1 passed on `da63b81` → GREEN 10/0** — two businesses in one account, A April FY / B January FY; invoices 15 Mar 1,000 and 10 May 300 → A = 300, B = 1,300 on `/api/reports`, `/api/tax-filing` and `/api/gl/pnl`, the switch, and the Settings save (bug: both 1,300, or both 300 after a save). Restated to the new contract (each RED on `da63b81`, GREEN with F88): `verify-pl-period-rows` (8 failed → 17/0 — the April year is the business's; a stale `?fyStart=0` must not change it) and `verify-pl-statement-period-ui` (2 failed → 4/0). Related set: 221 harnesses re-run on the fix — all green except pre-existing NEW-22 (fixed separately), FIX-3b (my own NEW-15/16 routes, fixed in `64efd8f`), `verify-rbac-enforcement` (fabricated `revoked` status caught by F79 — restated to the owner's real DELETE, 32/0), and three load flakes that pass on re-run (m10, m52, quote-line-items); the 6 non-test helpers print the same on `da63b81` and on the fix.
+**Still open in this class:** 2b display currency is a per-viewer **presentation** choice, always labelled with the currency — kept by design (the native books never change). Any NEW per-user setting applied to books is this finding again.
+
+**Was:** OPEN — survey, for the consolidation spec. F87 is one instance; this records the shape and the other candidates.
 
 **The pattern:** any setting stored **per USER** but applied to **per-ENTITY books** produces figures that depend on who is reading. The books belong to the entity; nothing about the reader should change a number.
 

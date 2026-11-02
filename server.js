@@ -1982,10 +1982,13 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
       || (_ds.accent != null && !/^#[0-9a-fA-F]{6}$/.test(String(_ds.accent))) || (_ds.powered_by != null && typeof _ds.powered_by !== 'boolean'))) {
     return res.status(400).json({ error: 'Document style: a design (classic, minimal or compact), a colour like #c9a84c, and on/off for the FinFlow line.', code: 'BAD_DOC_STYLE' });
   }
+  const _fyv = (req.body || {}).fiscal_year;   // F88: this business's fiscal year — a month name
+  if (_fyv != null && _fyv !== '' && !_FY_MONTH_NAMES.includes(String(_fyv))) return res.status(400).json({ error: 'The fiscal year starts in a month — January to December.', code: 'BAD_FISCAL_YEAR' });
   const _bp = (req.body || {}).bill_prefix;   // FA-M5c: same rule for the bill-number prefix (empty → "BILL-")
   if (_bp != null && !/^[A-Za-z0-9\-\/#_. ]{0,12}$/.test(String(_bp))) return res.status(400).json({ error: 'The bill prefix can use letters, numbers and - / # _ . (up to 12 characters).', code: 'BAD_BILL_PREFIX' });
   await db.updateById('entities', row.id, {
     ...(_ip != null && { invoice_prefix: String(_ip).trim() }),
+    ...(_fyv != null && { fiscal_year: _fyv === '' ? null : String(_fyv) }),
     ...(_bp != null && { bill_prefix: String(_bp).trim() }),
     ...(_ds != null && { doc_style: Object.assign({}, row.doc_style || {}, _ds) }),
     ...(_pt != null && _pt !== '' && { payment_terms: Number(_pt) }),
@@ -4789,7 +4792,7 @@ async function vendorBook(uid, eid) {
   // space-insensitive (bills and payments carry the vendor's name).
   const key = _contactKey;   // batch 9: the one contact key (it did not collapse spaces: "Supply  Co" was a 2nd vendor)
   const today = await entityTodayYmd(eid);
-  const fy = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: await accountFyStartIdx(uid), today });
+  const fy = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: await businessFyStartIdx(uid, eid), today });   // F88
   const owing = {}, paid = {}, bills = {}, label = {};
   for (const b of await db.allByUser('bills', uid, scoped)) {
     if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
@@ -5505,7 +5508,7 @@ app.get('/api/v1/customers', requireApiKey, apiLimiter, wrap(async (req, res) =>
 app.get('/api/v1/reports/summary', requireApiKey, apiLimiter, wrap(async (req, res) => {
   try {
     // M44: the OWNER's fiscal year (accountFyStartIdx), as every in-app surface uses — it was January (0) always.
-    const _fy = await accountFyStartIdx(req.apiUserId);
+    const _fy = await businessFyStartIdx(req.apiUserId, req.apiEntityId);   // F88: the business's year
     const books = await computeBooks(req.apiUserId, req.apiEntityId, 'year', null, _fy);
     const expenses = Math.round((((books.cogs || 0) + (books.opex || 0)) + Number.EPSILON) * 100) / 100;
     res.json({ object: 'summary', period: 'year', scope: req.apiEntityId == null ? 'all' : req.apiEntityId,
@@ -7347,7 +7350,7 @@ const COMPLEX_QUERY_RE = /\b(analyze|recommend|explain|forecast|compare|predict|
 // COGS, credit notes), every business and currency summed raw under a '$'.
 async function aiBooksContext(req) {
   const uid = scopeId(req), eid = req.entityId || null;
-  const fyStartIdx = await accountFyStartIdx(uid);
+  const fyStartIdx = await businessFyStartIdx(uid, eid);   // F88
   // M25: the open / overdue counts come from the same computeBooks call (arSummary: balance-based, past due date),
   // not a literal status match — nothing ever sets status 'overdue', so the AI was told "0 overdue" regardless.
   const _books = await computeBooks(uid, eid, 'year', null, fyStartIdx);
@@ -8599,6 +8602,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // portal / consolidated P&L call with no period). A financial endpoint validates strictly.
     const _intent = parseReportIntent(req.query);
     if (_intent.error) return res.status(400).json({ error: _intent.error });
+    _intent.fyStartIdx = await businessFyStartIdx(uid, eid);   // F88: the business's fiscal year, never the browser's
     const { bookPeriod, monthIdxArg } = _intent;
     if (req.query.display) await seedFxRatesForUser(uid);   // NEW-7: a converted view never waits for the next daily rates run
     // Canonical figures from computeBooks (the single source shared with the dashboard,
@@ -8729,8 +8733,8 @@ function parseReportIntent(q) {
       monthIdxArg = _mi;
     }
   }
-  const _fy = parseInt(q.fyStart, 10);
-  const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+  // F88: a sent ?fyStart is IGNORED — the fiscal year is the business's; the caller resolves it (businessFyStartIdx).
+  const fyStartIdx = null;
   const _display = String(q.display || '').toUpperCase();
   const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
   return { bookPeriod, monthIdxArg, fyStartIdx, display };
@@ -8748,6 +8752,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const eid = req.entityId || null;
   const intent = parseReportIntent(req.query);
   if (intent.error) return res.status(400).json({ error: intent.error });
+  intent.fyStartIdx = await businessFyStartIdx(uid, eid);   // F88
   const { bookPeriod, monthIdxArg, fyStartIdx, display } = intent;
   const _today = await scopeTodayYmd(scopeId(req), eid);   // N64 / L36b
   const _fyWin = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: fyStartIdx, today: _today });
@@ -8969,8 +8974,7 @@ app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
     // with. Now revenue + deductible both come from computeBooks over the FISCAL-YEAR window. fyStart
     // (0-11) arrives from the client's fiscal-year setting via ?fyStart=, exactly as /api/reports;
     // absent/invalid → January (0), matching the client default.
-    const _fy = parseInt(req.query.fyStart, 10);
-    const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+    const fyStartIdx = await businessFyStartIdx(uid, eid);   // F88: the business's year (a sent ?fyStart is ignored)
     const books = await computeBooks(uid, eid, 'year', null, fyStartIdx);
     const revenue = books.revenue;
     // M6: deductions = every ordinary cost (COGS + opex) less non-deductible expense rows; one computeBooks figure.
@@ -12999,7 +13003,8 @@ async function postSourceLedger(client, { userId, sourceType, row }) {
 // so a GL P&L for a period reconciles to computeBooks for that period to the cent. The balance sheet
 // is an as-of-today snapshot (all posted entries up to today). Because every entry balances, the trial
 // balance ties to zero and assets == liabilities + equity + net profit by construction.
-async function glFinancials(userId, entityId, period = 'year', fyStartIdx = 0, monthIdx = null) {
+async function glFinancials(userId, entityId, period = 'year', fyStartIdx = null, monthIdx = null) {
+  if (!Number.isInteger(fyStartIdx)) fyStartIdx = await businessFyStartIdx(userId, entityId);   // F88
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const _today = await entityTodayYmd(entityId);   // N64: the same business-local today as computeBooks
   const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
@@ -13236,7 +13241,8 @@ async function backfillLedgerForUser(userId, opts = {}) {
 // parts the aggregate tracks (revenue, and cogs+opex excluding FX which computeBooks doesn't fold in).
 // booksBalanced is the AND of all three — a live trust indicator the product can surface. It is
 // RED-provable: break any ledger entry and the signal drops to false (see verify-gl-verify.js).
-async function glReconcile(userId, entityId, fyStartIdx = 0) {
+async function glReconcile(userId, entityId, fyStartIdx = null) {
+  if (!Number.isInteger(fyStartIdx)) fyStartIdx = await businessFyStartIdx(userId, entityId);   // F88
   const r2 = n => Math.round((n || 0) * 100) / 100;
   // entityId null => CONSOLIDATED (all entities, base currency) via glConsolidated; else single entity.
   const f = entityId == null ? await glConsolidated(userId, { fyStartIdx }) : await glFinancials(userId, entityId, 'year', fyStartIdx);
@@ -13315,7 +13321,7 @@ async function glConsolidated(userId, opts = {}) {
   const num = v => parseFloat(v) || 0;
   const entityId = opts.entityId != null ? opts.entityId : null;
   const period = opts.period || 'year';
-  const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : 0;
+  const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : await businessFyStartIdx(userId, opts.entityId != null ? opts.entityId : (typeof entityId !== 'undefined' ? entityId : null));   // F88
   const monthIdx = opts.monthIdx != null ? opts.monthIdx : null;
   const _today = await scopeTodayYmd(userId, opts.entityId != null ? opts.entityId : null, opts.permittedEntityIds || null);   // N64 / L36b
   const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
@@ -13481,7 +13487,7 @@ const glTbDetail = tb => 'dr=' + (Math.round((tb.totalDebit || 0) * 100) / 100) 
 async function glProfitLoss(userId, entityId, opts = {}) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const period = opts.period || 'year';
-  const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : 0;
+  const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : await businessFyStartIdx(userId, opts.entityId != null ? opts.entityId : (typeof entityId !== 'undefined' ? entityId : null));   // F88
   const monthIdx = opts.monthIdx != null ? opts.monthIdx : null;
   const display = opts.display || null;
   const fromBooks = (books, source) => ({
@@ -13641,7 +13647,7 @@ async function glBalanceSheet(userId, entityId, opts = {}) {
   // sides of the gate (computeBooks' permittedEntityIds and glConsolidated's filter) see the same scope, so a hidden
   // entity's balances never enter a total. null ⇒ every entity (the owner, or a legacy whole-account link).
   const permitted = (entityId == null && Array.isArray(opts.permittedEntityIds)) ? opts.permittedEntityIds.map(Number) : null;
-  const books = await computeBooks(userId, entityId, 'year', null, 0, null, permitted);
+  const books = await computeBooks(userId, entityId, 'year', null, null, null, permitted);   // F88: the business's year (was January)
   // L6b: the balance sheet shows CONTROL accounts — the invoice / bill subledger plus posted journals' AR / AP legs
   // (computeBooks.journalBalances, read from the GL). `outstanding` itself stays the invoice subledger (D16).
   const jb = books.journalBalances || { ar: 0, ap: 0, inventory: 0 };
@@ -13760,6 +13766,19 @@ function presentDepositsAndPrepayments(res, books) {
 // name). N109: the accountant portal read users.data.fiscal_year, which nothing writes, so it always
 // windowed on January while the owner's own dashboard used their fiscal year.
 const _FY_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+// F88: the fiscal year belongs to the BUSINESS. A business's own setting (entities.data.fiscal_year, a month name)
+// wins; a business that never set one — and the consolidated "all businesses" view — uses the account's setting.
+// Every books engine resolves it here when no fiscal year is passed, and no route takes it from the browser.
+async function businessFyStartIdx(userId, entityId) {
+  if (entityId != null) {
+    try {
+      const { rows: [e] } = await pool.query(`SELECT data->>'fiscal_year' AS fy FROM entities WHERE id = $1 AND user_id = $2`, [entityId, userId]);
+      const i = e && e.fy ? _FY_MONTH_NAMES.indexOf(String(e.fy)) : -1;
+      if (i >= 0) return i;
+    } catch (_) { /* fall back to the account setting */ }
+  }
+  return accountFyStartIdx(userId);
+}
 async function accountFyStartIdx(userId) {
   try {
     const { rows: [r] } = await pool.query(`SELECT data->>'fiscal_year' AS fy FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL ORDER BY id LIMIT 1`, [userId]);
@@ -13880,7 +13899,8 @@ async function postJournalToLedger(client, { userId, entityId, journal }) {
   return { posted: true };
 }
 
-async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null, permittedEntityIds = null) {
+async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = null, monthIdx = null, permittedEntityIds = null) {
+  if (!Number.isInteger(fyStartIdx)) fyStartIdx = await businessFyStartIdx(userId, entityId);   // F88: no caller can fall back to January
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
   const sum = (arr, f) => (arr || []).reduce((s, x) => s + f(x), 0);
@@ -14761,7 +14781,7 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
     if (qPeriod !== 'year' && qPeriod !== 'month' && qPeriod !== 'quarter') return res.status(400).json({ error: 'Invalid period.' });
     let _mi = null;
     if (qPeriod !== 'year') { _mi = parseInt(qMonthIdx, 10); if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return res.status(400).json({ error: 'Invalid monthIdx.' }); }
-    const _fy = parseInt(qFy, 10), _fyIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+    void qFy; const _fyIdx = await businessFyStartIdx(uid, eid);   // F88: the business's year (a sent ?fyStart is ignored)
     const _cogsToday = await entityTodayYmd(eid);   // N64
     const _rp = FinFlowDates.resolvePeriod({ period: qPeriod, monthIdx: _mi, fyStartMonth: _fyIdx, today: _cogsToday });
     inWin = v => { const y = FinFlowDates._toYmd(v); return y != null && y <= _cogsToday && y >= _rp.start && y < _rp.end; };
@@ -15173,10 +15193,10 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
 // ── GL PHASE 3 — financial-statement read endpoints (additive; the ledger is still a dual-write
 // shadow, so these expose the books WITHOUT changing any existing dashboard/report path). All are
 // entity-scoped to req.entityId; the consolidated (all-entity) GL view is a later enhancement. ──
-function _glPeriodArgs(req) {
+async function _glPeriodArgs(req) {
   const q = req.query || {};
   const period = (q.period === 'month' || q.period === 'quarter') ? q.period : 'year';
-  const fy = parseInt(q.fyStart, 10); const fyStart = Number.isInteger(fy) && fy >= 0 && fy <= 11 ? fy : 0;
+  const fyStart = await businessFyStartIdx(scopeId(req), req.entityId);   // F88: the business's year (a sent ?fyStart is ignored)
   let monthIdx = null;
   if (period !== 'year') { const mi = parseInt(q.monthIdx, 10); if (Number.isInteger(mi) && mi >= 0 && mi <= 11) monthIdx = mi; }
   return { period, fyStart, monthIdx };
@@ -15244,18 +15264,18 @@ app.get('/api/gl/reconcile-check', requireAuth, wrap(async (req, res) => {
 
 app.get('/api/gl/statements', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity (consolidated GL is not yet available).', code: 'GL_ENTITY_REQUIRED' });
-  const { period, fyStart, monthIdx } = _glPeriodArgs(req);
+  const { period, fyStart, monthIdx } = await _glPeriodArgs(req);
   res.json(await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx));
 }));
 app.get('/api/gl/trial-balance', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
-  const { period, fyStart, monthIdx } = _glPeriodArgs(req);
+  const { period, fyStart, monthIdx } = await _glPeriodArgs(req);
   const f = await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx);
   res.json({ entityId: f.entityId, window: f.window, ...f.trialBalance });
 }));
 app.get('/api/gl/pnl', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
-  const { period, fyStart, monthIdx } = _glPeriodArgs(req);
+  const { period, fyStart, monthIdx } = await _glPeriodArgs(req);
   const f = await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx);
   const lines = f.accounts.filter(a => a.type === 'income' || a.type === 'expense')
     .map(a => ({ code: a.code, name: a.name, type: a.type, amount: a.type === 'income' ? -a.net_period : a.net_period }));
@@ -15263,7 +15283,7 @@ app.get('/api/gl/pnl', requireAuth, wrap(async (req, res) => {
 }));
 app.get('/api/gl/balance-sheet', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
-  const { period, fyStart, monthIdx } = _glPeriodArgs(req);
+  const { period, fyStart, monthIdx } = await _glPeriodArgs(req);
   const f = await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx);
   const grp = t => f.accounts.filter(a => a.type === t).map(a => ({ code: a.code, name: a.name, balance: a.balance }));
   // L40: totals.equity includes accumulated (un-closed) net income, which no equity ACCOUNT carries — so the equity

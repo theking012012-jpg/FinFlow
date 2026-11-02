@@ -15,13 +15,13 @@
  * Seed (hand-computed, independent of the code; pinned today 2026-07-25):
  *   invoices (pending): 2025-11-10 7000 · 2026-02-10 1000 · 2026-05-10 300 · 2026-07-05 50
  *   credit note (Open): 2026-07-10 20      expense: 2026-06-15 40      payroll run (approved) 2026-05: lines 500
- *   Fiscal year starting APRIL (fyStart=3) → FY = [2026-04-01, 2027-04-01):
+ *   Business fiscal year APRIL (entities.data.fiscal_year — F88; the request cannot override it) → FY = [2026-04-01, 2027-04-01):
  *     revenue 300 + 50 − 20 = 330 · expenses 40 + 500 = 540 · net −210
  *     rows Apr (0,0) · May (300,500) · Jun (0,40) · Jul (30,0) — no row after the current month
  *   Bug values: totals 1330 (Jan–Dec 2026: 1000+300+50−20); Σrows revenue 8330 (all time).
  *   Quarter (monthIdx 3 → Jul–Sep): revenue 30, expenses 0, rows [Jul].   Bug: totals 1330.
  *   Month (monthIdx 2 → June): revenue 0, expenses 40, rows [Jun].          Bug: totals 1330 / 540.
- *   No params (legacy callers): January FY → revenue 1330, expenses 540, Σrows 1330 (bug Σrows 8330).
+ *   Business with no fiscal year saved: January FY → revenue 1330, expenses 540, Σrows 1330 (bug Σrows 8330).
  *
  * The P&L Statement modal's request (part c) is verified by verify-pl-statement-period-ui.js.
  *
@@ -52,7 +52,8 @@ async function apiPart() {
     server = await bootServer(scratch.url);
     const PW = 'pl-period-pw-1';
     const uid = (await c.query(`INSERT INTO users (user_id,entity_id,data) VALUES (NULL,NULL,$1) RETURNING id`, [{ email: 'plp@finflow.test', plan: 'business', role: 'owner', password: bcrypt.hashSync(PW, 10) }])).rows[0].id;
-    const eid = (await c.query(`INSERT INTO entities (user_id,entity_id,data) VALUES ($1,NULL,$2) RETURNING id`, [uid, { name: 'PLP Co', currency: 'USD', is_active: 1 }])).rows[0].id;
+    // F88 (2026-11-02): the fiscal year is the business's — seeded April here; ?fyStart from a client is ignored.
+    const eid = (await c.query(`INSERT INTO entities (user_id,entity_id,data) VALUES ($1,NULL,$2) RETURNING id`, [uid, { name: 'PLP Co', currency: 'USD', is_active: 1, fiscal_year: 'April' }])).rows[0].id;
     const J = (t, ymd, d) => c.query(`INSERT INTO ${t} (user_id,entity_id,data,created_at,updated_at) VALUES ($1,$2,$3,$4::timestamptz,$4::timestamptz)`, [uid, eid, d, ymd + 'T16:00:00Z']);
     for (const [ymd, amt] of [['2025-11-10', 7000], ['2026-02-10', 1000], ['2026-05-10', 300], ['2026-07-05', 50]]) {
       await J('invoices', ymd, { client: 'Cust', amount: amt, amount_paid: 0, status: 'pending', issue_date: ymd, due_date: ymd });
@@ -71,7 +72,7 @@ async function apiPart() {
     console.log('  P&L REPORT — one period, rows sum to totals');
     console.log('='.repeat(78));
 
-    const y = await pl('period=year&fyStart=3');
+    const y = await pl('period=year&fyStart=0');   // F88: a stale per-viewer January (fyStart=0) must not change the business's April year (bug: 1330)
     A('April FY: totalRevenue 330 (bug: 1330 calendar year)', r2(y.totalRevenue) === 330, 'got ' + y.totalRevenue);
     A('April FY: totalExpenses 540', r2(y.totalExpenses) === 540, 'got ' + y.totalExpenses);
     A('April FY: netProfit −210', r2(y.netProfit) === -210, 'got ' + y.netProfit);
@@ -85,16 +86,18 @@ async function apiPart() {
     const jul = (y.rows || []).find(r => r.key === '2026-07') || {};
     A('April FY: Jul row = revenue 30 (50 − credit note 20)', r2(jul.revenue) === 30, JSON.stringify(jul));
 
-    const q = await pl('period=quarter&monthIdx=3&fyStart=3');
+    const q = await pl('period=quarter&monthIdx=3');
     A('Quarter (Jul–Sep): totalRevenue 30, expenses 0 (bug: 1330 / 540)', r2(q.totalRevenue) === 30 && r2(q.totalExpenses) === 0, `rev ${q.totalRevenue} exp ${q.totalExpenses}`);
     A('Quarter: rows = [Jul] and sum to the totals', JSON.stringify((q.rows || []).map(r => r.key)) === '["2026-07"]' && sum(q.rows, 'revenue') === 30, JSON.stringify(q.rows));
 
-    const m = await pl('period=month&monthIdx=2&fyStart=3');
+    const m = await pl('period=month&monthIdx=2');
     A('Month (June): totalRevenue 0, expenses 40 (bug: 1330 / 540)', r2(m.totalRevenue) === 0 && r2(m.totalExpenses) === 40, `rev ${m.totalRevenue} exp ${m.totalExpenses}`);
     A('Month: rows = [Jun] and sum to the totals', JSON.stringify((m.rows || []).map(r => r.key)) === '["2026-06"]' && sum(m.rows, 'expenses') === 40, JSON.stringify(m.rows));
 
+    // the same books in a business whose fiscal year is January (the default when none is saved)
+    await c.query(`UPDATE entities SET data = data - 'fiscal_year' WHERE id = $1`, [eid]);
     const d = await pl('');
-    A('No params (legacy callers): January FY totals 1330 / 540', r2(d.totalRevenue) === 1330 && r2(d.totalExpenses) === 540, `rev ${d.totalRevenue} exp ${d.totalExpenses}`);
+    A('No fiscal year saved → January FY totals 1330 / 540', r2(d.totalRevenue) === 1330 && r2(d.totalExpenses) === 540, `rev ${d.totalRevenue} exp ${d.totalExpenses}`);
     A('No params: Σrows revenue = 1330 = totalRevenue (bug: 8330)', sum(d.rows, 'revenue') === 1330, 'Σ=' + sum(d.rows, 'revenue'));
 
     const bad = await h.post('/api/reports/profit-loss?period=decade', {});

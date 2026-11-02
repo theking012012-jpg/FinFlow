@@ -857,8 +857,9 @@ If you cannot find a field, use null. Be concise.`;
   // Legacy: the requested scope unchanged. Scoped + specific entity: that entity. Scoped + all: the
   // PERMITTED entities consolidated to base currency via computeBooks' own per-row FX.
   async function _scopeBooks(userId, scope, entityId, period, summariesByEntity) {
-    if (scope.ea == null) return computeBooks(userId, entityId, period, null, scope.fyStartIdx);
-    if (entityId != null) return (summariesByEntity && summariesByEntity[entityId]) || computeBooks(userId, entityId, period, null, scope.fyStartIdx);
+    // F88: one business → ITS fiscal year (null = computeBooks resolves the business's); consolidated → the account's.
+    if (scope.ea == null) return computeBooks(userId, entityId, period, null, entityId != null ? null : scope.fyStartIdx);
+    if (entityId != null) return (summariesByEntity && summariesByEntity[entityId]) || computeBooks(userId, entityId, period, null, null);
     return computeBooks(userId, null, period, null, scope.fyStartIdx, null, scope.permittedIds);
   }
 
@@ -985,7 +986,7 @@ If you cannot find a field, use null. Be concise.`;
     const summariesByEntity = {};
     for (const er of entities.rows) {
       if (!_canRead(_entLevel[er.id])) continue;
-      summariesByEntity[er.id] = await computeBooks(userId, er.id, period, null, fyStartIdx);
+      summariesByEntity[er.id] = await computeBooks(userId, er.id, period, null, null);   // F88: each business's own fiscal year
     }
     // Top-line books (F9). Legacy: the requested scope unchanged. Scoped + specific entity: that
     // entity's own summary. Scoped + all: the PERMITTED entities consolidated to base currency.
@@ -1088,7 +1089,7 @@ If you cannot find a field, use null. Be concise.`;
       try {
         let allBalanced = _permittedIds.length > 0;
         for (const id of _permittedIds) {
-          const rec = await glReconcile(userId, id, fyStartIdx);
+          const rec = await glReconcile(userId, id, null);   // F88: each business's own fiscal year
           certification.entities[id] = { booksBalanced: rec.booksBalanced, trialBalanced: rec.trialBalanced, balanceSheetBalanced: rec.balanceSheetBalanced, reconciledToReports: rec.reconciledToReports };
           if (!rec.booksBalanced) allBalanced = false;
         }

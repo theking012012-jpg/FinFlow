@@ -92,6 +92,7 @@ async function _loadEntitiesFromDBImpl(){
       invoice_prefix: e.invoice_prefix || '',   // B1b: this business's invoice-number prefix (Settings)
       bill_prefix: e.bill_prefix || '',   // FA-M5c: and its bill-number prefix
       payment_terms: (e.payment_terms != null && e.payment_terms !== '' ? Number(e.payment_terms) : null),   // batch 8
+      fiscal_year: e.fiscal_year || null,   // F88: this business's fiscal year (null → the account's default)
       data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
       // F196 Tier 2: the entity's OWN letterhead profile. A document is issued BY this entity, so
       // its business name/address/contact/tax-id must travel with it rather than being read from the

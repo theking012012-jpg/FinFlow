@@ -117,7 +117,14 @@ async function main() {
     const before = await http.get('/api/my-access');
     A('while ACTIVE, viewer is scoped into A (scopedIntoOther)', before.json.scopedIntoOther === true,
       `scopedIntoOther=${before.json.scopedIntoOther} current=${before.json.currentAccountId}`);
-    await c.query(`UPDATE team_members SET data = data || '{"status":"revoked"}'::jsonb WHERE data->>'member_user_id' = $1`, [String(members.viewer)]);
+    // Revoke is the owner's DELETE /api/team/:id (the real path). This used to write status 'revoked' straight into the
+    // row — a value the schema does not have (team_members: pending / active; F79's CHECK now refuses it).
+    const tmId = (await c.query(`SELECT id FROM team_members WHERE data->>'member_user_id' = $1`, [String(members.viewer)])).rows[0].id;
+    // the owner revokes in their OWN session; the viewer's session (http) is left exactly as it was
+    const owner = new HarnessHttp(server.baseUrl, { xff: '10.77.0.9' });
+    A('owner login', (await owner.post('/api/auth/login', { email: 'rbac-owner@finflow.test', password: PW })).status === 200);
+    const del = await owner.request('DELETE', '/api/team/' + tmId);
+    A('owner revokes the viewer (DELETE /api/team/:id → 200)', del.status === 200, 'status ' + del.status + ' ' + String(del.text || '').slice(0, 120));
     const after = await http.get('/api/my-access');
     A('after REVOKE, viewer no longer scoped into A (next request, no session cache)',
       after.json.scopedIntoOther === false && after.json.currentAccountId === members.viewer,

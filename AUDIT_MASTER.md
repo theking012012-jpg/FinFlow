@@ -376,7 +376,8 @@ Many headers further down still say OPEN / PARTIAL / FIX HELD from July–August
 C1 `da63b81`, F88 `269c72e`, F75 `a604465` + F75-b `581a472` · `83a7538` (the wrappers measured; the dead renderProjects removed), F125 `5732c85`,
 NEW-22 `725f8c3`, F90 parts 1–4 `ba06384` · `665bc36` · `4bde7bd` · `b560c93` · `ed50219` (written by the database, History on every
 record, the audit report, tamper evidence), F105 `a917efe` (the ledger checks itself). F94, F129, F64, F54, F63, F68, F81, F116,
-F142 were already fixed — their rows say so; the 2026-08-09 list above was stale.
+F142 were already fixed — their rows say so; the 2026-08-09 list above was stale. Owner sweep on `7ece41f`: 734/738 → the 4 RED
+fixed in `fb0cb26` (seeds) + F79b (bad status → 400, not 500); re-sweep pending.
 
 ### ⏳ OUTSTANDING — as of 2026-11-02 (authoritative list; anything not here is fixed or is a numbered row above)
 **Code — next, in order:**
@@ -2301,6 +2302,20 @@ One CHECK, on `accountant_reviews.rating`. Specifically:
 **Done when:** (1) the harness refuses to seed `status:'final'` and says why; (2) the product half has an owner decision recorded, implemented or explicitly deferred.
 
 ---
+
+### F79b ✅ FIXED + VERIFIED (2026-11-02) — found by the owner's sweep — a status the record does not have answered 500
+**Found:** owner's 3× sweep on `7ece41f` — 734/738 GREEN, 4 RED. Three of the four were harness seeds, one was a real defect class:
+- `verify-account-switch` — revoked access by writing `team_members.status = 'revoked'` (not in the vocabulary; F79's CHECK refused it). Revoke in the product is `DELETE FROM team_members` → restated. 9/0.
+- `verify-negative-values` — seeded a customer status that does not exist → `STATUS_OF` now read from `pg_constraint`, never typed. 5/0.
+- `verify-escaping-sweep` — its guard read the `renderTimesheet` copy F75-b deleted; it now checks the live `renderTimesheetList` (extra.js). 3/0.
+- `verify-f150c-write-side-isolation` — `POST /api/quotes` with `status:'draft'` answered **500** (`23514 chk_quotes_status`). The seed was wrong (quotes have no draft) → `'pending'`, 33/0. **But the 500 is the product's defect:** a route that takes a status from the caller and does not validate it lets the database refuse the row, and the user sees a server error.
+All four restated in `fb0cb26`.
+
+**Class (Rule 13), enumerated by execution:** every create/edit route that takes a status. Invoices, bills, credit notes and vendor credits already validated (400). **Quotes, recurring invoices, recurring bills and customers did not — 500 on both POST and PUT.**
+
+**Root fix (one place, covers every route now and later):** the error handler maps a CHECK violation on any `chk_<table>_status` constraint (`23514`) to **400 `{code:'BAD_STATUS', error:"That status is not allowed for quotes. Allowed: pending, accepted, declined, converted.", allowed:[…]}`**. The allowed list is read from the constraint itself (`pg_get_constraintdef`), so it cannot drift from the schema. Nothing is written — the database refused the row.
+
+**Executed:** `verify-f79b-bad-status-400` (real server + scratch Postgres) — for 8 routes, POST with a nonsense status → 400 + no row; PUT a real row to a nonsense status → 400 + row unchanged; the sweep's own case (quote "draft") → 400 listing exactly `pending, accepted, declined, converted`. **RED 9 failed / 8 passed on `b560c93`** (quotes ×2, recurring invoices ×2, recurring bills ×2, customers ×2, the sweep case — all 500) **→ GREEN 17/0.** Related re-run 17/17 green: account-switch, c5-input-validation, checkout-payment-status, escaping-sweep, f150c, f157-no-entity-400, f66, f79-status-constraints, f79-status-domains, fam6-status-at-create, gl-status-reversal, negative-values, put-field-validation, f90-audit-at-the-write, api-key-mint-rbac, fix3b route guard + money routes.
 
 ### F80 ✅ FIXED (executed; status corrected 2026-08-07) — was 🟠 HIGH — Payroll leg had no status filter; `draft` runs recognised as expense on BOTH engines
 **Status:** ✅ **FIXED & verified.** Both engines now gate payroll recognition on `IN ('approved','paid')` (server `computeBooks` `PAYROLL_RECOGNIZED`; client `computeExpenseBreakdown` `PAYROLL_RECOGNIZED`, app-main.js) — a `draft` run contributes 0. Execution-verified against current HEAD: `verify-f33c-payroll-buckets` asserts a draft run of 999 is EXCLUDED from the total (3/3 green), and the F85 harnesses further exercise the approved/paid filter. Aligns with `VERIFICATION.md` decision 2 and `CLAUDE.md` Rule 12. Header previously read FIX HELD — stale.

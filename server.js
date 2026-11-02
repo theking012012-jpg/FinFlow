@@ -15631,7 +15631,22 @@ app.get('*', (req, res) => {
 // route above. (Previously it sat mid-file at ~2534, leaving ~42 later routes to
 // fall through to Express's default handler and return HTML/stack instead of JSON.)
 // eslint-disable-next-line no-unused-vars
-app.use((err, req, res, _next) => {
+// F79b (sweep 2026-11-02): a status the record's vocabulary does not have is the CALLER's mistake — 400 with the values
+// that ARE allowed, never a 500. The database's CHECK (chk_<table>_status, F79) is the one judge, for every route that
+// writes a status, now and later; the allowed values are read from that constraint, so the message can never drift
+// from what the database enforces.
+async function _badStatusAnswer(err) {
+  if (!err || err.code !== '23514' || !/^chk_[a-z_]+_status$/.test(String(err.constraint || ''))) return null;
+  let allowed = [];
+  try {
+    const { rows: [k] } = await pool.query(`SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname = $1 LIMIT 1`, [err.constraint]);
+    allowed = [...String((k && k.d) || '').matchAll(/'([a-z_]+)'::text/g)].map(m => m[1]).filter(v => v !== 'status');
+  } catch (_) {}
+  const what = String(err.table || err.constraint.replace(/^chk_|_status$/g, '')).replace(/_/g, ' ');
+  return { error: `That status is not allowed for ${what}.` + (allowed.length ? ' Allowed: ' + allowed.join(', ') + '.' : ''), code: 'BAD_STATUS', allowed };
+}
+app.use(async (err, req, res, _next) => {
+  try { const b = await _badStatusAnswer(err); if (b) return res.status(400).json(b); } catch (_) {}
   // F157: honour a typed, client-safe status set upstream (e.g. db.insert's NO_ACTIVE_ENTITY 400).
   // Only errors explicitly marked `expose` leak their message; everything else stays a generic 500.
   if (err && err.expose === true && Number.isInteger(err.status)) {

@@ -252,43 +252,136 @@
   }
   window.ffOpenDocView = openDoc;
 
-  // Batch 7 (better than standard): what changed on this document — old → new, who, when — read from the audit trail
-  // (the same record the Audit page shows). Owner / admin only (audit:read); anyone else simply sees no panel.
-  var HIST_FIELDS = { amount: 'Amount', client: 'Client', vendor: 'Vendor', issue_date: 'Issued', due_date: 'Due', status: 'Status', notes: 'Notes', number: 'Number' };
-  function _histVal(k, v){
+  // ── F90 part 2: the record's History — what changed, who, when, how — on every record, in plain words ──────────────
+  // Read from the audit trail (the database records every change in the same transaction as the change, F90 part 1),
+  // as the server pairs it: one action = one event (a route's named event + the row changes it made). Owner / admin only
+  // (audit:read); anyone else simply gets no panel. Never printed: it sits OUTSIDE the document frame.
+  var H_LABEL = { amount: 'Amount', client: 'Customer', customer: 'Customer', vendor: 'Vendor', issue_date: 'Issued', due_date: 'Due',
+    expiry_date: 'Expires', status: 'Status', notes: 'Notes', memo: 'Memo', number: 'Number', num: 'Number', ref: 'Reference',
+    amount_paid: 'Paid', payment_date: 'Paid on', paid_date: 'Paid on', date: 'Date', expense_date: 'Date', description: 'Description',
+    category: 'Category', method: 'Method', reference: 'Reference', line_items: 'Line items', tax: 'Tax', currency: 'Currency',
+    total_gross: 'Gross', total_net: 'Net pay', total_deductions: 'Deductions', period: 'Period', run_date: 'Run on', name: 'Name',
+    email: 'Email', role: 'Role', units: 'Units', unit_cost: 'Unit cost', cost: 'Cost', price: 'Price', budget: 'Budget', billed: 'Billed',
+    hours: 'Hours', employee: 'Employee', frequency: 'Frequency', next_run: 'Next run', end_date: 'Ends', deductible: 'Deductible',
+    invoice_id: 'Invoice', bill_id: 'Bill', credit_applied: 'Credit applied', class: 'Class', location: 'Location', quantity: 'Quantity',
+    lock_date: 'Locked up to', enabled: 'On', fiscal_year: 'Fiscal year', timezone: 'Time zone', country: 'Country', access_level: 'Access',
+    entity_access: 'Businesses', from_currency: 'From', to_currency: 'To', rate: 'Rate', rate_date: 'Rate date' };
+  var H_SKIP = { id: 1, user_id: 1, entity_id: 1, created_at: 1, updated_at: 1, idempotency_key: 1, customer_id: 1, vendor_id: 1, _dbId: 1,
+    last_restock_qty: 1, last_restock_at: 1, row_ids: 1 };
+  var H_MONEY = /^(amount|amount_paid|total|subtotal|tax|price|cost|unit_cost|gross|net|total_gross|total_net|total_deductions|budget|billed|balance|credit_applied|fee|net_pay|bonus|overtime|foreign_amount|base_amount)$/;
+  var H_VERB = { CREATE: 'created', UPDATE: 'edited', DELETE: 'deleted', APPROVE: 'approved', MARK_PAID: 'marked paid', VOID: 'voided',
+    REFUND: 'refunded', UNDO: 'undone', INVITE: 'invited', ACCEPT: 'accepted the invitation', PAY_IN_ADVANCE: 'paid in advance',
+    REMIT_WITHHOLDINGS: 'remitted the withholdings', RECALC: 'updated from payments', LOCK: 'locked', UNLOCK: 'unlocked',
+    CLIENT_REVOKE: 'revoked the accountant’s access', ACCESS_REQUESTED: 'asked an accountant for access', CLIENT_ACTIVATE: 'activated',
+    EMAIL_TEST_SENT: 'sent a test email' };
+  function hLabel(k){ return H_LABEL[k] || String(k).replace(/_/g, ' ').replace(/^\w/, function (c) { return c.toUpperCase(); }); }
+  function hVal(k, v){
     if (v == null || v === '') return '—';
-    if (k === 'amount') { var n = Number(v); return isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(v); }
-    if (k === 'issue_date' || k === 'due_date') return dlabel(v);
+    if (Array.isArray(v)) return k === 'line_items' ? v.length + (v.length === 1 ? ' line' : ' lines') : v.length + (v.length === 1 ? ' item' : ' items');
+    if (typeof v === 'object') { var j = JSON.stringify(v); return j.length > 60 ? j.slice(0, 57) + '…' : j; }
+    if (H_MONEY.test(k) && v !== '' && isFinite(Number(v))) return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (/^\d{4}-\d{2}-\d{2}/.test(String(v)) && (/(date|_on|^due|^next_run|^period_)/.test(k) || String(v).length === 10)) return dlabel(v);
+    if (v === true || v === 1 && /^(enabled|deductible)$/.test(k)) return 'yes';
+    if (v === false || v === 0 && /^(enabled|deductible)$/.test(k)) return 'no';
     return String(v).slice(0, 80);
   }
+  function hSame(k, a, b){ return hVal(k, a) === hVal(k, b); }
+  function hVerb(a){ a = String(a || '').toUpperCase(); return H_VERB[a] || a.toLowerCase().replace(/_/g, ' '); }
+  function hVia(src){
+    src = String(src || '');
+    if (/^api_key:/.test(src)) return 'via an API key';
+    if (/^job:recurring/.test(src)) return 'automatically — recurring schedule';
+    if (/^job:/.test(src)) return 'automatically';
+    if (/^webhook/.test(src)) return 'from a payment provider';
+    if (/^tool:/.test(src)) return 'by a FinFlow maintenance tool';
+    if (src === 'database') return 'directly in the database, outside the app';
+    return '';
+  }
+  // A genuine instant is shown in the BUSINESS's time zone (books have a zone, viewers don't — CLAUDE.md Rule 10).
+  function hWhen(ts){
+    var d = new Date(ts); if (isNaN(d)) return '';
+    var ent = (window.ENTITIES || []).find(function (e) { return e && e.active; }) || {};
+    var tz = ent.timezone || 'UTC';
+    try {
+      var p = {}; new Intl.DateTimeFormat('en-GB', { timeZone: tz, day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        .formatToParts(d).forEach(function (x) { p[x.type] = x.value; });
+      return p.day + ' ' + p.month + ' ' + p.year + ', ' + p.hour + ':' + p.minute;
+    } catch (_) { return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'; }
+  }
   function _obj(x){ if (!x) return {}; if (typeof x === 'string') { try { return JSON.parse(x) || {}; } catch (_) { return {}; } } return x; }
+  function _flat(o){ o = _obj(o); var out = {}; Object.keys(o).forEach(function (k) {
+    if (k === 'data' && o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) Object.keys(o[k]).forEach(function (kk) { if (!(kk in out)) out[kk] = o[k][kk]; });
+    else out[k] = o[k]; }); return out; }
+  // One event → { head, details[] } in plain words.
+  function hEvent(a){
+    var who = a.actor_name || 'Someone', act = String(a.action || '').toUpperCase();
+    var o = _flat(a.old_data), n = _flat(a.new_data), det = [];
+    var keys = Array.isArray(a.changed_fields) && a.changed_fields.length ? a.changed_fields
+      : Object.keys(Object.assign({}, o, n));
+    var row = String(a.row_action || act).toUpperCase();
+    if (row === 'CREATE' || row === 'DELETE') {
+      var src = row === 'CREATE' ? n : o;
+      ['amount', 'client', 'customer', 'vendor', 'name', 'description', 'issue_date', 'date', 'expense_date', 'payment_date', 'due_date', 'status', 'period', 'role', 'email']
+        .forEach(function (k) { if (src[k] != null && src[k] !== '') det.push(hLabel(k) + ' ' + hVal(k, src[k])); });
+    } else {
+      keys.forEach(function (k) {
+        if (H_SKIP[k]) return;
+        if (k === 'targets' && (o[k] || n[k])) {   // a budget: one line per target
+          var ot = o[k] || {}, nt = n[k] || {};
+          Object.keys(Object.assign({}, ot, nt)).forEach(function (t) { if (!hSame('amount', ot[t], nt[t])) det.push(t + ' ' + hVal('amount', ot[t]) + ' → ' + hVal('amount', nt[t]) + ' per year'); });
+          return;
+        }
+        if (!hSame(k, o[k], n[k])) det.push(hLabel(k) + ' ' + hVal(k, o[k]) + ' → ' + hVal(k, n[k]));
+      });
+      if (!det.length && a.field_name) det.push(hLabel(a.field_name) + ' ' + String(a.old_value || '—') + ' → ' + String(a.new_value || '—'));
+    }
+    var via = hVia(a.source);
+    return { head: hWhen(a.changed_at || a.created_at) + ' · ' + who + ' ' + hVerb(act) + (via ? ' (' + via + ')' : ''), details: det.slice(0, 12) };
+  }
+  window.ffHistoryEvent = hEvent;   // test surface
+  async function hRows(table, id){
+    var r = await fetch('/api/audit-trail?table=' + encodeURIComponent(table) + '&record_id=' + encodeURIComponent(id), { credentials: 'include' });
+    if (!r.ok) return null;   // no audit access → no panel (never an error on someone's screen)
+    var rows = await r.json(); return Array.isArray(rows) ? rows : null;
+  }
+  function hHTML(rows){
+    return rows.map(function (a) {
+      var e = hEvent(a);
+      return '<div data-style="padding:6px 0;border-top:1px solid var(--bd,#3a3128)">'
+        + '<div data-style="color:var(--t1,#e8dcc4)">' + esc(e.head) + '</div>'
+        + (e.details.length ? '<div data-style="color:var(--t2,#b8aa8e);font-size:11.5px;margin-top:2px">' + e.details.map(esc).join(' · ') + '</div>' : '')
+        + '</div>';
+    }).join('');
+  }
+  // In the document viewer (invoices, bills, quotes, receipts, credit notes, vendor credits, payments)
   window.ffDocHistory = async function (table, id) {
     var panel = $('ff-docview-history'); if (!panel || id == null) return;
     try {
-      var r = await fetch('/api/audit-trail?table=' + encodeURIComponent(table) + '&record_id=' + encodeURIComponent(id), { credentials: 'include' });
-      if (!r.ok) return;   // no audit access → no panel (never an error on someone's screen)
-      var rows = await r.json(); if (!Array.isArray(rows) || !rows.length) return;
-      var lines = rows.map(function (a) {
-        var when = String(a.changed_at || a.created_at || '').slice(0, 10), who = a.actor_name || 'Someone';
-        var act = String(a.action || '').toUpperCase(), parts = [];
-        if (act === 'CREATE') parts.push('created');
-        else if (act === 'RECALC' && a.field_name) parts.push('status / paid ' + esc(String(a.old_value || '—')) + ' → ' + esc(String(a.new_value || '—')) + ' (from payments)');
-        else {
-          var o = _obj(a.old_data), n = _obj(a.new_data);
-          Object.keys(HIST_FIELDS).forEach(function (k) {
-            if (!(k in n) && !(k in o)) return;
-            var ov = _histVal(k, o[k]), nv = _histVal(k, n[k]);
-            if (ov !== nv) parts.push(HIST_FIELDS[k] + ' ' + esc(ov) + ' → ' + esc(nv));
-          });
-          if (!parts.length && a.field_name) parts.push(esc(a.field_name) + ' ' + esc(String(a.old_value || '—')) + ' → ' + esc(String(a.new_value || '—')));
-        }
-        if (!parts.length) return '';
-        return '<div>' + esc(dlabel(when) || when) + ' · ' + esc(who) + ' — ' + parts.join('; ') + '</div>';
-      }).filter(Boolean);
-      if (!lines.length) return;
-      panel.innerHTML = '<div data-style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3,#8a7d66);margin-bottom:4px">History · not printed</div>' + lines.join('');
+      var rows = await hRows(table, id); if (!rows || !rows.length) return;
+      panel.innerHTML = '<div data-style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3,#8a7d66);margin-bottom:4px">History · not printed</div>' + hHTML(rows);
       panel.style.display = 'block';
     } catch (_) { /* history is a convenience — never blocks the document */ }
+  };
+  // For records with no document (expenses, payroll runs, journals, …): a History window of its own
+  window.ffRecordHistory = async function (table, id, title) {
+    var o = $('ff-history'); if (!o) {
+      o = document.createElement('div'); o.id = 'ff-history';
+      o.style.cssText = 'position:fixed;inset:0;z-index:9650;display:none;align-items:flex-start;justify-content:center;background:rgba(10,8,5,.62);padding:48px 16px;overflow:auto';
+      o.innerHTML = '<div data-style="width:100%;max-width:640px;background:var(--bg1,#1a160f);border:1px solid var(--bd,#3a3128);border-radius:12px;padding:16px 18px;color:var(--t2,#c9bca2);font-size:12.5px">'
+        + '<div data-style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div id="ff-history-title" data-style="font-weight:600;color:var(--t1,#e8dcc4)"></div>'
+        + '<button id="ff-history-close" type="button" class="btn btn-ghost btn-sm">Close</button></div><div id="ff-history-body"></div></div>';
+      document.body.appendChild(o);
+      o.addEventListener('click', function (ev) { if (ev.target === o) o.style.display = 'none'; });
+      $('ff-history-close').onclick = function () { o.style.display = 'none'; };
+    }
+    $('ff-history-title').textContent = 'History — ' + (title || 'record');
+    var body = $('ff-history-body'); body.innerHTML = '<div data-style="color:var(--t3,#8a7d66)">Loading…</div>';
+    o.style.display = 'flex';
+    try {
+      var rows = await hRows(table, id);
+      if (rows == null) { body.innerHTML = '<div data-style="color:var(--t3,#8a7d66)">Only the owner and admins can see a record’s history.</div>'; return; }
+      body.innerHTML = rows.length ? hHTML(rows) : '<div data-style="color:var(--t3,#8a7d66)">No changes recorded yet.</div>';
+    } catch (_) { body.innerHTML = '<div data-style="color:var(--red,#c0392b)">Couldn’t load the history — close this and try again.</div>'; }
   };
 
   // ── map a client-side invoice record → the renderer's shape ──

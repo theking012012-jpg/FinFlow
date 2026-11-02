@@ -497,6 +497,7 @@ async function loadPayrollRuns(){
           ${(r.status==='paid'&&r.paid_basis==='net'&&!r.withholdings_remitted_date&&_runWithholdings(r)>0)?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-id="${r.id}" data-on-click="openRemitWithholdings(Number(this.dataset.argId))">Remit</button>`:''}
           ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px;color:var(--red)" data-arg-id="${r.id}" data-on-click="deletePayrollRun(Number(this.dataset.argId))">Delete</button>`:''}
           ${(r.status==='approved'||r.status==='paid')?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px;color:var(--red)" data-arg-id="${r.id}" data-on-click="voidPayrollRun(Number(this.dataset.argId))">Void</button>`:''}
+          <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" title="History — who changed this run, and when" data-arg-id="${r.id}" data-arg-name="${esc('Payroll run '+(r.period||''))}" data-on-click="ffRecordHistory('payroll_runs', Number(this.dataset.argId), this.dataset.argName)">History</button>
         </div>
       </div>`).join('');
   }catch(e){el.innerHTML='<div data-style="color:var(--red);padding:1rem;font-size:12px">Could not load payroll runs</div>';}

@@ -499,6 +499,8 @@
             <div class="tx-amt dn">-${S(e.amount)}</div>
             ${e._dbId ? `<button class="btn btn-ghost btn-sm" data-style="padding:2px 6px" title="Edit"
               data-arg-idx="${idx}" data-on-click="editExpense(Number(this.dataset.argIdx))">✏</button>` : ''}
+            ${e._dbId ? `<button class="btn btn-ghost btn-sm" data-style="padding:2px 6px;font-size:10px" title="History — who changed this expense, and when"
+              data-arg-id="${e._dbId}" data-arg-name="${esc(e.desc || 'Expense')}" data-on-click="ffRecordHistory('expenses', Number(this.dataset.argId), this.dataset.argName)">History</button>` : ''}
             <button class="btn btn-ghost btn-sm" data-style="color:var(--red);opacity:.7;padding:2px 6px"
               data-arg-idx="${idx}" data-on-click="deleteExpense(Number(this.dataset.argIdx))">✕</button>
           </div>

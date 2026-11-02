@@ -1544,6 +1544,7 @@
         due_date: q.expiry_date || null, status: q.status || '', notes: q.notes || '',
         amount: q.amount, line_items: q.line_items || null, currency: q.currency || null,
       }, 'quote');
+      if (window.ffDocHistory) window.ffDocHistory('quotes', q.id);   // F90: its history
     };
     window.viewReceipt = function (id) {
       const r = (_receiptsData || []).find(x => x.id === id); if (!r) return;
@@ -1552,6 +1553,7 @@
         notes: r.notes || (r.method ? 'Payment method: ' + r.method : ''),
         amount: r.amount, line_items: r.line_items || null, currency: r.currency || null,
       }, 'receipt');
+      if (window.ffDocHistory) window.ffDocHistory('sales_receipts', r.id);   // F90
     };
     window.viewPaymentReceived = function (id) {
       const r = (_paymentsRecvData || []).find(x => x.id === id); if (!r) return;
@@ -1564,6 +1566,7 @@
         notes: r.method ? 'Payment method: ' + r.method : (inv ? 'Payment for ' + (inv.number || inv.num || 'invoice') : ''),
         amount: r.amount, currency: r.currency || null,
       }, 'payment');
+      if (window.ffDocHistory) window.ffDocHistory(r.invoice_id != null ? 'invoice_payments' : 'payments_received', r.id);   // F90: Store B / legacy
     };
     window.viewCreditNote = function (id) {
       const r = (_creditNotesData || []).find(x => x.id === id); if (!r) return;
@@ -1571,6 +1574,7 @@
         number: r.num, party: r.customer, issue_date: r.date || null, status: r.status || 'Open',
         notes: r.notes || r.reason || '', amount: r.amount, line_items: r.line_items || null, currency: r.currency || null,
       }, 'credit-note');
+      if (window.ffDocHistory) window.ffDocHistory('credit_notes', r.id);   // F90
     };
     window.viewVendorCredit = function (id) {
       const r = (_vendorCreditsData || []).find(x => x.id === id); if (!r) return;
@@ -1578,6 +1582,7 @@
         number: r.num, party: r.vendor, issue_date: r.date || null, status: r.status || 'Open',
         notes: r.notes || r.reason || '', amount: r.amount, line_items: r.line_items || null, currency: r.currency || null,
       }, 'vendor-credit');
+      if (window.ffDocHistory) window.ffDocHistory('vendor_credits', r.id);   // F90
     };
     window.viewPaymentMade = function (id) {
       const r = (_paymentsMadeData || []).find(x => x.id === id); if (!r) return;
@@ -1586,6 +1591,7 @@
         notes: r.method ? 'Payment method: ' + r.method : (r.bill_id ? 'Payment for bill' : ''),
         amount: r.amount, currency: r.currency || null,
       }, 'payment');
+      if (window.ffDocHistory) window.ffDocHistory('payments_made', r.id);   // F90
     };
 
     console.log('[FinFlow API Wiring — Pages] ✅ Quotes, Receipts, Payments Received, Recurring Invoices, Credit Notes, Vendors, Bills, Payments Made, Recurring Bills, Vendor Credits wired');

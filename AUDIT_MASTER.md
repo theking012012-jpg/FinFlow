@@ -2451,6 +2451,15 @@ a direct database edit recorded as system / database; the recurring job named; o
 contract (each green): f90-audit-foundation 10/0, f92-recalc-audit 8/0, fix3-audit-coverage 15/0, fix3b-audit-money-routes 19/0,
 lc3f-accountant-audit 17/0, team-membership-audit 7/0, c29-audit-filters 9/0 (new options for the newly recorded tables; it was
 failing on HEAD too), a6-test-data-purge 17/0. Related: 360 harnesses re-run (every write path changed): all green after the restatements above, plus b1b / fam5c numbers (the number given at creation is part of the creation event), fab10b portal links (named events PORTAL_LINK_SHARED / REVOKED), lc1c link tool + migration and b1b number tool (the tools / migration identify themselves; the database writes their rows), g3 doc-edit guard; load flakes green alone (fam2, fam12, m34, m46).
+**2026-11-02 — part 2 ✅ FIXED + VERIFIED: every record shows its History, in plain words.** Before: invoices and bills only, 8
+hard-coded fields, a date without a time, nothing about how. Now (`finflow-docview.js` `ffDocHistory` / `ffRecordHistory`): who,
+when — in the BUSINESS's time zone (Rule 10) — the action ("approved", "marked paid", not just "UPDATE"), every changed field
+old → new with money / dates formatted, a budget one line per target, and how ("via an API key", "automatically — recurring
+schedule", "directly in the database, outside the app"). Under every document (invoice, bill, quote, receipt, payment received
+/ made, credit note, vendor credit — never printed), and a History button on expenses, payroll runs and journals.
+Executed: `verify-f90b-history-panel` (Chromium; business in Asia/Tokyo) **RED 7 failed then crash on `ba06384` → GREEN 14/0**.
+It caught a part-1 reader bug, fixed first in its own commit (`665bc36`: a job's invoice read "edited" — rows of one
+transaction share a timestamp). Related: 24 document / expenses / payroll / journal harnesses green.
 **Load-bearing (infrastructure):** `finflow.ctx` is a SESSION setting sent before each write — it relies on the session-mode pooler.
 Under a transaction-mode pooler the SET and the write could reach different server connections (attribution would be wrong).
 **Status:** 🟢 **Phase A DONE (executed 10/10) — the trail is now accounting-grade; Phase B (coverage) in progress.** Owner ruled 2026-08-07: "the one that's perfect for an accounting app, up to standard." Built:

@@ -1281,7 +1281,7 @@ async function renderJournalsLive(){
         <span data-style="color:var(--t3)">${esc(j.ref||'')}</span>
         <span data-style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
         <span data-style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
-        <span><span class="badge ${(j.status||'Draft')==='Posted'?'b-green':'b-amber'}">${esc(j.status||'Draft')}</span></span>
+        <span><span class="badge ${(j.status||'Draft')==='Posted'?'b-green':'b-amber'}">${esc(j.status||'Draft')}</span>${j.id!=null?`<button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:1px 5px;margin-left:4px" title="History — who changed this journal, and when" data-arg-id="${j.id}" data-arg-name="${esc('Journal '+(j.ref||''))}" data-on-click="ffRecordHistory('journals', Number(this.dataset.argId), this.dataset.argName)">History</button>`:''}</span>
       </div>`).join('');
   }catch(e){
     const allEntries=[...journalEntries,...journalsData.map(j=>({...j,lines:null}))];

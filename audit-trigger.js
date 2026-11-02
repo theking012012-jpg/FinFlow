@@ -95,12 +95,78 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 `;
 
+// F90 part 4 — TAMPER EVIDENCE. Every audit entry carries a hash of its own content and of the entry before it in the same
+// account's chain (chain_seq 1, 2, 3, …), computed by the database as the entry is written (BEFORE INSERT, under a
+// per-account lock, so two writes can never claim the same place). Altering any recorded value, or removing an entry,
+// breaks the chain at that point — and verify (ff_audit_verify) says exactly where. The sign-in IP / device are left out
+// of the hash on purpose: LC3d-b removes them 90 days after an account is deleted, which must not read as tampering.
+// Entries written before the chain existed (chain_seq NULL) are reported as such, never as broken.
+// Limit (stated, not hidden): someone able to rewrite the database could delete the NEWEST entries and leave a shorter
+// chain that still verifies — the report shows the latest entry's number and hash so it can be noted elsewhere.
+const CHAIN_SQL = `
+CREATE OR REPLACE FUNCTION ff_audit_content(a audit_trail) RETURNS TEXT AS $$
+  SELECT jsonb_build_object(
+    'u', a.user_id, 'e', a.entity_id, 't', a.table_name, 'r', a.record_id, 'a', a.action, 'f', a.field_name,
+    'ov', a.old_value, 'nv', a.new_value, 'od', a.old_data, 'nd', a.new_data, 'at', a.actor_type, 'ai', a.actor_id,
+    'w', to_char(a.changed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'), 's', a.source, 'cf', a.changed_fields,
+    'q', a.request_id, 'n', a.chain_seq, 'p', a.prev_hash)::text
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION ff_audit_chain() RETURNS trigger AS $$
+DECLARE last RECORD;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('ff_audit_chain'), COALESCE(NEW.user_id, 0));
+  SELECT chain_seq, row_hash INTO last FROM audit_trail
+   WHERE user_id IS NOT DISTINCT FROM NEW.user_id AND chain_seq IS NOT NULL ORDER BY chain_seq DESC LIMIT 1;
+  NEW.changed_at := COALESCE(NEW.changed_at, NOW());
+  NEW.chain_seq := COALESCE(last.chain_seq, 0) + 1;
+  NEW.prev_hash := last.row_hash;
+  NEW.row_hash := encode(sha256(convert_to(ff_audit_content(NEW), 'UTF8')), 'hex');
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+-- Walk one account's chain: the first entry that does not hold (its own hash, or the link to the one before it, or a
+-- missing number), with what was found.
+CREATE OR REPLACE FUNCTION ff_audit_verify(acct INTEGER)
+RETURNS TABLE (entries BIGINT, legacy BIGINT, bad_id INTEGER, bad_seq BIGINT, reason TEXT, head_seq BIGINT, head_hash TEXT) AS $$
+  WITH c AS (
+    SELECT a.id, a.chain_seq, a.prev_hash, a.row_hash,
+           encode(sha256(convert_to(ff_audit_content(a), 'UTF8')), 'hex') AS recomputed,
+           lag(a.row_hash) OVER (ORDER BY a.chain_seq) AS prev_row_hash,
+           lag(a.chain_seq) OVER (ORDER BY a.chain_seq) AS prev_seq
+      FROM audit_trail a WHERE a.user_id IS NOT DISTINCT FROM acct AND a.chain_seq IS NOT NULL),
+  bad AS (
+    SELECT id, chain_seq,
+           CASE WHEN recomputed IS DISTINCT FROM row_hash THEN 'changed'
+                WHEN chain_seq <> COALESCE(prev_seq, 0) + 1 THEN 'missing_before'
+                WHEN prev_hash IS DISTINCT FROM prev_row_hash THEN 'missing_before' END AS reason
+      FROM c)
+  SELECT (SELECT count(*) FROM c),
+         (SELECT count(*) FROM audit_trail WHERE user_id IS NOT DISTINCT FROM acct AND chain_seq IS NULL),
+         b.id, b.chain_seq, b.reason,
+         (SELECT max(chain_seq) FROM c), (SELECT row_hash FROM c ORDER BY chain_seq DESC LIMIT 1)
+    FROM (SELECT * FROM bad WHERE reason IS NOT NULL ORDER BY chain_seq LIMIT 1) b
+   RIGHT JOIN (SELECT 1) one ON true
+$$ LANGUAGE sql STABLE;
+`;
+
+async function ensureChain(client) {
+  await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS chain_seq BIGINT`);
+  await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS prev_hash TEXT`);
+  await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS row_hash TEXT`);
+  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_trail_chain ON audit_trail (COALESCE(user_id, 0), chain_seq) WHERE chain_seq IS NOT NULL`);
+  await client.query(CHAIN_SQL);
+  await client.query(`DROP TRIGGER IF EXISTS audit_trail_chain ON audit_trail`);
+  await client.query(`CREATE TRIGGER audit_trail_chain BEFORE INSERT ON audit_trail FOR EACH ROW EXECUTE FUNCTION ff_audit_chain()`);
+}
+
 async function ensureSchema(client) {
   await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS changed_fields TEXT[]`);
   await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS source TEXT`);
   await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS request_id TEXT`);
   await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_trail_record ON audit_trail (table_name, record_id)`);
   await client.query(FUNCTIONS_SQL);
+  await ensureChain(client);
   for (const t of AUDITED_TABLES) {
     const { rows: [has] } = await client.query(`SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = $1`, [t]);
     if (!has) continue;
@@ -165,4 +231,4 @@ function mergeEvents(rows) {
   return out.sort((x, y) => ms(y) - ms(x) || (y.id || 0) - (x.id || 0));
 }
 
-module.exports = { AUDITED_TABLES, FUNCTIONS_SQL, ensureSchema, WRITE_RE, mergeEvents };
+module.exports = { AUDITED_TABLES, FUNCTIONS_SQL, CHAIN_SQL, ensureSchema, WRITE_RE, mergeEvents };

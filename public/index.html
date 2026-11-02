@@ -636,8 +636,10 @@
               </select>
               <button class="btn btn-ghost btn-sm" data-on-click="exportAuditCSV()">Export CSV</button>
               <button class="btn btn-ghost btn-sm" data-on-click="exportAuditPDF()">Export PDF</button>
+              <button class="btn btn-ghost btn-sm" data-on-click="verifyAuditTrail()" title="Check that no entry was changed or removed">Verify trail</button>
             </div>
           </div>
+          <div id="audit-verify-result" class="hidden" role="status" data-style="font-size:12px;margin:0 0 8px;padding:8px 10px;border-radius:8px;border:1px solid var(--bd)"></div>
           <!-- F90 part 3: who, when, what — filter the whole trail (dates are the business's calendar days) -->
           <div data-style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px">
             <label data-style="font-size:11px;color:var(--t3)">From <input type="date" class="finput" id="audit-filter-from" data-style="font-size:11px;padding:3px 6px;width:auto" data-on-change="loadAuditTrail()"></label>

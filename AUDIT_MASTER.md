@@ -2468,6 +2468,20 @@ returns the whole filtered trail (up to 50,000 entries) as CSV — one line per 
 formula-safe — or as the PDF on the page; every export is itself recorded (EXPORT, with its filters and size).
 Executed: `verify-f90c-audit-report` (Chromium; Tokyo business; entries at 16:30 UTC = 01:30 next day in Tokyo) **RED 11 failed
 on `4bde7bd` → GREEN 13/0**. Related: 33 audit harnesses green (one label restored: the "FinFlow support" badge, LC3g).
+**2026-11-02 — part 4 ✅ FIXED + VERIFIED: the trail is tamper-evident.** Before: the append-only trigger stops the app, but anyone
+holding the database's owner login (who can disable a trigger) could edit or delete entries without a trace. Now every entry
+carries `chain_seq` (1, 2, 3 … per account), `prev_hash` and `row_hash` = SHA-256 of its content + the previous hash, computed by
+the database as it is written (BEFORE INSERT, per-account advisory lock — no forks under concurrent writes). `GET /api/audit-log/verify`
+(`ff_audit_verify`) recomputes every fingerprint and link and names the first entry that does not hold — "changed after it was
+recorded", or "removed or changed before this one"; the Audit page has a **Verify trail** button. The sign-in IP / device are
+outside the hash, so LC3d-b's 90-day removal is not tampering; entries from before 2 Nov 2026 are reported as unchained, never as
+broken. **Stated limit:** deleting the NEWEST entries leaves a shorter chain that still verifies — the report shows the latest
+entry's number and fingerprint so it can be noted elsewhere; the restricted app database login (next) removes the app's ability
+to touch the trail at all.
+Executed: `verify-f90d-tamper-evident` **RED (no check exists: 404) on `b560c93` → GREEN 8/0** — 20 concurrent writes keep one
+unbroken chain; with the guard actually disabled: an edited amount is found at that entry; with its fingerprint recomputed too,
+at the next; restored exactly → intact; a deleted middle entry → found at #11; LC3d-b's IP removal still verifies; the page names
+the problem. Related: 68 harnesses that read or write the trail, or run the migrations — all green.
 **Load-bearing (infrastructure):** `finflow.ctx` is a SESSION setting sent before each write — it relies on the session-mode pooler.
 Under a transaction-mode pooler the SET and the write could reach different server connections (attribution would be wrong).
 **Status:** 🟢 **Phase A DONE (executed 10/10) — the trail is now accounting-grade; Phase B (coverage) in progress.** Owner ruled 2026-08-07: "the one that's perfect for an accounting app, up to standard." Built:

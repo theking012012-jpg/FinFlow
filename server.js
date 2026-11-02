@@ -4471,6 +4471,15 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
   res.json({ total: r.rows.length, rows: r.rows, more: r.more, next_before: r.next_before, timezone: r.tz,
     actors: actors.map(x => ({ key: x.actor_type + (x.actor_id != null && ['user', 'accountant'].includes(x.actor_type) ? ':' + x.actor_id : ''), name: x.actor_name })) });
 }));
+// F90 part 4: is this account's trail intact? Recomputes every entry's hash and every link (audit-trigger.js CHAIN_SQL).
+app.get('/api/audit-log/verify', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
+  const { rows: [v] } = await pool.query(`SELECT * FROM ff_audit_verify($1)`, [scopeId(req)]);
+  const problem = v && v.reason ? { entry_id: v.bad_id, number: Number(v.bad_seq), what: v.reason === 'changed'
+    ? 'This entry was changed after it was recorded — its content no longer matches its fingerprint.'
+    : 'One or more entries before this one were removed or changed — the chain is broken here.' } : null;
+  res.json({ intact: !problem, entries: Number(v ? v.entries : 0), earlier_unchained: Number(v ? v.legacy : 0), problem,
+    latest: v && v.head_seq != null ? { number: Number(v.head_seq), hash: v.head_hash } : null, checked_at: new Date().toISOString() });
+}));
 // The whole filtered trail as a file — every matching entry (up to 50,000), one line per changed field, times in the
 // business's time zone. The export is itself recorded (EXPORT, on the audit trail — the mass-export alert counts it).
 app.get('/api/audit-log/export', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {

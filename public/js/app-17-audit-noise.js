@@ -151,6 +151,28 @@ async function exportAuditPDF(){
   }catch(e){ if(typeof notify==='function')notify('Export failed — '+(e&&e.message||e),true); }
 }
 window.exportAuditPDF=exportAuditPDF;
+// F90 part 4: prove nothing was changed or removed — every entry's fingerprint and every link of the chain is
+// recomputed by the server.
+async function verifyAuditTrail(){
+  const box=document.getElementById('audit-verify-result'); if(!box)return;
+  box.classList.remove('hidden'); box.style.color='var(--t2)'; box.textContent='Checking every entry…';
+  try{
+    const r=await fetch('/api/audit-log/verify',{credentials:'include'});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const v=await r.json();
+    const n=x=>Number(x||0).toLocaleString('en-US');
+    if(v.intact){
+      box.style.color='var(--green)';
+      box.textContent='✓ Intact — '+n(v.entries)+' entries checked; none was changed or removed.'
+        +(v.latest?' Latest entry #'+n(v.latest.number)+', fingerprint '+String(v.latest.hash).slice(0,16)+'…':'')
+        +(v.earlier_unchained?' ('+n(v.earlier_unchained)+' earlier entries were recorded before fingerprints began on 2 Nov 2026.)':'');
+    }else{
+      box.style.color='var(--red)';
+      box.textContent='✗ Problem at entry #'+n(v.problem.number)+' — '+v.problem.what;
+    }
+  }catch(e){ box.style.color='var(--red)'; box.textContent='Could not check the trail — try again.'; }
+}
+window.verifyAuditTrail=verifyAuditTrail;
 
 // ── FEATURE 2: PARTIAL PAYMENTS — F113/F114/F115: the sole invoice-settle path ────
 // Replaces markInvoicePaid (deleted, finflow-api-wiring-medium.js). Opened with the FULL

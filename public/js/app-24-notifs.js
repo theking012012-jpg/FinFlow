@@ -65,9 +65,13 @@ window.updateScenario = function(){
   const set = (id,v)=>{ const el=document.getElementById(id); if(el)el.textContent=v; };
   set('lbl-rev-growth', (revGrowth>=0?'+':'')+Math.round(revGrowth*100)+'%');
   set('lbl-headcount', headcount+' hire'+(headcount===1?'':'s'));
-  set('lbl-salary', window._fmtMoneyNative(salary));
+  // F126: in a display currency the baseline is server-converted (BASE.ccy) and every figure — the sliders' amounts
+  // included — is in that currency; otherwise the business's own currency.
+  const _ccy = (typeof BASE !== 'undefined' && BASE && BASE.ccy) || null;
+  const _M = _ccy ? (v => window._fmtMoneyExactIn(v, (window.CURRENCIES && window.CURRENCIES[_ccy] && window.CURRENCIES[_ccy].symbol) || _ccy)) : (v => window._fmtMoneyNative(v));
+  set('lbl-salary', _M(salary));
   set('lbl-churn', (churn*100).toFixed(1)+'%');
-  set('lbl-invest', window._fmtMoneyNative(invest));
+  set('lbl-invest', _M(invest));
   set('lbl-efficiency', (efficiency>=0?'+':'')+Math.round(efficiency*100)+'%');
 
   const projRev = Math.round(BASE.rev * (1 + revGrowth) * (1 - churn));
@@ -84,7 +88,7 @@ window.updateScenario = function(){
   // the entity's currency. The shadow is deleted rather than edited (class C4: a second formatter
   // is the thing that drifts). Scenario figures project from BASE, which is native and never
   // FX-converted — and on a stale basis besides (F44) — so the NATIVE symbol is the honest one.
-  const S = v => window._fmtMoneyNative(v);
+  const S = _M;   // F126: native, or the display currency when BASE was server-converted
   const delta = (now, base) => {
     const d = now-base;
     const col = d>=0?'var(--green)':'var(--red)';

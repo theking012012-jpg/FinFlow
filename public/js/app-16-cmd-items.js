@@ -398,7 +398,7 @@ async function loadMRRData(){
     // straight from GET /api/recurring-invoices with no ?display= param and no conversion, so they
     // are in the ENTITY's own currency. '$' was simply wrong for any non-USD entity; activeCurrency
     // would be worse under a display currency — a converted label on an unconverted number.
-    // Converting MRR needs FX wiring this endpoint does not have → held as F126, not half-done.
+    // (F126, since built: with a display currency the server converts each schedule — see below.)
     // Each card keeps EXACTLY the rounding it had — mrr-val exact, arr-val abbreviated. Only the
     // symbol moves. (That the two disagree on abbreviation is pre-existing and left alone: it is a
     // formatting question, and changing it inside a currency commit would hide one change behind

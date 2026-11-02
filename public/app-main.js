@@ -493,15 +493,19 @@ function _nativeSymbol(){
 // L29 (F64 residue): EXACT like _fmtMoneyExact — honours "Show cents" — but in the entity's own symbol and
 // never converted. It used to delegate to the K/M/B abbreviator, so every report line, budget row and scenario
 // figure ≥ 1,000 read "TT$12.3K". Compact axes/tiles use _fmtMoneyNativeAbbr explicitly.
-function _fmtMoneyNative(n){
+// F126: the same exact renderer with the symbol given — for a value already in a KNOWN currency (e.g. the Scenario
+// baseline the server converted into the display currency). One renderer, two symbol sources (class C4).
+function _fmtMoneyExactIn(n, symbol){
   const v = parseFloat(n) || 0;
   const cents = document.getElementById('s-cents')?.checked;
   const abs = Math.abs(v);
   const body = cents
     ? abs.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})
     : Math.round(abs).toLocaleString('en-US');
-  return (v < 0 && body !== '0' ? '-' : '') + _nativeSymbol() + body;
+  return (v < 0 && body !== '0' ? '-' : '') + (symbol == null ? '$' : symbol) + body;
 }
+function _fmtMoneyNative(n){ return _fmtMoneyExactIn(n, _nativeSymbol()); }
+window._fmtMoneyExactIn = _fmtMoneyExactIn;
 function _fmtMoneyNativeAbbr(n){ return _fmtMoney(n, _nativeSymbol()); }
 window._nativeSymbol   = _nativeSymbol;     // for sites that render exact, not abbreviated
 window._fmtMoneyNative = _fmtMoneyNative;

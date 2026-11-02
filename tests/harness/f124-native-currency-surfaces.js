@@ -105,6 +105,7 @@ function loadApp(mutate) {
     app('function _fmtMoney(value, symbol){'),
     app('function _fmtMoneyAbbr(n){'),
     app('function _nativeSymbol(){'),
+    app('function _fmtMoneyExactIn(n, symbol){'),   // F126: _fmtMoneyNative delegates to it (symbol given)
     app('function _fmtMoneyNative(n){'),
     app('function _fmtMoneyNativeAbbr(n){'),   // L29: compact axes
     app('function _activeEntityCurrency(){'),
@@ -202,10 +203,10 @@ console.log('\n-- 2b - Scenario planner: every card AND the axis agree, on ONE s
 
 console.log('\n-- 2c - FAILURE PATH, EXECUTED: the pre-fix sources rebuilt and run --');
 {
+  // F126 (2026-11-02): updateScenario now has ONE native formatter, `_M` (cards, deltas and the salary / invest
+  // labels all go through it), so reverting its native branch restores every pre-fix '$' at once.
   const PRE = { 'window._fmtMoneyNativeAbbr(v)': "window._fmtMoney(v, '$')",
-                'window._fmtMoneyNative(v)': "window._fmtMoney(v, '$')",
-                'window._fmtMoneyNative(salary)': "window._fmtMoney(salary,'$')",
-                'window._fmtMoneyNative(invest)': "window._fmtMoney(invest,'$')" };
+                '(v => window._fmtMoneyNative(v))': "(v => window._fmtMoney(v, '$'))" };
   let reverted = 0;
   const { api, captured, store } = loadIdx(s => {
     let out = s;
@@ -214,7 +215,7 @@ console.log('\n-- 2c - FAILURE PATH, EXECUTED: the pre-fix sources rebuilt and r
     }
     return out;
   });
-  A('pre-fix forms were restored (control is real)', reverted >= 4, true, `reverted ${reverted}`);
+  A('pre-fix forms were restored (control is real)', reverted >= 2, true, `reverted ${reverted}`);
   api.updateScenario();
   A('PRE-FIX scenario cards show a hardcoded $ on a TTD entity', symbolOf(store['sc-rev'].textContent), '$');
   A('PRE-FIX axis shows a hardcoded $',  symbolOf(tickOf(captured[0])(1234)), '$');

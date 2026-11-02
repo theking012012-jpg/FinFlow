@@ -1336,8 +1336,8 @@ after a classic script declaring  let charts = {} :
 
 ---
 
-### F126 🟡 MEDIUM — MRR/ARR and the Scenario planner are never FX-converted at all — **NEW (2026-08-03, found while fixing F124), OPEN**
-**Status:** OPEN. **F124 made these surfaces HONEST, not converted** — do not read that tick as coverage.
+### F126 ✅ FIXED + VERIFIED (2026-11-02) — was 🟡 MEDIUM — MRR/ARR and the Scenario planner are never FX-converted at all
+**Status:** ✅ **FIXED + VERIFIED 2026-11-02.** Re-measured first: MRR / ARR were ALREADY converted (server `?display=` on /api/recurring-invoices, `verify-f126-mrr-fx-convert` 10/0) — this row was stale. The Scenario planner was NOT: it projected from native figures under the native symbol. Now `_syncScenarioBase` takes the server-converted Year (`/api/reports?display=`, the dashboard's own source; expenses = revenue − net profit) and every Scenario figure renders in the display currency through one exact renderer (`_fmtMoneyExactIn`, which `_fmtMoneyNative` now delegates to). `verify-f126-display-currency-mrr-scenario` RED 4/4 (Scenario) → GREEN 8/0. (Original text: OPEN. F124 made these surfaces HONEST, not converted.)
 
 Both render business money that no code converts:
 - **MRR / ARR** — `loadMRRData` (`index.html`) sums `GET /api/recurring-invoices` with no `?display=` param and no rate applied.

@@ -1835,6 +1835,26 @@
     // COGS comes from /api/cogs (period=year); until it lands the last fetched figure for this entity is used,
     // then the scenario repaints once with the fetched value.
     window._syncScenarioBase = function () {
+      // F126: with a display currency chosen, the baseline is the SERVER-converted Year (the same /api/reports call the
+      // dashboard's converted KPIs use — historical per-row FX), so Scenario agrees with the dashboard in that currency.
+      // expenses = revenue − net profit, so the baseline net equals the dashboard's Year net (COGS included). No rate
+      // for the pair → the native baseline below (the dashboard reverts to native in that case too).
+      const _disp = window._displayCurrency || null;
+      if (_disp) {
+        const _fyNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const q = new URLSearchParams({ display: _disp, period: 'year', fyStart: String(Math.max(0, _fyNames.indexOf((document.getElementById('s-fy') || {}).value || 'January'))) });
+        window._scenarioBaseReady = fetch('/api/reports?' + q.toString(), { credentials: 'include' }).then(r => (r.ok ? r.json() : null)).then(j => {
+          if (window._displayCurrency !== _disp) return;   // changed while in flight
+          if (!j || (j.fxCoverage && j.fxCoverage.complete === false)) { window._displayCurrency = _disp; return _nativeBase(); }
+          const rev = Number(j.revenue) || 0, exp = rev - (Number(j.netProfit) || 0);
+          window.BASE = { rev, exp, cash: 0, burn: exp / 12, ccy: _disp };
+          if (typeof window.updateScenario === 'function') window.updateScenario();
+        }).catch(() => _nativeBase());
+        return window._scenarioBaseReady;
+      }
+      return _nativeBase();
+    };
+    function _nativeBase() {
       const rev = typeof window.computeRevenue === 'function' ? (window.computeRevenue('year') || 0) : 0;
       const bd = typeof window.computeExpenseBreakdown === 'function' ? window.computeExpenseBreakdown('year') : null;
       const opex = bd ? (bd.total || 0) : 0;
@@ -1854,7 +1874,7 @@
         if (typeof window.updateScenario === 'function') window.updateScenario();
       }).catch(() => {});
       return window._scenarioBaseReady;
-    };
+    }
 
     // ── Entity KPI cards: update after renderEntities() ───────────────
     const _medOrigRenderEntities = window.renderEntities;

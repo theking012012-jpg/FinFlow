@@ -1,10 +1,10 @@
 'use strict';
 /**
- * verify-f75-wrappers-live — are the 7 app-main functions that a wiring file WRAPS (rather than replaces) actually live?
+ * verify-f75-wrappers-live — are the app-main functions that a wiring file WRAPS (rather than replaces) actually live?
  * "Live" = calling window.NAME through the whole runtime chain reaches the app-main body, and the function does its job.
  *
  * How: the real /app in Chromium against the real server + scratch Postgres (Rule 3). The browser is served app-main.js
- * with ONE line added at the top of each of the 7 bodies — `__f75hit('NAME')` — so a hit means the app-main code itself
+ * with ONE line added at the top of each wrapped body — `__f75hit('NAME')` — so a hit means the app-main code itself
  * ran (parsed with acorn, inserted at the body's first brace; nothing else changes). Each function is then called the way
  * the app calls it, twice (a wrapper can call the original only the first time), and its visible effect is checked.
  * MEASUREMENT harness: it reports what it measures for every call; it asserts only that each function does its job.
@@ -14,23 +14,22 @@
 const fs = require('fs'); const path = require('path');
 const acorn = require('acorn');
 const { runBrowser } = require('./browserKit.js');
-const NAMES = ['closeModal', 'renderDocuments', 'renderProjects', 'renderReports', 'saveOwnerPayroll', 'updateDashboard', 'showPage'];
+const NAMES = ['closeModal', 'renderDocuments', 'renderReports', 'saveOwnerPayroll', 'updateDashboard', 'showPage'];   // F75-b: renderProjects measured dead (0 runs) and deleted — verify-f75b-render-projects
 
 function instrumented() {
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'app-main.js'), 'utf8');
   const ast = acorn.parse(src, { ecmaVersion: 'latest', allowReturnOutsideFunction: true });
   const at = [];
   for (const n of ast.body) if (n.type === 'FunctionDeclaration' && NAMES.includes(n.id.name)) at.push([n.body.start + 1, n.id.name]);
-  if (at.length !== NAMES.length) throw new Error('found ' + at.map(a => a[1]) + ' — expected all 7 declared in app-main');
+  if (at.length !== NAMES.length) throw new Error('found ' + at.map(a => a[1]) + ' — expected all ' + NAMES.length + ' declared in app-main');
   let out = src;
   for (const [pos, name] of at.sort((a, b) => b[0] - a[0])) out = out.slice(0, pos) + `try{(window.__f75hits=window.__f75hits||[]).push(${JSON.stringify(name)});}catch(_){}` + out.slice(pos);
   return out;
 }
 
-runBrowser('F75 — the 7 wrapped app-main functions: does the app-main code run?', async ({ open, A, eq, J, c, uid }) => {
+runBrowser('F75 — the 6 wrapped app-main functions: does the app-main code run?', async ({ open, A, eq, J, c, uid }) => {
   const body = instrumented();
   await J('POST', '/api/invoices', { client: 'Wrapper Co', amount: 2468, status: 'pending', issue_date: '2026-07-08', due_date: '2026-08-08', idempotency_key: 'f75w-i' });
-  await J('POST', '/api/projects', { name: 'Wrapper Project', client: 'Wrapper Co', budget: 1000, status: 'active' }).catch(() => {});
 
   const page = await open({ width: 1280, height: 900, beforeGoto: async (ctx) => {
     await ctx.route(/\/app-main\.js(\?.*)?$/, route => route.fulfill({ status: 200, contentType: 'application/javascript; charset=utf-8', body }));
@@ -42,7 +41,7 @@ runBrowser('F75 — the 7 wrapped app-main functions: does the app-main code run
   const reset = () => page.evaluate(() => { window.__f75hits = []; });
   const wait = (ms) => page.waitForTimeout(ms);
   const report = {};
-  report['during boot (all 7)'] = await page.evaluate(() => { const h = window.__f75hits || []; const o = {}; h.forEach(x => o[x] = (o[x] || 0) + 1); return o; });
+  report['during boot (all 6)'] = await page.evaluate(() => { const h = window.__f75hits || []; const o = {}; h.forEach(x => o[x] = (o[x] || 0) + 1); return o; });
 
   // showPage — switches the visible page
   for (const k of [1, 2]) {
@@ -77,7 +76,7 @@ runBrowser('F75 — the 7 wrapped app-main functions: does the app-main code run
   A('updateDashboard: the revenue card shows the seeded invoice (2,468 / 2.5K)', /2,?468|2\.5K/.test(rev), 'd-rev = ' + rev);
 
   // renderReports / renderDocuments / renderProjects — their pages render
-  for (const [name, pg] of [['renderReports', 'reports'], ['renderDocuments', 'documents'], ['renderProjects', 'projects']]) {
+  for (const [name, pg] of [['renderReports', 'reports'], ['renderDocuments', 'documents']]) {
     for (const k of [1, 2]) {
       await reset();
       await page.evaluate((p) => window.showPage(p), pg); await wait(900);
@@ -89,8 +88,6 @@ runBrowser('F75 — the 7 wrapped app-main functions: does the app-main code run
     const txt = await page.evaluate((p) => ((document.getElementById('page-' + p) || {}).textContent || '').replace(/\s+/g, ' ').trim(), pg);
     A(name + ': the ' + pg + ' page has content', txt.length > 40, txt.slice(0, 120));
   }
-  const projTxt = await page.evaluate(() => (document.getElementById('page-projects') || {}).textContent || '');
-  report['projects page shows the seeded project'] = /Wrapper Project/.test(projTxt);
 
   // saveOwnerPayroll — saves the owner's salary to the database
   for (const k of [1, 2]) {

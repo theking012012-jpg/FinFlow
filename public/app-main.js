@@ -2384,7 +2384,7 @@ function showPage(id, el){
   if(id==='payments-made'&&typeof renderPaymentsMade==='function')_call(renderPaymentsMade);
   if(id==='recurring-bills'&&typeof renderRecurringBills==='function')_call(renderRecurringBills);
   if(id==='vendor-credits'&&typeof renderVendorCredits==='function')_call(renderVendorCredits);
-  if(id==='projects'&&typeof renderProjects==='function')_call(renderProjects);
+  if(id==='projects'&&typeof window.renderProjects==='function')_call(window.renderProjects);
   if(id==='timesheet'&&typeof renderTimesheet==='function')_call(renderTimesheet);
   if(id==='manual-journals'&&typeof renderJournals==='function')_call(renderJournals);
   if(id==='chart-of-accounts'&&typeof renderCOA==='function')_call(renderCOA);
@@ -5946,21 +5946,7 @@ window.submitBankLine=submitBankLine;
 // ════════════════════════════════════════════
 // PROJECTS PAGE
 // ════════════════════════════════════════════
-const projectsData=[]; // populated from API by finflow-api-wiring-extra.js
-function renderProjects(){
-  const l=document.getElementById('projects-list');if(!l)return;
-  l.innerHTML=projectsData.map(p=>`
-    <div data-style="padding:10px 0;border-bottom:1px solid var(--bd)">
-      <div data-style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div><div data-style="font-size:13px;font-weight:500;color:var(--t1)">${esc(p.name)}</div><div data-style="font-size:11px;color:var(--t3)">${esc(p.client)} · ${p.hours}h logged</div></div>
-        <div data-style="display:flex;align-items:center;gap:12px">
-          <div data-style="text-align:right"><div data-style="font-size:11px;color:var(--t3)">Billed / Budget</div><div data-style="font-size:12px;font-weight:600;font-family:var(--font-mono)">${_fmtMoneyNative(p.billed)} / ${_fmtMoneyNative(p.budget)}</div></div>
-          <span class="badge ${p.status==='Completed'?'b-green':'b-blue'}">${p.status}</span>
-        </div>
-      </div>
-      <div class="bar-track" data-style="height:4px"><div class="bar-fill" data-style="width:${p.progress}%;background:${p.status==='Completed'?'var(--green)':'var(--acc)'}"></div></div>
-    </div>`).join('');
-}
+// F75-b (2026-11-02): the dead copy of renderProjects() (and the empty projectsData it painted) was deleted — the code that runs is window.renderProjects in finflow-api-wiring-extra.js.
 // F75 (2026-11-02): the dead copy of openNewProjectModal() was deleted — the code that runs is window.openNewProjectModal in finflow-api-wiring-extra.js.
 
 // ════════════════════════════════════════════
@@ -6752,7 +6738,7 @@ setTimeout(function(){
     function(){if(typeof renderPaymentsMade==='function')renderPaymentsMade();},
     function(){if(typeof renderRecurringBills==='function')renderRecurringBills();},
     function(){if(typeof renderVendorCredits==='function')renderVendorCredits();},
-    function(){if(typeof renderProjects==='function')renderProjects();},
+    function(){if(typeof window.renderProjects==='function')window.renderProjects();},
     function(){if(typeof renderTimesheet==='function')renderTimesheet();},
     function(){if(typeof renderJournals==='function')renderJournals();},
     function(){if(typeof renderCOA==='function')renderCOA();},

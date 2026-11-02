@@ -4924,7 +4924,16 @@ function clearAIChat(){
       window.projects = _projects;
       window.projectsData = _projects;
       renderProjectsList();
-    } catch (err) { console.warn('[Projects]', err.message); }
+    } catch (err) {
+      console.warn('[Projects]', err.message);
+      // F75-b: nothing loaded yet → say so, with a Retry (was: a blank list, forever). A failed background refresh
+      // after a good load leaves the good list alone.
+      if (!_projectsFetched) {
+        const l = document.getElementById('projects-list');
+        if (l) l.innerHTML = '<div data-style="padding:16px 0;color:var(--t3);font-size:13px">Couldn\'t load projects. '
+          + (window._ffRetryBtn ? window._ffRetryBtn('renderProjects') : '') + '</div>';
+      }
+    }
   }
   window.renderProjectsList = function() { renderProjectsList(); };
   window.loadProjectsFromDB = loadProjects;
@@ -5043,11 +5052,14 @@ function clearAIChat(){
     } catch (err) { tip('Could not delete — ' + err.message, true); }
   };
 
-  const _origRenderProjects = typeof renderProjects === 'function' ? renderProjects : null;
+  // F75-b (2026-11-02): the ONE projects renderer. This used to call app-main's renderProjects first — but only until the
+  // boot load answered, which in practice was never (measured: 0 runs), and that copy painted a script-scoped empty
+  // array anyway, so before the load the list was blank. app-main's copy is deleted.
   window.renderProjects = function () {
     if (_projectsFetched) { renderProjectsList(); return; }
-    if (_origRenderProjects) _origRenderProjects();
-    loadProjects();
+    const l = document.getElementById('projects-list');
+    if (l) l.innerHTML = '<div data-style="padding:16px 0;color:var(--t3);font-size:13px">Loading projects…</div>';
+    return loadProjects();
   };
 
   // ══════════════════════════════════════════════════════

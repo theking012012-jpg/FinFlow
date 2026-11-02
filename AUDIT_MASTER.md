@@ -339,11 +339,41 @@ Each was confirmed by a green execution harness on real Postgres, or by direct c
 - **Harness-green (deep-dive sweep 2026-08-08 — 53/53 verify-*.js + step1–4 gates):** F26, F33-C, F40, F66, F72,
   F73, F85, F90, F101, F102, F106, F112, F117, F119, F125, F127, F132–F135, F137–F140, C1 (16 routes).
 
-**Still genuinely OPEN (small, no money bugs / no launch blockers):** F94 (scheduled UI — design call), F126 (MRR
+**Still genuinely OPEN (small, no money bugs / no launch blockers):** *(superseded 2026-11-02 — F126, F75, F125, F111/F107 and C1 are now fixed; see the 2026-11-02 block below)* F94 (scheduled UI — design call), F126 (MRR
 FX — by-design), F129 + F64 (display polish), F54/F107/F108/F111 (team/multi-tenant — deferred), F92 (PARTIAL —
 side-effects audited, structural elimination remains), F75 (dead-shadow class — shrinking), F77/F110 (test-debt),
 F109 (close-position feature — owner-gated), F19 (verified DB TLS — deferred), and LOW misc
 (F30/F52/F63/F68/F81/F83/F116/F142/F26-b/F105).
+
+---
+
+## ✅ 2026-11-02 RE-VERIFICATION — the old OPEN headers below, re-run (authoritative; supersedes those headers)
+Many headers further down still say OPEN / PARTIAL / FIX HELD from July–August. On 2026-11-02 each one's own harness was
+**executed** on `da63b81` (real server + scratch Postgres; jsdom/Chromium where there is a page). Where a row says
+"read", it was confirmed by reading the code only — not executed — and is labelled so.
+
+| Finding (stale header) | What was executed | Result | What it proves |
+|---|---|---|---|
+| **F84** 🔴 bill paid via Payments Made counted twice | `verify-f84-bill-linked-payment` · `verify-f84-savepaymentmade-billid` | 6/0 · 6/0 | the payment carries `bill_id`, so OpEx/AP count the bill once; the live form sends it |
+| **F95** 🔴 Cash Flow blind to one money-in store / **F32-residual** | `verify-m16-cashflow-ledger-cash` · `verify-f137-cashflow-ar-ap-reports` | 3/0 · 12/0 | Cash Flow equals balance-sheet cash on a discriminating seed and the report renders its own totals (that it reads `invoice_payments`: by reading) |
+| **F102** 🟠 dashboard omits payroll on a cold boot ("FIX HELD") | `verify-f102-payroll-boot` | 10/0 | cold-boot Expenses/Profit include payroll runs (oracle = `expected.js`) |
+| **F117** 🟠 duplicate invoice on double-submit (PARTIAL) | `verify-f117-client-submit-guard` · `verify-f117-bankrec-match-idempotent` · `verify-c1-idempotency` · `verify-c1-payments-made` | 18/0 · 5/0 · 22/0 · 12/0 | the client guard, the bank-rec natural key, and **C1 (`da63b81`)**: one idempotency key at the write for every mutating `/api` route — the "~31-route class" is closed |
+| **F128** 🟠 Reports used pre-F32 basis (PARTIAL) | `f128-reports-canonical-source` | 7/0 | the Reports modal shows the canonical figures; the dead-copy half is gone — `app-main.js` no longer declares `generateReport` (only the wiring copy exists), and after **F75** the shadow check holds 7 wrappers and no dead copies |
+| **F92** 🟠 money fields mutated as side effects | `verify-f92-recalc-audit` | 8/0 | both side-effect writers (`recalcInvoiceStatus`, `recalcBillStatus`) are audited. The structural "single audited write path" stays open as F90 — not claimed here |
+| **F107 / F111** 🟡 a login cannot see the accounts it can access | `verify-f111-access-visibility` · `verify-f111-ui-render` | 11/0 · 7/0 | `/api/my-access` reads the member axis; the page shows the scoped banner — **F111 done, F107's remediation shipped** |
+| **F149** 🟡 creating a 2nd business renames the 1st | `verify-f149-create-no-entity-rename` | 11/0 | creating a business no longer renames the existing one |
+| **F26** / F26-b | `verify-f26-receipt-entity-scoping` | 7/0 | receipts are entity-scoped; F26-b (legacy NULL-entity rows) stays an owner data decision (Rule 8) |
+| **PL#5** 🟡 quotes never convert | `verify-lr9-quote-edit-convert` | 7/0 | Edit + Convert to invoice exist (LR9) and create a draft invoice through the one invoice writer |
+| **C3 / F37** 🔴 UTC record dates | `verify-n102-entity-record-dates` · `verify-f88-utc-parity` | 19/0 · 49/0 | server-filled dates use the business's calendar date; UTC businesses unchanged byte-for-byte |
+| **F88** fiscal year per user | `verify-f88-fiscal-year-per-business` | 9 failed → 10/0 (`269c72e`) | fixed this round — see F88 |
+| **F110** 🟡 clock pin / seed re-pin hazard | read | — | the guard landed (header says so); the re-pin *strategy* is still open (test tooling only) |
+| **F108** 🟡 entity has no jurisdiction | read | — | `entities.data.country` exists since F191 (country per business); a `(name, country)` unique key is not built — open as design |
+| **F89** browser clock | read | — | see F89 (fiscal-year half now the business's; "today" half by reading only) |
+| **F41** 🟢 bills | not re-checked | — | unchanged |
+
+**Still genuinely open after this round:** F90 (single audited write path), F110 re-pin strategy, F108 unique key,
+F89 "today" half (needs a harness), F26-b (owner data decision), F94, F129/F64, F109, F19, and the LOW misc list in the
+2026-08-09 block. Fixed this round (own commits, each RED → GREEN): FA-L3e `3f9e5f7`, F126 `b0b6759`, F79 `cdb862a`, C1 `da63b81`, F88 `269c72e`, F75 `a604465`, F125 `5732c85`, NEW-22 `725f8c3`.
 
 ---
 

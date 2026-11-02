@@ -80,6 +80,7 @@ and `verify-live-retest-b-2026-10-31` (RED 17 / 3 → 20 / 0). Full 3× sweep: t
 | NEW-20 | (found writing the Privacy Policy) | The app CSP's `connect-src` allows `https://query1.finance.yahoo.com`; nothing in the code calls it (grep: CSP line only). | ✅ **FIXED + VERIFIED 2026-11-01** — removed from `connect-src` (same commit and harness as NEW-19). | |
 | NEW-21 | (legal, from LR29 / NEW-18) | Items only a lawyer / the owner can settle: (1) lawyer review of Terms / Privacy / Security before launch; (2) an EU representative and a UK representative (GDPR / UK GDPR Art. 27) for a non-EU company serving those markets; (3) US CAN-SPAM requires a valid postal address in commercial (product-news) emails — the Wyoming registered-agent address once the company exists; (4) whether Syria, Russia / Belarus (IT-services restrictions) or Venezuela need blocking beyond CU / IR / KP; (5) confirm the 90-day audit IP retention. | 🔒 **OWNER / LEGAL** |
 | NEW-22 | (found running the F79 related set, 2026-11-02) | Three jsdom tests fail on `main` as well as this branch: `verify-fam8-sales-by-customer` (4 fail), `verify-f137-sales-payroll-reports` (2 fail) — the page's invoice list is empty in their jsdom boot, so the Sales report shows only receipts / credit notes — and `probe-fx-client-divergence` (2 fail: its claims about the old static FX table no longer hold, NEW-8). **The product is right:** the same Sales by Customer seed in a real browser against the real server shows Acme $12,500 (both spellings) and Beta Co $200. | ✅ **FIXED 2026-11-02 (test tooling).** Cause found by execution: not an empty invoice list — the report was generated after a fixed 1.4 s wait, before the page's `/api/invoices` had answered on a busy machine (after the boot loads, `computeRevenue('year')` on the same page = 13,550, correct). Both harnesses now wait for the page to go quiet (`boot.idle`) before and after generating the report: fam8 4 failed → 6/0, f137 2 failed → 9/0, both green again under a 4-way parallel run on 2 CPUs. The probe asserted the OLD bug (client static-rate conversion); the client now reads the server's consolidation (M23) — `getConsolTotal` converts nothing — so the probe is **retired**; that contract is executed by `verify-fx-client-consolidation` (5/0) and `verify-m23-entities-consolidated` (2/0). |
+| NEW-23 | (owner question 2026-11-02: "how can someone access the database directly?") | The app connects to Postgres as the database OWNER (`DATABASE_URL`). Only the owner's credentials reach the database directly (no app user can), but a compromised app server would hold owner rights: it could alter tables, disable the audit trail's append-only trigger and chain (F90), or edit entries. | ⬜ **OPEN (code, next)** — a restricted app role (read / write records; no DDL, no trigger changes, no UPDATE / DELETE on `audit_trail`); the owner then swaps `DATABASE_URL` in Railway. Owner-side: Supabase network restrictions (Railway only), 2FA, rotate the password if ever shared. |
 
 ## 🔴 FULL E2E TEST 2026-10-30 — E2E rows (source: `COWORK_TEST_SCRIPT.md` run on live dab2, 2026-10-29/30, Cowork)
 
@@ -339,7 +340,7 @@ Each was confirmed by a green execution harness on real Postgres, or by direct c
 - **Harness-green (deep-dive sweep 2026-08-08 — 53/53 verify-*.js + step1–4 gates):** F26, F33-C, F40, F66, F72,
   F73, F85, F90, F101, F102, F106, F112, F117, F119, F125, F127, F132–F135, F137–F140, C1 (16 routes).
 
-**Still genuinely OPEN (small, no money bugs / no launch blockers):** *(superseded 2026-11-02 — F126, F75, F125, F111/F107 and C1 are now fixed; see the 2026-11-02 block below)* F94 (scheduled UI — design call), F126 (MRR
+**Still genuinely OPEN (small, no money bugs / no launch blockers):** *(superseded 2026-11-02 — see ⏳ OUTSTANDING below; F126, F75, F125, F111/F107, C1, F90, F105 are fixed)* F94 (scheduled UI — design call), F126 (MRR
 FX — by-design), F129 + F64 (display polish), F54/F107/F108/F111 (team/multi-tenant — deferred), F92 (PARTIAL —
 side-effects audited, structural elimination remains), F75 (dead-shadow class — shrinking), F77/F110 (test-debt),
 F109 (close-position feature — owner-gated), F19 (verified DB TLS — deferred), and LOW misc
@@ -371,15 +372,44 @@ Many headers further down still say OPEN / PARTIAL / FIX HELD from July–August
 | **F89** browser clock | read | — | see F89 (fiscal-year half now the business's; "today" half by reading only) |
 | **F41** 🟢 bills | not re-checked | — | unchanged |
 
-**Still genuinely open after this round:** F90 (single audited write path), F110 re-pin strategy, F108 unique key,
-F89 "today" half (needs a harness), F26-b (owner data decision), F94, F129/F64, F109, F19, and the LOW misc list in the
-2026-08-09 block. Fixed this round (own commits, each RED → GREEN): FA-L3e `3f9e5f7`, F126 `b0b6759`, F79 `cdb862a`, C1 `da63b81`, F88 `269c72e`, F75 `a604465`, F125 `5732c85`, NEW-22 `725f8c3`.
+**Fixed 2026-11-02 (own commits, each RED → GREEN, related harnesses re-run):** FA-L3e `3f9e5f7`, F126 `b0b6759`, F79 `cdb862a`,
+C1 `da63b81`, F88 `269c72e`, F75 `a604465` + F75-b `581a472` · `83a7538` (the wrappers measured; the dead renderProjects removed), F125 `5732c85`,
+NEW-22 `725f8c3`, F90 parts 1–4 `ba06384` · `665bc36` · `4bde7bd` · `b560c93` · `ed50219` (written by the database, History on every
+record, the audit report, tamper evidence), F105 `a917efe` (the ledger checks itself). F94, F129, F64, F54, F63, F68, F81, F116,
+F142 were already fixed — their rows say so; the 2026-08-09 list above was stale.
 
+### ⏳ OUTSTANDING — as of 2026-11-02 (authoritative list; anything not here is fixed or is a numbered row above)
+**Code — next, in order:**
+1. **Restricted database login for the app (NEW-23).** The app connects as the database OWNER, so a compromised app server could
+   alter tables, disable the audit trail's append-only trigger or its chain, or edit entries. Fix: an app role that can read /
+   write records but cannot alter tables, disable triggers, or UPDATE / DELETE `audit_trail`; the owner login stays out of the app.
+   Owner step after the code: create the role's password, swap `DATABASE_URL` in Railway once.
+2. **F89** — period windows ("this month", the fiscal year) still take TODAY from the browser's clock (`_entityToday`,
+   app-main.js `new Date()`); the server's clock is known (`_serverClock`) but not used there. A wrong device clock = wrong periods.
+3. **F41** — recurring bills have no end-date field (and `PUT /api/recurring-bills/:id` ignores `end_date`) — they repeat forever.
+4. **F108** — no rule against two businesses in one account with the same name and country; a guarded unique index + a read-only
+   duplicate lister (country exists since F191).
+5. **F26-b** — read-only tool listing legacy entity-less sales receipts (the assignment itself is the owner's, Rule 8).
+6. **F52** — accessibility: `a11y-audit` reports 215 violation nodes across 10 pages (labels, contrast, keyboard).
+**Needs an owner decision:** F30 (custom permissions that really apply, or remove the save nothing reads) · F109 (close an
+investment position — holdings serve both sides of the wall) · F110 (test-clock re-pin strategy; the guard is in) · F83 (the
+sweep runner's exit code — by design for now) · F26-b (which business each legacy receipt belongs to).
+**Owner-only:** the 3× sweep, then merge PR #6 · Railway `PLAID_ENV=production`, `DATABASE_CA_CERT` (F19) · Supabase network
+restrictions (Railway only) + 2FA on Supabase / Railway / GitHub + rotate the database password if ever shared · run
+`tools/launch/list-status-violations.js` (read-only) on production before validating F79's constraints · Resend logs (FA-L3c,
+LR17) · one look at live (G14) · lawyer review (NEW-21).
 ---
 
 ## ⚙️ LOAD-BEARING INFRASTRUCTURE CONFIG — do not "clean up"
 
 Configuration whose current value is deliberate and whose removal would break something with no obvious cause. Recorded because none of this is reconstructable from memory, and the failure would surface months later at deploy time, not at edit time.
+
+### Supabase SESSION-mode pooler is LOAD-BEARING for the audit trail (2026-11-02, F90)
+The app tells the database who is making each change by setting `finflow.ctx` on the connection right before the write
+(database.js, a SESSION-level `set_config`); the audit trigger reads it in the same statement. Under a TRANSACTION-mode pooler the
+SET and the write could reach different server connections and changes would be attributed to the wrong person (or "system").
+Keep `DATABASE_URL` on the session pooler (or a direct connection). Changing it requires moving the context into each write's
+transaction first.
 
 ### `nixpacks.toml` → `npm install --production` is LOAD-BEARING (2026-07-23)
 

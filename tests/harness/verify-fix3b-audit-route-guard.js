@@ -49,6 +49,8 @@ const ALLOWED = {
       "POST /api/reports/cash-flow",
       "POST /api/reports/profit-loss",
       "PUT /api/scenario",
+      "POST /api/contact",       // FA-L §5 / NEW-15: an anonymous message to support (one support_requests row, user_id null) — no books, no access, no signed-in actor to audit
+      "POST /api/unsubscribe",   // NEW-16: an email address opting out of product news (email_optouts) — no books, no access, no signed-in actor to audit
     ],
   },
   "EXEMPT-FAB10b": {

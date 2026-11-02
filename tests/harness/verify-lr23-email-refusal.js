@@ -11,6 +11,7 @@
  *   4  no API key in the error                                                                              (secret hygiene)
  *   5  STRUCTURAL (labelled, Rule 5): every `new Resend(` in the app is wrapped by checkedResend; the two call sites with no
  *      error handling (accountant invite; anomaly digest) now handle a refusal                         bug: unwrapped
+ *      (accountant invite restated 2026-11-02 for NEW-9: a refusal → emailSent:false, the invite stays in the app)
  */
 require('./clock.js');
 const fs = require('fs');
@@ -43,7 +44,10 @@ const A = (n, ok, det) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++
     const unwrapped = files.filter(([, s]) => /new Resend\(/.test(s.replace(/checkedResend\(new Resend\(/g, ''))).map(([f]) => f);
     A('5  STRUCTURAL: every `new Resend(` is wrapped by checkedResend', unwrapped.length === 0 && /checkedResend\(new Resend\(/.test(files[0][1]), 'unwrapped in: ' + unwrapped.join(', '));
     const acct = files[1][1], anom = files[3][1];
-    A('5  STRUCTURAL: accountant invite handles a refused e-mail (EMAIL_NOT_SENT)', /code: 'EMAIL_NOT_SENT'/.test(acct));
+    // RESTATED 2026-11-02: NEW-9 (adbe0b2) made the invitation a row the client sees in the app, so a refused e-mail no
+    // longer fails the invite — it answers emailSent:false and says the e-mail could not be sent (never "sent").
+    // Executed in verify-new9-accountant-invite; this structural line now checks that contract instead of the old code.
+    A('5  STRUCTURAL: accountant invite reports a refused e-mail honestly (emailSent false + "could not be sent")', /let emailSent = false;/.test(acct) && /emailSent = true;/.test(acct) && /the e-mail could not be sent/.test(acct));
     A('5  STRUCTURAL: anomaly digest reports sent:false on a refusal', /sent: false, reason: 'send_failed'/.test(anom));
   } catch (e) { fail++; console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); }
   console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);

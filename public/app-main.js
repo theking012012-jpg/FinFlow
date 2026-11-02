@@ -5458,10 +5458,8 @@ function buildCharts(){
   // Destroy ALL orphaned Chart instances (prevents "instance 0" ghost conflict on re-render)
   Object.keys(Chart.instances).forEach(key=>{try{Chart.instances[key].destroy();}catch(e){}});
   // Destroy existing charts to prevent canvas reuse error
-  if(window.charts){
-    Object.values(window.charts).forEach(c=>{try{if(c&&typeof c.destroy==='function')c.destroy();}catch(e){}});
-    window.charts={};
-  }
+  // F125 (2026-11-02): a dead `if(window.charts){…destroy…; window.charts={}}` block was here. `charts` is a script-scoped
+  // `let`, never window.charts, so it could not run — and the line above already destroys every Chart instance.
   const{tc,gc}=chartDefaults();
   const _oc=document.getElementById('overviewChart');
   if(!_oc||_oc.offsetWidth===0||_oc.offsetParent===null)return;

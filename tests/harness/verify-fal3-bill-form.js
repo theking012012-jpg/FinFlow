@@ -1,7 +1,10 @@
 'use strict';
 /**
- * verify-fal3-bill-form.js — FA-L3: the accountant dashboard's bill form takes its minimum from tier-config.js,
- * the same rule bill-client enforces (verify-accountant-billing proves the server side on real Postgres).
+ * verify-fal3-bill-form.js — FA-L3: the accountant dashboard's bill form takes its minimum from the server's rule —
+ * tier-config.js, the rule bill-client enforces (verify-accountant-billing proves the server side on real Postgres).
+ * RESTATED 2026-11-02 for FA-L3e: the form now gets each currency's minimum from GET /api/accountants/bill-options
+ * (the server converts tier-config's USD minimum; verify-fal3e-bill-currency executes that on real Postgres), and
+ * sends { amount, currency } instead of amountCents. The canned bill-options carries tier-config's own USD minimum.
  * Before: the form hard-coded $50 (label, input min, the preview and the submit check) while the server had none.
  *
  * The page runs in jsdom with the REAL tier-config.js inlined (not a stub). The API is canned — this checks only
@@ -27,9 +30,10 @@ const API = {
 let pass = 0, fail = 0;
 const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (d ? '\n          ' + d : ''))); };
 
-async function boot(tierSrc) {
+async function boot(tierSrc, minCents) {
+  const api = Object.assign({}, API, { '/api/accountants/bill-options': { currencies: [{ code: 'USD', source: 'usd', exponent: 2, minMinor: minCents, feeFixedMinor: 30, billable: true }], default: 'USD' } });
   let html = require('./appScripts.js').pageSource('accountant-dashboard.html');
-  const fetchStub = `<script>window.__calls=[];window.open=function(){};window.fetch=function(u,o){var p=String(u).split('?')[0];window.__calls.push({p:p,body:o&&o.body||null});var data=(${JSON.stringify(API)})[p];if(p==='/api/accountants/bill-client')data={url:'https://checkout.stripe.test/c/x',emailed:true};return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(data==null?{}:data);}});};</script>`;
+  const fetchStub = `<script>window.__calls=[];window.open=function(){};window.fetch=function(u,o){var p=String(u).split('?')[0];window.__calls.push({p:p,body:o&&o.body||null});var data=(${JSON.stringify(api)})[p];if(p==='/api/accountants/bill-client')data={url:'https://checkout.stripe.test/c/x',emailed:true};return Promise.resolve({ok:true,status:200,json:function(){return Promise.resolve(data==null?{}:data);}});};</script>`;
   if (html.split('<script src="/tier-config.js"></script>').length !== 2) throw new Error('tier-config <script> tag not found once');
   html = html.replace('<script src="/tier-config.js"></script>', () => fetchStub + '<script>' + tierSrc + '</script>');
   const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: new VirtualConsole(), url: 'https://finflow.test/accountant-dashboard.html' });
@@ -41,10 +45,10 @@ async function boot(tierSrc) {
 }
 
 async function scenario(label, tierSrc, minCents, below, at) {
-  const w = await boot(tierSrc);
+  const w = await boot(tierSrc, minCents);
   const d = w.document;
   const money = c => '$' + (c / 100).toFixed(2);
-  try { w.openBillModal(); } catch (e) { A(label + ': openBillModal ran', false, e.message); return; }
+  try { w.openBillModal(); d.getElementById('bill-client-select').value = '7'; await w.billClientChanged(); } catch (e) { A(label + ': openBillModal ran', false, e.message); return; }
   const lbl = (d.getElementById('bill-amount-label') || {}).textContent || '';
   A(label + ': the label reads "minimum ' + money(minCents) + '"', lbl.includes('minimum ' + money(minCents)), lbl);
   A(label + ': the input\'s min is ' + (minCents / 100), d.getElementById('bill-amount').min === String(minCents / 100), d.getElementById('bill-amount').min);
@@ -62,7 +66,7 @@ async function scenario(label, tierSrc, minCents, below, at) {
   await w.submitBill();
   const sent = w.__calls.filter(c => c.p === '/api/accountants/bill-client');
   const body = sent[0] ? JSON.parse(sent[0].body) : {};
-  A(label + ': $' + at + ' is sent as amountCents ' + Math.round(at * 100), sent.length === 1 && body.amountCents === Math.round(at * 100), JSON.stringify(body));
+  A(label + ': $' + at + ' is sent as { amount: "' + at + '", currency: "usd" } (FA-L3e)', sent.length === 1 && body.amount === String(at) && body.currency === 'usd', JSON.stringify(body));
   w.close();
 }
 
@@ -72,7 +76,7 @@ async function scenario(label, tierSrc, minCents, below, at) {
     const real = fs.readFileSync(path.join(ROOT, 'tier-config.js'), 'utf8');
     const T = require(path.join(ROOT, 'tier-config.js'));
     A('tier-config: the USD minimum bill is 5000 cents ($50.00)', T.minBillMinor('usd') === 5000, String(T.minBillMinor && T.minBillMinor('usd')));
-    await scenario('run 1 (real tier-config, $50.00)', real, 5000, 49.99, 50);
+    await scenario('run 1 (real tier-config, $50.00)', real, T.minBillMinor('usd'), 49.99, 50);
     const raised = real.replace('const MIN_BILL_MINOR = { usd: 5000 };', 'const MIN_BILL_MINOR = { usd: 7500 };');
     A('run 2 setup: tier-config raised to $75.00', raised !== real);
     await scenario('run 2 (tier-config raised to $75.00)', raised, 7500, 60, 75);

@@ -521,6 +521,9 @@ async function initDB() {
     // FA-L3i: the part of a client-paid bill refunded (or lost in a dispute), minor units, cumulative. Same statement as
     // scripts/migrations/2026-10-24-earning-refunds.sql.
     await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS refunded_cents INTEGER`);
+    // FA-L3e: every amount on the row is in this currency (a bill's checkout currency; referral pay is USD). Every
+    // earning before FA-L3e is USD by construction (the bill form sent no currency → bill-client's 'usd' default).
+    await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'usd'`);
     // FA-L3d: referral pay sent by Stripe Connect transfer (referral-payouts.js). One payout per accountant per
     // month; at most one unfinished payout per accountant; each referral row records the payout that paid it.
     // Same statements as scripts/migrations/2026-10-24-referral-payouts.sql.

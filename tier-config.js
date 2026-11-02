@@ -33,7 +33,8 @@
 
   // FA-L3: the smallest bill an accountant can send a client, in the currency's minor units. One rule for the
   // server (bill-client refuses below it), the dashboard's bill form and the accountants page. The dashboard bills
-  // in USD only today (FA-L3e), so only USD has a minimum; minBillMinor() is null for a currency with none.
+  // in USD. FA-L3e: a bill in another currency uses this USD minimum converted at the client's own exchange rate
+  // (accountant-routes _billOptions), so only USD is listed here.
   const MIN_BILL_MINOR = { usd: 5000 };
   function minBillMinor(currency) {
     const v = MIN_BILL_MINOR[String(currency || '').toLowerCase()];
@@ -64,10 +65,12 @@
   // estimateStripeFeeCents(cents) → Stripe's standard US card fee (2.9% + 30¢).
   // Used as the estimate when a bill is created; the REAL fee from the charge's
   // balance transaction replaces it on the payment_intent.succeeded webhook.
-  function estimateStripeFeeCents(billedCents) {
+  // FA-L3e: fixedMinor = the 30¢ part in the bill's own currency (bill-options converts it); default USD 30.
+  function estimateStripeFeeCents(billedCents, fixedMinor) {
     const b = Math.max(0, Math.round(Number(billedCents) || 0));
     if (b === 0) return 0;
-    return Math.round(b * 0.029) + 30;
+    const fixed = fixedMinor == null ? 30 : Math.max(0, Math.round(Number(fixedMinor) || 0));
+    return Math.round(b * 0.029) + fixed;
   }
 
   // splitBilling(billedCents, commissionRate, stripeFeeCents) → the money split.

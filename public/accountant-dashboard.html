@@ -447,8 +447,14 @@
     <p>FinFlow processes the payment and transfers 96% to your connected Stripe account. You set the rate.</p>
     <div class="modal-form-group">
       <label for="bill-client-select">Client</label>
-      <select id="bill-client-select" class="finput" data-style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:'Jost',sans-serif;font-size:13px;color:var(--text);outline:none;appearance:none">
+      <select id="bill-client-select" data-on-change="billClientChanged()" class="finput" data-style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:'Jost',sans-serif;font-size:13px;color:var(--text);outline:none;appearance:none">
         <option value="">Select client...</option>
+      </select>
+    </div>
+    <div class="modal-form-group">
+      <label for="bill-currency">Currency</label>
+      <select id="bill-currency" class="finput" data-on-change="billCurrencyChanged()" data-style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:'Jost',sans-serif;font-size:13px;color:var(--text);outline:none;appearance:none">
+        <option value="">Choose a client first</option>
       </select>
     </div>
     <div class="modal-form-group">
@@ -456,8 +462,8 @@
       <input type="text" id="bill-description" placeholder="e.g. Tax filing — FY 2025, Monthly bookkeeping">
     </div>
     <div class="modal-form-group">
-      <label for="bill-amount" id="bill-amount-label">Amount (USD) — minimum $50</label>
-      <input type="number" id="bill-amount" placeholder="500" min="50" step="1">
+      <label for="bill-amount" id="bill-amount-label">Amount</label>
+      <input type="number" id="bill-amount" placeholder="500" step="any">
     </div>
     <div id="bill-breakdown" data-style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-top:4px;font-size:12px;color:var(--text2)">
       <div data-style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Client pays</span><span id="bill-total" data-style="color:var(--text)">—</span></div>

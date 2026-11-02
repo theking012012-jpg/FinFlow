@@ -102,7 +102,7 @@ const ROOT = path.join(__dirname, '..', '..');
     A('admin earnings: commission collected $67.00 (bug: $751.50 — the accountants\' nets, unpaid included)', ea.summary && Number(ea.summary.commission_collected_cents) === 6700, JSON.stringify(ea.summary));
     const det = (await adm.get('/api/admin/accountants/' + accA)).json || {};
     const dA = det.accountant || det;
-    A('admin accountant detail "Total Earned" $659.30 (bug: $831.50 with the unpaid bill)', Number(dA.total_earnings_cents) === 65930, String(dA.total_earnings_cents));
+    A('admin accountant detail "Total Earned" $659.30 (bug: $831.50 with the unpaid bill) — FA-L3e: now the per-currency formatted figure', dA.total_earnings_formatted === '$659.30', String(dA.total_earnings_formatted));
     const list = (await adm.get('/api/admin/accountants')).json;
     const rowA = (Array.isArray(list) ? list : (list && (list.accountants || list.rows)) || []).find(r => r.id === accA) || {};
     A('admin accountants list: A has 3 clients (bug: 3 × A\'s earnings rows)', Number(rowA.client_count) === 3, String(rowA.client_count));

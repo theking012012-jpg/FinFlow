@@ -269,7 +269,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc, chartForBusiness) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc, chartForBusiness, pickRate) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -1543,6 +1543,7 @@ If you cannot find a field, use null. Be concise.`;
     // FA-L3g: the figures come from the one writer (earnings-figures.js) over ALL rows — not a sum of the 100 rows
     // listed here, which also counted bills the client had not paid. FA-L3f: currentPeriod is the booking month.
     const summary = await earningsFigures.accountantFigures(pool, req.session.accountantId);
+    for (const r of result.rows) r.amount_formatted = earningsFigures.fmtMinor(r.amount_cents, r.currency);   // FA-L3e: each row in its own currency
     return res.json({
       earnings: result.rows,
       summary,
@@ -2863,6 +2864,43 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // is 'awaiting_payment' until payment_intent.succeeded marks it 'paid' (server.js webhook, matched by
   // the earning id carried in the PaymentIntent metadata).
   const _billEsc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  // ── FA-L3e: which currencies an accountant may bill a client in, and each one's rules ─────────────────────────
+  // Offered: the currencies of the client's businesses the accountant may see (the first is the default), the
+  // accountant's own rate currency (LA15c), and USD. Each carries its decimal places (stripe-units, N47), its minimum
+  // (the USD minimum in tier-config, converted at the CLIENT's own exchange rate and rounded up to a whole unit) and
+  // Stripe's fixed fee part converted the same way. A currency with no rate yet is listed but cannot be billed in —
+  // the minimum could not be applied, and a number is never invented.
+  async function _billOptions(accountantId, clientId) {
+    const { rows: [ac] } = await pool.query(`SELECT access_level, entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`, [accountantId, clientId]);
+    if (!ac) return null;
+    const scope = await _clientScope(clientId, ac);
+    const { rows: [a] } = await pool.query(`SELECT rate_currency FROM accountants WHERE id = $1`, [accountantId]);
+    const codes = [], src = {};
+    const add = (c, s) => { c = String(c || '').trim().toUpperCase(); if (/^[A-Z]{3}$/.test(c) && !codes.includes(c)) { codes.push(c); src[c] = s; } };
+    for (const e of scope.entities) if (scope.permitted.has(e.id)) add(e.currency, 'client');
+    add(a && a.rate_currency, 'accountant'); add('USD', 'usd');
+    const units = require('./stripe-units');
+    const fx = (await pool.query(`SELECT from_currency, to_currency, rate, rate_date FROM fx_rates WHERE user_id = $1`, [clientId])).rows;
+    const today = new Date().toISOString().slice(0, 10);
+    const usdMin = minBillMinor('usd');
+    const currencies = codes.map(code => {
+      const exp = units.currencyExponent(code);
+      let rate = code === 'USD' ? 1 : null;
+      if (rate == null && typeof pickRate === 'function') { try { const r = Number(pickRate(fx, 'USD', code, today)); rate = r > 0 ? r : null; } catch (_) { rate = null; } }
+      const minMinor = rate == null ? null : (code === 'USD' ? usdMin : Math.ceil(units.minorToMajor(usdMin, 'usd') * rate) * Math.pow(10, exp));
+      const feeFixedMinor = rate == null ? null : Math.round(0.30 * rate * Math.pow(10, exp));
+      return { code, source: src[code], exponent: exp, minMinor, feeFixedMinor, billable: rate != null };
+    });
+    return { currencies, default: (currencies.find(c => c.billable) || currencies[currencies.length - 1]).code };
+  }
+  app.get('/api/accountants/bill-options', requireAccountant, wrap(async (req, res) => {
+    const clientId = parseInt(req.query.clientId, 10);
+    if (!Number.isInteger(clientId) || clientId <= 0) return res.status(400).json({ error: 'Choose a client.' });
+    const o = await _billOptions(req.session.accountantId, clientId);
+    if (!o) return res.status(403).json({ error: 'Client not found or not linked to you' });
+    res.json(o);
+  }));
+
   app.post('/api/accountants/bill-client', requireAccountant, async (req, res) => {
     let earningId = null;
     try {
@@ -2874,11 +2912,17 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       if (!Number.isInteger(clientId) || clientId <= 0) return res.status(400).json({ error: 'Choose a client to bill.' });
       if (!/^[a-z]{3}$/.test(currency)) return res.status(400).json({ error: 'Invalid currency.' });
       const units = require('./stripe-units');
-      // amountCents = minor units (the dashboard); amount = major units (API callers). Currency exponent (N47).
-      const amountMinor = b.amountCents != null ? Number(b.amountCents) : units.majorToMinor(parseFloat(b.amount), currency);
+      // FA-L3e: only an offered currency, and only one whose minimum can be applied (a rate exists).
+      const _opts = await _billOptions(req.session.accountantId, clientId);
+      if (!_opts) return res.status(403).json({ error: 'Client not found or not linked to you' });
+      const _cur = _opts.currencies.find(c => c.code === currency.toUpperCase());
+      if (!_cur) return res.status(400).json({ error: `Bill in ${_opts.currencies.map(c => c.code).join(', ')}.`, code: 'CURRENCY_NOT_OFFERED' });
+      if (!_cur.billable) return res.status(400).json({ error: `There is no exchange rate for ${_cur.code} yet, so the minimum cannot be applied. Bill in ${_opts.currencies.filter(c => c.billable).map(c => c.code).join(' or ')}.`, code: 'NO_RATE' });
+      // amount = major units (the dashboard, any currency); amountCents = minor units (older callers). Currency exponent (N47).
+      const amountMinor = b.amount != null && b.amount !== '' ? units.majorToMinor(parseFloat(b.amount), currency) : Number(b.amountCents);
       if (!Number.isInteger(amountMinor) || amountMinor <= 0) return res.status(400).json({ error: 'Enter a valid amount.' });
-      // FA-L3: the minimum bill is the server's rule (tier-config), not only the dashboard's
-      const minBill = minBillMinor(currency);
+      // FA-L3: the minimum bill is the server's rule, not only the dashboard's — in the bill's own currency (FA-L3e)
+      const minBill = _cur.minMinor;
       if (minBill != null && amountMinor < minBill) {
         const shown = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(units.minorToMajor(minBill, currency));
         return res.status(400).json({ error: `The minimum bill is ${shown}.` });
@@ -2903,14 +2947,14 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         [req.session.accountantId]
       );
       const rate  = commissionRateFor(parseInt(countRes.rows[0].count) || 0);
-      const split = splitBilling(amountMinor, rate, estimateStripeFeeCents(amountMinor));
+      const split = splitBilling(amountMinor, rate, estimateStripeFeeCents(amountMinor, _cur.feeFixedMinor));   // FA-L3e: fixed fee in the bill's currency
 
       // The earning exists from the start, NOT payable: 'awaiting_payment' (never the 'pending' payout queue).
       const { rows: [er] } = await pool.query(
         `INSERT INTO accountant_earnings
-           (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents, stripe_fee_cents, description, status, created_at)
-         VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,'awaiting_payment',NOW()) RETURNING id`,
-        [req.session.accountantId, clientId, split.accountantNetCents, split.billedCents, split.commissionCents, split.stripeFeeCents, description]);
+           (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents, stripe_fee_cents, description, status, currency, created_at)
+         VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,'awaiting_payment',$8,NOW()) RETURNING id`,
+        [req.session.accountantId, clientId, split.accountantNetCents, split.billedCents, split.commissionCents, split.stripeFeeCents, description, currency]);   // FA-L3e
       earningId = er.id;
 
       const meta = { kind: 'accountant_bill', accountant_id: String(req.session.accountantId), client_id: String(clientId), earning_id: String(earningId) };

@@ -653,9 +653,10 @@ async function loadEarnings() {
     const { records, summary, payouts } = await res.json();
     const s = summary || {};
 
-    document.getElementById('earn-commission').textContent = '$' + ((parseInt(s.commission_collected_cents)||0)/100).toFixed(2);   // FA-L3g: FinFlow's commission on paid bills
-    document.getElementById('earn-referral').textContent = '$' + ((parseInt(s.referral_owed_cents)||0)/100).toFixed(2);   // FA-L3d: owed = pending only
-    document.getElementById('earn-paid').textContent = '$' + ((parseInt(s.paid_cents)||0)/100).toFixed(2);
+    const F = s.formatted || {};   // FA-L3e: per currency, formatted by the server's one writer (earnings-figures.js)
+    document.getElementById('earn-commission').textContent = F.commission || '—';   // FA-L3g: FinFlow's commission on paid bills
+    document.getElementById('earn-referral').textContent = F.referralOwed || '—';   // FA-L3d: owed = pending only
+    document.getElementById('earn-paid').textContent = F.paidOut || '—';
 
     document.getElementById('earnings-tbody').innerHTML = records.length ? records.map(e => `
       <tr>
@@ -663,7 +664,7 @@ async function loadEarnings() {
         <td class="primary">${esc(e.first_name)} ${esc(e.last_name)}<div data-style="font-size:11px;color:var(--t3)">${esc(e.firm||'')}</div></td>
         <td><span class="badge ${e.type==='referral'?'b-gold':'b-green'}">${e.type==='referral'?'Referral':'Commission'}</span></td>
         <td>${esc(e.description||'—')}</td>
-        <td class="gold">$${(e.amount_cents/100).toFixed(2)}</td>
+        <td class="gold">${esc(e.amount_formatted || '')}</td>
         <td>${e.period_month ? FinFlowDates.calendarLabel(e.period_month, { month: 'short', year: 'numeric' }) : '—'}</td>
         <td><span class="badge ${e.status==='paid'?'b-green':'b-amber'}">${e.status === 'paid' ? 'paid' : e.payout_id ? 'sending by Stripe' : e.status === 'awaiting_payment' ? 'client has not paid' : e.status}</span></td>
       </tr>`).join('')
@@ -673,7 +674,7 @@ async function loadEarnings() {
       <tr>
         <td class="primary">${esc(p.first_name)} ${esc(p.last_name)}<div data-style="font-size:11px;color:var(--t3)">${esc(p.firm||'')}</div></td>
         <td>${ym(p.period_month)}</td>
-        <td class="gold">$${(p.amount_cents/100).toFixed(2)}</td>
+        <td class="gold">${esc(p.amount_formatted || '')}</td>
         <td><span class="badge ${p.status==='sent'?'b-green':p.status==='failed'?'b-red':'b-amber'}">${p.status === 'claimed' ? 'sending' : esc(p.status)}</span></td>
         <td data-style="font-size:12px">${p.status === 'sent' ? esc(p.stripe_transfer_id || '') : esc(p.last_error || '—')}</td>
         <td>${Number(p.attempts) || 0}</td>
@@ -950,7 +951,7 @@ async function openAccountant(id) {
       <div class="detail-row"><span class="detail-label">Status</span><span class="detail-val"><span class="badge ${a.status==='verified'?'b-green':a.status==='pending'?'b-amber':'b-red'}">${esc(a.status)}</span></span></div>
       <div class="detail-row"><span class="detail-label">Rating</span><span class="detail-val">${a.avg_rating > 0 ? parseFloat(a.avg_rating).toFixed(1) + ' ★' : '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Stripe</span><span class="detail-val"><span class="badge ${a.stripe_onboarded?'b-green':'b-amber'}">${a.stripe_onboarded?'Connected':'Not set'}</span></span></div>
-      <div class="detail-row"><span class="detail-label">Total Earned</span><span class="detail-val">$${(parseInt(a.total_earnings_cents||0)/100).toFixed(2)}</span></div>
+      <div class="detail-row"><span class="detail-label">Total Earned</span><span class="detail-val">${esc(a.total_earnings_formatted || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Verify Method</span><span class="detail-val">${esc(a.verification_method||'—')}</span></div>
       ${vData.profBody?`<div class="detail-row"><span class="detail-label">Prof Body</span><span class="detail-val">${esc(vData.profBody)} · ${esc(vData.membershipNumber||'')}</span></div>`:''}
       <div class="detail-row"><span class="detail-label">Clients (${(a.clients||[]).length})</span></div>

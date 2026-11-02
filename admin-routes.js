@@ -341,8 +341,9 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClientOrG
         referralOwedCents: platformEarnings.referralOwedCents,
         totalCents: platformEarnings.commissionCollectedCents,
         pendingCents: platformEarnings.referralOwedCents,
-        totalFormatted: '$' + (platformEarnings.commissionCollectedCents / 100).toFixed(2),
-        pendingFormatted: '$' + (platformEarnings.referralOwedCents / 100).toFixed(2),
+        totalFormatted: platformEarnings.formatted.commission,     // FA-L3e: per currency, never added across currencies
+        pendingFormatted: platformEarnings.formatted.referralOwed,
+        byCurrency: platformEarnings.byCurrency,
       },
       ai: {
         totalQueries: parseInt(aiCacheTotal.rows[0].count),
@@ -365,8 +366,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClientOrG
              a.kyc_status, a.kyc_verified_at,
              a.review_count, a.stripe_onboarded, a.created_at, a.verified_at,
              -- FA-L3g: subqueries, not two joined one-to-many tables (that multiplied clients × earnings rows)
-             (SELECT COUNT(*) FROM accountant_clients ac WHERE ac.accountant_id = a.id AND ac.status = 'active') AS client_count,
-             (SELECT COALESCE(SUM(ae.amount_cents), 0) FROM accountant_earnings ae WHERE ae.accountant_id = a.id AND ae.${earningsFigures.EARNED_SQL}) AS total_earnings_cents
+             (SELECT COUNT(*) FROM accountant_clients ac WHERE ac.accountant_id = a.id AND ac.status = 'active') AS client_count
       FROM accountants a
     `;
     const params = [];
@@ -376,6 +376,9 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClientOrG
     if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
     query += ' GROUP BY a.id ORDER BY a.created_at DESC LIMIT 100';
     const result = await pool.query(query, params);
+    // FA-L3e: earned per currency (one formatter), never a sum across currencies
+    const _tot = await earningsFigures.accountantTotalsFormatted(pool, result.rows.map(r => r.id));
+    for (const r of result.rows) r.total_earnings_formatted = (_tot.get(Number(r.id)) || {}).earned;
     return res.json(result.rows);
   }));
 
@@ -680,7 +683,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClientOrG
   // ── EARNINGS & PAYOUTS ────────────────────────────────────────────────────
   app.get('/api/admin/earnings', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
-      SELECT ae.id, ae.type, ae.amount_cents, ae.description, ae.status, ae.period_month, ae.created_at, ae.payout_id,
+      SELECT ae.id, ae.type, ae.amount_cents, ae.currency, ae.description, ae.status, ae.period_month, ae.created_at, ae.payout_id,
              rp.status AS payout_status,
              a.first_name, a.last_name, a.firm
       FROM accountant_earnings ae
@@ -699,17 +702,22 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClientOrG
     const summary = await pool.query(`
       SELECT
         COUNT(*) AS total_records,
-        COALESCE(SUM(amount_cents),0) AS total_cents,
-        COALESCE(SUM(CASE WHEN status='pending' THEN amount_cents ELSE 0 END),0) AS pending_cents,
-        COALESCE(SUM(CASE WHEN status='paid' THEN amount_cents ELSE 0 END),0) AS paid_cents,
-        COALESCE(SUM(CASE WHEN type='service_commission' THEN amount_cents ELSE 0 END),0) AS commission_cents,
-        COALESCE(SUM(CASE WHEN type='referral' THEN amount_cents ELSE 0 END),0) AS referral_cents,
+        COALESCE(SUM(amount_cents) FILTER (WHERE currency = 'usd'),0) AS total_cents,
+        COALESCE(SUM(CASE WHEN status='pending' AND currency = 'usd' THEN amount_cents ELSE 0 END),0) AS pending_cents,
+        COALESCE(SUM(CASE WHEN status='paid' AND currency = 'usd' THEN amount_cents ELSE 0 END),0) AS paid_cents,
+        COALESCE(SUM(CASE WHEN type='service_commission' AND currency = 'usd' THEN amount_cents ELSE 0 END),0) AS commission_cents,
+        COALESCE(SUM(CASE WHEN type='referral' AND currency = 'usd' THEN amount_cents ELSE 0 END),0) AS referral_cents,
         -- FA-L3d: referral pay still owed = booked, not yet paid (was: every referral row, paid ones included)
-        COALESCE(SUM(CASE WHEN type='referral' AND status='pending' THEN amount_cents ELSE 0 END),0) AS referral_owed_cents
+        COALESCE(SUM(CASE WHEN type='referral' AND status='pending' AND currency = 'usd' THEN amount_cents ELSE 0 END),0) AS referral_owed_cents
       FROM accountant_earnings
     `);
-    // FA-L3g: FinFlow's commission on PAID bills, from the one writer (commission_cents above is the accountants' nets)
-    summary.rows[0].commission_collected_cents = (await earningsFigures.platformFigures(pool)).commissionCollectedCents;
+    // FA-L3g: FinFlow's commission on PAID bills, from the one writer (commission_cents above is the accountants' nets).
+    // FA-L3e: the *_cents above are USD only (back-compat); every displayed figure is the per-currency formatted one.
+    const _pf = await earningsFigures.platformFigures(pool);
+    summary.rows[0].commission_collected_cents = _pf.commissionCollectedCents;
+    summary.rows[0].formatted = { commission: _pf.formatted.commission, referralOwed: _pf.formatted.referralOwed, paidOut: _pf.formatted.paidOut };
+    for (const r of result.rows) r.amount_formatted = earningsFigures.fmtMinor(r.amount_cents, r.currency);
+    for (const p of payouts.rows) p.amount_formatted = earningsFigures.fmtMinor(p.amount_cents, p.currency);
 
     return res.json({ records: result.rows, summary: summary.rows[0], payouts: payouts.rows });
   }));
@@ -931,15 +939,12 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClientOrG
   app.get('/api/admin/accountants/:id', requireAdmin, wrap(async (req, res) => {
     const { id } = req.params;
     const accRes = await pool.query(`
-      SELECT a.*,
-             COALESCE(SUM(ae.amount_cents) FILTER (WHERE ae.${earningsFigures.EARNED_SQL}),0) AS total_earnings_cents,   -- FA-L3g: earned = booked referral + PAID fees (was: incl. unpaid bills)
-             COALESCE(SUM(CASE WHEN ae.status='paid' THEN ae.amount_cents ELSE 0 END),0) AS paid_earnings_cents
-      FROM accountants a
-      LEFT JOIN accountant_earnings ae ON ae.accountant_id = a.id
-      WHERE a.id = $1
-      GROUP BY a.id
+      SELECT a.* FROM accountants a WHERE a.id = $1
     `, [id]);
     if (!accRes.rows[0]) return res.status(404).json({ error: 'Accountant not found.' });
+    // FA-L3g: earned = booked referral + PAID fees. FA-L3e: per currency, formatted by the one writer.
+    { const t = (await earningsFigures.accountantTotalsFormatted(pool, [accRes.rows[0].id])).get(Number(accRes.rows[0].id)) || {};
+      accRes.rows[0].total_earnings_formatted = t.earned; accRes.rows[0].paid_earnings_formatted = t.paid; }
     const clients = await pool.query(`
       SELECT u.id, u.data->>'name' AS name, u.data->>'email' AS email, ac.status
       FROM accountant_clients ac

@@ -71,7 +71,7 @@ async function child() {
   const acc = page('accountant-dashboard.html', {
     '/api/accountants/me': { first_name: 'Ada', last_name: 'L', status: 'verified', referral_code: 'X', email: 'a@x.test', conduct: { accepted: true, version: '1.0', current: '1.0', blocked: false } },
     '/api/accountants/clients': [], '/api/accountants/pending-requests': [], '/api/accountants/deadlines': [], '/api/accountants/stripe-status': { connected: true, transfersEnabled: true },
-    '/api/accountants/earnings': { earnings: [{ id: 1, type: 'referral', amount_cents: 1000, description: 'Referral', status: 'pending', period_month: '2026-10-01' }], totalFormatted: '$10.00', currentPeriod: '2026-10-01', summary: { earnedCents: 1000, thisMonthCents: 1000, awaitingClientCents: 0, referralOwedCents: 1000, currentPeriod: '2026-10-01' } },
+    '/api/accountants/earnings': { earnings: [{ id: 1, type: 'referral', amount_cents: 1000, description: 'Referral', status: 'pending', period_month: '2026-10-01' }], totalFormatted: '$10.00', currentPeriod: '2026-10-01', summary: { earnedCents: 1000, thisMonthCents: 1000, awaitingClientCents: 0, referralOwedCents: 1000, currentPeriod: '2026-10-01', formatted: { earned: '$10.00', thisMonth: '$10.00', awaiting: null, referralOwed: '$10.00' } } },   // FA-L3e: + the route's per-currency formatted strings
   });
   await settle();
   try { await acc.loadEarnings(); } catch (_) {}

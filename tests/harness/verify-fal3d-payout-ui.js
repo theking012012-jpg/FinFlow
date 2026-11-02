@@ -72,7 +72,7 @@ const EARNINGS = [
           { id: 2, type: 'referral', amount_cents: 1000, description: 'month 2', status: 'pending', period_month: '2026-11-01', payout_id: 8, payout_status: 'failed', first_name: 'Ada', last_name: 'L', firm: 'F' },
           { id: 4, type: 'referral', amount_cents: 1000, description: 'no Stripe', status: 'pending', period_month: '2026-11-01', payout_id: null, first_name: 'Cy', last_name: 'C', firm: 'G' },
         ],
-        summary: { commission_cents: '0', referral_cents: '5000', referral_owed_cents: '2000', paid_cents: '3000' },
+        summary: { commission_cents: '0', referral_cents: '5000', referral_owed_cents: '2000', paid_cents: '3000', formatted: { commission: '$0.00', referralOwed: '$20.00', paidOut: '$30.00' } },   // FA-L3e: the route now also returns per-currency formatted strings (the page shows those)
         payouts: [
           { id: 8, period_month: '2026-11-01', amount_cents: 1000, currency: 'usd', status: 'failed', stripe_transfer_id: null, attempts: 3, last_error: 'Insufficient funds in Stripe account.', first_name: 'Ada', last_name: 'L', firm: 'F' },
           { id: 7, period_month: '2026-10-01', amount_cents: 3000, currency: 'usd', status: 'sent', stripe_transfer_id: 'tr_SENT1', attempts: 1, last_error: null, first_name: 'Ada', last_name: 'L', firm: 'F' },

@@ -35,7 +35,20 @@ const { buildSegments } = require('./segments'); // Classes & Locations segment 
 const apiKeys = require('./api-keys'); // public API key helpers (pure: generate/hash/mask)
 // Segment tag (Classes & Locations): trim to 80 chars; empty/absent -> undefined so the row stays untagged.
 const _segTag = (v) => { const t = (v == null ? '' : String(v)).trim().slice(0, 80); return t || undefined; };
-const Sanctions = require('./sanctions');   // Terms §11: the one list of comprehensively embargoed countries
+const Sanctions = require('./sanctions');
+// FA-L3e: a charge's Stripe fee, in the CHARGE's currency. The balance transaction is in the platform's settlement
+// currency (USD for a US platform); a JMD bill's fee arrives in USD cents. Converted with the balance transaction's own
+// exchange_rate (charge currency → settlement currency) and each currency's exponent. null when Stripe gave no fee.
+function feeInChargeCurrency(charge) {
+  const bt = charge && charge.balance_transaction;
+  if (!bt || bt.fee == null) return null;
+  const units = require('./stripe-units');
+  const cc = String(charge.currency || bt.currency || 'usd').toLowerCase(), sc = String(bt.currency || cc).toLowerCase();
+  if (cc === sc) return Math.round(Number(bt.fee));
+  const xr = Number(bt.exchange_rate);
+  if (!(xr > 0)) return null;   // cannot convert → keep the estimate (COALESCE in the update), never a wrong-currency number
+  return units.majorToMinor(units.minorToMajor(bt.fee, sc) / xr, cc);
+}   // Terms §11: the one list of comprehensively embargoed countries
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
 const { requirePerm } = require('./rbac');                // F5 Step 4 — per-route RBAC (matrix in rbac.js)
 const pgSession = require('connect-pg-simple')(session);
@@ -356,7 +369,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       const chargeId = pi.latest_charge || pi.charges?.data?.[0]?.id;
       if (chargeId) {
         const charge = await stripe.charges.retrieve(chargeId, { expand: ['balance_transaction'] });
-        realFee = charge.balance_transaction?.fee ?? null;
+        realFee = feeInChargeCurrency(charge);   // FA-L3e: the fee is in the platform's currency; the bill may not be
       }
     } catch (e) { console.error('[Stripe] fee reconcile lookup failed:', e.message); }
     // N98: a bill created through Checkout has no PaymentIntent id when it is booked; it is matched by the
@@ -7507,7 +7520,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc, chartForBusiness);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger, numberNewDoc, chartForBusiness, pickRate);  // FA-L3e: pickRate → bill minimums in the client's currencies · F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -15736,6 +15749,7 @@ module.exports.pickRate = pickRate;                 // FX-live - pair resolution
 module.exports._pickDirectRate = _pickDirectRate;   // FX-live - direct-pair carry-forward/backward matcher (test surface)
 module.exports.refreshLiveFxRates = refreshLiveFxRates;   // FX-live - USD-base feed upsert, manual-wins, idempotent-per-day (test surface)
 module.exports._setResendClientForTest = c => { resendClient = c; };   // LC3d: harness seam — a capturing fake Resend, never the network
-module.exports._mutateSettingsBlob = _mutateSettingsBlob;   // LC3e-c: test surface (the one connection writer)
+module.exports._mutateSettingsBlob = _mutateSettingsBlob;
+module.exports.feeInChargeCurrency = feeInChargeCurrency;   // FA-L3e: test surface   // LC3e-c: test surface (the one connection writer)
 module.exports.stripDeletedAccountDevices = stripDeletedAccountDevices;
 module.exports.clearOldVisitorIps = clearOldVisitorIps;   // retention: website visitor IPs after 30 days (test surface)   // LC3d-b: test surface (90-day device strip)

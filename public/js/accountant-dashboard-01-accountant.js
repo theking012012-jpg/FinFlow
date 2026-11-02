@@ -410,14 +410,16 @@ async function loadEarnings() {
     // the 100 rows listed below. FA-L3f: "this month" is the server's booking month (Rule 10 — no viewer clock).
     const FD = window.FinFlowDates;
     const sm = data.summary || {};
-    const usd = c => '$' + ((Number(c) || 0) / 100).toFixed(2);
-    const mtd = usd(sm.thisMonthCents);
+    // FA-L3e: bills can be in the client's currency — the server formats every figure per currency (never added
+    // across currencies); the page shows its strings.
+    const F = sm.formatted || {};
+    const mtd = F.thisMonth || '—';
 
     document.getElementById('stat-mtd').textContent = mtd;
-    document.getElementById('earn-total').textContent = usd(sm.earnedCents);
-    document.getElementById('earn-total-sub').textContent = Number(sm.awaitingClientCents) > 0 ? 'All time · + ' + usd(sm.awaitingClientCents) + ' billed, waiting for the client' : 'All time';
+    document.getElementById('earn-total').textContent = F.earned || '—';
+    document.getElementById('earn-total-sub').textContent = F.awaiting ? 'All time · + ' + F.awaiting + ' billed, waiting for the client' : 'All time';
     document.getElementById('earn-mtd').textContent = mtd;
-    document.getElementById('earn-pending').textContent = usd(sm.referralOwedCents);
+    document.getElementById('earn-pending').textContent = F.referralOwed || '—';
 
     const rows = earnings.length === 0
       ? '<tr class="loading-row"><td colspan="5">No earnings yet. Invite clients to start earning.</td></tr>'
@@ -426,7 +428,7 @@ async function loadEarnings() {
           <td>${e.period_month ? FD.calendarLabel(e.period_month, { month: 'short', year: 'numeric' }) : '—'}</td>
           <td><span class="badge ${e.type === 'referral' ? 'badge-gold' : 'badge-green'}">${e.type === 'referral' ? 'Referral' : 'Service'}</span></td>
           <td>${esc(e.description || '—')}</td>
-          <td class="gold">$${(e.amount_cents / 100).toFixed(2)}</td>
+          <td class="gold">${esc(e.amount_formatted || '')}</td>
           <td><span class="badge ${e.status === 'paid' ? 'badge-green' : 'badge-amber'}"${e.payout_transfer_id ? ` title="Stripe transfer ${esc(e.payout_transfer_id)}"` : ''}>${esc(_earningStatus(e))}</span></td>
         </tr>`).join('');
 
@@ -668,30 +670,59 @@ function openBillModal() {
     activeClients.map(c => `<option value="${c.id}">${esc(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</option>`).join('');
   document.getElementById('bill-breakdown').style.display = 'none';
   document.getElementById('bill-amount').value = '';
-  // FA-L3: the label and the input's minimum come from tier-config — the rule bill-client enforces
-  const minBill = _minBillCents();
-  document.getElementById('bill-amount-label').textContent = 'Amount (USD) — minimum $' + (minBill / 100).toFixed(2);
-  document.getElementById('bill-amount').min = String(minBill / 100);
   document.getElementById('bill-description').value = '';
+  _billOpts = null; _fillBillCurrencies();
   document.getElementById('bill-modal').classList.add('open');
 }
 
-// The dashboard bills in USD (FA-L3e); 0 when tier-config sets no USD minimum.
-function _minBillCents() { return window.FinFlowTiers.minBillMinor('usd') || 0; }
+// FA-L3e: the currencies this client can be billed in come from the server (bill-options): the client's businesses'
+// currencies the accountant may see (first = default), the accountant's own rate currency, and USD — each with its
+// decimal places, minimum and Stripe fixed fee in that currency. The page does no currency maths of its own.
+let _billOpts = null;
+async function billClientChanged() {
+  const id = document.getElementById('bill-client-select').value;
+  _billOpts = null; _fillBillCurrencies();
+  if (!id) return;
+  try {
+    const r = await fetch('/api/accountants/bill-options?clientId=' + encodeURIComponent(id), { credentials: 'include' });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Could not load the client\'s currencies', 'error'); return; }
+    _billOpts = d; _fillBillCurrencies(d.default);
+  } catch (_) { toast('Could not load the client\'s currencies', 'error'); }
+}
+const _SRC = { client: "client's business", accountant: 'your rate currency', usd: 'US dollar' };
+function _fillBillCurrencies(def) {
+  const sel = document.getElementById('bill-currency');
+  const list = (_billOpts && _billOpts.currencies) || [];
+  sel.innerHTML = list.length ? list.map(c => `<option value="${esc(c.code)}"${c.billable ? '' : ' disabled'}${c.code === def ? ' selected' : ''}>${esc(c.code)} — ${esc(_SRC[c.source] || '')}${c.billable ? '' : ' (no exchange rate yet)'}</option>`).join('') : '<option value="">Choose a client first</option>';
+  billCurrencyChanged();
+}
+function _billCur() { const code = document.getElementById('bill-currency').value; return ((_billOpts && _billOpts.currencies) || []).find(c => c.code === code) || null; }
+const _fmtMoney = (minor, c) => { try { return new Intl.NumberFormat('en-US', { style: 'currency', currency: c.code }).format(minor / Math.pow(10, c.exponent)); } catch (_) { return c.code + ' ' + (minor / Math.pow(10, c.exponent)).toFixed(c.exponent); } };
+const _toMinor = (major, c) => Math.round((Number(major) || 0) * Math.pow(10, c.exponent));
+function billCurrencyChanged() {
+  const c = _billCur(), lbl = document.getElementById('bill-amount-label'), inp = document.getElementById('bill-amount');
+  if (!c) { lbl.textContent = 'Amount'; inp.removeAttribute('min'); inp.step = 'any'; document.getElementById('bill-breakdown').style.display = 'none'; return; }
+  lbl.textContent = 'Amount (' + c.code + ')' + (c.minMinor ? ' — minimum ' + _fmtMoney(c.minMinor, c) : '');
+  inp.min = c.minMinor ? String(c.minMinor / Math.pow(10, c.exponent)) : '';
+  inp.step = c.exponent ? String(1 / Math.pow(10, c.exponent)) : '1';
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+}
 
 document.addEventListener('input', function(e) {
   if (e.target.id === 'bill-amount') {
+    const c = _billCur();
     const amt = parseFloat(e.target.value) || 0;
-    if (Math.round(amt * 100) >= _minBillCents()) {
+    if (c && amt > 0 && _toMinor(amt, c) >= (c.minMinor || 0)) {
       // F17: LIVE tier commission from the shared /tier-config.js — the same split
       // the backend applies (Stripe fee off the top → commission → you net the rest).
       // First 3 active paying clients are commission-free.
       const T = window.FinFlowTiers;
       const activeCount = clients.filter(c => c.status === 'active' && c.subscription_status === 'active').length;
       const rate = T.commissionRateFor(activeCount);
-      const cents = Math.round(amt * 100);
-      const split = T.splitBilling(cents, rate, T.estimateStripeFeeCents(cents));
-      const fmt = c => '$' + (c / 100).toFixed(2);
+      const cents = _toMinor(amt, c);   // FA-L3e: minor units of THIS currency
+      const split = T.splitBilling(cents, rate, T.estimateStripeFeeCents(cents, c.feeFixedMinor));
+      const fmt = m => _fmtMoney(m, c);
       document.getElementById('bill-total').textContent = fmt(split.billedCents);
       document.getElementById('bill-stripe').textContent = '−' + fmt(split.stripeFeeCents);
       document.getElementById('bill-fee-label').textContent = `FinFlow commission (${(rate * 100).toFixed(0)}%)`;
@@ -708,19 +739,19 @@ async function submitBill() {
   const clientUserId = document.getElementById('bill-client-select').value;
   const description = document.getElementById('bill-description').value.trim();
   const amount = parseFloat(document.getElementById('bill-amount').value);
+  const c = _billCur();
 
   if (!clientUserId) { toast('Please select a client', 'error'); return; }
+  if (!c || !c.billable) { toast('Choose a currency to bill in', 'error'); return; }
   if (!description) { toast('Please enter a service description', 'error'); return; }
-  const minBill = _minBillCents();   // FA-L3: the same minimum the server enforces
-  if (!amount || Math.round(amount * 100) < minBill) { toast('Minimum bill is $' + (minBill / 100).toFixed(2), 'error'); return; }
-
-  const amountCents = Math.round(amount * 100);
+  // FA-L3: the same minimum the server enforces — in the bill's own currency (FA-L3e)
+  if (!amount || _toMinor(amount, c) < (c.minMinor || 0)) { toast('Minimum bill is ' + _fmtMoney(c.minMinor || 0, c), 'error'); return; }
 
   try {
     const res = await fetch('/api/accountants/bill-client', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientUserId, description, amountCents }),
+      body: JSON.stringify({ clientUserId, description, amount: String(amount), currency: c.code.toLowerCase() }),   // FA-L3e: major units + currency; the server converts with the currency's exponent
     });
     const data = await res.json();
     if (data.error) { toast(data.error, 'error'); return; }

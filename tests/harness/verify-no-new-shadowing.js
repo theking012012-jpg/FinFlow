@@ -23,11 +23,10 @@ const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  [STRUCTURAL] ' + n)
 
 // Reviewed 2026-10-07 (L27). R = replacement (app-main copy is DEAD), W = wrapper (calls the saved original).
 // 2026-10-14 LA7: updateInvoices removed — its dead app-main copy (pre-F56 Outstanding formula) was deleted.
+// 2026-11-02 F75: all 19 replacement (R) copies DELETED from app-main — every one was installed synchronously and
+// unconditionally by the bundle, and nothing referenced them at load time (checked with acorn). Only the 7 wrappers
+// remain; a NEW shadow of either kind still fails this check.
 const REVIEWED = {
-  deleteCustomer: 'R', saveCustomer: 'R', saveSettings: 'R', saveInvoice: 'R', renderInvoices: 'R', renderInventory: 'R',
-  renderPayroll: 'R', restockItem: 'R', openProductModal: 'R', saveProduct: 'R', openLogTimeModal: 'R',
-  openNewProjectModal: 'R', renderTimesheet: 'R', saveJournalEntry: 'R', loadPersistedData: 'R',
-  persistAll: 'R', renderExpenses: 'R', saveExpense: 'R', saveHolding: 'R',
   closeModal: 'W', renderDocuments: 'W', renderProjects: 'W', renderReports: 'W', saveOwnerPayroll: 'W',
   updateDashboard: 'W', showPage: 'W',
 };
@@ -72,7 +71,9 @@ const unknownOf = found => Object.keys(found).filter(n => !(n in REVIEWED));
       'defs has computeRevenue=' + defs.has('computeRevenue') + ' unknown=' + unknownOf(inj).join(','));
     const inj2 = shadows(defs, wiring.concat([['finflow-api-wiring-INJECTED.js', 'window.updateCashflow = () => 0;']]));
     A('self-test: an injected `window.updateCashflow = …` is reported as NEW', unknownOf(inj2).includes('updateCashflow'), unknownOf(inj2).join(','));
-    A('current count is 26 (19 replacements + 7 wrappers; reviewed 2026-10-07, LA7 removed updateInvoices 2026-10-14)', n === 26, 'n=' + n);
+    A('current count is 7 — the wrappers only (F75 2026-11-02 deleted the 19 dead replacement copies; was 26)', n === 7 && Object.values(REVIEWED).every(v => v === 'W'), 'n=' + n);
+    const stillR = Object.keys(found).filter(k => REVIEWED[k] !== 'W');
+    A('no app-main function is a dead replacement copy any more (every remaining shadow is a wrapper)', stillR.length === 0, stillR.join(', '));
   } catch (e) { fail++; console.log('  FATAL: ' + (e && e.stack || e)); }
   console.log('\n' + '-'.repeat(78));
   console.log(fail ? ('  ' + fail + ' FAILED — ' + pass + ' passed, ' + fail + ' failed') : ('  ALL GREEN — ' + pass + ' passed, 0 failed  (no new shadowing)'));

@@ -819,8 +819,8 @@ function injectRoleBadge(role){
 function lsSave(){}
 function lsLoad(key, fallback){ return fallback; }
 function persistAfter(origFn){ return origFn; }
-function persistAll(){}
-function loadPersistedData(){}
+// F75 (2026-11-02): the dead copy of persistAll() was deleted — the code that runs is window.persistAll in finflow-api-wiring-postgres.js.
+// F75 (2026-11-02): the dead copy of loadPersistedData() was deleted — the code that runs is window.loadPersistedData in finflow-api-wiring-postgres.js.
 
 // CSV export — page-aware, exports the data from whichever page is currently active
 // xlsx export — writes the SAME rows the CSV export builds as a real .xlsx, via lazy-loaded
@@ -1200,30 +1200,7 @@ function updateJETotals(){
   document.getElementById('je-post-btn').disabled = !balanced;
 }
 
-function saveJournalEntry(status){
-  const lines = window._jeLines.filter(l=>l.code && (l.dr>0||l.cr>0));
-  if(lines.length < 2){ notify('Add at least 2 lines','error'); return; }
-  const totalDr = lines.reduce((s,l)=>s+(l.dr||0),0);
-  const totalCr = lines.reduce((s,l)=>s+(l.cr||0),0);
-  if(status==='Posted' && Math.abs(totalDr-totalCr)>0.01){
-    notify('Debits must equal credits to post','error'); return;
-  }
-  const ref = 'JE-' + String(journalEntries.length + 43).padStart(4,'0');
-  const entry = {
-    date: document.getElementById('je-date').value,
-    notes: document.getElementById('je-notes').value || 'Manual journal entry',
-    ref,
-    debit: totalDr,
-    credit: totalCr,
-    status,
-    lines,
-  };
-  journalEntries.unshift(entry);
-  renderJournals();
-  renderCOA(); // refresh balances
-  closeModal('journal-entry-modal');
-  notify(`Journal entry ${ref} ${status.toLowerCase()}`);
-}
+// F75 (2026-11-02): the dead copy of saveJournalEntry() was deleted — the code that runs is window.saveJournalEntry in finflow-api-wiring-postgres.js.
 
 // ════════════════════════════════════════════
 // PATCH renderJournals to include live entries
@@ -1327,7 +1304,7 @@ window.renderJournals = renderJournalsLive;
 // INIT — run after DOM is ready
 // ════════════════════════════════════════════
 function initEnhancements(){
-  loadPersistedData();
+  // F75: loadPersistedData() was an empty function in both copies (data lives in Postgres) — the call is gone.
   // Init business switcher
   const activeBiz = businesses.find(b=>b.id===activeBizId) || businesses[0];
   if(activeBiz){
@@ -1646,11 +1623,12 @@ async function loadEntityData(idx){
     }
 
     const _safeRender = (fn) => { try { if(typeof fn==='function') fn(); } catch(e) { console.warn('render error:', e.message); } };
-    _safeRender(renderInvoices);
-    _safeRender(renderExpenses);
+    // F75: the live renderers are the wiring's (window.X) — looked up at call time, never a dead local copy.
+    _safeRender(window.renderInvoices);
+    _safeRender(window.renderExpenses);
     _safeRender(renderCustomers);
-    _safeRender(renderInventory);
-    _safeRender(renderPayroll);
+    _safeRender(window.renderInventory);
+    _safeRender(window.renderPayroll);
     _safeRender(updateDashboard);
     _safeRender(buildCharts);
 
@@ -2693,36 +2671,7 @@ function renderCashflow(){updateCashflow()}
 // the F56/D2/M27 AR definition). The copy that stood here was shadowed (never executed — instrumented boot, 0 calls)
 // and still held the pre-F56 Outstanding formula (Σ amount over status ≠ paid: drafts and partial payments counted
 // whole). Deleted so it cannot regrow if the override ever moves (Rule 1). Callers below go through window.
-function renderInvoices(){
-  if(typeof window.updateInvoices==='function') window.updateInvoices();
-  if(!userInvoices) userInvoices=[];
-  const badgeCls={'paid':'b-green','pending':'b-amber','overdue':'b-red','partial':'b-blue'};
-  document.getElementById('invoice-list').innerHTML=userInvoices.map((inv,idx)=>{
-    const paid=parseFloat(inv.amount_paid)||0;
-    const total=parseFloat(inv.amount)||0;
-    const paidStr=paid>0?S(paid):'—';
-    const statusLabel=inv.status==='partial'?`partial (${S(paid)} of ${S(total)})`:inv.status;
-    return`<div class="table-row inv-cols">
-      <span>${esc(inv.client)}</span>
-      <span data-style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
-      <span data-style="font-family:var(--font-mono);color:${paid>0?'var(--green)':'var(--t3)'}">${paidStr}</span>
-      <span data-style="color:${esc(inv.color)}">${esc(inv.due)}</span>
-      <span class="table-actions" data-style="display:flex;gap:4px;flex-wrap:wrap">
-        <span class="badge ${badgeCls[inv.status]||'b-amber'}">${esc(statusLabel)}</span>
-        ${inv.status!=='paid'?`<button class="btn btn-ghost btn-sm inv-remind-btn" data-style="font-size:10px;padding:3px 7px" data-idx="${Number(idx)}" data-id="${inv.id||''}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Record Payment</button>`:''}
-        ${inv.status==='overdue'?`<button class="btn btn-ghost btn-sm inv-remind-btn-r" data-style="font-size:10px;padding:3px 7px" data-idx="${Number(idx)}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Remind ↗</button>`:''}
-      </span>
-    </div>`;
-  }).join('');
-  // Record Payment button delegation
-  document.getElementById('invoice-list').querySelectorAll('.inv-remind-btn').forEach(btn=>{
-    btn.onclick=function(){
-      const invId=this.getAttribute('data-id');
-      const invIdx=this.getAttribute('data-idx');
-      openRecordPaymentModal(invId||invIdx,this.getAttribute('data-client'),this.getAttribute('data-amount'));
-    };
-  });
-}
+// F75 (2026-11-02): the dead copy of renderInvoices() was deleted — the code that runs is window.renderInvoices in finflow-api-wiring-medium.js.
 // Event delegation for invoice remind buttons — no user data embedded in onclick
 document.addEventListener('click', function(e){
   const btn = e.target.closest('.inv-remind-btn');
@@ -2862,25 +2811,7 @@ function openInvoiceModal(){
   _fillContactPicker('inv-client','ff-cust-list','/api/customers',_custDisplayName);   // batch 9: pick a saved customer
   openModal('invoice-modal');
 }
-function saveInvoice(){
-  const client=sanitizeText(document.getElementById('inv-client').value,200);
-  const amountRaw=validateAmount(document.getElementById('inv-amount').value);
-  if(!client){notify('Client name is required',true);return;}
-  if(amountRaw===null||amountRaw<=0){notify('A valid positive amount is required',true);return;}
-  if(currentUserPlan==='pro'&&(userInvoices||[]).length>=50){
-    if(typeof showUpgradeModal==='function') showUpgradeModal('invoice_limit');
-    return;
-  }
-  const amount=amountRaw;
-  const due=document.getElementById('inv-due').value;
-  const status=document.getElementById('inv-status').value;
-  const dueStr=due?(window.FinFlowDates?window.FinFlowDates.fmtLabel(due):due):'No due date';   // batch 8 (+ F195: a calendar date, never an instant)
-  if(!userInvoices) userInvoices = [];
-  userInvoices.push({client,amount,due:dueStr,color:status==='overdue'?'var(--red)':'var(--t2)',status});
-  closeModal('invoice-modal');
-  renderInvoices();
-  notify(`Invoice created for ${esc(client)}`);
-}
+// F75 (2026-11-02): the dead copy of saveInvoice() was deleted — the code that runs is window.saveInvoice in finflow-api-wiring-medium.js.
 
 // ════════════════════════════════════════════
 // EXPENSES
@@ -2925,15 +2856,7 @@ function updateExpenses(d=getPeriodData()){
     }
   });
 }
-function renderExpenses(){
-  updateExpenses();
-  if(!bizExpenses) bizExpenses=[];
-  document.getElementById('expense-list').innerHTML=bizExpenses.slice(0,6).map(e=>`
-    <div class="tx-row">
-      <div><div class="tx-name">${esc(e.desc)}</div><div class="tx-cat">${esc(e.cat)} · ${esc(e.date)}${e.ded!=='no'?' · '+(e.ded==='half'?'50%':'100%')+' deductible':''}</div></div>
-      <div class="tx-amt dn">-${S(e.amount)}</div>
-    </div>`).join('');
-}
+// F75 (2026-11-02): the dead copy of renderExpenses() was deleted — the code that runs is window.renderExpenses in finflow-api-wiring-medium.js.
 function openExpenseModal(){
   const _sv=(id,v)=>{const el=document.getElementById(id); if(el) el.value=v;};
   _sv('bexp-desc','');
@@ -2945,18 +2868,7 @@ function openExpenseModal(){
   window._expIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new expense never reuses the last token
   openModal('expense-modal');
 }
-function saveExpense(){
-  const desc=sanitizeText(document.getElementById('bexp-desc').value,300);
-  const amountRaw=validateAmount(document.getElementById('bexp-amount').value);
-  if(!desc){notify('Description is required',true);return;}
-  if(amountRaw===null||amountRaw<=0){notify('A valid positive amount is required',true);return;}
-  const amount=amountRaw;
-  if(!bizExpenses) bizExpenses = [];
-  bizExpenses.unshift({desc,cat:document.getElementById('bexp-cat').value,amount,ded:document.getElementById('bexp-ded').value,date:'Today'});
-  closeModal('expense-modal');
-  renderExpenses();
-  notify('Expense logged');
-}
+// F75 (2026-11-02): the dead copy of saveExpense() was deleted — the code that runs is window.saveExpense in finflow-api-wiring-medium.js (and -final.js).
 
 // ════════════════════════════════════════════
 // INVENTORY
@@ -2972,56 +2884,10 @@ window._invItemValue = function(item){
 };
 // Shadowed at runtime by finflow-api-wiring-medium.js window.renderInventory (a replacement override). Kept on the
 // same sources so it can never re-grow C7/LA5 if it ever runs.
-function renderInventory(){
-  if(!inventory) inventory=[];
-  const lowCount=inventory.filter(i=>i.low).length;
-  document.getElementById('badge-inv2').textContent=lowCount;
-  document.getElementById('badge-inv2').style.display=lowCount>0?'':'none';
-  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-  set('inv-skus',inventory.length);
-  set('inv-lowstock',lowCount);
-  set('inv-value',window._inventoryValue!=null?S(window._inventoryValue):'—');   // C7
-  document.getElementById('inventory-list').innerHTML=inventory.map((item,idx)=>{
-    const pct=Math.min(100,Math.round(item.units/item.max*100));
-    const col=pct<10?'var(--red)':pct<20?'var(--amber)':'var(--green)';
-    const val=window._invItemValue(item);   // LA5
-    const cogsVal=item.cogs!=null?S(item.cogs):'—';
-    return`<div class="inv-item-row">
-      <span data-style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
-      <span>${esc(item.name)}</span>
-      <span data-style="color:${item.low?'var(--red)':'var(--t1)'}">${item.units} units${item.low?' ⚠':''}</span>
-      <div class="stock-bar"><div class="stock-fill" data-style="width:${pct}%;background:${col}"></div></div>
-      <span data-style="color:${item.low?'var(--red)':'var(--t1)'};">${val==null?'—':S(val)}</span>
-      <span data-style="text-align:right;font-family:var(--font-mono);color:var(--t2)">${cogsVal}</span>
-      <span class="table-actions" data-style="display:flex;gap:4px">
-        <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-idx="${idx}" data-on-click="openStockInModal(Number(this.dataset.argIdx))">+ In</button>
-        <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-idx="${idx}" data-on-click="openStockOutModal(Number(this.dataset.argIdx))">- Out</button>
-        <button class="btn btn-ghost btn-sm" data-style="font-size:10px;padding:3px 7px" data-arg-idx="${idx}" data-on-click="restockItem(Number(this.dataset.argIdx))">Restock</button>
-      </span>
-    </div>`;
-  }).join('');
-}
-function restockItem(idx){
-  if(idx<0||idx>=inventory.length)return;
-  notify('Use the Stock In modal to restock this item.');
-  return;
-}
-function openProductModal(){openModal('product-modal')}
-function saveProduct(){
-  const name=sanitizeText(document.getElementById('prod-name').value,200);
-  if(!name){notify('Product name is required',true);return;}
-  const unitsRaw=parseInt(document.getElementById('prod-units').value)||0;
-  const units=Math.max(0,Math.min(unitsRaw,1000000));
-  const costRaw=validateAmount(document.getElementById('prod-cost').value);
-  const cost=costRaw!==null?costRaw:0;
-  const thresh=Math.max(0,parseInt(document.getElementById('prod-thresh').value)||20);
-  const sku='#'+String(1048+(inventory||[]).length).padStart(4,'0');
-  if(!inventory) inventory=[];
-  inventory.push({sku,name,units,max:Math.max(units*2,100),cost,low:units<thresh});
-  closeModal('product-modal');
-  renderInventory();
-  notify(`${name} added to inventory`);
-}
+// F75 (2026-11-02): the dead copy of renderInventory() was deleted — the code that runs is window.renderInventory in finflow-api-wiring-medium.js.
+// F75 (2026-11-02): the dead copy of restockItem() was deleted — the code that runs is window.restockItem in finflow-api-wiring-medium.js.
+// F75 (2026-11-02): the dead copy of openProductModal() was deleted — the code that runs is window.openProductModal in finflow-api-wiring-medium.js.
+// F75 (2026-11-02): the dead copy of saveProduct() was deleted — the code that runs is window.saveProduct in finflow-api-wiring-medium.js.
 
 // ════════════════════════════════════════════
 // PAYROLL
@@ -3080,44 +2946,7 @@ window.dedTotal=dedTotal; window.netFromDeductions=netFromDeductions; window.ded
 window.setDedRows=setDedRows; window.addDedRow=addDedRow; window.readDedRows=readDedRows;
 window.DED_DISCLAIMER=DED_DISCLAIMER; window.DED_DISCLAIMER_OUTPUT=DED_DISCLAIMER_OUTPUT;
 
-function renderPayroll(){
-  const allEmps=ownerPayroll?[{...ownerPayroll,isOwner:true},...(payrollEmployees||[])]:( payrollEmployees||[]);
-  const totalGross=allEmps.reduce((a,e)=>a+(parseFloat(e.gross)||0),0);
-  const totalDed=allEmps.reduce((a,e)=>a+dedTotal(e.gross, e.deductions),0);
-  document.getElementById('pr-total').textContent=S(totalGross);
-  document.getElementById('pr-headcount').textContent=allEmps.length+' employee'+(allEmps.length!==1?'s':'');
-  document.getElementById('pr-tax').textContent=S(totalDed);
-  if(ownerPayroll){
-    document.getElementById('pr-owner-net').textContent=S(ownerPayroll.net);
-    document.getElementById('pr-owner-label').textContent='Your net salary';
-    document.getElementById('owner-cta').style.display='none';
-    document.getElementById('payroll-link-card').style.display='flex';
-    document.getElementById('link-net-display').textContent=S(ownerPayroll.net)+'/mo';
-  } else {
-    document.getElementById('pr-owner-net').textContent='—';
-    document.getElementById('pr-owner-label').textContent='Not on payroll';
-    document.getElementById('owner-cta').style.display='block';
-    document.getElementById('payroll-link-card').style.display='none';
-    document.getElementById('link-net-display').textContent='—';   // C1
-  }
-  document.getElementById('payroll-list').innerHTML=allEmps.map(e=>{
-    const net=netFromDeductions(e.gross, e.deductions);
-    const tax=dedTotal(e.gross, e.deductions);
-    return`<div class="payroll-row">
-      <div class="emp-info">
-        <div class="emp-init ${e.avClass||'av-blue'}">${e.initials||getInitials(e.fname,e.lname)}</div>
-        <div><div class="emp-name">${esc(e.fname)} ${esc(e.lname)}${e.isOwner?` <span class="badge b-blue" data-style="font-size:9px">You</span>`:''}</div><div class="emp-role">${esc(e.type||'Full-time')}</div></div>
-      </div>
-      <span data-style="color:var(--t2);font-size:12px">${esc(e.role)}</span>
-      <span data-style="font-family:var(--font-mono);color:var(--t1)">${S(e.gross)}</span>
-      <span data-style="color:var(--red);font-family:var(--font-mono)">${tax>0?'-'+S(tax):'—'}</span>
-      <span data-style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${S(net)}</span>
-      ${e.isOwner
-        ?`<button class="btn-icon" data-on-click="openOwnerModal()" title="Edit" data-style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
-        :`<button data-arg-id="${e._dbId||e.id||0}" data-on-click="openEditEmployee(Number(this.dataset.argId))" data-style="background:none;border:none;cursor:pointer;color:var(--t3);padding:4px;font-size:14px;line-height:1" title="Edit employee">✏</button>`}
-    </div>`;
-  }).join('');
-}
+// F75 (2026-11-02): the dead copy of renderPayroll() was deleted — the code that runs is window.renderPayroll in finflow-api-wiring-medium.js.
 function previewOwnerNet(){
   const g=Number(document.getElementById('own-gross').value)||0;
   const deds=readDedRows('own-deductions-rows');
@@ -4851,21 +4680,7 @@ function openAddHoldingModal(scope){
     const _b=_modal.querySelector('button[data-on-click*="saveHolding"]'); if(_b) _b.textContent='Add holding'; }
   openModal('holding-modal');
 }
-function saveHolding(){
-  const ticker=(document.getElementById('h-ticker').value||'').trim().toUpperCase();
-  const name=(document.getElementById('h-name').value||'').trim()||ticker;
-  const shares=parseFloat(document.getElementById('h-shares').value)||0;
-  const cost=parseFloat(document.getElementById('h-cost').value)||0;
-  const price=parseFloat(document.getElementById('h-price').value)||cost;
-  const div=parseFloat(document.getElementById('h-div').value)||0;
-  const type=document.getElementById('h-type').value||'Stock';
-  if(!ticker||!shares){notify('Ticker and shares are required',true);return;}
-  const colors=['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a','#5a4e3a'];
-  holdings.push({ticker,name,type,shares,cost,price,div,color:colors[holdings.length%colors.length]});
-  closeModal('holding-modal');
-  renderInvestments();
-  notify(`${ticker} added to portfolio ✦`);
-}
+// F75 (2026-11-02): the dead copy of saveHolding() was deleted — the code that runs is window.saveHolding in finflow-api-wiring.js (and -extra.js, -final.js).
 
 // G11: one rebalance view for both sides — Personal passes nothing (its own holdings), the business investments page
 // passes window.bizHoldings with scope 'business'. Never a mix (the personal/business wall).
@@ -5160,32 +4975,8 @@ function openCustomerModal(id=null){
   }
   openModal('customer-modal');
 }
-function saveCustomer(){
-  const fname=sanitizeText(document.getElementById('cust-fname').value,100);
-  const lname=sanitizeText(document.getElementById('cust-lname').value,100);
-  const email=document.getElementById('cust-email').value.trim().toLowerCase().slice(0,254);
-  if(!fname||!lname){notify('First name and last name are required',true);return;}
-  if(!email||!validateEmail(email)){notify('A valid email address is required',true);return;}
-  const data={   // L17: no typed revenue — the server derives it from the customer's invoices
-    fname,lname,email,
-    company:sanitizeText(document.getElementById('cust-company').value,200),
-    industry:document.getElementById('cust-industry').value,
-    phone:sanitizePhone(document.getElementById('cust-phone').value),
-    status:document.getElementById('cust-status').value,
-    notes:sanitizeText(document.getElementById('cust-notes').value,1000)
-  };
-  const editId=document.getElementById('cust-edit-id').value;
-  if(editId){const idx=customers.findIndex(c=>c.id===Number(editId));if(idx>-1)customers[idx]={...customers[idx],...data};notify('Customer updated');}
-  else{data.id=nextCustId++;customers.push(data);notify('Customer added');}
-  closeModal('customer-modal');renderCustomers(document.getElementById('cust-search').value);
-}
-async function deleteCustomer(){
-  const id=Number(document.getElementById('cust-edit-id').value);
-  if(!id)return;
-  if(!(await window._confirmModal('Delete this customer? This cannot be undone.', {danger:true})))return;
-  customers=customers.filter(c=>c.id!==id);
-  closeModal('customer-modal');renderCustomers();notify('Customer deleted');
-}
+// F75 (2026-11-02): the dead copy of saveCustomer() was deleted — the code that runs is window.saveCustomer in finflow-api-wiring.js.
+// F75 (2026-11-02): the dead copy of deleteCustomer() was deleted — the code that runs is window.deleteCustomer in finflow-api-wiring.js.
 
 // ════════════════════════════════════════════
 // SETTINGS
@@ -5590,35 +5381,7 @@ function _applyConvertedTxns(txns){
 function toggleCompact(){
   document.getElementById('sidebar').classList.toggle('compact',document.getElementById('s-compact').checked);
 }
-async function saveSettings(){
-  const v = id => (document.getElementById(id)||{}).value;
-  const c = id => !!document.getElementById(id)?.checked;
-  const b = {
-    name:          v('s-user-name'),
-    currency:      v('s-currency'),
-    business_name: v('s-biz-name'),
-    industry:      v('s-industry'),
-    address:       v('s-address'),
-    email:         v('s-email'),
-    phone:         v('s-phone'),
-    website:       v('s-website'),
-    tax_id:        v('s-tax-id'),
-    fiscal_year:   v('s-fy'),
-    dark_mode:     c('s-dark') ? 1 : 0,
-    show_cents:    c('s-cents') ? 1 : 0,
-    notif_email:   c('s-email-alerts') ? 1 : 0,
-  };
-  try {
-    await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b) });
-    if (window.CURRENT_USER && b.name) window.CURRENT_USER.name = b.name;
-    notify('Settings saved ✦');
-    // A fiscal-year change must re-sync the computed month range everywhere (header,
-    // month nav, chart, AI) — otherwise MONTH_FULL only recomputes on the next entity
-    // load, so the header/chart lag until then.
-    _ffFiscalMonthsChanged();   // LC2b
-    if(typeof refreshAllPeriodData==='function') refreshAllPeriodData();
-  } catch(e) { notify('Failed to save settings'); }
-}
+// F75 (2026-11-02): the dead copy of saveSettings() was deleted — the code that runs is window.saveSettings in finflow-api-wiring.js.
 
 function openAddEntityModal(){
   if(_entityCapReached()){
@@ -6200,25 +5963,14 @@ function renderProjects(){
       <div class="bar-track" data-style="height:4px"><div class="bar-fill" data-style="width:${p.progress}%;background:${p.status==='Completed'?'var(--green)':'var(--acc)'}"></div></div>
     </div>`).join('');
 }
-function openNewProjectModal(){notify('New project modal');}
+// F75 (2026-11-02): the dead copy of openNewProjectModal() was deleted — the code that runs is window.openNewProjectModal in finflow-api-wiring-extra.js.
 
 // ════════════════════════════════════════════
 // TIMESHEET PAGE
 // ════════════════════════════════════════════
 const timesheetData=[]; // populated from API by finflow-api-wiring-extra.js
-function renderTimesheet(){
-  const l=document.getElementById('timesheet-list');if(!l)return;
-  l.innerHTML=timesheetData.map(t=>`
-    <div class="table-row" data-style="grid-template-columns:1fr 100px 80px 70px 70px 70px">
-      <span data-style="font-weight:500">${esc(t.employee)}</span>
-      <span data-style="color:var(--t2)">${esc(t.project)}</span>
-      <span data-style="color:var(--t3)">${esc(t.date)}</span>
-      <span data-style="font-family:var(--font-mono)">${t.hours} hrs</span>
-      <span data-style="font-family:var(--font-mono);color:${t.billable>0?'var(--green)':'var(--t3)'}">${t.billable} hrs</span>
-      <span data-style="font-family:var(--font-mono)">$${t.rate}/hr</span>
-    </div>`).join('');
-}
-function openLogTimeModal(){notify('Log time entry');}
+// F75 (2026-11-02): the dead copy of renderTimesheet() was deleted — the code that runs is window.renderTimesheet in finflow-api-wiring-extra.js.
+// F75 (2026-11-02): the dead copy of openLogTimeModal() was deleted — the code that runs is window.openLogTimeModal in finflow-api-wiring-extra.js.
 
 // ════════════════════════════════════════════
 // MANUAL JOURNALS PAGE
@@ -6984,12 +6736,12 @@ setTimeout(function(){
   var _fns=[
     function(){loadChartJS(function(){buildCharts();buildCashChart();});},
     refreshAllPeriodData,
-    renderPayroll,
+    function(){if(typeof window.renderPayroll==='function')window.renderPayroll();},   // F75: the wiring's live copies, looked up when run
     renderPersonal,
     renderCustomers,
-    renderInventory,
-    renderInvoices,
-    renderExpenses,
+    function(){if(typeof window.renderInventory==='function')window.renderInventory();},
+    function(){if(typeof window.renderInvoices==='function')window.renderInvoices();},
+    function(){if(typeof window.renderExpenses==='function')window.renderExpenses();},
     renderItems,
     renderBanking,
     function(){if(typeof renderQuotes==='function')renderQuotes();},

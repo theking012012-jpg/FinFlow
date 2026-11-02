@@ -65,8 +65,11 @@ A('no unescaped user-data field in any HTML sink across render sources',
   offenders.length ? offenders.join('\n          ') : '');
 
 // Explicit regression guards for the two sinks fixed in this pass.
-const am = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8');
-A('[GUARD] renderTimesheet escapes employee/project', /\$\{esc\(t\.employee\)\}/.test(am) && /\$\{esc\(t\.project\)\}/.test(am));
+// F75 (2026-11-02): app-main's renderTimesheet was a DEAD copy and is deleted; the code that runs is window.renderTimesheet
+// = renderTimesheetList in finflow-api-wiring-extra.js (Rule 1) — the guard checks THAT copy (its escaper is e()).
+const ex = fs.readFileSync(path.join(process.cwd(), 'public', 'finflow-api-wiring-extra.js'), 'utf8');
+const _tsFn = (ex.match(/function renderTimesheetList\(\)[\s\S]*?\n  \}\n/) || [''])[0];
+A('[GUARD] renderTimesheet (the live renderTimesheetList) escapes employee and project', /window\.renderTimesheet\s*=\s*renderTimesheetList/.test(ex) && /\$\{e\(t\.employee\)\}/.test(_tsFn) && /\$\{e\(_tsProjectLabel\(t\)/.test(_tsFn));
 const ad = require('./appScripts.js').pageSource('accountant-dashboard.html');
 A('[GUARD] accountant bill-client dropdown escapes client name/email', /\$\{esc\(c\.client_name/.test(ad));
 

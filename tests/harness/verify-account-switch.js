@@ -61,7 +61,9 @@ async function main() {
     const hf = await login('sw-f@finflow.test');
     A('control: fresh invitee (no own books) lands in O', (await inv(hf)) === 'O-inv', 'invoices=' + await inv(hf));
     await hu.post('/api/my-access/switch', { accountOwnerId: O });
-    await c.query(`UPDATE team_members SET data = data || '{"status":"revoked"}' WHERE id=$1`, [tmU]);
+    // Revoke = the membership row is removed (the owner's DELETE /api/team/:id does exactly this). It used to write status
+    // 'revoked' — a value team_members does not have (pending / active); F79's CHECK refuses it.
+    await c.query(`DELETE FROM team_members WHERE id=$1`, [tmU]);
     A('membership revoked while switched in → next request back in own books, not O', (await inv(hu)) === 'U-inv', 'invoices=' + await inv(hu));
   } finally {
     if (server) { try { await server.close(); } catch (_) {} }

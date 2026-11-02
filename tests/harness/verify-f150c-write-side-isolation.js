@@ -22,7 +22,7 @@ const CASES = [
   ['customers',          '/api/customers',          '/api/customers',          { fname: 'IsoCust', lname: 'X', email: '' },                                        'fname',  'IsoCust'],
   ['items',              '/api/items',              '/api/items',              { name: 'IsoItem', price: 5 },                                                       'name',   'IsoItem'],
   ['inventory',          '/api/inventory',          '/api/inventory',          { name: 'IsoInv', units: 3, cost: 2 },                                               'name',   'IsoInv'],
-  ['quotes',             '/api/quotes',             '/api/quotes',             { client: 'IsoQuote', amount: 100, expiry_date: '2026-12-31', status: 'draft' },      'client', 'IsoQuote'],
+  ['quotes',             '/api/quotes',             '/api/quotes',             { client: 'IsoQuote', amount: 100, expiry_date: '2026-12-31', status: 'pending' },      'client', 'IsoQuote'],
   ['vendors',            '/api/vendors',            '/api/vendors',            { name: 'IsoVendor' },                                                                'name',   'IsoVendor'],
   ['bills',              '/api/bills',              '/api/bills',              { vendor: 'IsoBillVend', amount: 50, due_date: '2026-12-31', status: 'unpaid' },      'vendor', 'IsoBillVend'],
   ['recurring_bills',    '/api/recurring-bills',    '/api/recurring-bills',    { vendor: 'IsoRB', amount: 10, frequency: 'monthly', next_run: '2026-08-01', status: 'active' }, 'vendor', 'IsoRB'],

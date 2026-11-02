@@ -35,7 +35,12 @@ async function main() {
     const app = require('../../server.js');
     const NUM = ['amount', 'price', 'cost', 'gross', 'bonus', 'overtime', 'units', 'max_units', 'hours', 'rate', 'qty', 'quantity', 'stock', 'shares', 'current_val', 'target_val', 'monthly_contrib', 'revenue', 'amount_paid'];
     const TEXT = ['name', 'description', 'client', 'customer', 'vendor', 'employee', 'fname', 'lname', 'ticker', 'keyword', 'category', 'company', 'project'];
-    const STATUS_OF = { bills: 'unpaid', credit_notes: 'Open', vendor_credits: 'Open' };
+    // Rule 11: each table's status is READ FROM THE SCHEMA (its chk_<table>_status CHECK, F79) — the first value it allows —
+    // never guessed (a guessed 'pending' is refused by customers, payroll_runs, …).
+    const STATUS_OF = {};
+    for (const r of (await c.query(`SELECT conrelid::regclass::text AS t, pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname LIKE 'chk\\_%\\_status' ESCAPE '\\'`)).rows) {
+      const m = /IN \(\s*'([^']+)'/.exec(r.d) || /ARRAY\[\s*'([^']+)'/.exec(r.d); if (m) STATUS_OF[r.t] = m[1];
+    }
     const TABLE_OF = { team: 'team_members' };
     const tables = new Set((await c.query(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='data'`)).rows.map(r => r.table_name));
     const base = (t) => { const d = { status: STATUS_OF[t] || 'pending', date: '2026-07-01', issue_date: '2026-07-01', expense_date: '2026-07-01', due_date: '2026-08-01', email: 'x@finflow.test', frequency: 'Monthly', next_run: '2026-08-01', kind: 'asset', target_val: 10 }; TEXT.forEach(k => { d[k] = 'Neg test'; }); return d; };

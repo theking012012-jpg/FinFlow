@@ -2882,8 +2882,17 @@ The remediation half of **F107**, logged separately because it is a feature, not
 
 ---
 
-### F105 🟠 HIGH (PROCESS) — A finding was double-logged and a settled decision re-opened, because the ledger was searched positionally, not by topic — **NEW (2026-07-24)**
-**Status:** OPEN — reconciliation check PROPOSED (design only, not built), per owner sequencing. This is a process defect: the ledger failed at the one thing it exists to do.
+### F105 🟠 HIGH (PROCESS) — A finding was double-logged and a settled decision re-opened, because the ledger was searched positionally, not by topic — **✅ FIXED + VERIFIED 2026-11-02 (the guard is built)**
+**Status (2026-11-02): ✅ BUILT + VERIFIED** — `tests/harness/ledger-sync.js`, run by the pre-commit hook on the STAGED ledger:
+(a) two different findings citing the same `file:line` with neither mentioning the other → BLOCKED, naming both; (b) a finding
+asking an accounting-basis question ("open question", "decision needed", "does … accrue / count …") on a topic one of
+VERIFICATION.md's Decisions 1–5 covers, without citing "Decision N" (or "no decision exists") → BLOCKED, pointing at that
+Decision. A ratchet: what the ledger held when it was built is `ledger-baseline.json` (7 collisions, 3 uncited — F128's
+reconciliation text); only NEW cases fail. Executed: `verify-f105-ledger-guard` 6/0 — the real ledger passes; an F104-shaped
+row (an anchor F110 owns, no mention) is blocked naming F110 and passes once it cites F110; a row re-opening the payroll-run
+basis is blocked pointing at Decision 2 and passes once it cites it; the hook runs it before its final exit. (RED: no guard
+existed — the same rows committed silently.)
+**Was:** OPEN — reconciliation check PROPOSED (design only, not built), per owner sequencing. This is a process defect: the ledger failed at the one thing it exists to do.
 
 **What happened (honest account).** While logging F102/F103 I:
 1. **Searched the ledger positionally, not semantically.** I grepped `F99|F100|F101` to find where to *insert* new rows — I never searched the ledger by TOPIC (`payroll`, `draft`, `status filter`). So **F80** — the identical defect, logged the day before — never surfaced, and I logged it again as F104.

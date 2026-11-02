@@ -49,4 +49,16 @@ if [ -f scripts/gen-handlers.js ]; then
   }
 fi
 
+# ── F105: the findings ledger checks itself ──────────────────────────────────
+# A new finding citing code another finding already owns (same file:line) without mentioning it — a likely duplicate —
+# or asking an accounting-basis question a Decision in VERIFICATION.md already settled, without citing it, BLOCKS.
+# Only NEW cases fail (tests/harness/ledger-baseline.json holds what the ledger had when this was built).
+if [ -f tests/harness/ledger-sync.js ]; then
+  node tests/harness/ledger-sync.js --check || {
+    echo "" >&2
+    echo "[pre-commit] BLOCKED — AUDIT_MASTER.md: see the ledger-sync lines above." >&2
+    exit 1
+  }
+fi
+
 exit 0

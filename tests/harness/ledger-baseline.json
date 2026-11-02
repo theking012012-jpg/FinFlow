@@ -1,0 +1,17 @@
+{
+ "note": "F105 baseline — the ledger as it stood when the guard was built (2026-11-02). Only NEW entries fail.",
+ "collisions": [
+  "C4|F118|app-main.js:548",
+  "C6|F63|app-main.js:1453",
+  "F113|F118|app-main.js:2222",
+  "F118|F124|index.html:6280",
+  "F125|F59|app-main.js:4434",
+  "F33|F58|finflow-api-wiring-dashboard.js:64",
+  "F33|F58|server.js:4147"
+ ],
+ "uncited": [
+  "F128|Decision 1",
+  "F128|Decision 2",
+  "F128|Decision 3"
+ ]
+}

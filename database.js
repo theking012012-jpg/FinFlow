@@ -706,6 +706,13 @@ async function initDB() {
       CREATE OR REPLACE FUNCTION admin_log_immutable() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION 'admin_log is append-only: % is not permitted', TG_OP; END;
       $$ LANGUAGE plpgsql`);
+    // C1 / F92 / Rule 9: the one idempotency store every mutating /api request goes through (idempotency.js).
+    // Mirrors scripts/migrations/2026-11-02-idempotency-keys.sql.
+    await client.query(`CREATE TABLE IF NOT EXISTS idempotency_keys (
+      id BIGSERIAL PRIMARY KEY, actor TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL, method TEXT NOT NULL,
+      path TEXT NOT NULL, response_status INTEGER, response_body JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ, UNIQUE (actor, key))`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created ON idempotency_keys (created_at)`);
     // Product-news unsubscribes (mirrors scripts/migrations/2026-11-02-email-optouts.sql).
     await client.query(`CREATE TABLE IF NOT EXISTS email_optouts (
   email      TEXT PRIMARY KEY,

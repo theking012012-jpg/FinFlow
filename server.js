@@ -1683,6 +1683,13 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// ── C1 / F92 / Rule 9: IDEMPOTENCY AT THE WRITE — one shared mechanism for every mutating /api route ──────────────
+// A write carrying an Idempotency-Key runs once per (actor, key): the first claims the key in idempotency_keys, its
+// response is stored, a repeat gets that response back (idempotency.js). Every page sends a key on every /api write
+// (public/ff-idem.js), so this covers every route — including routes added after it. After the auth / role gates, so a
+// refused request is replayed as refused; before every route.
+app.use('/api', require('./idempotency.js')(pool));
+
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 // scopeId(req) — the single indirection point for data-scope resolution.
 // Phase 2: returns req.accountId, resolved by the account resolver middleware above.
@@ -15647,7 +15654,7 @@ const _jobs = {
   recurring: () => runExclusive(pool, 'recurring-scheduler', () => runRecurringScheduler()),
   fxLive:    () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates()),
   reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
-  billing:   () => runExclusive(pool, 'billing-daily', async () => { const r = await runBillingJob(); try { await stripDeletedAccountDevices(); } catch (e) { console.error('[retention] IP / device removal:', e.message); } try { await clearOldVisitorIps(); } catch (e) { console.error('[retention] visitor IP removal:', e.message); } return r; }),   // D-G: pending plan changes (+ retention, renewals) · LC3d-b
+  billing:   () => runExclusive(pool, 'billing-daily', async () => { const r = await runBillingJob(); try { await stripDeletedAccountDevices(); } catch (e) { console.error('[retention] IP / device removal:', e.message); } try { await clearOldVisitorIps(); } catch (e) { console.error('[retention] visitor IP removal:', e.message); } try { await require('./idempotency.js').purgeOld(pool); } catch (e) { console.error('[retention] idempotency keys:', e.message); } return r; }),   // D-G: pending plan changes (+ retention, renewals) · LC3d-b
   referrals: () => runExclusive(pool, 'referral-payouts', () => runReferralJob()),   // FA-L3d: book the month + send referral pay
   autoEmails: () => runExclusive(pool, 'auto-emails', () => runAutoEmails()),   // FA-B1: the customer emails a business turned on
 };

@@ -519,7 +519,8 @@ F25, F30, F32 (residual `/api/cashflow` reconciliation + Store A row), F33-C, F3
 
 A class is only a class if it has a full instance list. Each has one.
 
-### C1 — Duplicate-submit — 🟠 **PARTIAL** — durable DB-level fix DONE for `payroll_runs` (pilot); interim heuristic still backs the other money routes; ~29-route rollout + client token OPEN
+### C1 — Duplicate-submit — ✅ **FIXED + VERIFIED 2026-11-02** — one idempotency mechanism at the write for every mutating /api route (was 🟠 PARTIAL)
+> **2026-11-02 (C1 / F92 / Rule 9):** `idempotency.js` — every mutating /api request with an `Idempotency-Key` runs once per (actor, key): the unique row in `idempotency_keys` decides (no time window); the first response is stored and replayed (`Idempotent-Replayed: true`); a concurrent repeat waits for it; the same key on a different request → 422; a 5xx releases the key. `public/ff-idem.js` (first script on all 19 pages) puts a key on every same-origin /api write, derived from the user's gesture (double-click / impatient re-click = one operation; a write no gesture started = a unique key, behaving as before). Measured on HEAD: two CONCURRENT identical submits created 2 rows on 9 of 10 routes the 5-second window was meant to cover. `verify-c1-idempotency` RED 21/1 → GREEN 22/0; related 100 page-driving harnesses green (one fix found while running them: keep the caller's header type).
 
 > **STATUS — four states (2026-07-25). PARTIAL per the tick-off corollary: a fix covering part of a class says PARTIAL and lists what's left. C1 stays the single home for the double-submit class — no new F-number.**
 >

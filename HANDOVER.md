@@ -21,6 +21,25 @@
 - **Next (AUDIT_MASTER "OUTSTANDING"):** NEW-27, then NEW-23 restricted database login (the old `finflow_app` plan does not close it —
   see the row), then F89, F41, F108, F26-b, F52. Open findings from this session: NEW-25 (a skipped harness reads green).
 
+### How we work (the method used 2026-11-01 → 11-03 — keep using it)
+- **Per fix:** read-only investigation → write the harness → run it **RED on the old commit** (a second checkout:
+  `git worktree add ../finflow-red <old-sha>`, copy the new harness in, run it there) → **GREEN on the fix** → re-run the
+  related harnesses (grep `tests/harness` for the route/table/function touched) → update the AUDIT row with the numbers →
+  one commit per fix → push. State the bug value in every assertion (Rule 4). Inject the failure path (Rule 14).
+- **Related runs in parallel** (2-core container: 3–4 jobs). Put harness file names in a list, then:
+  `xargs -a list.txt -P 4 -I{} sh -c 'r=$(timeout 480 node -r ./tests/harness/clock.js tests/harness/{} 2>&1 | grep -E "ALL GREEN|FAILED|FATAL|passed" | tail -1); echo "{} | $r"'`
+- **Owner's sweep (PowerShell), each run saved to a file:**
+  `1..3 | ForEach-Object { node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js | Tee-Object "sweep-new-$_.txt" }`
+  then `Select-String -Path sweep-new-*.txt -Pattern "SWEEP COMPLETE"`. One harness only: `$env:SWEEP_ONLY="name"`.
+  Reds go on the frozen list and are investigated before anything else; the sweep's "NEAR THE TIME LIMIT" list is a to-do.
+- **Releasing:** after a green 3× sweep, fast-forward `main` to the swept commit (`git push origin <branch-head>:main`) so
+  the deployed commits are exactly the tested ones; GitHub marks the PR(s) merged. Then update AUDIT_MASTER / HANDOVER /
+  LAUNCH_STATUS.
+- **Production read-only tools** (never paste `DATABASE_URL` into chat — it holds the password): copy it in Railway, then in
+  PowerShell paste-but-don't-Enter `$env:DATABASE_URL = (Get-Clipboard).Trim(); $env:DATABASE_URL.StartsWith("postgres")`,
+  copy the URL in Railway, press Enter (`True`), run the tool, `Remove-Item Env:DATABASE_URL`.
+- **Talking to the owner:** short updates after each commit, never a long silence; evidence (counts, RED/GREEN) not claims.
+
 ## ⚡ UPDATE 2026-10-23 night — PRODUCTION IS LIVE ON `main` (read this first)
 
 **Railway has been up since the morning of 2026-10-23** (owner) and auto-deploys `main`. Everything pushed on 2026-10-23

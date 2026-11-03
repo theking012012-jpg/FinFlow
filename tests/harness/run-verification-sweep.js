@@ -91,7 +91,7 @@ for (const f of tests) {
     : (exitOk ? 'passed (exit 0)' : `failed (exit ${r.status})`);
   const summary = masked ? `MASKED — exit 0 but reported: ${base}` : base;
   const secs = elapsedSecs(started);
-  results.push({ f, ok, summary, out, masked });
+  results.push({ f, ok, summary, out, masked, secs: Number(secs) });
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${f.padEnd(46)} ${summary}  (${secs}s)`);
 }
 
@@ -101,6 +101,16 @@ console.log('\n' + '='.repeat(78));
 console.log(`  SWEEP COMPLETE — ${results.length - failed.length}/${results.length} GREEN, ${failed.length} RED`
   + (maskedCount ? `  (${maskedCount} of the reds were EXIT-0 MASKED — internally failed but exited 0)` : ''));
 console.log('='.repeat(78));
+
+// NEAR THE LIMIT — green, but within reach of TIMEOUT. boot-failures-gate ran 163–178s against 180s for weeks, green
+// every time, until one slower run timed out (owner's sweep 2026-11-03, run 2). A harness's margin is shown here so
+// it is fixed BEFORE it turns a sweep red. Not a failure: it does not change the exit code.
+const NEAR = 0.6;
+const near = results.filter(r => r.ok && r.secs >= (TIMEOUT / 1000) * NEAR).sort((a, b) => b.secs - a.secs);
+if (near.length) {
+  console.log(`\nNEAR THE TIME LIMIT (green, but over ${Math.round(NEAR * 100)}% of the ${TIMEOUT / 1000}s per-harness limit — speed these up before they time out):`);
+  for (const r of near) console.log(`    ${r.f.padEnd(46)} ${r.secs.toFixed(1)}s  (${Math.round(100 * r.secs / (TIMEOUT / 1000))}%)`);
+}
 
 if (failed.length) {
   console.log('\nFROZEN FAILURE LIST (sweep rule 2 — fix the whole list, then re-run every check):\n');

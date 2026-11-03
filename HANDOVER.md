@@ -16,7 +16,9 @@
   guard in the pre-commit hook, F125, C1, F126, FA-L3e, NEW-22, NEW-26 (sweep lists harnesses near the time limit).
 - **Owner, after the deploy:** confirm `746696a` is live in Railway; run `tools/launch/list-status-violations.js` (read-only)
   on production before validating F79's constraints.
-- **Next (AUDIT_MASTER "OUTSTANDING"):** NEW-23 restricted database login (the old `finflow_app` plan does not close it —
+- **Production check done 2026-11-03:** `0ab6618` live; `list-status-violations.js` = 26 constraints, 0 bad rows. Owner approved
+  NEW-27 (validate them at boot) — **build it first**.
+- **Next (AUDIT_MASTER "OUTSTANDING"):** NEW-27, then NEW-23 restricted database login (the old `finflow_app` plan does not close it —
   see the row), then F89, F41, F108, F26-b, F52. Open findings from this session: NEW-25 (a skipped harness reads green).
 
 ## ⚡ UPDATE 2026-10-23 night — PRODUCTION IS LIVE ON `main` (read this first)

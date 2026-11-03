@@ -1,9 +1,23 @@
 # FinFlow — session handover (for the next Claude)
 
-**Written:** 2026-08-14 · **Repo state:** `main` at commit `62137cc`, clean, everything pushed.
+**Written:** 2026-08-14 · **Updated:** 2026-11-03 — `main` at `746696a` (see the first UPDATE below; older repo-state notes are history).
 **You are picking up a single-founder SaaS build.** The owner (Shaq, Trinidad) plans/approves; you write code.
 
 ---
+
+## ⚡ UPDATE 2026-11-03 — `main` = `746696a` (PR #6, #5, #4 merged) — read this first
+
+- **Released:** PR #6 (owner decisions round 2; contains #5 and #4) fast-forwarded onto `main` at `746696a`, the exact commits
+  the owner swept: 3× sweep on `aedc279` = 739/739 · 738/739 · 739/739; the one red was `boot-failures-gate` timing out
+  (NEW-24 — it ran 163–178s against the 180s limit; now 3 probes at a time, ~75s), owner re-ran it: GREEN.
+- **In this release (2026-11-01 → 11-03):** F90 audit trail written by the database (triggers on 39 tables, History on every
+  record, the Audit log as a report, tamper-evident hash chain + Verify), F79 status constraints + F79b (a bad status is a
+  400 naming the allowed values, never a 500), F88 fiscal year per business, F75/F75-b dead copies removed, F105 ledger
+  guard in the pre-commit hook, F125, C1, F126, FA-L3e, NEW-22, NEW-26 (sweep lists harnesses near the time limit).
+- **Owner, after the deploy:** confirm `746696a` is live in Railway; run `tools/launch/list-status-violations.js` (read-only)
+  on production before validating F79's constraints.
+- **Next (AUDIT_MASTER "OUTSTANDING"):** NEW-23 restricted database login (the old `finflow_app` plan does not close it —
+  see the row), then F89, F41, F108, F26-b, F52. Open findings from this session: NEW-25 (a skipped harness reads green).
 
 ## ⚡ UPDATE 2026-10-23 night — PRODUCTION IS LIVE ON `main` (read this first)
 

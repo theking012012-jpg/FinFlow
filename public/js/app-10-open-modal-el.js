@@ -3,7 +3,17 @@
 (function(){
   'use strict';
   // Topmost-first precedence: open modal → sidebar drawer → AI panel → notif panel.
-  function _openModalEl(){ return document.querySelector('.modal-overlay:not(.hidden)'); }
+  // NEW-29: an open modal is one that is VISIBLE — not merely one without the "hidden" class (the Edit Employee modal hides
+  // with display:none, so the old selector always found it: the Back entry was never removed, and a Back press with
+  // nothing open "closed" that invisible modal). Topmost = the last open one in the page.
+  function _openModalEl(){
+    var all = document.querySelectorAll('.modal-overlay:not(.hidden)');
+    for(var i = all.length - 1; i >= 0; i--){
+      var d; try { d = window.getComputedStyle(all[i]).display; } catch(_) { d = all[i].style.display; }
+      if(d !== 'none') return all[i];
+    }
+    return null;
+  }
   function _topmost(){
     if(_openModalEl()) return 'modal';
     if(document.body.classList.contains('sidebar-open')) return 'sidebar';

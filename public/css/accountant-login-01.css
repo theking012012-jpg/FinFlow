@@ -2,8 +2,8 @@
    style, so every stylesheet is a file. It is linked at the same place, so the cascade order is unchanged. */
   :root {
     --bg: #0e0e0c; --bg2: #141410; --card: #1a1a15;
-    --gold: #c9a84c; --gold-light: #e8cc7a; --gold-dim: #8a6f2e;
-    --text: #f0ead6; --text2: #9a9278; --text3: #5a5540;
+    --gold: #c9a84c; --gold-light: #e8cc7a; --gold-dim: #a28336;
+    --text: #f0ead6; --text2: #9a9278; --text3: #908866;
     --border: #2a2820; --border2: #3a3828;
     --green: #4a9c6d; --red: #c45c5c; --red-bg: #1f0d0d;
   }

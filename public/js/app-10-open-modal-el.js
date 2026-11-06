@@ -53,3 +53,87 @@
     // else: nothing open → allow normal navigation (do nothing)
   });
 })();
+
+// F52 (2026-11-06) — every modal window, however it was built (37 in index.html, more built at runtime by app-main and
+// the wiring files, and any added later), is announced and usable from the keyboard. ONE mechanism instead of a patch per
+// modal: an observer marks each .modal-overlay as a named dialog (role="dialog", aria-modal, aria-label = its title)
+// and names every icon-only close button "Close"; when a modal opens, focus moves into it and returns on close; Escape
+// closes the top open modal by pressing its own close button (so each modal's own close logic runs).
+(function(){
+  'use strict';
+  function _isOpen(ov){
+    if(!ov || ov.classList.contains('hidden')) return false;
+    try { return window.getComputedStyle(ov).display !== 'none'; } catch(_) { return ov.style.display !== 'none'; }
+  }
+  function _title(ov){
+    var t = ov.querySelector('.modal-title, h2, h3');
+    var s = t ? String(t.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    return (s || 'Dialog').slice(0, 120);
+  }
+  function _mark(root){
+    if(!root || root.nodeType !== 1) return;
+    var ovs = [], btns = [];
+    if(root.matches && root.matches('.modal-overlay')) ovs.push(root);
+    if(root.matches && root.matches('.modal-close')) btns.push(root);
+    if(root.querySelectorAll){
+      Array.prototype.push.apply(ovs, root.querySelectorAll('.modal-overlay'));
+      Array.prototype.push.apply(btns, root.querySelectorAll('.modal-close'));
+    }
+    ovs.forEach(function(ov){
+      if(!ov.getAttribute('role')) ov.setAttribute('role', 'dialog');
+      if(!ov.hasAttribute('aria-modal')) ov.setAttribute('aria-modal', 'true');
+      if(!ov.getAttribute('aria-label') && !ov.getAttribute('aria-labelledby')) ov.setAttribute('aria-label', _title(ov));
+      // First sight: a modal inserted ALREADY open (built and shown in one go) is an opening too.
+      if(ov._ffWasOpen === undefined){ ov._ffWasOpen = false; _openedOrClosed(ov); }
+    });
+    btns.forEach(function(b){ if(!b.getAttribute('aria-label') && !String(b.textContent || '').trim()) b.setAttribute('aria-label', 'Close'); });
+    // A form label with no `for` (the runtime-built forms write <label class="field-label">Code *</label><input id=…>):
+    // link it to the one field in its own .field-wrap, so the field is announced by its label.
+    var labs = [];
+    if(root.matches && root.matches('label.field-label:not([for])')) labs.push(root);
+    if(root.querySelectorAll) Array.prototype.push.apply(labs, root.querySelectorAll('label.field-label:not([for])'));
+    labs.forEach(function(l){
+      var w = l.closest('.field-wrap'); if(!w || l.querySelector('input,select,textarea')) return;
+      var c = w.querySelectorAll('input:not([type="hidden"]),select,textarea'); if(c.length !== 1) return;
+      if(c[0].id) l.setAttribute('for', c[0].id);
+      else if(!c[0].getAttribute('aria-label')) c[0].setAttribute('aria-label', String(l.textContent || '').replace(/[*\s]+$/,'').trim());
+    });
+  }
+  var _FOCUSABLE = 'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]):not(.modal-close), [tabindex]:not([tabindex="-1"])';
+  function _openedOrClosed(ov){
+    var open = _isOpen(ov);
+    if(open === !!ov._ffWasOpen) return;
+    ov._ffWasOpen = open;
+    if(open){
+      // Where to return: what had focus before — not a field inside this modal (openModal may focus one before we run).
+      var a = document.activeElement;
+      ov._ffReturnFocus = (a && ov.contains(a)) ? _lastOutside : a;
+      setTimeout(function(){ if(!_isOpen(ov) || ov.contains(document.activeElement)) return;
+        var f = ov.querySelector(_FOCUSABLE) || ov.querySelector('.modal-close'); if(f && f.focus) f.focus(); }, 0);
+    } else {
+      var r = ov._ffReturnFocus; ov._ffReturnFocus = null;
+      if(r && r.focus && document.contains(r)) { try { r.focus(); } catch(_) {} }
+    }
+  }
+  var _lastOutside = null;
+  function _start(){
+    document.addEventListener('focusin', function(e){ if(e.target && e.target.closest && !e.target.closest('.modal-overlay')) _lastOutside = e.target; }, true);
+    _mark(document.body);
+    new MutationObserver(function(muts){
+      for(var i = 0; i < muts.length; i++){
+        var m = muts[i];
+        if(m.type === 'childList'){ for(var j = 0; j < m.addedNodes.length; j++) _mark(m.addedNodes[j]); }
+        else if(m.target && m.target.classList && m.target.classList.contains('modal-overlay')) _openedOrClosed(m.target);
+      }
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    document.addEventListener('keydown', function(e){
+      if(e.key !== 'Escape' || e.defaultPrevented) return;
+      var open = Array.prototype.filter.call(document.querySelectorAll('.modal-overlay'), _isOpen);
+      if(!open.length) return;
+      var top = open[open.length - 1], x = top.querySelector('.modal-close');
+      if(x){ e.preventDefault(); x.click(); }
+    });
+  }
+  window._ffModalA11y = { mark: _mark, isOpen: _isOpen };   // test surface
+  if(document.body) _start(); else document.addEventListener('DOMContentLoaded', _start);
+})();

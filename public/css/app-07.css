@@ -39,3 +39,6 @@ select.ob-input{cursor:pointer}
 .ob-check-item .ob-ck-icon{width:20px;height:20px;border-radius:50%;background:var(--green-bg);border:1.5px solid var(--green);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;color:var(--green)}
 .ob-success{text-align:center;padding:.5rem 0}
 .ob-success-ring{width:64px;height:64px;border-radius:50%;background:var(--green-bg);border:2px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:28px;animation:obSlideUp .35s cubic-bezier(.34,1.5,.64,1) .1s both}
+
+/* F52: text for screen readers only (visually hidden, still read aloud) */
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

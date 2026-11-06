@@ -7,10 +7,10 @@
     --card2: #1f1f18;
     --gold: #c9a84c;
     --gold-light: #e8cc7a;
-    --gold-dim: #8a6f2e;
+    --gold-dim: #a28336;
     --text: #f0ead6;
     --text2: #9a9278;
-    --text3: #5a5540;
+    --text3: #908866;
     --border: #2a2820;
     --border2: #3a3828;
     --green: #4a9c6d;
@@ -221,7 +221,7 @@
   }
   .verify-box-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .verify-badge { font-size: 10px; background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); border-radius: 4px; padding: 2px 8px; letter-spacing: 0.05em; text-transform: uppercase; }
-  .verify-box h4 { font-size: 13px; color: var(--text); font-weight: 500; }
+  .verify-box h3, .verify-box h4 { font-size: 13px; color: var(--text); font-weight: 500; }
   .verify-box p { font-size: 12px; color: var(--text2); margin-bottom: 10px; line-height: 1.5; }
   .verify-options { display: flex; flex-direction: column; gap: 8px; }
   .verify-option {
@@ -296,7 +296,7 @@
   .status-dot.done { background: var(--green); }
   .status-dot.pending { background: var(--amber); }
   .status-dot.future { background: var(--text3); }
-  .status-item-text h5 { font-size: 13px; color: var(--text); font-weight: 500; }
+  .status-item-text h4, .status-item-text h5 { font-size: 13px; color: var(--text); font-weight: 500; }
   .status-item-text p { font-size: 12px; color: var(--text2); }
 
   .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }

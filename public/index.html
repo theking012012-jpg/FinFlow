@@ -87,7 +87,7 @@
 
 <div class="app" id="app">
   <!-- F111: app-wide banner when this session is scoped into an account the user does not own -->
-  <div id="scoped-banner" data-style="display:none;background:var(--amber-bg,#2a2109);color:var(--amber,#c9a84c);border-bottom:1px solid rgba(196,138,42,.3);padding:8px 16px;font-size:12.5px;text-align:center">
+  <div id="scoped-banner" role="region" aria-label="Access notice" data-style="display:none;background:var(--amber-bg,#2a2109);color:var(--amber,#c9a84c);border-bottom:1px solid rgba(196,138,42,.3);padding:8px 16px;font-size:12.5px;text-align:center">
     You're viewing <b id="scoped-banner-name"></b>'s account — your access here is <span id="scoped-banner-role" data-style="text-transform:capitalize"></span>.
   </div>
   <div class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
@@ -274,7 +274,7 @@
     </div>
   </nav>
 
-  <div id="swipe-hint" class="swipe-hint">← swipe to navigate →</div>
+  <div id="swipe-hint" class="swipe-hint" aria-hidden="true">← swipe to navigate →</div>
 
   <div class="main">
     <div class="topbar" role="banner">
@@ -438,7 +438,7 @@
         <!-- D-D: growth & retention for a COMPLETED month — filled by ffRenderSaas (finflow-api-wiring-extra.js) from GET /api/saas-metrics -->
         <div class="card" id="saas-section">
           <div class="card-header"><h2 class="card-title" id="saas-title">Growth &amp; retention</h2>
-            <select class="finput" id="saas-month" data-style="max-width:180px" data-on-change="ffRenderSaas(this.value)"></select></div>
+            <select class="finput" id="saas-month" aria-label="Month" data-style="max-width:180px" data-on-change="ffRenderSaas(this.value)"></select></div>
           <div id="saas-body" data-style="font-size:12.5px;color:var(--t2)">Loading…</div>
         </div>
       </div>
@@ -470,7 +470,7 @@
               <button class="scenario-preset-btn consol-cur-btn" data-code="GBP" data-on-click="setConsolCurrency('GBP')" data-style="font-size:10.5px;padding:3px 8px">🇬🇧 GBP</button>
               <button class="scenario-preset-btn consol-cur-btn" data-code="EUR" data-on-click="setConsolCurrency('EUR')" data-style="font-size:10.5px;padding:3px 8px">🇪🇺 EUR</button>
               <button class="scenario-preset-btn consol-cur-btn" data-code="TTD" data-on-click="setConsolCurrency('TTD')" data-style="font-size:10.5px;padding:3px 8px">🇹🇹 TTD</button>
-              <select id="consol-more-select" data-on-change="if(this.value){setConsolCurrency(this.value);document.querySelectorAll('.consol-cur-btn').forEach(b=>b.classList.remove('active-preset'));}" data-style="font-size:10.5px;padding:3px 6px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg2);color:var(--t2);font-family:var(--font);cursor:pointer;outline:none" title="More currencies">
+              <select id="consol-more-select" aria-label="More currencies" data-on-change="if(this.value){setConsolCurrency(this.value);document.querySelectorAll('.consol-cur-btn').forEach(b=>b.classList.remove('active-preset'));}" data-style="font-size:10.5px;padding:3px 6px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg2);color:var(--t2);font-family:var(--font);cursor:pointer;outline:none" title="More currencies">
                 <option value="">More…</option>
               </select>
             </div>
@@ -563,7 +563,7 @@
           <div class="card-header">
             <div><h2 class="card-title">Field-level change history</h2><div class="card-sub">Every field change logged with old &amp; new value</div></div>
             <div data-style="display:flex;gap:6px;flex-wrap:wrap">
-              <select class="finput" id="audit-filter-table" data-style="font-size:11px;padding:4px 8px;width:auto" data-on-change="loadAuditTrail()">
+              <select class="finput" id="audit-filter-table" aria-label="Record type" data-style="font-size:11px;padding:4px 8px;width:auto" data-on-change="loadAuditTrail()">
                 <!-- C29: each value is the audit_trail.table_name(s) the server really writes (recordAudit `table:`).
                      verify-c29-audit-filters fails if a written table has no option here. -->
                 <option value="all">Everything</option>
@@ -597,7 +597,7 @@
                 <option value="billing">Plan &amp; billing</option>
                 <option value="audit_trail">Audit log exports</option>
               </select>
-              <select class="finput" id="audit-filter-action" data-style="font-size:11px;padding:4px 8px;width:auto" data-on-change="loadAuditTrail()">
+              <select class="finput" id="audit-filter-action" aria-label="Action" data-style="font-size:11px;padding:4px 8px;width:auto" data-on-change="loadAuditTrail()">
                 <option value="all">All actions</option>
                 <option value="CREATE">Create</option>
                 <option value="UPDATE">Update</option>
@@ -820,7 +820,7 @@
                   <th data-style="text-align:left;padding:4px 6px;font-weight:600">Rate</th>
                   <th data-style="text-align:left;padding:4px 6px;font-weight:600">Gain/Loss</th>
                   <th data-style="text-align:left;padding:4px 6px;font-weight:600">Status</th>
-                  <th data-style="padding:4px 6px"></th>
+                  <th data-style="padding:4px 6px"><span class="sr-only">Actions</span></th>
                 </tr></thead>
                 <tbody id="fx-tx-list"></tbody>
               </table>
@@ -906,11 +906,11 @@
       </div>
 
       <!-- RECORD PAYMENT MODAL — F113/F114/F115: the sole invoice-settle path (replaces Mark paid) -->
-      <div class="modal-overlay hidden" id="record-payment-modal">
+      <div class="modal-overlay hidden" id="record-payment-modal" role="dialog" aria-modal="true" aria-label="Record Payment">
         <div class="modal">
           <div class="modal-header">
             <div><div class="modal-title">Record Payment</div><div class="modal-sub" id="rp-sub">Record a payment against this invoice</div></div>
-            <button class="modal-close" data-on-click="closeModal('record-payment-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('record-payment-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <input type="hidden" id="rp-invoice-id">
           <div class="field-group" data-style="text-align:center;padding:8px 0;border-bottom:1px solid var(--bd);margin-bottom:10px">
@@ -950,11 +950,11 @@
       </div>
 
       <!-- RUN PAYROLL MODAL -->
-      <div class="modal-overlay hidden" id="run-payroll-modal">
+      <div class="modal-overlay hidden" id="run-payroll-modal" role="dialog" aria-modal="true" aria-label="Run Payroll">
         <div class="modal modal-wide">
           <div class="modal-header">
             <div><div class="modal-title">Run Payroll</div><div class="modal-sub">Process payroll for current period</div></div>
-            <button class="modal-close" data-on-click="closeModal('run-payroll-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('run-payroll-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
             <div class="field-wrap"><label class="field-label" for="prm-period">Pay period (month)</label><input class="finput" id="prm-period" type="month" aria-describedby="prm-period-hint" data-on-input="_prmPeriodHint()"></div>
@@ -972,11 +972,11 @@
       </div>
 
       <!-- STOCK IN MODAL -->
-      <div class="modal-overlay hidden" id="stock-in-modal">
+      <div class="modal-overlay hidden" id="stock-in-modal" role="dialog" aria-modal="true" aria-label="Stock In">
         <div class="modal">
           <div class="modal-header">
             <div><div class="modal-title">Stock In</div><div class="modal-sub" id="si-sub">Record a purchase / stock receipt</div></div>
-            <button class="modal-close" data-on-click="closeModal('stock-in-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('stock-in-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <input type="hidden" id="si-item-idx">
           <div class="field-group">
@@ -999,11 +999,11 @@
       </div>
 
       <!-- STOCK OUT MODAL -->
-      <div class="modal-overlay hidden" id="stock-out-modal">
+      <div class="modal-overlay hidden" id="stock-out-modal" role="dialog" aria-modal="true" aria-label="Stock Out">
         <div class="modal">
           <div class="modal-header">
             <div><div class="modal-title">Stock Out</div><div class="modal-sub" id="so-sub">A sale, or stock written off</div></div>
-            <button class="modal-close" data-on-click="closeModal('stock-out-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('stock-out-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <input type="hidden" id="so-item-idx">
           <!-- FA-B7: a sale records what it sold for and to whom — its sales receipt (paid now) or invoice (on credit) is made with it -->
@@ -1034,11 +1034,11 @@
       </div>
 
       <!-- FX RATE MODAL -->
-      <div class="modal-overlay hidden" id="fx-rate-modal">
+      <div class="modal-overlay hidden" id="fx-rate-modal" role="dialog" aria-modal="true" aria-label="Override Rate">
         <div class="modal">
           <div class="modal-header">
             <div><div class="modal-title">Override Rate</div><div class="modal-sub">Rates update automatically daily — add one only to override a specific pair or date</div></div>
-            <button class="modal-close" data-on-click="closeModal('fx-rate-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('fx-rate-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
             <div class="field-wrap"><label class="field-label" for="fxr-from">From Currency</label><input class="finput" id="fxr-from" placeholder="e.g. TTD" data-style="text-transform:uppercase" maxlength="3"></div>
@@ -1056,11 +1056,11 @@
       </div>
 
       <!-- ENTITY BUSINESS PROFILE MODAL (F196 Tier 2) -->
-      <div class="modal-overlay hidden" id="entity-profile-modal">
+      <div class="modal-overlay hidden" id="entity-profile-modal" role="dialog" aria-modal="true" aria-label="Business profile">
         <div class="modal">
           <div class="modal-header">
             <div><div class="modal-title">Business profile</div><div class="modal-sub" id="ep-sub">The letterhead used on this entity’s invoices, quotes & receipts</div></div>
-            <button class="modal-close" data-on-click="closeModal('entity-profile-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('entity-profile-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <input type="hidden" id="ep-entity-id">
           <div class="field-wrap"><label class="field-label" for="ep-business-name">Business name <span data-style="color:var(--t3);font-weight:400">· blank = use the entity name</span></label><input class="finput" id="ep-business-name" placeholder="Shown on documents"></div>
@@ -1077,7 +1077,7 @@
             <label class="field-label">Logo <span data-style="color:var(--t3);font-weight:400">· PNG/JPG/SVG, max 256 KB · appears on documents</span></label>
             <div data-style="display:flex;align-items:center;gap:12px;margin-top:4px">
               <img id="ep-logo-preview" alt="" data-style="max-height:44px;max-width:120px;object-fit:contain;border:1px solid var(--bd);border-radius:6px;padding:4px;display:none">
-              <input type="file" id="ep-logo-file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" data-on-change="epLogoPick(this)" data-style="font-size:12px">
+              <input type="file" id="ep-logo-file" aria-label="Business logo" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" data-on-change="epLogoPick(this)" data-style="font-size:12px">
               <button type="button" class="btn btn-ghost btn-sm" id="ep-logo-remove" data-on-click="epLogoClear()" data-style="display:none">Remove</button>
             </div>
           </div>
@@ -1089,11 +1089,11 @@
       </div>
 
       <!-- FX TRANSACTION MODAL -->
-      <div class="modal-overlay hidden" id="fx-tx-modal">
+      <div class="modal-overlay hidden" id="fx-tx-modal" role="dialog" aria-modal="true" aria-label="Add FX Transaction">
         <div class="modal">
           <div class="modal-header">
             <div><div class="modal-title">Add FX Transaction</div><div class="modal-sub">Log a foreign currency transaction</div></div>
-            <button class="modal-close" data-on-click="closeModal('fx-tx-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('fx-tx-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
             <div class="field-wrap"><label class="field-label" for="fxt-currency">Foreign Currency</label><input class="finput" id="fxt-currency" placeholder="e.g. TTD" data-style="text-transform:uppercase" maxlength="3"></div>
@@ -1122,11 +1122,11 @@
       </div>
 
       <!-- SETTLE FX TRANSACTION MODAL (PL#6) -->
-      <div class="modal-overlay hidden" id="fx-settle-modal">
+      <div class="modal-overlay hidden" id="fx-settle-modal" role="dialog" aria-modal="true" aria-label="Settle FX Transaction">
         <div class="modal">
           <div class="modal-header">
             <div><div class="modal-title">Settle FX Transaction</div><div class="modal-sub">Enter the exchange rate at settlement</div></div>
-            <button class="modal-close" data-on-click="closeModal('fx-settle-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('fx-settle-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-wrap"><label class="field-label" for="fx-settle-rate">Rate at Settlement</label><input class="finput" id="fx-settle-rate" type="number" placeholder="e.g. 0.1495" step="any"></div>
           <div class="modal-footer">
@@ -1137,14 +1137,14 @@
       </div>
 
       <!-- ADD HOLDING MODAL -->
-      <div class="modal-overlay hidden" id="holding-modal">
+      <div class="modal-overlay hidden" id="holding-modal" role="dialog" aria-modal="true" aria-label="Add holding">
         <div class="modal" data-style="max-width:min(660px,calc(100vw - 2rem))">
           <div class="modal-header">
             <div><div class="modal-title">Add holding</div><div class="modal-sub">Track a new investment position</div></div>
-            <button class="modal-close" data-on-click="closeModal('holding-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('holding-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
-            <div class="field-wrap" data-style="position:relative"><label class="field-label" for="h-ticker">Ticker / Symbol</label><input class="finput" id="h-ticker" placeholder="Type a symbol or name — e.g. AAPL or Microsoft" data-style="text-transform:uppercase" autocomplete="off" data-on-input="ffHoldingSearch&&ffHoldingSearch()" data-on-keydown="ffHoldingSearchKey&&ffHoldingSearchKey(event)" data-on-blur="ffHoldingTickerBlur&&ffHoldingTickerBlur()"><div id="h-ticker-suggest" role="listbox" data-style="display:none;position:absolute;z-index:60;left:0;right:auto;width:min(calc(200% - 40px),calc(100vw - 4rem));top:100%;margin-top:3px;background:var(--bg1);border:1px solid var(--bd2);border-radius:8px;max-height:300px;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.45)"></div></div>
+            <div class="field-wrap" data-style="position:relative"><label class="field-label" for="h-ticker">Ticker / Symbol</label><input class="finput" id="h-ticker" placeholder="Type a symbol or name — e.g. AAPL or Microsoft" data-style="text-transform:uppercase" autocomplete="off" data-on-input="ffHoldingSearch&&ffHoldingSearch()" data-on-keydown="ffHoldingSearchKey&&ffHoldingSearchKey(event)" data-on-blur="ffHoldingTickerBlur&&ffHoldingTickerBlur()"><div id="h-ticker-suggest" role="listbox" aria-label="Ticker suggestions" data-style="display:none;position:absolute;z-index:60;left:0;right:auto;width:min(calc(200% - 40px),calc(100vw - 4rem));top:100%;margin-top:3px;background:var(--bg1);border:1px solid var(--bd2);border-radius:8px;max-height:300px;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.45)"></div></div>
             <div class="field-wrap"><label class="field-label" for="h-type">Asset type</label><select class="finput" id="h-type" data-on-change="ffHoldingSearch&&ffHoldingSearch()"><option>Stock</option><option>ETF</option><option>Bond</option><option>Crypto</option><option>Cash</option><option>Other</option></select></div>
           </div>
           <div class="field-group">
@@ -1165,11 +1165,11 @@
       <script src="/js/app-05-timer.js"></script>
 
       <!-- REBALANCE MODAL -->
-      <div class="modal-overlay hidden" id="rebalance-modal">
+      <div class="modal-overlay hidden" id="rebalance-modal" role="dialog" aria-modal="true" aria-label="Rebalance portfolio">
         <div class="modal modal-wide">
           <div class="modal-header">
             <div><div class="modal-title">Rebalance portfolio</div><div class="modal-sub">Current vs target allocation</div></div>
-            <button class="modal-close" data-on-click="closeModal('rebalance-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            <button class="modal-close" aria-label="Close" data-on-click="closeModal('rebalance-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div id="rebalance-content"></div>
           <div class="modal-footer">
@@ -1344,7 +1344,7 @@
               <button class="btn btn-primary btn-sm" data-on-click="openInvoiceModal()">+ New invoice</button>
             </div>
           </div>
-          <div class="table-header inv-cols" data-style="display:grid;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Client</span><span>Amount</span><span>Paid</span><span>Due date</span><span>Status</span><span aria-label="Actions"></span></div>
+          <div class="table-header inv-cols" data-style="display:grid;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Client</span><span>Amount</span><span>Paid</span><span>Due date</span><span>Status</span><span><span class="sr-only">Actions</span></span></div>
           <div id="invoice-list"><!-- rendered --></div>
         </div>
       </div>
@@ -1371,7 +1371,7 @@
             data-on-dragover="event.preventDefault();this.classList.add('drag-over')"
             data-on-dragleave="this.classList.remove('drag-over')"
             data-on-drop="handleScannerDrop(event)">
-            <input type="file" accept="image/*,.pdf" data-on-change="handleScannerFile(this.files[0])" id="scanner-file-input">
+            <input type="file" accept="image/*,.pdf" data-on-change="handleScannerFile(this.files[0])" id="scanner-file-input" aria-label="Receipt or invoice file to scan">
             <div class="scanner-drop-icon">
               <svg viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="9" y2="8"/><path d="M9 11l1.5 1.5 2.5-2.5"/></svg>
             </div>
@@ -1563,7 +1563,7 @@
             <button class="scenario-preset-btn pers-cur-btn" data-code="GBP" data-on-click="setPersCurrency('GBP')" data-style="font-size:10.5px;padding:3px 8px">🇬🇧 GBP</button>
             <button class="scenario-preset-btn pers-cur-btn" data-code="EUR" data-on-click="setPersCurrency('EUR')" data-style="font-size:10.5px;padding:3px 8px">🇪🇺 EUR</button>
             <button class="scenario-preset-btn pers-cur-btn" data-code="TTD" data-on-click="setPersCurrency('TTD')" data-style="font-size:10.5px;padding:3px 8px">🇹🇹 TTD</button>
-            <select id="pers-cur-more" data-on-change="if(this.value){setPersCurrency(this.value);document.querySelectorAll('.pers-cur-btn').forEach(b=>b.classList.remove('active-preset'));this.value='';}" data-style="font-size:10.5px;padding:3px 6px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg2);color:var(--t2);font-family:var(--font);cursor:pointer;outline:none">
+            <select id="pers-cur-more" aria-label="More currencies" data-on-change="if(this.value){setPersCurrency(this.value);document.querySelectorAll('.pers-cur-btn').forEach(b=>b.classList.remove('active-preset'));this.value='';}" data-style="font-size:10.5px;padding:3px 6px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg2);color:var(--t2);font-family:var(--font);cursor:pointer;outline:none">
               <option value="">More…</option>
             </select>
             <span data-style="font-size:10px;color:var(--t3);margin-left:4px" id="pers-fx-label"></span>
@@ -1759,7 +1759,7 @@
           <div data-style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:1rem">
             <span id="bill-monthly-label" data-style="font-size:12.5px;font-weight:500;color:var(--t1)">Monthly</span>
             <label class="toggle" data-on-click="setTimeout(toggleBilling,0)">
-              <input type="checkbox" id="billing-toggle">
+              <input type="checkbox" id="billing-toggle" aria-label="Bill yearly">
               <div class="toggle-track"></div>
               <div class="toggle-thumb"></div>
             </label>
@@ -1828,7 +1828,7 @@
           <div class="card-header"><h2 class="card-title">Compare plans</h2><span data-style="font-size:11px;color:var(--t3)">Everything each plan includes</span></div>
           <div data-style="overflow-x:auto">
             <table id="plan-compare-app" data-style="width:100%;border-collapse:collapse;font-size:12px;min-width:480px">
-              <thead><tr data-style="border-bottom:1px solid var(--bd)"><th data-style="text-align:left;padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em"></th><th data-style="padding:6px 8px;color:var(--t2);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Pro</th><th data-style="padding:6px 8px;color:var(--acc);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;background:var(--acc-bg)">Business</th><th data-style="padding:6px 8px;color:var(--t2);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Scale</th></tr></thead>
+              <thead><tr data-style="border-bottom:1px solid var(--bd)"><th data-style="text-align:left;padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em"><span class="sr-only">Feature</span></th><th data-style="padding:6px 8px;color:var(--t2);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Pro</th><th data-style="padding:6px 8px;color:var(--acc);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;background:var(--acc-bg)">Business</th><th data-style="padding:6px 8px;color:var(--t2);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Scale</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -2079,7 +2079,7 @@
           <div data-style="font-size:13px;color:var(--t2);margin-bottom:1.25rem">Lock transactions before a certain date to prevent accidental edits. Locked periods require a password to modify.</div>
           <div class="setting-row" data-style="padding:1rem 0">
             <div><div class="setting-label">Enable transaction locking</div><div class="setting-desc">Prevent edits to transactions before the lock date</div></div>
-            <label class="toggle"><input type="checkbox" id="lock-enabled" data-on-change="toggleLocking()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+            <label class="toggle"><input type="checkbox" id="lock-enabled" aria-label="Enable transaction locking" data-on-change="toggleLocking()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
           </div>
           <div id="lock-config" data-style="display:none">
             <div class="field-group" data-style="margin-top:1rem">
@@ -2190,11 +2190,11 @@
             <div class="f94-field"><label id="f94-partyLabel">Customer</label><input id="f94-mWho" placeholder="e.g. Acme Corp"></div>
             <div class="f94-row2">
               <div class="f94-field"><label>Amount</label><input id="f94-mAmount" type="number" min="0" step="0.01" placeholder="0.00"></div>
-              <div class="f94-field"><label>Frequency</label><select id="f94-mFreq"><option>Monthly</option><option>Weekly</option></select></div>
+              <div class="f94-field"><label for="f94-mFreq">Frequency</label><select id="f94-mFreq"><option>Monthly</option><option>Weekly</option></select></div>
             </div>
             <div class="f94-row2">
-              <div class="f94-field"><label>Next date</label><input id="f94-mDate" type="date"></div>
-              <div class="f94-field"><label>End date <span data-style="text-transform:none;letter-spacing:0;color:var(--t3)">· optional</span></label><input id="f94-mEnd" type="date"></div>
+              <div class="f94-field"><label for="f94-mDate">Next date</label><input id="f94-mDate" type="date"></div>
+              <div class="f94-field"><label for="f94-mEnd">End date <span data-style="text-transform:none;letter-spacing:0;color:var(--t3)">· optional</span></label><input id="f94-mEnd" type="date"></div>
             </div>
             <div class="f94-mfoot"><button class="f94-linkbtn" id="f94-mCancel">Cancel</button><button class="f94-newbtn" data-style="margin:0" id="f94-mSave">Save schedule</button></div>
             <div class="f94-mnote" id="f94-mNote"></div>
@@ -2297,11 +2297,11 @@
           <div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M12.9 3.1l-1.4 1.4M4.5 11.5l-1.4 1.4"/></svg>App preferences</div>
-              <div class="setting-row"><div><div class="setting-label">Dark mode</div><div class="setting-desc">Espresso dark theme</div></div><label class="toggle"><input type="checkbox" id="s-dark" checked data-on-change="toggleTheme()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
-              <div class="setting-row"><div><div class="setting-label">Compact sidebar</div><div class="setting-desc">Tighter navigation spacing</div></div><label class="toggle"><input type="checkbox" id="s-compact" data-on-change="toggleCompact()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
-              <div class="setting-row"><div><div class="setting-label">Show cents</div><div class="setting-desc">Display $1,234.56 format</div></div><label class="toggle"><input type="checkbox" id="s-cents" data-on-change="refreshAllPeriodData()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
-              <div class="setting-row"><div><div class="setting-label">Email alerts</div><div class="setting-desc">Email me when an invoice of this business goes overdue</div></div><label class="toggle"><input type="checkbox" id="s-email-alerts" data-on-change="window._ffSetOwnerAlert&&window._ffSetOwnerAlert(this.checked)"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
-              <div class="setting-row"><div><div class="setting-label">AI auto-insights</div><div class="setting-desc">Generate insights on load</div></div><label class="toggle"><input type="checkbox" id="s-ai-auto" checked><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+              <div class="setting-row"><div><div class="setting-label">Dark mode</div><div class="setting-desc">Espresso dark theme</div></div><label class="toggle"><input type="checkbox" id="s-dark" aria-label="Dark mode" checked data-on-change="toggleTheme()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+              <div class="setting-row"><div><div class="setting-label">Compact sidebar</div><div class="setting-desc">Tighter navigation spacing</div></div><label class="toggle"><input type="checkbox" id="s-compact" aria-label="Compact sidebar" data-on-change="toggleCompact()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+              <div class="setting-row"><div><div class="setting-label">Show cents</div><div class="setting-desc">Display $1,234.56 format</div></div><label class="toggle"><input type="checkbox" id="s-cents" aria-label="Show cents" data-on-change="refreshAllPeriodData()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+              <div class="setting-row"><div><div class="setting-label">Email alerts</div><div class="setting-desc">Email me when an invoice of this business goes overdue</div></div><label class="toggle"><input type="checkbox" id="s-email-alerts" aria-label="Email alerts" data-on-change="window._ffSetOwnerAlert&&window._ffSetOwnerAlert(this.checked)"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+              <div class="setting-row"><div><div class="setting-label">AI auto-insights</div><div class="setting-desc">Generate insights on load</div></div><label class="toggle"><input type="checkbox" id="s-ai-auto" aria-label="AI auto-insights" checked><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
             </div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v3l2 2"/></svg>Invoice settings</div>
@@ -2385,11 +2385,11 @@
 </div>
 
 <!-- ══ DELETE ACCOUNT MODAL ══ -->
-<div class="modal-overlay hidden" id="delete-account-modal">
+<div class="modal-overlay hidden" id="delete-account-modal" role="dialog" aria-modal="true" aria-label="Delete Account">
   <div class="modal" data-style="max-width:420px">
     <div class="modal-header">
       <div><div class="modal-title" data-style="color:var(--red)">Delete Account</div><div class="modal-sub">This is permanent and cannot be undone</div></div>
-      <button class="modal-close" data-on-click="closeModal('delete-account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('delete-account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div data-style="font-size:13px;color:var(--t2);margin-bottom:1rem;line-height:1.6">All your data — invoices, expenses, customers, payroll, investments and settings — will be permanently deleted. Enter your password to confirm.</div>
     <div class="field-wrap"><label class="field-label" for="del-acct-pw">Confirm password</label><input class="finput" type="password" id="del-acct-pw" placeholder="Enter your password"></div>
@@ -2499,11 +2499,11 @@
 <!-- injected by JS -->
 
 <!-- ══ RECONCILIATION MODAL ══ -->
-<div class="modal-overlay hidden" id="reconcile-modal">
+<div class="modal-overlay hidden" id="reconcile-modal" role="dialog" aria-modal="true" aria-label="Bank Reconciliation">
   <div class="modal modal-wide" data-style="max-width:640px">
     <div class="modal-header">
       <div><div class="modal-title">Bank Reconciliation</div><div class="modal-sub" id="recon-sub">Match transactions to your bank statement</div></div>
-      <button class="modal-close" data-on-click="closeModal('reconcile-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('reconcile-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div data-style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1rem">
       <div data-style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:.75rem">
@@ -2531,11 +2531,11 @@
 </div>
 
 <!-- ══ JOURNAL ENTRY MODAL ══ -->
-<div class="modal-overlay hidden" id="journal-entry-modal">
+<div class="modal-overlay hidden" id="journal-entry-modal" role="dialog" aria-modal="true" aria-label="New Journal Entry">
   <div class="modal modal-wide" data-style="max-width:600px">
     <div class="modal-header">
       <div><div class="modal-title">New Journal Entry</div><div class="modal-sub">Double-entry — debits must equal credits</div></div>
-      <button class="modal-close" data-on-click="closeModal('journal-entry-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('journal-entry-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group" data-style="margin-bottom:.75rem">
       <div class="field-wrap"><label class="field-label" for="je-date">Date</label><input class="finput" type="date" id="je-date" value="2026-04-29"></div>
@@ -2560,9 +2560,9 @@
 </div>
 
 <!-- MODALS -->
-<div class="modal-overlay hidden" id="owner-modal">
+<div class="modal-overlay hidden" id="owner-modal" role="dialog" aria-modal="true" aria-label="Add yourself to payroll">
   <div class="modal" data-style="max-width:520px">
-    <div class="modal-header"><div><div class="modal-title" id="owner-modal-title">Add yourself to payroll</div><div class="modal-sub">Set your salary per entity — all flow to Personal Finance collectively</div></div><button class="modal-close" data-on-click="closeModal('owner-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title" id="owner-modal-title">Add yourself to payroll</div><div class="modal-sub">Set your salary per entity — all flow to Personal Finance collectively</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('owner-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
 
     <!-- Entity tabs -->
     <div data-style="display:flex;gap:4px;padding:2px;background:var(--bg3);border-radius:var(--radius);margin-bottom:1rem" id="owner-entity-tabs"></div>
@@ -2601,11 +2601,11 @@
 </div>
 
 <!-- ADD EMPLOYEE MODAL -->
-<div class="modal-overlay hidden" id="add-employee-modal">
+<div class="modal-overlay hidden" id="add-employee-modal" role="dialog" aria-modal="true" aria-label="Add employee">
   <div class="modal" data-style="max-width:480px">
     <div class="modal-header">
       <div><div class="modal-title">Add employee</div><div class="modal-sub">Add a team member to payroll</div></div>
-      <button class="modal-close" data-on-click="closeModal('add-employee-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('add-employee-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group" data-style="margin-bottom:.6rem">
       <div class="field-wrap"><label class="field-label" for="emp-fname">First name</label><input class="finput" id="emp-fname" placeholder="First name"></div>
@@ -2637,9 +2637,9 @@
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="invoice-modal">
+<div class="modal-overlay hidden" id="invoice-modal" role="dialog" aria-modal="true" aria-label="New invoice">
   <div class="modal modal-wide">
-    <div class="modal-header"><div><div class="modal-title">New invoice</div><div class="modal-sub">Create and track a new client invoice</div></div><button class="modal-close" data-on-click="closeModal('invoice-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title">New invoice</div><div class="modal-sub">Create and track a new client invoice</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('invoice-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-client">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label" for="inv-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-issue">Issue date</label><input class="finput" id="inv-issue" type="date" data-on-input="window._docTermsChange?window._docTermsChange('inv',true):(window._invDueHint&&window._invDueHint())"></div><div class="field-wrap"><label class="field-label" for="inv-due">Due date</label><input class="finput" id="inv-due" type="date" aria-describedby="inv-due-hint" data-on-input="window._docDueTyped&&window._docDueTyped('inv')"></div><div class="field-wrap"><label class="field-label" for="inv-terms">Terms</label><select class="finput" id="inv-terms" data-on-change="window._docTermsChange&&window._docTermsChange('inv')"><option value="">Your terms</option><option value="0">Due on receipt</option><option value="7">Net 7</option><option value="15">Net 15</option><option value="30">Net 30</option><option value="45">Net 45</option><option value="60">Net 60</option><option value="90">Net 90</option><option value="custom">Custom — the due date</option></select></div></div>
     <div id="inv-due-hint" data-style="font-size:11.5px;color:var(--t3);margin:-.35rem 0 .7rem"></div>
@@ -2656,7 +2656,7 @@
           <th data-style="padding:2px 6px 6px;font-weight:600;width:70px;text-align:center">Qty</th>
           <th data-style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Rate</th>
           <th data-style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Amount</th>
-          <th data-style="width:28px"></th>
+          <th data-style="width:28px"><span class="sr-only">Remove line</span></th>
         </tr></thead>
         <tbody id="inv-li-rows"></tbody>
       </table>
@@ -2667,9 +2667,9 @@
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="expense-modal">
+<div class="modal-overlay hidden" id="expense-modal" role="dialog" aria-modal="true" aria-label="Add expense">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title">Add expense</div><div class="modal-sub">Log a business expense</div></div><button class="modal-close" data-on-click="closeModal('expense-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title">Add expense</div><div class="modal-sub">Log a business expense</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('expense-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-desc">Description *</label><input class="finput" id="bexp-desc" placeholder="e.g. Office rent"></div><div class="field-wrap"><label class="field-label" for="bexp-amount">Amount (<span data-cur="biz">USD</span>) *</label><input class="finput" id="bexp-amount" type="number" placeholder="0.00"></div></div>
     <!-- M49: the expense's own calendar date (defaults to today, back-/forward-datable) — it files the expense to its period. -->
     <div class="field-wrap"><label class="field-label" for="bexp-date">Date *</label><input class="finput" id="bexp-date" type="date"></div>
@@ -2683,9 +2683,9 @@
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="product-modal">
+<div class="modal-overlay hidden" id="product-modal" role="dialog" aria-modal="true" aria-label="Add product">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title">Add product</div><div class="modal-sub">Add a new inventory item</div></div><button class="modal-close" data-on-click="closeModal('product-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title">Add product</div><div class="modal-sub">Add a new inventory item</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('product-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="prod-name">Product name *</label><input class="finput" id="prod-name" placeholder="e.g. USB-C Hub"></div><div class="field-wrap"><label class="field-label" for="prod-sku">SKU</label><input class="finput" id="prod-sku" placeholder="#1050"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="prod-units">Units in stock</label><input class="finput" id="prod-units" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="prod-cost">Unit cost (<span data-cur="biz">USD</span>)</label><input class="finput" id="prod-cost" type="number" placeholder="0.00"></div></div>
     <div class="field-wrap"><label class="field-label" for="prod-thresh">Reorder threshold (units)</label><input class="finput" id="prod-thresh" type="number" placeholder="20"></div>
@@ -2693,17 +2693,17 @@
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="restock-modal">
+<div class="modal-overlay hidden" id="restock-modal" role="dialog" aria-modal="true" aria-label="Restock">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title" id="restock-modal-title">Restock</div><div class="modal-sub">Add units to current stock</div></div><button class="modal-close" data-on-click="closeModal('restock-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title" id="restock-modal-title">Restock</div><div class="modal-sub">Add units to current stock</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('restock-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-wrap"><label class="field-label" for="restock-qty">Units to add</label><input class="finput" id="restock-qty" type="number" placeholder="50" min="1"></div>
     <div class="modal-footer"><button class="btn btn-ghost" data-on-click="closeModal('restock-modal')">Cancel</button><button class="btn btn-primary" data-on-click="saveRestock()">Save</button></div>
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="edit-inv-modal">
+<div class="modal-overlay hidden" id="edit-inv-modal" role="dialog" aria-modal="true" aria-label="Edit inventory item">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title">Edit inventory item</div><div class="modal-sub">Update product details and stock levels</div></div><button class="modal-close" data-on-click="closeModal('edit-inv-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title">Edit inventory item</div><div class="modal-sub">Update product details and stock levels</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('edit-inv-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-wrap"><label class="field-label" for="edit-inv-name">Product name *</label><input class="finput" id="edit-inv-name" placeholder="e.g. USB-C Hub"></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="edit-inv-units">Units in stock</label><input class="finput" id="edit-inv-units" type="number" min="0" placeholder="0" readonly title="Use Stock In, Stock Out or Restock to change stock"></div><div class="field-wrap"><label class="field-label" for="edit-inv-cost">Unit cost (<span data-cur="biz">USD</span>)</label><input class="finput" id="edit-inv-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="edit-inv-reorder">Reorder level</label><input class="finput" id="edit-inv-reorder" type="number" min="0" step="1" placeholder="Alert when stock falls to…" title="You get a low-stock alert when units fall to this number"></div><div class="field-wrap"><label class="field-label" for="edit-inv-max">Capacity (units)</label><input class="finput" id="edit-inv-max" type="number" min="1" placeholder="200" title="The most you hold — sets the stock bar"></div></div>
@@ -2711,9 +2711,9 @@
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="item-modal">
+<div class="modal-overlay hidden" id="item-modal" role="dialog" aria-modal="true" aria-label="New Item">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title" id="item-modal-title">New Item</div><div class="modal-sub">Add or edit a product or service in your catalog</div></div><button class="modal-close" data-on-click="closeModal('item-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title" id="item-modal-title">New Item</div><div class="modal-sub">Add or edit a product or service in your catalog</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('item-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-name">Name *</label><input class="finput" id="item-name" placeholder="e.g. Web Development"></div><div class="field-wrap"><label class="field-label" for="item-sku">SKU</label><input class="finput" id="item-sku" placeholder="SVC-001"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-type">Type</label><select class="finput" id="item-type"><option value="Product">Product</option><option value="Service">Service</option></select></div><div class="field-wrap"><label class="field-label" for="item-status">Status</label><select class="finput" id="item-status"><option value="Active">Active</option><option value="Inactive">Inactive</option></select></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-price">Price (<span data-cur="biz">USD</span>)</label><input class="finput" id="item-price" type="number" min="0" step="0.01" placeholder="0.00"></div><div class="field-wrap"><label class="field-label" for="item-cost">Cost ($) <span data-style="color:var(--t3);font-size:10.5px">for margin</span></label><input class="finput" id="item-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
@@ -2724,9 +2724,9 @@
 </div>
 
 
-<div class="modal-overlay hidden" id="goal-modal">
+<div class="modal-overlay hidden" id="goal-modal" role="dialog" aria-modal="true" aria-label="Add savings goal">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title">Add savings goal</div><div class="modal-sub">Set a new financial milestone</div></div><button class="modal-close" data-on-click="closeModal('goal-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title">Add savings goal</div><div class="modal-sub">Set a new financial milestone</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('goal-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-wrap"><label class="field-label" for="goal-name">Goal name *</label><input class="finput" id="goal-name" placeholder="e.g. House deposit"></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="goal-current">Current (<span data-cur="pers">USD</span>)</label><input class="finput" id="goal-current" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="goal-target">Target (<span data-cur="pers">USD</span>)</label><input class="finput" id="goal-target" type="number" placeholder="10000"></div></div>
     <div class="field-wrap"><label class="field-label" for="goal-monthly">Monthly contribution (<span data-cur="pers">USD</span>)</label><input class="finput" id="goal-monthly" type="number" placeholder="500"></div>
@@ -2734,9 +2734,9 @@
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="account-modal">
+<div class="modal-overlay hidden" id="account-modal" role="dialog" aria-modal="true" aria-label="Add asset">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title" id="acct-modal-title">Add asset</div><div class="modal-sub">Assets and liabilities feed your real net worth</div></div><button class="modal-close" data-on-click="closeModal('account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title" id="acct-modal-title">Add asset</div><div class="modal-sub">Assets and liabilities feed your real net worth</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <input type="hidden" id="acct-edit-id"><input type="hidden" id="acct-kind">
     <div class="field-wrap"><label class="field-label" for="acct-name">Name *</label><input class="finput" id="acct-name" placeholder="e.g. Chase savings / Car loan"></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="acct-type">Type</label><select class="finput" id="acct-type"></select></div><div class="field-wrap"><label class="field-label" for="acct-value">Value</label><input class="finput" id="acct-value" type="number" placeholder="0.00" step="0.01"></div></div>
@@ -2745,9 +2745,9 @@
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="transaction-modal">
+<div class="modal-overlay hidden" id="transaction-modal" role="dialog" aria-modal="true" aria-label="Add transaction">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title" id="txm-title">Add transaction</div><div class="modal-sub">Log a personal income or expense</div></div><button class="modal-close" data-on-click="closeModal('transaction-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title" id="txm-title">Add transaction</div><div class="modal-sub">Log a personal income or expense</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('transaction-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <input type="hidden" id="tx-edit-id">
     <input type="hidden" id="tx-recurring-id">
     <div class="field-wrap"><label class="field-label">Type</label>
@@ -2786,9 +2786,9 @@
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="customer-modal">
+<div class="modal-overlay hidden" id="customer-modal" role="dialog" aria-modal="true" aria-label="Add customer">
   <div class="modal modal-wide">
-    <div class="modal-header"><div><div class="modal-title" id="cust-modal-title">Add customer</div><div class="modal-sub" id="cust-modal-sub">Fill in the customer details</div></div><button class="modal-close" data-on-click="closeModal('customer-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title" id="cust-modal-title">Add customer</div><div class="modal-sub" id="cust-modal-sub">Fill in the customer details</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('customer-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <input type="hidden" id="cust-edit-id">
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="cust-fname">First name</label><input class="finput" id="cust-fname" placeholder="First name"></div><div class="field-wrap"><label class="field-label" for="cust-lname">Last name</label><input class="finput" id="cust-lname" placeholder="Last name"></div></div>
     <div data-style="font-size:11.5px;color:var(--t3);margin:-4px 0 8px">A first and last name, or a company name — email is optional.</div>
@@ -2915,11 +2915,11 @@
 <script src="/js/app-25-open.js"></script>
 
 <!-- ══ QUOTE MODAL ══════════════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="quote-modal">
+<div class="modal-overlay hidden" id="quote-modal" role="dialog" aria-modal="true" aria-label="New Quote">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title">New Quote</div><div class="modal-sub">Create a quote for a client</div></div>
-      <button class="modal-close" data-on-click="document.getElementById('quote-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="document.getElementById('quote-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="quote-client">Client *</label><input class="finput" id="quote-client" placeholder="Enter client name"></div>
@@ -2946,7 +2946,7 @@
           <th data-style="padding:2px 6px 6px;font-weight:600;width:70px;text-align:center">Qty</th>
           <th data-style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Rate</th>
           <th data-style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Amount</th>
-          <th data-style="width:28px"></th>
+          <th data-style="width:28px"><span class="sr-only">Remove line</span></th>
         </tr></thead>
         <tbody id="quote-li-rows"></tbody>
       </table>
@@ -2961,11 +2961,11 @@
 </div>
 
 <!-- ══ VENDOR MODAL ═════════════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="vendor-modal">
+<div class="modal-overlay hidden" id="vendor-modal" role="dialog" aria-modal="true" aria-label="New Vendor">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title">New Vendor</div><div class="modal-sub">Add a supplier or vendor</div></div>
-      <button class="modal-close" data-on-click="document.getElementById('vendor-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="document.getElementById('vendor-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="vendor-name">Vendor Name *</label><input class="finput" id="vendor-name" placeholder="e.g. AWS"></div>
@@ -2987,11 +2987,11 @@
 </div>
 
 <!-- ══ BILL MODAL ═══════════════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="bill-modal">
+<div class="modal-overlay hidden" id="bill-modal" role="dialog" aria-modal="true" aria-label="New Bill">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title">New Bill</div><div class="modal-sub">Record a bill from a vendor</div></div>
-      <button class="modal-close" data-on-click="document.getElementById('bill-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="document.getElementById('bill-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="bill-vendor">Vendor *</label><input class="finput" id="bill-vendor" placeholder="e.g. AWS"></div>
@@ -3022,7 +3022,7 @@
           <th data-style="padding:2px 6px 6px;font-weight:600;width:70px;text-align:center">Qty</th>
           <th data-style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Rate</th>
           <th data-style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Amount</th>
-          <th data-style="width:28px"></th>
+          <th data-style="width:28px"><span class="sr-only">Remove line</span></th>
         </tr></thead>
         <tbody id="bill-li-rows"></tbody>
       </table>
@@ -3056,11 +3056,11 @@
 </div>
 
 <!-- ══ RECURRING BILL MODAL ═════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="recurring-bill-modal">
+<div class="modal-overlay hidden" id="recurring-bill-modal" role="dialog" aria-modal="true" aria-label="New Recurring Bill">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title">New Recurring Bill</div><div class="modal-sub">Set up an auto-recurring bill</div></div>
-      <button class="modal-close" data-on-click="document.getElementById('recurring-bill-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="document.getElementById('recurring-bill-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="rb-vendor">Vendor *</label><input class="finput" id="rb-vendor" placeholder="e.g. AWS"></div>
@@ -3086,11 +3086,11 @@
 </div>
 
 <!-- ══ RECURRING INVOICE MODAL ══════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="recurring-inv-modal">
+<div class="modal-overlay hidden" id="recurring-inv-modal" role="dialog" aria-modal="true" aria-label="New Recurring Invoice">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title">New Recurring Invoice</div><div class="modal-sub">Set up an auto-recurring invoice</div></div>
-      <button class="modal-close" data-on-click="document.getElementById('recurring-inv-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="document.getElementById('recurring-inv-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="ri-client">Client *</label><input class="finput" id="ri-client" placeholder="Enter client name"></div>
@@ -3118,11 +3118,11 @@
 </div>
 
 <!-- ══ SALES RECEIPT MODAL ═══════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="modal-receipt">
+<div class="modal-overlay hidden" id="modal-receipt" role="dialog" aria-modal="true" aria-label="New Sales Receipt">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="receipt-modal-title">New Sales Receipt</div><div class="modal-sub">Record a point-of-sale transaction</div></div>
-      <button class="modal-close" data-on-click="closeModal('modal-receipt')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('modal-receipt')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <input type="hidden" id="receipt-id">
     <div class="field-group">
@@ -3146,11 +3146,11 @@
 </div>
 
 <!-- ══ PAYMENT RECEIVED MODAL ════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="modal-payment-received">
+<div class="modal-overlay hidden" id="modal-payment-received" role="dialog" aria-modal="true" aria-label="Record Payment Received">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="pr-modal-title">Record Payment Received</div><div class="modal-sub">Log a payment from a customer</div></div>
-      <button class="modal-close" data-on-click="closeModal('modal-payment-received')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('modal-payment-received')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <input type="hidden" id="pr-id">
     <div class="field-group">
@@ -3175,11 +3175,11 @@
 </div>
 
 <!-- ══ CREDIT NOTE MODAL ═════════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="modal-credit-note">
+<div class="modal-overlay hidden" id="modal-credit-note" role="dialog" aria-modal="true" aria-label="New Credit Note">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="cn-modal-title">New Credit Note</div><div class="modal-sub">Issue a credit to a customer</div></div>
-      <button class="modal-close" data-on-click="closeModal('modal-credit-note')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('modal-credit-note')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <input type="hidden" id="cn-id">
     <div class="field-group">
@@ -3206,19 +3206,19 @@
 </div>
 
 <!-- ══ PAYMENT MADE MODAL ════════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="remit-withholdings-modal">
+<div class="modal-overlay hidden" id="remit-withholdings-modal" role="dialog" aria-modal="true" aria-label="Remit withholdings">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title">Remit withholdings</div><div class="modal-sub" id="rw-sub">Record paying the withheld tax / pension</div></div><button class="modal-close" data-on-click="closeModal('remit-withholdings-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="modal-header"><div><div class="modal-title">Remit withholdings</div><div class="modal-sub" id="rw-sub">Record paying the withheld tax / pension</div></div><button class="modal-close" aria-label="Close" data-on-click="closeModal('remit-withholdings-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <input type="hidden" id="rw-run-id">
     <div class="field-wrap"><label class="field-label" for="rw-date">Date paid *</label><input class="finput" id="rw-date" type="date"></div>
     <div class="modal-footer"><button class="btn btn-ghost" data-on-click="closeModal('remit-withholdings-modal')">Cancel</button><button class="btn btn-primary" data-on-click="saveRemitWithholdings()">Record remittance</button></div>
   </div>
 </div>
-<div class="modal-overlay hidden" id="modal-payment-made">
+<div class="modal-overlay hidden" id="modal-payment-made" role="dialog" aria-modal="true" aria-label="Make Payment">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="pm-modal-title">Make Payment</div><div class="modal-sub">Log a payment to a vendor</div></div>
-      <button class="modal-close" data-on-click="closeModal('modal-payment-made')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('modal-payment-made')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <input type="hidden" id="pm-id">
     <div class="field-group">
@@ -3249,11 +3249,11 @@
 </div>
 
 <!-- ══ VENDOR CREDIT MODAL ═══════════════════════════════════════════ -->
-<div class="modal-overlay hidden" id="modal-vendor-credit">
+<div class="modal-overlay hidden" id="modal-vendor-credit" role="dialog" aria-modal="true" aria-label="New Vendor Credit">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="vc-modal-title">New Vendor Credit</div><div class="modal-sub">Log a credit from a vendor</div></div>
-      <button class="modal-close" data-on-click="closeModal('modal-vendor-credit')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeModal('modal-vendor-credit')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <input type="hidden" id="vc-id">
     <div class="field-group">
@@ -3276,11 +3276,11 @@
 
 
 <!-- EMPLOYEE EDIT MODAL -->
-<div id="modal-edit-employee" class="modal-overlay" data-style="display:none" data-on-click="if(event.target===this)closeEditEmployee()">
+<div id="modal-edit-employee" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit Employee" data-style="display:none" data-on-click="if(event.target===this)closeEditEmployee()">
   <div class="modal-box" data-style="max-width:420px">
     <div class="modal-header">
       <div><div class="modal-title">Edit Employee</div></div>
-      <button class="modal-close" data-on-click="closeEditEmployee()"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      <button class="modal-close" aria-label="Close" data-on-click="closeEditEmployee()"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="modal-body" data-style="display:flex;flex-direction:column;gap:14px">
       <input type="hidden" id="edit-emp-id">

@@ -390,7 +390,6 @@ was `boot-failures-gate` TIMEOUT (NEW-24, fixed).
 the gate on his machine: GREEN) · 739/739 → PR #6 (containing #5 and #4) **merged to `main` as a fast-forward to `746696a`** — the
 exact commits swept. Railway auto-deploys `main`; F90's audit triggers and chain are created by `initDB()` at that boot.
 **Code — next, in order:**
-6. **F52** — accessibility: `a11y-audit` reports 215 violation nodes across 10 pages (labels, contrast, keyboard).
 **Needs an owner decision:** F30 (custom permissions that really apply, or remove the save nothing reads) · F109 (close an
 investment position — holdings serve both sides of the wall) · F110 (test-clock re-pin strategy; the guard is in) · F83 (the
 sweep runner's exit code — by design for now) · F26-b (which business each legacy receipt belongs to).
@@ -3531,9 +3530,10 @@ After final5.js was cleared (F136/F144), `stubs.js` is the other shadow graveyar
 
 ---
 
-### F52 🟢 LOW — Form accessibility
-3 form fields with no `id`/`name`, 7 inputs with no associated `<label>` (owner-observed via DevTools Issues). Breaks autofill and screen-reader labelling.
-**Course of action:** enumerate via the DevTools "Violating node" links, add `id`/`name` + `<label for=…>`.
+### F52 ✅ FIXED + VERIFIED (2026-11-06) — was 🟢 LOW — Accessibility (structure, dialogs, keyboard, contrast)
+**Measured first (axe-core):** 216 violation nodes on the 10 static pages — index.html 213: 152 contents outside any landmark (the 37 modal windows were plain divs), 37 nameless × close buttons, 11 + 5 unlabeled controls / selects, 5 empty table headers, 3 one-offs; accountant-register 3 (a file input, two skipped heading levels). Contrast (Chromium): /accountant-login 7, /accountant-register 11 — the shared accountant palette's `--text3` #5a5540 (2.3:1) and `--gold-dim` #8a6f2e (3.7:1). No modal answered Escape.
+**Fixed:** every control named by its own visible text (`for=` where a label existed); empty headers carry screen-reader text (`.sr-only`, app-07.css); headings one level at a time (CSS selectors follow). **One mechanism for every modal window** — static, built at runtime (13+ builders in app-main / the wiring files), and future (app-10-open-modal-el.js, beside the Back-button handling): each `.modal-overlay` becomes a named dialog (role, aria-modal, its title), icon-only close buttons are named "Close", unlinked field labels are linked to their field, focus moves into a modal on open and back to what opened it on close, and Escape closes the top modal by pressing its own close button. Contrast: the two palette tokens raised in all 8 stylesheets that share them (#908866, #a28336 — same hue, ≥4.6:1 on every background they sit on).
+**Executed:** `verify-f52-accessibility` — axe on the 10 static pages AND inside the live app after boot (jsdom, real server + Postgres), a runtime-built modal, focus and Escape: **RED 9 failed / 9 passed on `000b805` → GREEN 19/0**. `verify-f52b-contrast` — Chromium, the app dark + light and 11 public pages: **RED 2 failed / 11 passed → GREEN 13/0**. Related 33: 32 green; `verify-la4-customers-from-invoices` failed 9/10 under 3-way parallel load on the 2-core container and passed 10/0 alone (a screen-timing harness — recorded as a rerun, not hidden). Not measured: the logged-in accountant dashboard / client pages and admin (same palette tokens, raised in the same change).
 
 ---
 

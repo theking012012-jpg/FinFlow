@@ -783,17 +783,8 @@ window.switchEntity=async function(idx){
 const TEAM=[];
 const ROLE_LABELS={owner:'Owner',admin:'Admin',accountant:'Accountant',viewer:'Viewer'};
 const ROLE_CLASSES={owner:'role-owner',admin:'role-admin',accountant:'role-accountant',viewer:'role-viewer'};
-const PERMS=[
-  {label:'View all reports',desc:'P&L, cash flow, balance sheet',o:true,a:true,ac:true,v:true},
-  {label:'Create invoices',desc:'Draft, send & mark paid',o:true,a:true,ac:true,v:false},
-  {label:'Manage expenses',desc:'Add, edit, delete expenses',o:true,a:true,ac:true,v:false},
-  {label:'Run payroll',desc:'Execute payroll runs',o:true,a:true,ac:false,v:false},
-  {label:'Manage team',desc:'Invite, remove, change roles',o:true,a:true,ac:false,v:false},
-  {label:'Bank connections',desc:'Link & manage bank accounts',o:true,a:false,ac:false,v:false},
-  {label:'Entity management',desc:'Add/remove business entities',o:true,a:false,ac:false,v:false},
-  {label:'Audit log',desc:'View full change history',o:true,a:true,ac:false,v:false},
-  {label:'API access',desc:'Generate API keys',o:true,a:false,ac:false,v:false},
-];
+// F30: the role table comes from the server (rbac.js — what is ENFORCED); this page no longer keeps its own copy.
+
 window.renderTeam=function(){
   const tl=document.getElementById('team-list');
   const active=TEAM.filter(m=>m.lastSeen!=='Pending');
@@ -817,15 +808,17 @@ window.renderTeam=function(){
   }
 
   const pl=document.getElementById('perm-list');
-  // Read-only reference: shows the role defaults enforced server-side by rbac.js.
-  // Every cell is disabled — per-account customization is a tracked follow-up.
-  if(pl)pl.innerHTML=PERMS.map((p,pi)=>{
-    const chk=(on)=>`<input type="checkbox" ${on?'checked':''} disabled data-style="width:16px;height:16px;accent-color:var(--acc);cursor:default;margin:0 auto;display:block">`;
-    return `<div class="perm-row" data-style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;align-items:center">
-      <div><div class="perm-label">${p.label}</div><div class="perm-desc">${p.desc}</div></div>
-      ${chk(p.o)}${chk(p.a)}${chk(p.ac)}${chk(p.v)}
-    </div>`;
-  }).join('');
+  // Read-only: the role table rbac.js enforces, from GET /api/permissions (F30) — never a copy kept here.
+  if(pl){
+    const _esc=(t)=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const chk=(on,lab)=>`<input type="checkbox" ${on?'checked':''} disabled aria-label="${_esc(lab)}" data-style="width:16px;height:16px;accent-color:var(--acc);cursor:default;margin:0 auto;display:block">`;
+    fetch('/api/permissions',{credentials:'include'}).then(r=>r.ok?r.json():Promise.reject(new Error('HTTP '+r.status))).then(t=>{
+      pl.innerHTML=(t.rows||[]).map(p=>`<div class="perm-row" data-style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;align-items:center">
+      <div><div class="perm-label">${_esc(p.label)}</div><div class="perm-desc">${_esc(p.desc)}</div></div>
+      ${['owner','admin','accountant','viewer'].map(r=>chk(p.grants&&p.grants[r], p.label+' — '+r)).join('')}
+    </div>`).join('');
+    }).catch(()=>{ pl.innerHTML='<div data-style="font-size:12px;color:var(--t3);padding:8px 0">Could not load the role permissions. Refresh to try again.</div>'; });
+  }
 };
 
 // ── AUDIT TRAIL — all data from DB via /api/audit-log ──────────────────────

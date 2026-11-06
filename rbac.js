@@ -30,7 +30,28 @@ const MATRIX = {
   'entities:manage':    [],                                 // add/remove/switch business entities — owner only
   'permissions:manage': [],                                 // edit the RBAC config itself — owner only
   'ai:use':             ['admin', 'accountant'],            // AI chat — viewer excluded (cost + reads everything)
+  'records:delete':     ['admin'],                          // DELETE any record — enforced by server.js's coarse method gate (F30: one source)
 };
+
+// F30 (2026-11-06): the role table the Settings page SHOWS, built from MATRIX itself — so what people see is exactly what is
+// enforced. (It used to be a hand-written copy in the browser that had drifted: it showed accountants deleting expenses,
+// which the server refuses, and API keys as owner-only, which admins can make.) permissions:manage is left out — it is the
+// owner's own right to this table, which has no editor (custom role tables were never enforced; the save is gone).
+const DISPLAY = [
+  ['books:read', 'View reports and records', 'P&L, cash flow, balance sheet, every list'],
+  ['books:write', 'Create and edit records', 'Invoices, bills, expenses, payments, journals'],
+  ['records:delete', 'Delete records', 'Remove invoices, bills, expenses and other records'],
+  ['payroll:write', 'Run payroll', 'Create, approve and pay payroll runs'],
+  ['team:manage', 'Manage team', 'Invite, remove, change roles'],
+  ['audit:read', 'Audit log', 'View the full change history'],
+  ['settings:manage', 'Settings and API keys', 'Account settings, period locks, API keys'],
+  ['ai:use', 'AI assistant', 'Ask the AI about your books'],
+  ['bank:manage', 'Bank connections', 'Link and manage bank accounts'],
+  ['entities:manage', 'Businesses', 'Add, remove and switch businesses'],
+];
+function permissionTable() {
+  return { roles: ROLES.slice(), rows: DISPLAY.map(([cap, label, desc]) => ({ cap, label, desc, grants: Object.fromEntries(ROLES.map(r => [r, roleHasPerm(r, cap)])) })) };
+}
 
 // Does `role` hold capability `cap`? Owner: always. Unknown cap: never (fail-closed).
 function roleHasPerm(role, cap) {
@@ -55,4 +76,4 @@ function requirePerm(cap) {
   };
 }
 
-module.exports = { ROLES, MATRIX, roleHasPerm, requirePerm };
+module.exports = { ROLES, MATRIX, DISPLAY, roleHasPerm, requirePerm, permissionTable };

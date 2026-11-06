@@ -105,9 +105,9 @@ async function main() {
     for (let i = 1; i <= 2; i++) await member.put(q('/api/scenario'), { growth: i * 5 });
     const scn = await ownerGet('/api/scenario');
     A('scenario: the owner sees growth 10 (bug: {})', scn && scn.growth === 10, JSON.stringify(scn));
-    // permissions:manage is OWNER-only (rbac.js) — a member is refused; scopeId(req) is the owner's own id there.
+    // F30 (2026-11-06): there is no permissions save any more (the role table is rbac.js's, read-only) — refused for everyone.
     const pr = await member.post(q('/api/permissions'), [{ role: 'viewer', perms: ['read'] }]);
-    A('permissions: an admin member is refused (owner-only) — 403', pr.status === 403, 'status ' + pr.status);
+    A('permissions: no save route exists (F30) — 404, for a member as for the owner', pr.status === 404, 'status ' + pr.status);
     const st = await member.put(q('/api/settings'), { fiscal_year: 'April' });
     const os = await ownerGet('/api/settings');
     A('settings: the owner sees fiscal_year April (bug: the save went to an orphan row under the member)', st.status === 200 && os && os.fiscal_year === 'April', `status ${st.status} ${JSON.stringify(os && os.fiscal_year)}`);

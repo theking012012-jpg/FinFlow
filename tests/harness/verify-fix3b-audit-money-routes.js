@@ -139,11 +139,10 @@ const eq = (n, m, e, bug) => { const ok = JSON.stringify(m) === JSON.stringify(e
     await since();
     await J('PUT', '/api/mrr', { mrr: 1200 });
     await J('PUT', '/api/mrr', { mrr: 1350 });
-    await J('POST', '/api/permissions', [{ role: 'bookkeeper', perms: ['books:read'] }]);
     await J('POST', '/api/gl/backfill', {});
     t = await rows();
     eq('MRR: CREATE (1200) then UPDATE (1200 → 1350)', t.filter(x => x.table_name === 'settings').map(x => [x.action, x.action === 'UPDATE' ? [x.old_data.mrr, x.new_data.mrr] : x.new_data.mrr]), [['CREATE', 1200], ['UPDATE', [1200, 1350]]], []);
-    eq('role permissions saved → permissions UPDATE with the new table', t.filter(x => x.table_name === 'permissions').map(x => [x.action, JSON.stringify(x.new_data)]), [['UPDATE', JSON.stringify([{ role: 'bookkeeper', perms: ['books:read'] }])]], []);
+    // F30 (2026-11-06): POST /api/permissions is gone (the saved table was never enforced) — nothing to audit.
     eq('ledger rebuild (not a dry run) → ledger_entries RECALC', t.filter(x => x.table_name === 'ledger_entries').map(x => x.action), ['RECALC'], []);
     await since();
     await J('POST', '/api/gl/backfill?dry=1', {});

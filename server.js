@@ -1678,7 +1678,7 @@ app.use('/api', (req, res, next) => {
   if (!req.session.userId) return next(); // unauthenticated — let requireAuth handle it
   if (req.path.startsWith('/auth/')) return next(); // auth routes are exempt (self-service)
   const role = req.accountRole || 'viewer'; // resolved membership role; fail closed if unset
-  if (req.method === 'DELETE' && !['admin', 'owner'].includes(role))
+  if (req.method === 'DELETE' && !require('./rbac').roleHasPerm(role, 'records:delete'))   // F30: rbac.js is the one source
     return res.status(403).json({ error: 'Only admin or owner can delete records.' });
   if (['POST', 'PUT', 'PATCH'].includes(req.method) && role === 'viewer' && !READ_ONLY_POST.has(req.path))
     return res.status(403).json({ error: 'Viewer role is read-only.' });
@@ -8664,27 +8664,10 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── PERMISSIONS ───────────────────────────────────────────────────────────────
-app.get('/api/permissions', requireAuth, wrap(async (req, res) => {
-  const { rows: _permRows } = await pool.query(
-    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
-    [scopeId(req)]
-  );
-  const _pr0 = _permRows[0] ? rowToObj(_permRows[0]) : null;
-  res.json(_pr0?.value ? JSON.parse(_pr0.value) : null);
-}));
-app.post('/api/permissions', requireAuth, requirePerm('permissions:manage'), wrap(async (req, res) => {
-  const data = JSON.stringify(req.body || []);
-  const { rows: [_perme] } = await pool.query(
-    `SELECT id, data->>'value' AS value FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
-    [scopeId(req)]
-  );
-  if (_perme) await db.updateById('user_settings', _perme.id, { value: data });
-  else await db.insert('user_settings', { user_id: scopeId(req), key: 'permissions', value: data });
-  // FIX-3b: the role table decides who may do what — every save is on the trail (before → after).
-  { let _old = null; try { _old = _perme && _perme.value ? JSON.parse(_perme.value) : null; } catch (_) {}
-    await recordAudit(pool, { userId: scopeId(req), entityId: null, table: 'permissions', recordId: _perme ? _perme.id : null, action: 'UPDATE', oldData: _old, newData: req.body || [], req }); }
-  res.json({ ok: true });
-}));
+// F30 (2026-11-06, owner decision): the role table is the one rbac.js ENFORCES — read-only. The old GET returned a saved
+// per-account table and POST stored it, but nothing ever enforced it (and nothing in the app called either); the save is
+// removed so nothing pretends to save, and the page shows the real table.
+app.get('/api/permissions', requireAuth, (req, res) => res.json(require('./rbac').permissionTable()));
 
 // ── DERIVED / AGGREGATE ENDPOINTS ─────────────────────────────────────────────
 // These aren't backed by their own table — they compute a summary on the fly

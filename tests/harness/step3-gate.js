@@ -35,7 +35,10 @@ const { writeResults } = require('./verification-sync.js');
 const KEEP = process.argv.includes('--keep');
 // F83: exit-0 by default keeps an interactive sweep readable; --strict (or STRICT=1) makes the gate a
 // real regression signal for automated callers — non-zero on any FAIL or a thrown error.
-const STRICT = process.argv.includes('--strict') || process.env.STRICT === '1';
+// F83 DECIDED 2026-11-06: always strict — any failure exits non-zero. The exit-0 mode existed so a non-zero exit could not
+// truncate a sweep report; the sweep runner reads every harness's full output whatever its exit code, so that reason is gone,
+// and exit-0-on-failure is the masking hazard itself. (--strict / STRICT=1 are still accepted; they change nothing.)
+const STRICT = true;
 const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-secret' };
 
 let pass = 0, fail = 0;

@@ -125,6 +125,8 @@ function fingerprint() {
 }
 
 // ── CHILD: print this viewer's fingerprint ──
+// S4_NO_FP=1 (test-only): every viewer produces no fingerprint — executes the harness-error path (F83, Rule 14).
+if (process.env.S4_CHILD && process.env.S4_NO_FP === '1') process.exit(0);
 if (process.env.S4_CHILD) {
   try { process.stdout.write('FP=' + JSON.stringify(fingerprint())); }
   catch (e) { process.stdout.write('ERR=' + (e && e.stack ? e.stack : String(e))); }
@@ -134,7 +136,10 @@ if (process.env.S4_CHILD) {
 // ── PARENT ──
 // F83: this gate already exits non-zero on a check FAIL (H2). --strict additionally makes the
 // "a viewer produced no fingerprint" harness-error path non-zero instead of silently exit-0.
-const STRICT = process.argv.includes('--strict') || process.env.STRICT === '1';
+// F83 DECIDED 2026-11-06: always strict — any failure exits non-zero. The exit-0 mode existed so a non-zero exit could not
+// truncate a sweep report; the sweep runner reads every harness's full output whatever its exit code, so that reason is gone,
+// and exit-0-on-failure is the masking hazard itself. (--strict / STRICT=1 are still accepted; they change nothing.)
+const STRICT = true;
 let pass = 0, fail = 0;
 const A = (name, ok, detail) => { if (ok) { pass++; console.log('  PASS  ' + name); } else { fail++; console.log('  FAIL  ' + name + (detail ? '\n          ' + detail : '')); } };
 const flat = (obj, pre, out) => { out = out || {}; pre = pre || ''; for (const k of Object.keys(obj)) { const v = obj[k]; const key = pre ? pre + '.' + k : k; if (v && typeof v === 'object') flat(v, key, out); else out[key] = v; } return out; };
@@ -154,6 +159,7 @@ for (const x of runs) console.log('  · ' + x.z.tz.padEnd(24) + '(' + x.z.label 
 if (runs.some((x) => !x.fp)) {
   console.log('\n  A viewer produced no fingerprint (harness/extraction error) — raw tail:');
   for (const x of runs) if (!x.fp) console.log('    [' + x.z.tz + '] ' + x.raw.trim().slice(0, 600));
+  fail++;   // F83: a viewer that produced nothing is a failure (it printed "0 FAILED" and the sweep counted it green)
   console.log('\n  ' + fail + ' FAILED — cannot proceed without all four viewers.\n');
   process.exit(STRICT ? 1 : 0);   // F83: a missing-fingerprint harness error is non-zero under --strict
 }

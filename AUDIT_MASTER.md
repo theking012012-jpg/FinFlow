@@ -2374,7 +2374,9 @@ The risk was a **false failure**: any surface that bounds its window at the curr
 
 ---
 
-### F83 🟢 LOW — Harness exits 0 even when checks fail — **deliberate for now, tracked commitment** (2026-07-23)
+### F83 ✅ DECIDED + FIXED + VERIFIED (2026-11-06, owner: "fix") — the money gates are always strict
+**Decision:** no exit-0 mode. Its reason — a non-zero exit could truncate a sweep report — is gone: the sweep runner reads every harness's full output whatever the exit code, and `clock.js` already forces a non-zero exit after any printed failure. `step1/2/3-gate` and `step4-client-gate` now exit non-zero on any failure (`--strict` / `STRICT=1` still accepted, no effect). **Found executing it:** step4's harness-error path ("a viewer produced no fingerprint") printed **"0 FAILED — cannot proceed"** and exited 0 — and step4 does not load clock.js itself — so the sweep counted it **PASS** while checking nothing; it now counts the failure ("1 FAILED") and exits 1. **Executed:** `verify-f83-gates-strict` (the real gate with every viewer producing nothing — test switch `S4_NO_FP=1` — directly and through the real sweep): **RED 3 failed / 0 passed on `b307a13`** (the old sweep printed `PASS step4-client-gate.js … 0 FAILED — cannot proceed`) **→ GREEN 3/0**. Related: step2 63/0, step3 56/0, step4 5/0, f83-exit-latch, sweep-runner-timer, new25 green; step1 25/1 — "server major version is 17": this container's Postgres is 16 (same on the old code; green on the owner's machine, embedded Postgres 17).
+**Was:** 🟢 LOW — Harness exits 0 even when checks fail — deliberate for now, tracked commitment (2026-07-23)
 **Status:** OPEN by design. Recorded so it is a decision with an expiry, not an oversight that calcifies.
 
 The harness sets `process.exitCode = 0` unconditionally. That is correct **while it is an instrument**: during a sweep the artefact is the *report* — actual vs expected for every check — and a non-zero exit that truncated output or tripped a wrapper would cost more than it gained. `VERIFICATION.md` rule 1 (run every check before fixing anything) depends on a full run always completing and always being readable.

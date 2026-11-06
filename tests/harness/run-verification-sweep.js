@@ -80,10 +80,16 @@ for (const f of tests) {
   const nonzeroTally = /\b[1-9]\d*\s+FAILED\b/.test(out) || /\bpassed,\s*[1-9]\d*\s+failed\b/.test(out);
   const crashed = /\bFATAL:|PROBE ERROR\b/.test(out);
   const internalFail = nonzeroTally || crashed;
-  const ok = exitOk && !internalFail;
+  // NEW-25: a check that was SKIPPED was not executed, so the harness is not green — whatever its tally says
+  // (restore-drill-guard printed "ALL GREEN — 0 passed … (SKIPPED: no bash)"; the f94 helpers print "  SKIP  …" and still
+  // tallied green). A skip is a line that STARTS with SKIP / SKIPPED — "PASS  [SKIP] …" (a feature named Skip) is not one.
+  const skipLines = (out.match(/^[ \t]*SKIP(PED)?\b.*$/gm) || []).map(l => l.trim());
+  const skipped = skipLines.length > 0;
+  const ok = exitOk && !internalFail && !skipped;
   const masked = exitOk && internalFail;   // process said 0, but the harness reported failures
 
   const base = timedOut ? 'TIMEOUT'
+    : skipped && !internalFail ? `SKIPPED — ${skipLines.length} check(s) not executed: ${skipLines[0].slice(0, 90)}`
     : red && !green ? red[red.length - 1].trim()
     : red && green ? red[red.length - 1].trim()          // both present → still surface the failure
     : green ? green[green.length - 1].trim()

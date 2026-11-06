@@ -58,6 +58,7 @@ function loadEngine(journals) {
   // extract the real helpers too (else ReferenceError: _entityToday is not defined — same break as step4-client-gate).
   const appParts = [
     extractFn(appMain, 'function _activeEntityTz()'),
+    extractFn(appMain, 'function _clockNow()'),
     extractFn(appMain, 'function _entityToday()'),
     extractFn(appMain, 'function _fyContext()'),
     extractFn(appMain, 'function _periodWindow(period, monthIdx)'),

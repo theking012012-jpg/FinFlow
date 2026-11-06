@@ -547,7 +547,7 @@ window.loadMyTasks = async function() {
     // (string compare against the resolved today). new Date(d) made a task due today "overdue" and showed the
     // previous day for every viewer west of UTC.
     const _MNd = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const _today = window.FinFlowDates.resolvedToday(new Date());
+    const _today = (typeof window._entityToday === 'function') ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date());   // F89
     const fmtDue = d => { const y = window.FinFlowDates._toYmd(d); if (!y) return ''; return (+y.slice(8,10)) + ' ' + _MNd[+y.slice(5,7)-1] + ' ' + y.slice(0,4); };
     const row = t => {
       const done = t.status === 'done';

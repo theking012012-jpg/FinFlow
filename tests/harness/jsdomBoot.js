@@ -74,7 +74,7 @@ function pathOf(url) {
  *        instead of direct SQL that the ledger never sees.
  */
 async function bootSpaInJsdom(opts = {}) {
-  const { failMap = {}, seedExtra = null, baseSeed = true, apiSeed = null } = opts;
+  const { failMap = {}, seedExtra = null, baseSeed = true, apiSeed = null, deviceClockOffsetMs = 0 } = opts;
   const { JSDOM, VirtualConsole, CookieJar } = require('jsdom');
 
   const scratch = await startScratchPostgres({ keep: false });
@@ -157,9 +157,10 @@ async function bootSpaInJsdom(opts = {}) {
   // F72b: the page's requests still in flight through this layer — what idle() waits on.
   let inflight = 0, started = 0;
   const installLayers = (window) => {
-    // Pin the jsdom window clock so client period windows match the server probe.
+    // Pin the jsdom window clock so client period windows match the server probe. F89: deviceClockOffsetMs makes the
+    // DEVICE clock wrong by that much while the server keeps the pinned time — a viewer whose computer clock is off.
     window.Date = (function () {
-      const P = clock.PINNED_MS;
+      const P = clock.PINNED_MS + deviceClockOffsetMs;
       class PinnedDate extends window.Date {
         constructor(...a) { if (a.length === 0) super(P); else super(...a); }
         static now() { return P; }

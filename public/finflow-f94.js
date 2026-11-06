@@ -43,6 +43,7 @@
     sel.value = current || '';
   }
   // Exposed so the static Create-Business form (nb-timezone / nb-country) can be filled by the same list.
+  window._f94EntityToday = function(){ return entityToday(); };   // F89 (test surface)
   window._f94FillRegion = function(){
     _fillRegionSelect(document.getElementById('nb-timezone'), 'tz', '');
     _fillRegionSelect(document.getElementById('nb-country'), 'country', '');
@@ -55,8 +56,10 @@
   function fmt(n){ return Math.round(n).toLocaleString('en-US'); }
   function ents(){ try { return (typeof ENTITIES !== 'undefined' ? ENTITIES : null) || window.ENTITIES || []; } catch(e){ return window.ENTITIES || []; } }
   function activeEntity(){ var a = ents().find(function(e){ return e.active; }); return a || ents()[0] || null; }
-  // The server clock's "today" for the active entity (F88). Falls back to UTC when tz absent.
+  // The active business's "today" — F89: the ONE definition (app-main _entityToday: the server's clock, the business's
+  // zone). This copy read the device clock. The fallback below runs only if app-main has not loaded.
   function entityToday(){
+    try { if (typeof window._entityToday === 'function') return window._entityToday(); } catch(_){}
     try {
       var e = activeEntity();
       if (window.FinFlowDates && typeof window.FinFlowDates.resolvedToday === 'function')

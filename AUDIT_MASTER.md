@@ -373,7 +373,7 @@ Many headers further down still say OPEN / PARTIAL / FIX HELD from July–August
 | **F88** fiscal year per user | `verify-f88-fiscal-year-per-business` | 9 failed → 10/0 (`269c72e`) | fixed this round — see F88 |
 | **F110** 🟡 clock pin / seed re-pin hazard | read | — | the guard landed (header says so); the re-pin *strategy* is still open (test tooling only) |
 | **F108** 🟡 entity has no jurisdiction | read | — | `entities.data.country` exists since F191 (country per business); a `(name, country)` unique key is not built — open as design |
-| **F89** browser clock | read | — | see F89 (fiscal-year half now the business's; "today" half by reading only) |
+| **F89** browser clock | executed | ✅ | FIXED 2026-11-06 — server clock for every client today |
 | **F41** 🟢 bills | not re-checked | — | unchanged |
 
 **Fixed 2026-11-02 (own commits, each RED → GREEN, related harnesses re-run):** FA-L3e `3f9e5f7`, F126 `b0b6759`, F79 `cdb862a`,
@@ -389,8 +389,6 @@ was `boot-failures-gate` TIMEOUT (NEW-24, fixed).
 the gate on his machine: GREEN) · 739/739 → PR #6 (containing #5 and #4) **merged to `main` as a fast-forward to `746696a`** — the
 exact commits swept. Railway auto-deploys `main`; F90's audit triggers and chain are created by `initDB()` at that boot.
 **Code — next, in order:**
-2. **F89** — period windows ("this month", the fiscal year) still take TODAY from the browser's clock (`_entityToday`,
-   app-main.js `new Date()`); the server's clock is known (`_serverClock`) but not used there. A wrong device clock = wrong periods.
 3. **F41** — recurring bills have no end-date field (and `PUT /api/recurring-bills/:id` ignores `end_date`) — they repeat forever.
 4. **F108** — no rule against two businesses in one account with the same name and country; a guarded unique index + a read-only
    duplicate lister (country exists since F191).
@@ -2666,7 +2664,8 @@ Additional weight specific to this product: FinFlow is **accounting software wit
 
 ---
 
-### F89 🟠 HIGH — Period boundaries are derived from the BROWSER clock; the server does not disagree — **NEW (2026-07-23, read-only verified)**
+### F89 ✅ FIXED + VERIFIED (2026-11-06) — was 🟠 HIGH — Period boundaries were derived from the BROWSER clock
+**Fixed 2026-11-06:** `_entityToday()` (app-main.js — the one definition; no wiring override, Rule 1 checked) now reads the SERVER's clock once it is known (`_clockNow()`: NEW-2's `_serverClock`, the server's instant advanced by elapsed time, never by the device's reading), in the business's zone. Every client accounting today routes through it: the period windows, `_fyContext`, AR / overdue, bills due, banking month, money-date defaults (enumerated: 14 call sites, all via `window._entityToday`). Three read the device directly and now use it too: `_isScheduled` (scheduled vs issued), `finflow-f94.js`'s own `entityToday` (forecasts / upcoming / runway), and the accountant-task overdue colour (`app-26`). Before the first server reply only the device clock exists (money-date defaults stay blocked then — F115 / NEW-2). **Executed:** `verify-f89-server-clock-periods` — real /app in jsdom, server pinned 2026-07-25, the DEVICE clock 40 days fast: today 2026-07-25, fiscal month July, an invoice dated 2026-08-10 is scheduled, f94 today 2026-07-25, the month window July. **RED 6 failed / 3 passed on `0822a8d` → GREEN 9/0** (one assertion labelled STRUCTURAL: the accountant-task colour). Related 28 re-run green (f94 ×8, isscheduled-entity-tz, f88 ×4, a8b, calendar-dates-tz ×2, live-retests, pl-period-rows, period-lock, verification-cells, journal-dashboard-parity, step4-client-gate, f57-cash-card…). Four source-slicing harnesses (Rule 5's fragile extractor) needed the new helper added to their slice lists — `tz-matrix` prints no standard summary on the old code either (unchanged).
 **Status (2026-11-02):** the fiscal-year START half is now the business's (F88 2a, executed). The "today" half was covered by F87's string-date periods (confirmed by READING only — not re-executed for this row). Kept open until a harness pins a browser clock different from the server's and compares figures.
 **Was:** OPEN. Its own finding, adjacent to F87.
 

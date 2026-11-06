@@ -526,7 +526,13 @@ window._activeEntityTz = _activeEntityTz;
 // fiscal context, period windows, bills due, banking month) uses it, mirroring the server's entityTodayYmd. A bare
 // resolvedToday(new Date()) is the UTC day: for a business far from UTC it moved invoices across the overdue / issued
 // line near midnight, so client and server disagreed. No active entity or no zone ⇒ UTC, byte-identical to before.
-function _entityToday(){ return window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
+// F89 (2026-11-06): on the SERVER's clock once it is known (NEW-2's _serverClock: the server's instant, advanced by the
+// time elapsed since — never by the device's clock reading). A device whose clock is wrong no longer moves "today",
+// the current month, the fiscal year, or overdue / scheduled. Before the first server reply: the device clock (no other
+// clock exists yet; money-date defaults stay blocked until then — F115 / NEW-2).
+function _clockNow(){ const c=window._serverClock; return c ? new Date(c.server + (Date.now() - c.local)) : new Date(); }
+window._clockNow = _clockNow;
+function _entityToday(){ return window.FinFlowDates.resolvedToday(_clockNow(), _activeEntityTz()); }
 window._entityToday = _entityToday;
 // NEW-2 (live retest 2026-10-30): a money date's DEFAULT is the active business's today on the SERVER's clock. F115 kept
 // the viewer's clock out by using the server's today — but that was the server's UTC day, so from 8 pm in New York
@@ -542,7 +548,7 @@ function _businessToday(){
 }
 window._businessToday = _businessToday;
 window._isScheduled = function(dateStr){
-  try { const y = window.FinFlowDates._toYmd(dateStr); return y != null && y > window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
+  try { const y = window.FinFlowDates._toYmd(dateStr); return y != null && y > _entityToday(); }   // F89: the business's today
   catch(_){ return false; }
 };
 

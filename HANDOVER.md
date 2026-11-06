@@ -1,9 +1,20 @@
 # FinFlow — session handover (for the next Claude)
 
-**Written:** 2026-08-14 · **Updated:** 2026-11-03 — `main` at `746696a` (see the first UPDATE below; older repo-state notes are history).
+**Written:** 2026-08-14 · **Updated:** 2026-11-06 — `main` at `746696a`; work on `feat/outstanding-2026-11-06` (see the first UPDATE below).
 **You are picking up a single-founder SaaS build.** The owner (Shaq, Trinidad) plans/approves; you write code.
 
 ---
+
+## ⚡ UPDATE 2026-11-06 — every outstanding code item built, on `feat/outstanding-2026-11-06` — read this first
+
+- **Branch, not main** (main deploys on push): NEW-27, NEW-23, F89, F41, NEW-28, F108, F26-b, NEW-25, F52 — one commit each,
+  RED on the code before → GREEN, related harnesses re-run; the AUDIT rows carry the numbers. **No code item is left open.**
+- **🔴 NEW-28** (found by F108's related run): on multi-business accounts, saving Settings renamed the active business to the
+  account-wide business name. Fixed; production may hold renamed businesses → owner runs `tools/launch/list-renamed-businesses.js`.
+- **Next:** the owner's 3× sweep on the branch head → fast-forward main → the owner-only list in AUDIT_MASTER "OUTSTANDING"
+  (NEW-28 / F26-b listers, NEW-23 switch-over §11). Decisions still the owner's: F30, F109, F110, F83.
+- New read-only tools (tools/launch): list-renamed-businesses, list-entityless-records, list-duplicate-businesses. New owner tool:
+  scripts/db-app-role.js (NEW-23). Sweep: a SKIP line now makes a harness not green (NEW-25); boot-failures-gate parallel (NEW-24).
 
 ## ⚡ UPDATE 2026-11-03 — `main` = `746696a` (PR #6, #5, #4 merged) — read this first
 

@@ -385,18 +385,24 @@ F142 were already fixed — their rows say so; the 2026-08-09 list above was sta
 fixed in `fb0cb26` (seeds) + F79b (bad status → 400, not 500). Re-sweep on `aedc279` (2026-11-03): **739/739 · 738/739 · 739/739** — the one red
 was `boot-failures-gate` TIMEOUT (NEW-24, fixed).
 
-### ⏳ OUTSTANDING — as of 2026-11-03 (authoritative list; anything not here is fixed or is a numbered row above)
-**Released 2026-11-03:** owner 3× sweep on `aedc279` = 739/739 · 738/739 (NEW-24, a test-gate timeout — fixed `030b2be`, owner re-ran
-the gate on his machine: GREEN) · 739/739 → PR #6 (containing #5 and #4) **merged to `main` as a fast-forward to `746696a`** — the
-exact commits swept. Railway auto-deploys `main`; F90's audit triggers and chain are created by `initDB()` at that boot.
-**Code — next, in order:**
+### ⏳ OUTSTANDING — as of 2026-11-06 (authoritative list; anything not here is fixed or is a numbered row above)
+**Released 2026-11-03:** PR #6 (with #5, #4) on `main` at `746696a` after the owner's 3× sweep (739/739 · 738/739 · 739/739).
+**Built 2026-11-06 on `feat/outstanding-2026-11-06`** (each its own commit, RED on the code before it → GREEN, related harnesses
+re-run): NEW-27 `3602a3f` (status constraints validated at boot) · NEW-23 `0822a8d` (restricted app login, proven on the real
+schema) · F89 `b6dfec2` (server clock for every client "today") · F41 `c09308a` (recurring end dates) · NEW-28 `62c2356` (🔴 Settings
+renamed businesses — found by F108's related run) · F108 `87d12e8` (one business per name + country) · F26-b `5104976` (lister) ·
+NEW-25 `000b805` (a skipped check is not green) · F52 `7b96f22` (accessibility). **No code item is left open.**
+**Release steps (owner):** (1) the 3× sweep on the branch head (≈750 harnesses now); (2) then main fast-forwards to the swept head.
 **Needs an owner decision:** F30 (custom permissions that really apply, or remove the save nothing reads) · F109 (close an
 investment position — holdings serve both sides of the wall) · F110 (test-clock re-pin strategy; the guard is in) · F83 (the
-sweep runner's exit code — by design for now) · F26-b (which business each legacy receipt belongs to).
-**Owner-only:** F26-b — run `tools/launch/list-entityless-records.js` (read-only), decide each row's business · NEW-28 — run `tools/launch/list-renamed-businesses.js` (read-only) and decide what to rename back · NEW-23 — switch the app to the restricted login (OWNER_ACTIONS §11, ≈5 min; then run the schema step from the PC on
-every release) · ✅ 2026-11-03 `0ab6618` live; `list-status-violations.js` on production = 0 rows (NEW-27) · Railway `PLAID_ENV=production`, `DATABASE_CA_CERT` (F19) · Supabase network
-restrictions (Railway only) + 2FA on Supabase / Railway / GitHub + rotate the database password if ever shared · Resend logs (FA-L3c,
-LR17) · one look at live (G14) · lawyer review (NEW-21).
+sweep runner's exit code — by design for now).
+**Owner-only, after the release:** NEW-28 — run `tools/launch/list-renamed-businesses.js` (read-only) and decide what to rename
+back · F26-b — run `tools/launch/list-entityless-records.js` (read-only), decide each row's business · F108 — if boot logs
+"ux_entities_user_name_country not created", run `tools/launch/list-duplicate-businesses.js` · NEW-23 — switch the app to the
+restricted login (OWNER_ACTIONS §11, ≈5 min; then the schema step from the PC on every release) · Railway `PLAID_ENV=production`,
+`DATABASE_CA_CERT` (F19) · Supabase network restrictions (Railway only) + 2FA on Supabase / Railway / GitHub + rotate the database
+password if ever shared · Resend logs (FA-L3c, LR17) · one look at live (G14) · lawyer review (NEW-21).
+✅ done: 2026-11-03 `0ab6618` live; `list-status-violations.js` on production = 0 rows (NEW-27).
 ---
 
 ## ⚙️ LOAD-BEARING INFRASTRUCTURE CONFIG — do not "clean up"

@@ -1363,6 +1363,9 @@ async function initDB() {
     // Mirrored by scripts/migrations/2026-10-21-personal-history.sql.
     await require('./personal-history').ensureSchema(client);
 
+    // NEW-23 — which schema code last ran here (see schemaFingerprint()).
+    await client.query(`CREATE TABLE IF NOT EXISTS schema_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');
   } catch (err) {
@@ -1447,6 +1450,38 @@ async function initDB() {
   await validateStatusConstraints();
 
   return pool;
+}
+
+/**
+ * NEW-23 — the fingerprint of the schema code: initDB() itself, the audit-trigger and personal-history schema modules,
+ * and every versioned migration (name + content). The owner-run schema step (scripts/migrate.js, or a normal boot that
+ * runs initDB) records it; a web process running as the restricted login (SKIP_INIT_DDL=1) compares it at boot, so a
+ * release whose schema step was not run is reported loudly instead of failing later on a missing column.
+ */
+function schemaFingerprint(dir = path.join(__dirname, 'scripts', 'migrations')) {
+  const h = require('crypto').createHash('sha256');
+  h.update(initDB.toString());
+  for (const f of ['audit-trigger.js', 'personal-history.js']) h.update(fs.readFileSync(path.join(__dirname, f)));
+  let files = [];
+  try { files = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort(); } catch (_) { /* no migrations dir */ }
+  for (const f of files) { h.update(f); h.update(fs.readFileSync(path.join(dir, f))); }
+  return h.digest('hex');
+}
+async function recordSchemaFingerprint(q = pool) {
+  const fp = schemaFingerprint();
+  await q.query(`INSERT INTO schema_state (key, value, at) VALUES ('fingerprint', $1, NOW())
+                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, at = NOW()`, [fp]);
+  return fp;
+}
+/** { current: true } when the database's recorded schema matches this code; otherwise why not. Read-only. */
+async function checkSchemaFingerprint(q = pool) {
+  const expected = schemaFingerprint();
+  let row;
+  try { row = (await q.query(`SELECT value, at FROM schema_state WHERE key = 'fingerprint'`)).rows[0]; }
+  catch (e) { return { current: false, expected, found: null, reason: 'schema_state not readable: ' + e.message }; }
+  if (!row) return { current: false, expected, found: null, reason: 'no schema step has been recorded' };
+  return row.value === expected ? { current: true, expected, found: row.value, at: row.at }
+    : { current: false, expected, found: row.value, at: row.at, reason: 'the database was set up by a different version of the schema code' };
 }
 
 /**
@@ -1744,4 +1779,5 @@ async function runMigrations(dbPool = pool, dir = path.join(__dirname, 'scripts'
   return result;
 }
 
-module.exports = { db, initDB, pool, rowToObj, DEFAULT_COA, ensureLedgerAccountsForEntity, runMigrations, validateStatusConstraints };
+module.exports = { db, initDB, pool, rowToObj, DEFAULT_COA, ensureLedgerAccountsForEntity, runMigrations, validateStatusConstraints,
+  schemaFingerprint, recordSchemaFingerprint, checkSchemaFingerprint };

@@ -12,7 +12,7 @@
  * On Railway: set this as the service's "release"/pre-deploy command (owner creds), and the web
  * process's DATABASE_URL to finflow_app + SKIP_INIT_DDL=1. Exits non-zero if any migration fails.
  */
-const { initDB, runMigrations, pool } = require('../database');
+const { initDB, runMigrations, pool, recordSchemaFingerprint } = require('../database');
 
 (async () => {
   console.log('[migrate] applying baseline schema (initDB)…');
@@ -25,7 +25,9 @@ const { initDB, runMigrations, pool } = require('../database');
     await pool.end().catch(() => {});
     process.exit(1);
   }
-  console.log(`[migrate] OK — schema ready, ${applied} new migration(s) applied.`);
+  // NEW-23: record which schema code ran, so the restricted web process can tell at boot whether this step was run.
+  const fp = await recordSchemaFingerprint(pool);
+  console.log(`[migrate] OK — schema ready, ${applied} new migration(s) applied (schema ${fp.slice(0, 12)}).`);
   await pool.end().catch(() => {});
   process.exit(0);
 })().catch((e) => { console.error('[migrate] error:', e && e.stack ? e.stack : e); process.exit(1); });

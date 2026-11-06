@@ -8,7 +8,7 @@ const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
-const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity, runMigrations, DEFAULT_COA } = require('./database');
+const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity, runMigrations, DEFAULT_COA, recordSchemaFingerprint, checkSchemaFingerprint } = require('./database');
 const { establishSession } = require('./session-auth');
 const totp = require('./totp');
 const securityLog = require('./security-log');   // LC3d: security-log event names, device labels, alert e-mails
@@ -15778,6 +15778,17 @@ function startReconcileMonitor(resend) {
   setInterval(() => _jobs.reconcile(resend).catch(e => captureErr(e)), Math.max(1, hours) * 60 * 60 * 1000);
 }
 
+// NEW-23 — the web process runs as the restricted login (SKIP_INIT_DDL=1) and cannot change the schema; the owner runs
+// scripts/migrate.js. If that step was not run for this release, say so loudly (log + Sentry) instead of failing later.
+async function _reportSchemaState() {
+  const st = await checkSchemaFingerprint(pool);
+  if (st.current) { console.log('[boot] schema is current (' + st.expected.slice(0, 12) + ')'); return st; }
+  const msg = '[boot] SCHEMA NOT CURRENT — ' + st.reason + '. Run the owner schema step for this release: node scripts/migrate.js '
+    + '(OWNER_ACTIONS §11). expected ' + st.expected.slice(0, 12) + ', found ' + (st.found ? st.found.slice(0, 12) : 'none');
+  console.error(msg);
+  captureErr(new Error(msg));
+  return st;
+}
 if (require.main === module) {
   // F202 — least-privilege deploys: when the web process runs as a role WITHOUT DDL rights
   // (scripts/db-app-role.sql → finflow_app), set SKIP_INIT_DDL=1 and apply schema+migrations in a
@@ -15785,12 +15796,16 @@ if (require.main === module) {
   // behavior — boot runs the idempotent baseline schema + migrations itself.
   const _skipDDL = /^(1|true|yes)$/i.test(process.env.SKIP_INIT_DDL || '');
   const _prepare = _skipDDL
-    ? Promise.resolve().then(() => console.log('[boot] SKIP_INIT_DDL set — skipping initDB()/migrations (expects an owner-run migrate step)'))
+    ? Promise.resolve().then(async () => {
+        console.log('[boot] SKIP_INIT_DDL set — skipping initDB()/migrations (expects an owner-run migrate step)');
+        try { await _reportSchemaState(); } catch (e) { console.error('[boot] schema check failed:', e && e.message); }
+      })
     : initDB().then(async () => {
         // Versioned migrations run AFTER the idempotent baseline schema, BEFORE serving — each in its own
         // transaction, so a bad one fails loudly without bricking boot. New schema changes go here.
         try { const _m = await runMigrations(pool); if (_m.failed.length) captureErr(new Error('[migrate] ' + _m.failed.length + ' migration(s) failed: ' + _m.failed.map(x => x.name).join(', '))); }
         catch (e) { console.error('[migrate] runner error (boot continues):', e && e.message); captureErr(e); }
+        try { await recordSchemaFingerprint(pool); } catch (e) { console.error('[boot] could not record the schema fingerprint:', e && e.message); }
       });
   _prepare.then(async () => {
     app.listen(PORT, () => {
@@ -15824,6 +15839,7 @@ if (require.main === module) {
 }
 
 module.exports = app;
+module.exports._reportSchemaState = _reportSchemaState;   // NEW-23 (test surface)
 // Test hook: expose the canonical books calculator for harness verification (no behavior
 // change in prod — the app is still the default export).
 module.exports.computeBooks = computeBooks;

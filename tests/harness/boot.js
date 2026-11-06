@@ -67,7 +67,7 @@ async function initSchema(scratchUrl) {
   return { database, pool: database.pool, scrubbed };
 }
 
-async function bootServer(scratchUrl) {
+async function bootServer(scratchUrl, opts = {}) {
   const { scrubbed } = installEnv(scratchUrl);
 
   // server.js:4750 fires initDB() at import time and never awaits it. We run our own first
@@ -80,7 +80,9 @@ async function bootServer(scratchUrl) {
   process.on('unhandledRejection', onUnhandled);
 
   const database = require('../../database.js');
-  await database.initDB();
+  // NEW-23: opts.skipInitDB boots the app the way production does under the restricted login (SKIP_INIT_DDL=1) —
+  // the schema was built beforehand by the owner step (scripts/migrate.js), and this process never runs DDL.
+  if (!opts.skipInitDB) await database.initDB();
   if (process.env.FF_AUDIT_SHADOW_OUT) await require('./auditShadow.js').install(database.pool);   // F90 measurement (opt-in)
 
   const app = require('../../server.js');

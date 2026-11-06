@@ -12,8 +12,10 @@
 -- The migration runner (database.js runMigrations) can run under the owner in CI/deploy;
 -- the web process uses DATABASE_URL pointed at finflow_app.
 --
--- Usage (as the database owner):
+-- Usage (as the database owner — AFTER `node scripts/migrate.js`, so the tables exist; re-run after any release that
+-- adds a table only if default privileges were not in place):
 --   psql "$OWNER_DATABASE_URL" -v app_pw='a-strong-password' -f scripts/db-app-role.sql
+--   (no psql? OWNER_ACTIONS §11 has a node one-liner)
 -- Then set the app's DATABASE_URL to connect as finflow_app.
 -- ============================================================================
 
@@ -42,6 +44,21 @@ GRANT USAGE, SELECT                  ON ALL SEQUENCES  IN SCHEMA public TO finfl
 -- without re-granting). Run as the role that OWNS the tables.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES    TO finflow_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT                  ON SEQUENCES TO finflow_app;
+
+-- NEW-23 — the history tables. The app never deletes an audit row or edits the admin log, so it cannot. It keeps
+-- UPDATE on audit_trail only for the 90-day sign-in IP removal (LC3d-b), which audit_trail_immutable() still limits to
+-- exactly that change; DELETE on personal_history only for account erasure (personal_history_no_mutate limits it).
+-- TRUNCATE (which skips row triggers) is never granted on any table; revoked here explicitly for these three.
+-- (Each only if the table exists — run this after scripts/migrate.js so they do; re-running is harmless.)
+DO $$
+BEGIN
+  IF to_regclass('public.audit_trail')      IS NOT NULL THEN REVOKE DELETE, TRUNCATE ON audit_trail FROM finflow_app; END IF;
+  IF to_regclass('public.admin_log')        IS NOT NULL THEN REVOKE UPDATE, DELETE, TRUNCATE ON admin_log FROM finflow_app; END IF;
+  IF to_regclass('public.personal_history') IS NOT NULL THEN REVOKE TRUNCATE ON personal_history FROM finflow_app; END IF;
+END $$;
+-- Not the owner of any table or function, so it cannot ALTER TABLE … DISABLE TRIGGER, DROP TRIGGER, or replace the
+-- audit functions; SET session_replication_role (which skips triggers) needs superuser. All executed in
+-- tests/harness/verify-new23-app-role-real-schema.js.
 
 -- Explicitly NOT granted: CREATE on schema, ownership, SUPERUSER, CREATEROLE, CREATEDB.
 -- Verify:  \du finflow_app     (should show no attributes / "Cannot login" false, no Superuser)

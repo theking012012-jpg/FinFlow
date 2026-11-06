@@ -32,7 +32,9 @@
   `1..3 | ForEach-Object { node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js | Tee-Object "sweep-new-$_.txt" }`
   then `Select-String -Path sweep-new-*.txt -Pattern "SWEEP COMPLETE"`. One harness only: `$env:SWEEP_ONLY="name"`.
   Reds go on the frozen list and are investigated before anything else; the sweep's "NEAR THE TIME LIMIT" list is a to-do.
-- **Releasing:** after a green 3× sweep, fast-forward `main` to the swept commit (`git push origin <branch-head>:main`) so
+- **Releasing:** once the owner has switched to the restricted login (NEW-23, OWNER_ACTIONS §11), the owner runs the schema
+  step from his PC (`node scripts/migrate.js`, owner address via the clipboard) on the release's code first. Then:
+  after a green 3× sweep, fast-forward `main` to the swept commit (`git push origin <branch-head>:main`) so
   the deployed commits are exactly the tested ones; GitHub marks the PR(s) merged. Then update AUDIT_MASTER / HANDOVER /
   LAUNCH_STATUS.
 - **Production read-only tools** (never paste `DATABASE_URL` into chat — it holds the password): copy it in Railway, then in

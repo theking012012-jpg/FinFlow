@@ -62,6 +62,10 @@ Configuring backups isn't the deliverable — proving a restore works is.
 
 **Critical constraint (verified in `database.js`):** the app runs `CREATE TABLE / ALTER TABLE / CREATE INDEX / DROP` on its own tables at every boot. So the app role must be able to modify **its own** objects — the way to allow that safely is to make it the **owner** of those objects, NOT to grant it superuser. A true "can't ALTER anything" role would fail `initDB` on your next deploy.
 
+> **Superseded 2026-11-06 (NEW-23):** follow `OWNER_ACTIONS_2026-10-21.md` §11. The text below is history: it described
+> `finflow_app` as owning the schema objects, which it must NOT (an owner can switch off the audit trail), and put the owner
+> address in Railway. `scripts/db-app-role.sql` never made it an owner; `scripts/db-app-role.js` is the tool to run.
+
 Goal: app connects as `finflow_app` — a role that owns the `public` schema objects but has **NOSUPERUSER NOCREATEROLE NOCREATEDB** and no reach into other databases, roles, or extensions.
 
 Run in the **Supabase SQL editor** (as the `postgres` role). **Do this in a branch/staging project first, boot the app against it, and confirm `initDB` succeeds before touching production.** Keep your current `DATABASE_URL` as an instant rollback.

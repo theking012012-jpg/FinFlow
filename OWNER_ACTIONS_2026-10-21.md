@@ -257,26 +257,29 @@ checkout at DEST (`$env:DATABASE_URL=…; npm start`), sign in, open an invoice 
 
 ---
 
-## 11. Least-privilege DB role (§2.3) — `INFRA_RUNBOOK.md` §4
+## 11. Least-privilege DB role (§2.3) — NEW-23 (rewritten 2026-11-06)
 
-Do it on a Supabase **branch / staging copy first**.
-1. Create the role with `psql` (the script takes the password as a psql variable, so it never lands in the file):
-   ```powershell
-   $env:OWNER_DATABASE_URL = "<current owner URL>"
-   $pw = node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
-   psql $env:OWNER_DATABASE_URL -v app_pw="$pw" -f scripts/db-app-role.sql
-   ```
-   Store `$pw` in your password manager, then `Remove-Variable pw`. Check:
-   `psql $env:OWNER_DATABASE_URL -c "SELECT rolname, rolsuper FROM pg_roles WHERE rolname='finflow_app'"` → `rolsuper = f`.
-2. Railway → add variable `OWNER_DATABASE_URL` (the current owner URL) → service **Settings → Deploy → Pre-deploy
-   command**: `DATABASE_URL=$OWNER_DATABASE_URL node scripts/migrate.js` (`migrate.js` reads `DATABASE_URL`; this hands
-   it the owner URL for the release step only).
-3. Variables: `DATABASE_URL` → the same pooler host, user `finflow_app.<project-ref>`, the new password;
-   `SKIP_INIT_DDL=1`.
-4. Redeploy. Logs must show `[migrate] OK — schema ready` (pre-deploy) and the web process booting with no
-   `permission denied`.
+**Why:** the app connects as the database OWNER today, so a compromised app server could alter tables or switch off the
+audit trail. After this, the app runs as `finflow_app`: it reads and writes records, and is refused (executed,
+`verify-new23-app-role-real-schema`, 26/0) altering any table, switching off / dropping / replacing the audit triggers,
+skipping triggers, deleting or emptying the audit trail, and editing the admin log. **The owner address is never put in
+Railway** — the schema step runs from your PC.
 
-**Rollback (instant):** set `DATABASE_URL` back to the owner URL and delete `SKIP_INIT_DDL` → redeploy.
+**Once (≈5 min).** PowerShell, in the repo folder, on the release's code (`git pull` first):
+1. Copy the CURRENT `DATABASE_URL` from Railway (it is the owner address). In PowerShell paste-but-don't-Enter
+   `$env:DATABASE_URL = (Get-Clipboard).Trim(); $env:DATABASE_URL.StartsWith("postgres")`, copy it in Railway, press Enter → `True`.
+2. `$env:NODE_ENV = "production"` (uses TLS, like Railway), then `node scripts/migrate.js` → ends `[migrate] OK — schema ready … (schema xxxxxxxxxxxx)`.
+3. `node scripts/db-app-role.js` → `login works as "finflow_app"; switching off the audit trail as it: REFUSED (correct)` and
+   `the new DATABASE_URL is on your clipboard (not shown)`. **Paste it straight into Railway → Variables → `DATABASE_URL`.**
+4. Railway → Variables → add `SKIP_INIT_DDL` = `1`. Save (Railway redeploys).
+5. `Remove-Item Env:DATABASE_URL; Remove-Item Env:NODE_ENV`. Keep the owner address only in Supabase / your password manager.
+6. Railway deploy log must show `[boot] schema is current (xxxxxxxxxxxx)` and no `permission denied`. Sign in and open an invoice.
+
+**Every release after that** (because the app can no longer change the schema): before main moves, run steps 1, 2 and 5
+on the release's code. If you forget, the log says `[boot] SCHEMA NOT CURRENT … Run the owner schema step` (and Sentry
+gets it) — run the step then; the schema changes are additive, so running them after the deploy is safe.
+
+**Rollback (instant):** set `DATABASE_URL` back to the owner address and delete `SKIP_INIT_DDL` → redeploy.
 
 ---
 

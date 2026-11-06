@@ -374,7 +374,7 @@ Many headers further down still say OPEN / PARTIAL / FIX HELD from July–August
 | **F110** 🟡 clock pin / seed re-pin hazard | read | — | the guard landed (header says so); the re-pin *strategy* is still open (test tooling only) |
 | **F108** 🟡 entity has no jurisdiction | read | — | `entities.data.country` exists since F191 (country per business); a `(name, country)` unique key is not built — open as design |
 | **F89** browser clock | executed | ✅ | FIXED 2026-11-06 — server clock for every client today |
-| **F41** 🟢 bills | not re-checked | — | unchanged |
+| **F41** bills | executed | ✅ | FIXED 2026-11-06 — end date in the form, on edit, one rule on every recurring type |
 
 **Fixed 2026-11-02 (own commits, each RED → GREEN, related harnesses re-run):** FA-L3e `3f9e5f7`, F126 `b0b6759`, F79 `cdb862a`,
 C1 `da63b81`, F88 `269c72e`, F75 `a604465` + F75-b `581a472` · `83a7538` (the wrappers measured; the dead renderProjects removed), F125 `5732c85`,
@@ -389,7 +389,6 @@ was `boot-failures-gate` TIMEOUT (NEW-24, fixed).
 the gate on his machine: GREEN) · 739/739 → PR #6 (containing #5 and #4) **merged to `main` as a fast-forward to `746696a`** — the
 exact commits swept. Railway auto-deploys `main`; F90's audit triggers and chain are created by `initDB()` at that boot.
 **Code — next, in order:**
-3. **F41** — recurring bills have no end-date field (and `PUT /api/recurring-bills/:id` ignores `end_date`) — they repeat forever.
 4. **F108** — no rule against two businesses in one account with the same name and country; a guarded unique index + a read-only
    duplicate lister (country exists since F191).
 5. **F26-b** — read-only tool listing legacy entity-less sales receipts (the assignment itself is the owner's, Rule 8).
@@ -3482,7 +3481,8 @@ After final5.js was cleared (F136/F144), `stubs.js` is the other shadow graveyar
 
 ---
 
-### F39 ✅ FIXED (invoices) / **F41** 🟢 OPEN (bills)
+### F39 ✅ FIXED (invoices) / **F41** ✅ FIXED + VERIFIED 2026-11-06 (bills, and the end-date rule on every recurring type)
+**F41 fixed 2026-11-06:** the recurring-bill form has **Ends on (optional)** (`#rb-end`, cleared on open, checked against the next run, sent by `saveRecurringBill` — the only copy, wiring-pages); both recurring lists show `· Ends: <date>`. One server rule `_recurringEndDate()` on create AND edit of recurring bills, invoices and personal: absent = unchanged, `''`/`null` = removes the end, else a real date not before the next run (`END_BEFORE_NEXT_RUN`). Old: `PUT /api/recurring-bills` ignored `end_date` (so an end could never be added to an existing bill), an end before the next run was stored, `null` could not remove one on invoices. (Malformed dates were already refused on every write by `body-shape.js` — kept as controls.) **Executed:** `verify-f41-recurring-end-date` (real /app in jsdom + server + Postgres + the real recurring job) — **RED 10 failed / 8 passed on `b6dfec2` → GREEN 18/0**; the job: a bill given an end of 2026-06-30 by EDIT makes the June bill and completes (old: 2 bills). Related 15/15 green (recurring scheduler / exactly-once / issue-date / nextrun-tz, g16, lr24, m31, f94 scheduled ×2, put-field-validation, fam6 ×4, fap1d body-shape).
 `end_date` on recurring **invoices** is complete end-to-end — server accepts it (`server.js:2093`), the scheduler stops on it, and the UI has `#ri-end` (`index.html:6860`, wired in `pages.js:366` and `stubs.js:647`). Commit `e1319ef`.
 **F41 — recurring BILLS remain dormant:** `runRecurringScheduler` and `POST /api/recurring-bills` honour `end_date`, but **no `rb-end` input exists anywhere** (verified by grep). A user can never set one, so recurring bills generate forever. Exact parallel to the invoice half.
 **Course of action:** copy the `ri-end` field + wiring to the recurring-bill modal (`index.html:6391`) and both save paths.

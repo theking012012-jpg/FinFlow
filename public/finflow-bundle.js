@@ -3279,7 +3279,7 @@ function clearAIChat(){
           <div data-style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
             <div>
               <div data-style="font-weight:500;font-size:13px">${esc(r.client)}</div>
-              <div data-style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
+              <div data-style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}${r.end_date ? ' · Ends: ' + esc(String(r.end_date).slice(0, 10)) : ''}</div>
             </div>
             <div data-style="display:flex;align-items:center;gap:10px">
               <span data-style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
@@ -4129,7 +4129,7 @@ function clearAIChat(){
           <div data-style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
             <div>
               <div data-style="font-weight:500;font-size:13px">${esc(r.vendor)}</div>
-              <div data-style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}</div>
+              <div data-style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.frequency)} · Next: ${esc(r.next_run || '—')}${r.end_date ? ' · Ends: ' + esc(String(r.end_date).slice(0, 10)) : ''}</div>
             </div>
             <div data-style="display:flex;align-items:center;gap:10px">
               <span data-style="font-family:var(--font-mono);font-weight:600">${S(r.amount)}</span>
@@ -4154,7 +4154,7 @@ function clearAIChat(){
     };
 
     window.openNewRecurringBillModal = function () {
-      ['rb-vendor','rb-amount'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      ['rb-vendor','rb-amount','rb-end'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });   // F41: rb-end
       window._pickVendor?.('rb-vendor');   // FA-B4
       const f = document.getElementById('rb-freq'); if (f) f.value = 'Monthly';
       const n = document.getElementById('rb-next'); if (n) n.value = todayStr();
@@ -4170,8 +4170,10 @@ function clearAIChat(){
       const frequency = document.getElementById('rb-freq')?.value   || 'Monthly';
       const next_run  = document.getElementById('rb-next')?.value   || todayStr();
       const status    = document.getElementById('rb-status')?.value || 'active';
+      const end_date  = document.getElementById('rb-end')?.value || null;   // F41: optional end
+      if (end_date && end_date < next_run) { notify('The end date is before the next run.', true); return; }
       try {
-        const saved = await api('POST', '/api/recurring-bills', { vendor, amount, frequency, next_run, status });
+        const saved = await api('POST', '/api/recurring-bills', { vendor, amount, frequency, next_run, status, end_date });
         _recurringBillsData.unshift(saved.row || saved);
         window.recurringBills = _recurringBillsData;
         closeModal('recurring-bill-modal');

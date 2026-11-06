@@ -5765,6 +5765,22 @@ app.delete('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(asyn
 }));
 
 // ── RECURRING BILLS ───────────────────────────────────────────────────────────
+// F41 (2026-11-06) — one rule for a recurring schedule's end date, on every recurring type (bills, invoices, personal),
+// create and edit: absent = unchanged; '' or null = no end (clears it); otherwise a real calendar date (YYYY-MM-DD) not
+// before the schedule's next run. Before: bills ignored end_date on edit (they repeated forever), an end before the next
+// run was stored, and null could not remove an end on bills or invoices. (Malformed dates were already refused for every
+// /api write by body-shape.js — INVALID_DATE; the format check here is a second line, BAD_END_DATE.)
+function _recurringEndDate(body, nextRun) {
+  if (!body || !Object.prototype.hasOwnProperty.call(body, 'end_date')) return { skip: true };
+  const v = body.end_date;
+  if (v === null || v === '') return { value: null };
+  const y = String(v).slice(0, 10);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(y) ? new Date(y + 'T00:00:00Z') : null;
+  if (!d || isNaN(d) || d.toISOString().slice(0, 10) !== y) return { error: { error: 'The end date must be a date (YYYY-MM-DD).', code: 'BAD_END_DATE' } };
+  const nr = nextRun ? String(nextRun).slice(0, 10) : null;
+  if (nr && y < nr) return { error: { error: `The end date (${y}) is before the next run (${nr}).`, code: 'END_BEFORE_NEXT_RUN' } };
+  return { value: y };
+}
 app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   try {
     // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
@@ -5779,10 +5795,11 @@ app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
 app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
+  const _ed = _recurringEndDate(req.body, next_run); if (_ed.error) return res.status(400).json(_ed.error);   // F41
   const entity = await activeEntity(req);
   const _dup = await findRecentDuplicate('recurring_bills', scopeId(req), req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_bills', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  const { row } = await db.insert('recurring_bills', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: _ed.skip ? null : _ed.value });  // F150-class: request-scoped entity · F41
   row.vendor_id = await linkDocContact('recurring_bills', scopeId(req), row.entity_id, row.id, row.vendor, req);   // FA-B4: a saved contact
   await _auditRec(req, 'recurring_bills', 'CREATE', null, row);   // FIX-3b
   res.json(row);
@@ -5800,6 +5817,8 @@ app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
   if (frequency != null) patch.frequency = frequency;
   if (next_run != null) patch.next_run = next_run;
   if (status != null) patch.status = status;
+  { const _ed = _recurringEndDate(req.body, patch.next_run != null ? patch.next_run : (_rblr.data || {}).next_run);   // F41: was ignored
+    if (_ed.error) return res.status(400).json(_ed.error); if (!_ed.skip) patch.end_date = _ed.value; }
   await db.updateById('recurring_bills', Number(req.params.id), patch);
   if (patch.vendor != null) await relinkDocContact('recurring_bills', scopeId(req), _rblr.entity_id, _rblr.id, _rblr.data && _rblr.data.vendor, patch.vendor, req);   // FA-B4b
   { const { rows: [_rbn] } = await pool.query(`SELECT * FROM recurring_bills WHERE id = $1 LIMIT 1`, [_rblr.id]); if (_rbn) await _auditRec(req, 'recurring_bills', 'UPDATE', rowToObj(_rblr), rowToObj(_rbn)); }   // FIX-3b
@@ -5827,9 +5846,10 @@ app.post('/api/recurring-personal-transactions', requireAuth, wrap(async (req, r
   const { description, category = 'Other', amount, tx_type = 'expense', frequency = 'Monthly', next_run, status = 'active', end_date = null, currency = 'USD' } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
+  const _ed = _recurringEndDate(req.body, next_run); if (_ed.error) return res.status(400).json(_ed.error);   // F41
   const _dup = await findRecentDuplicate('recurring_personal_transactions', req.session.userId, null, { textMatch: { description: String(description).trim().slice(0,300), frequency: String(frequency) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_personal_transactions', { user_id: req.session.userId, description: String(description).trim().slice(0, 300), category, amount: parseFloat(amount)||0, tx_type, frequency, next_run, status, end_date: end_date || null, currency: String(currency || 'USD') });
+  const { row } = await db.insert('recurring_personal_transactions', { user_id: req.session.userId, description: String(description).trim().slice(0, 300), category, amount: parseFloat(amount)||0, tx_type, frequency, next_run, status, end_date: _ed.skip ? null : _ed.value, currency: String(currency || 'USD') });
   await _persHist(req, req.session.userId, 'recurring_personal_transactions', 'CREATE', null, row);   // LC3c
   res.status(201).json(row);
 }));
@@ -5848,7 +5868,8 @@ app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req
   if (tx_type != null) patch.tx_type = tx_type;
   if (frequency != null) patch.frequency = frequency;
   if (status != null) patch.status = status;
-  if (end_date !== undefined) patch.end_date = end_date || null;
+  { const _ed = _recurringEndDate(req.body, (_rptr.data || {}).next_run);   // F41
+    if (_ed.error) return res.status(400).json(_ed.error); if (!_ed.skip) patch.end_date = _ed.value; }
   if (currency != null) { if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' }); patch.currency = String(currency); }
   await db.updateById('recurring_personal_transactions', Number(req.params.id), patch);
   const { rows: [_rpta] } = await pool.query(`SELECT * FROM recurring_personal_transactions WHERE id = $1 LIMIT 1`, [Number(req.params.id)]);
@@ -5900,10 +5921,11 @@ app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
+  const _ed = _recurringEndDate(req.body, next_run); if (_ed.error) return res.status(400).json(_ed.error);   // F41
   const entity = await activeEntity(req);
   const _dup = await findRecentDuplicate('recurring_invoices', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_invoices', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  const { row } = await db.insert('recurring_invoices', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: _ed.skip ? null : _ed.value })   /* F41 */;  // F150-class: request-scoped entity
   row.customer_id = await linkDocContact('recurring_invoices', scopeId(req), row.entity_id, row.id, row.client, req);   // FA-B4: a saved contact
   await _auditRec(req, 'recurring_invoices', 'CREATE', null, row);   // FIX-3b
   res.json(row);
@@ -5921,7 +5943,8 @@ app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
   if (frequency != null) patch.frequency = frequency;
   if (next_run != null) patch.next_run = next_run;
   if (status != null) patch.status = status;
-  if (end_date != null) patch.end_date = end_date;
+  { const _ed = _recurringEndDate(req.body, patch.next_run != null ? patch.next_run : (_rinvr.data || {}).next_run);   // F41
+    if (_ed.error) return res.status(400).json(_ed.error); if (!_ed.skip) patch.end_date = _ed.value; }
   await db.updateById('recurring_invoices', Number(req.params.id), patch);
   if (patch.client != null) await relinkDocContact('recurring_invoices', scopeId(req), _rinvr.entity_id, _rinvr.id, _rinvr.data && _rinvr.data.client, patch.client, req);   // FA-B4b
   { const { rows: [_rin] } = await pool.query(`SELECT * FROM recurring_invoices WHERE id = $1 LIMIT 1`, [_rinvr.id]); if (_rin) await _auditRec(req, 'recurring_invoices', 'UPDATE', rowToObj(_rinvr), rowToObj(_rin)); }   // FIX-3b

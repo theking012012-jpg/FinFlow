@@ -368,7 +368,7 @@ Many headers further down still say OPEN / PARTIAL / FIX HELD from July–August
 | **F92** 🟠 money fields mutated as side effects | `verify-f92-recalc-audit` | 8/0 | both side-effect writers (`recalcInvoiceStatus`, `recalcBillStatus`) are audited. The structural "single audited write path" stays open as F90 — not claimed here |
 | **F107 / F111** 🟡 a login cannot see the accounts it can access | `verify-f111-access-visibility` · `verify-f111-ui-render` | 11/0 · 7/0 | `/api/my-access` reads the member axis; the page shows the scoped banner — **F111 done, F107's remediation shipped** |
 | **F149** 🟡 creating a 2nd business renames the 1st | `verify-f149-create-no-entity-rename` | 11/0 | creating a business no longer renames the existing one |
-| **F26** / F26-b | `verify-f26-receipt-entity-scoping` | 7/0 | receipts are entity-scoped; F26-b (legacy NULL-entity rows) stays an owner data decision (Rule 8) |
+| **F26** / F26-b | `verify-f26-receipt-entity-scoping` · `verify-f26b-entityless-lister` | 7/0 · 9/0 | receipts are entity-scoped; F26-b: read-only lister built 2026-11-06 (all 17 business tables) — assigning rows stays the owner's (Rule 8) |
 | **PL#5** 🟡 quotes never convert | `verify-lr9-quote-edit-convert` | 7/0 | Edit + Convert to invoice exist (LR9) and create a draft invoice through the one invoice writer |
 | **C3 / F37** 🔴 UTC record dates | `verify-n102-entity-record-dates` · `verify-f88-utc-parity` | 19/0 · 49/0 | server-filled dates use the business's calendar date; UTC businesses unchanged byte-for-byte |
 | **F88** fiscal year per user | `verify-f88-fiscal-year-per-business` | 9 failed → 10/0 (`269c72e`) | fixed this round — see F88 |
@@ -390,12 +390,11 @@ was `boot-failures-gate` TIMEOUT (NEW-24, fixed).
 the gate on his machine: GREEN) · 739/739 → PR #6 (containing #5 and #4) **merged to `main` as a fast-forward to `746696a`** — the
 exact commits swept. Railway auto-deploys `main`; F90's audit triggers and chain are created by `initDB()` at that boot.
 **Code — next, in order:**
-5. **F26-b** — read-only tool listing legacy entity-less sales receipts (the assignment itself is the owner's, Rule 8).
 6. **F52** — accessibility: `a11y-audit` reports 215 violation nodes across 10 pages (labels, contrast, keyboard).
 **Needs an owner decision:** F30 (custom permissions that really apply, or remove the save nothing reads) · F109 (close an
 investment position — holdings serve both sides of the wall) · F110 (test-clock re-pin strategy; the guard is in) · F83 (the
 sweep runner's exit code — by design for now) · F26-b (which business each legacy receipt belongs to).
-**Owner-only:** NEW-28 — run `tools/launch/list-renamed-businesses.js` (read-only) and decide what to rename back · NEW-23 — switch the app to the restricted login (OWNER_ACTIONS §11, ≈5 min; then run the schema step from the PC on
+**Owner-only:** F26-b — run `tools/launch/list-entityless-records.js` (read-only), decide each row's business · NEW-28 — run `tools/launch/list-renamed-businesses.js` (read-only) and decide what to rename back · NEW-23 — switch the app to the restricted login (OWNER_ACTIONS §11, ≈5 min; then run the schema step from the PC on
 every release) · ✅ 2026-11-03 `0ab6618` live; `list-status-violations.js` on production = 0 rows (NEW-27) · Railway `PLAID_ENV=production`, `DATABASE_CA_CERT` (F19) · Supabase network
 restrictions (Railway only) + 2FA on Supabase / Railway / GitHub + rotate the database password if ever shared · Resend logs (FA-L3c,
 LR17) · one look at live (G14) · lawyer review (NEW-21).
@@ -3390,6 +3389,7 @@ This is the accrual question, not a rounding one: under decisions 1 and 2 an exp
 **Verified** `tests/harness/verify-f26-receipt-entity-scoping.js` (real Postgres, real endpoints): two entities (R1=100→E1, R2=200→E2) + legacy NULL R0=50. Post-fix E1 revenue=150, E2 revenue=250, E1 list=[50,100], legacy visible to both — 7/7. **Fail-then-pass control** vs `HEAD:server.js`: the 3 leak assertions FAIL (both entities 350) while legacy-visibility passes on both builds → discriminates (Rules 4+14). Done-when met.
 **payments_received note:** the finding's original `payments_received` leg is moot — F32 removed it as a revenue leg and F86 found it empty in prod; it feeds no money surface, so there is nothing to scope there.
 **Was (stale):** PARTIAL — line refs 3919/2131/2170 pre-move; "backfill first or rows hide" applied only to strict scoping.
+**F26-b — tool built 2026-11-06.** Legacy rows stored with no business show under every business of their account (the null-inclusive read). The class is wider than receipts (Rule 13): `tools/launch/list-entityless-records.js` (read-only) covers every table carrying the F150 invariant `chk_<table>_entity_nn` — read from the database, so 17 tables today and any added later — per account: rows, amount total, creation dates, and the account's businesses as candidates ("one business: the obvious home"). **Executed:** `verify-f26b-entityless-lister` (real schema, legacy rows seeded as production has them, the real tool) 9/0: receipts 50 + 70 and an expense 30 listed for a two-business account, an invoice 400 for a one-business account, stamped rows excluded, nothing changed, no e-mail printed (one assertion labelled STRUCTURAL: SELECT-only source). RED = the tool did not exist. **Owner: run it; deciding each row's business is yours (Rule 8).**
 
 ---
 

@@ -3634,9 +3634,9 @@ app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
 const _holdingOwner = (req, entityId) => entityId != null ? scopeId(req) : req.session.userId;
 // LC3c: a holding is recorded where it lives — a business holding (entity_id set) on that business's audit trail, a
 // personal one (entity_id NULL) in the person's own history. Never both, never crossed.
-const _holdingHist = (req, action, oldRow, newRow) => {
+const _holdingHist = (req, action, oldRow, newRow, table = 'holdings') => {
   const r = newRow || oldRow || {};
-  return r.entity_id != null ? _auditRec(req, 'holdings', action, oldRow, newRow) : _persHist(req, r.user_id, 'holdings', action, oldRow, newRow);
+  return r.entity_id != null ? _auditRec(req, table, action, oldRow, newRow) : _persHist(req, r.user_id, table, action, oldRow, newRow);
 };
 async function _ownedHolding(req, id) {
   const { rows: [r] } = await pool.query(
@@ -3699,6 +3699,98 @@ app.delete('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
   await db.deleteById('holdings', parseInt(req.params.id));
   await _holdingHist(req, 'DELETE', _hOld, null);   // LC3c
   res.json({ ok: true });
+}));
+
+// ── F109 — CLOSE A POSITION / REALIZED GAINS ──────────────────────────────────────────────────────────────────────────
+// A holding can be closed in full or in part: realized gain = shares closed × (close price − the holding's average
+// cost). The record lives on the SAME side of the wall as the holding (written with the holding's own user_id /
+// entity_id — never from req.entityId for a personal one): a personal close is the person's, a business close is that
+// business's. It is TRACKING, not tax, and is NOT in operating profit (investment income is not operating revenue):
+// no books figure reads realized_gains. One transaction with the holding row locked, so two closes cannot sell the
+// same shares twice. A close can be undone (DELETE /api/realized-gains/:id): the shares go back at the cost they left at.
+const _r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+async function _holdingToday(entityId) {
+  let tz = null;
+  if (entityId != null) { const { rows: [e] } = await pool.query(`SELECT data->>'timezone' AS tz FROM entities WHERE id = $1`, [entityId]); tz = e && e.tz; }
+  return FinFlowDates.resolvedToday(new Date(), tz || null);
+}
+app.post('/api/holdings/:id/close', requireAuth, wrap(async (req, res) => {
+  const row = await _ownedHolding(req, req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  const shares = Number(b.shares), price = Number(b.price);
+  if (!(shares > 0) || !isFinite(shares)) return res.status(400).json({ error: 'Enter how many to close (more than 0).', code: 'BAD_SHARES' });
+  if (!(price >= 0) || !isFinite(price) || b.price === '' || b.price == null) return res.status(400).json({ error: 'Enter the price you closed at (0 or more).', code: 'BAD_PRICE' });
+  const today = await _holdingToday(row.entity_id);
+  const date = b.date ? String(b.date).slice(0, 10) : today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + 'T00:00:00Z'))) return res.status(400).json({ error: 'The close date must be a date (YYYY-MM-DD).', code: 'BAD_DATE' });
+  if (date > today) return res.status(400).json({ error: 'A close cannot be dated in the future.', code: 'FUTURE_DATE' });
+  const cx = await pool.connect();
+  let rec, after = null;
+  try {
+    await cx.query('BEGIN');
+    const { rows: [h] } = await cx.query(`SELECT * FROM holdings WHERE id = $1 FOR UPDATE`, [row.id]);
+    if (!h) { await cx.query('ROLLBACK'); return res.status(404).json({ error: 'Not found.' }); }
+    const cur = rowToObj(h), held = Number(cur.shares) || 0, cost = Number(cur.cost_per) || 0;
+    if (shares > held + 1e-9) { await cx.query('ROLLBACK'); return res.status(400).json({ error: `You hold ${held} — you cannot close ${shares}.`, code: 'TOO_MANY_SHARES', held }); }
+    const data = { holding_id: cur.id, ticker: cur.ticker, name: cur.name, asset_type: cur.asset_type, color: cur.color || null,
+      shares_closed: shares, close_price: price, avg_cost: cost, proceeds: _r2(shares * price), cost_basis: _r2(shares * cost),
+      gain: _r2(shares * (price - cost)), close_date: date };
+    const { rows: [ins] } = await cx.query(`INSERT INTO realized_gains (user_id, entity_id, data) VALUES ($1, $2, $3) RETURNING *`, [h.user_id, h.entity_id, data]);
+    rec = rowToObj(ins);
+    const left = held - shares;
+    if (left <= 1e-9) await cx.query(`DELETE FROM holdings WHERE id = $1`, [h.id]);
+    else { const { rows: [u] } = await cx.query(`UPDATE holdings SET data = jsonb_set(data, '{shares}', to_jsonb($2::numeric)), updated_at = NOW() WHERE id = $1 RETURNING *`, [h.id, left]); after = rowToObj(u); }
+    await cx.query('COMMIT');
+  } catch (e) { try { await cx.query('ROLLBACK'); } catch (_) {} throw e; } finally { cx.release(); }
+  await _holdingHist(req, 'CREATE', null, rec, 'realized_gains');
+  await _holdingHist(req, after ? 'UPDATE' : 'DELETE', row, after);
+  res.status(201).json({ realized: rec, holding: after });
+}));
+// Same wall as GET /api/holdings: business rows ONLY with scope=business (the active business); anything else PERSONAL.
+app.get('/api/realized-gains', requireAuth, wrap(async (req, res) => {
+  const biz = req.query.scope === 'business';
+  if (biz && req.entityId == null) return res.json({ rows: [], total: 0 });
+  const { rows } = biz
+    ? await pool.query(`SELECT * FROM realized_gains WHERE user_id = $1 AND entity_id = $2`, [scopeId(req), req.entityId])
+    : await pool.query(`SELECT * FROM realized_gains WHERE user_id = $1 AND entity_id IS NULL`, [req.session.userId]);
+  const list = rows.map(rowToObj).sort((a, b) => String(b.close_date).localeCompare(String(a.close_date)) || b.id - a.id);
+  res.json({ rows: list, total: _r2(list.reduce((t, r) => t + (Number(r.gain) || 0), 0)) });
+}));
+app.delete('/api/realized-gains/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [own] } = await pool.query(
+    `SELECT * FROM realized_gains WHERE id = $1 AND ((entity_id IS NULL AND user_id = $2) OR (entity_id IS NOT NULL AND user_id = $3)) LIMIT 1`,
+    [parseInt(req.params.id), req.session.userId, scopeId(req)]);
+  if (!own) return res.status(404).json({ error: 'Not found.' });
+  const cx = await pool.connect();
+  let back = null, before = null, gone = null;
+  try {
+    await cx.query('BEGIN');
+    const { rows: [g] } = await cx.query(`SELECT * FROM realized_gains WHERE id = $1 FOR UPDATE`, [own.id]);
+    if (!g) { await cx.query('ROLLBACK'); return res.status(404).json({ error: 'Not found.' }); }
+    gone = rowToObj(g);
+    const n = Number(gone.shares_closed) || 0, c = Number(gone.avg_cost) || 0;
+    // The holding it came from — or, if that was fully closed and later re-opened as a new row, the open holding of the
+    // same ticker on the SAME side of the wall: a position is one row per ticker per side, never a second one.
+    let { rows: [h] } = await cx.query(`SELECT * FROM holdings WHERE id = $1 AND user_id = $2 AND entity_id IS NOT DISTINCT FROM $3 FOR UPDATE`, [gone.holding_id, g.user_id, g.entity_id]);
+    if (!h) ({ rows: [h] } = await cx.query(`SELECT * FROM holdings WHERE user_id = $1 AND entity_id IS NOT DISTINCT FROM $2 AND upper(data->>'ticker') = upper($3) ORDER BY id LIMIT 1 FOR UPDATE`, [g.user_id, g.entity_id, gone.ticker]));
+    if (h) {   // still open: the shares come back; the average cost is re-weighted with the cost they left at
+      before = rowToObj(h);
+      const held = Number(before.shares) || 0, total = held + n;
+      const avg = total > 0 ? (held * (Number(before.cost_per) || 0) + n * c) / total : c;
+      const { rows: [u] } = await cx.query(`UPDATE holdings SET data = data || jsonb_build_object('shares', $2::numeric, 'cost_per', $3::numeric), updated_at = NOW() WHERE id = $1 RETURNING *`, [h.id, total, avg]);
+      back = rowToObj(u);
+    } else {   // fully closed: the position is re-opened as it was
+      const { rows: [i] } = await cx.query(`INSERT INTO holdings (user_id, entity_id, data) VALUES ($1, $2, $3) RETURNING *`,
+        [g.user_id, g.entity_id, { ticker: gone.ticker, name: gone.name, asset_type: gone.asset_type, color: gone.color, shares: n, cost_per: c, price: Number(gone.close_price) || c, dividend: 0 }]);
+      back = rowToObj(i);
+    }
+    await cx.query(`DELETE FROM realized_gains WHERE id = $1`, [g.id]);
+    await cx.query('COMMIT');
+  } catch (e) { try { await cx.query('ROLLBACK'); } catch (_) {} throw e; } finally { cx.release(); }
+  await _holdingHist(req, 'DELETE', gone, null, 'realized_gains');
+  await _holdingHist(req, before ? 'UPDATE' : 'CREATE', before, back);
+  res.json({ ok: true, holding: back });
 }));
 
 // ── BUDGET TARGETS ────────────────────────────────────────────────────────────

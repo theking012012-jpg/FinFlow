@@ -311,3 +311,126 @@
   })()
 
 })();
+
+// ── F109 (2026-11-06) — close a position (all or part) and the realized gains it records ─────────────────────────────
+// Realized gain = shares closed × (close price − average cost), computed and stored by the server
+// (POST /api/holdings/:id/close) on the SAME side of the wall as the holding. Shown on its own line under the holdings —
+// tracking only, never in operating profit. A close can be undone (the shares come back at the cost they left at).
+(function () {
+  'use strict';
+  // This file's convention: each block carries its own api() (the others are private to their blocks).
+  async function api(method, path, body) {
+    const opts = { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `API error ${res.status}`); }
+    return res.json();
+  }
+  const _esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const _money = (n) => (typeof S2 === 'function' ? S2(Number(n) || 0) : (Number(n) || 0).toFixed(2));
+  const _cache = { personal: null, business: null };
+  const _find = (id) => {
+    let h = (window.holdings || window.portfolioHoldings || []).find((x) => x.id === id), scope = 'personal';
+    if (!h) { h = (window.bizHoldings || []).find((x) => x.id === id); if (h) scope = 'business'; }
+    return { h, scope };
+  };
+  const _today = (scope) => {
+    try { if (scope === 'business' && typeof window._entityToday === 'function') return window._entityToday(); } catch (_) {}
+    const now = typeof window._clockNow === 'function' ? window._clockNow() : new Date();
+    return window.FinFlowDates ? window.FinFlowDates.resolvedToday(now, null) : now.toISOString().slice(0, 10);
+  };
+
+  window.openClosePosition = function (id) {
+    const { h, scope } = _find(id);
+    if (!h) { if (typeof notify === 'function') notify('That holding is no longer here — refresh the page.', true); return; }
+    const old = document.getElementById('ff-close-pos'); if (old) old.remove();
+    const m = document.createElement('div');
+    m.id = 'ff-close-pos'; m.className = 'modal-overlay';
+    m.dataset.holdingId = String(h._dbId || h.id); m.dataset.scope = scope; m.dataset.cost = String(Number(h.cost) || 0); m.dataset.held = String(Number(h.shares) || 0);
+    m.innerHTML = `<div class="modal" data-style="max-width:420px">
+      <div class="modal-header"><div class="modal-title">Close ${_esc(h.ticker)}</div><button class="modal-close" data-on-click="ffClosePosCancel()">&#215;</button></div>
+      <div data-style="font-size:12px;color:var(--t3);margin-bottom:10px">You hold ${_esc(h.shares)} at an average cost of ${_money(h.cost)}. Close all of it or part.</div>
+      <div class="field-wrap"><label class="field-label" for="cp-shares">How many to close</label><input class="finput" id="cp-shares" type="number" step="any" min="0" value="${_esc(h.shares)}" data-on-input="ffClosePosPreview()"></div>
+      <div class="field-wrap"><label class="field-label" for="cp-price">Close price (per unit)</label><input class="finput" id="cp-price" type="number" step="any" min="0" value="${_esc(h.price)}" data-on-input="ffClosePosPreview()"></div>
+      <div class="field-wrap"><label class="field-label" for="cp-date">Close date</label><input class="finput" id="cp-date" type="date" value="${_esc(_today(scope))}"></div>
+      <div id="cp-preview" data-style="font-size:13px;margin:8px 0 4px"></div>
+      <div data-style="font-size:11px;color:var(--t3);margin-bottom:12px">Tracking only — not tax advice. A realized gain is not counted in your operating profit.</div>
+      <div data-style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-ghost" data-on-click="ffClosePosCancel()">Cancel</button><button class="btn btn-primary" id="cp-submit" data-on-click="ffClosePosSubmit()">Close position</button></div>
+    </div>`;
+    document.body.appendChild(m);
+    window.ffClosePosPreview();
+  };
+  window.ffClosePosPreview = function () {
+    const m = document.getElementById('ff-close-pos'); if (!m) return;
+    const n = parseFloat(document.getElementById('cp-shares').value), p = parseFloat(document.getElementById('cp-price').value);
+    const el = document.getElementById('cp-preview');
+    if (!(n > 0) || !(p >= 0)) { el.textContent = ''; return; }
+    if (n > Number(m.dataset.held) + 1e-9) { el.textContent = 'You hold only ' + m.dataset.held + '.'; return; }
+    const g = n * (p - Number(m.dataset.cost));
+    el.textContent = 'Realized ' + (g >= 0 ? 'gain ' : 'loss ') + _money(Math.abs(g));
+  };
+  window.ffClosePosCancel = function () { const m = document.getElementById('ff-close-pos'); if (m) m.remove(); };
+  window.ffClosePosSubmit = async function () {
+    const m = document.getElementById('ff-close-pos'); if (!m) return;
+    const btn = document.getElementById('cp-submit'); if (btn) btn.disabled = true;
+    const scope = m.dataset.scope;
+    try {
+      const r = await api('POST', `/api/holdings/${m.dataset.holdingId}/close`, {
+        shares: parseFloat(document.getElementById('cp-shares').value),
+        price: parseFloat(document.getElementById('cp-price').value),
+        date: document.getElementById('cp-date').value,
+      });
+      m.remove();
+      const g = r && r.realized ? Number(r.realized.gain) : 0;
+      if (typeof notify === 'function') notify('Position closed — realized ' + (g >= 0 ? 'gain ' : 'loss ') + _money(Math.abs(g)));
+      if (typeof window._refreshHoldings === 'function') window._refreshHoldings(scope);
+      await window.loadRealizedGains(scope);
+    } catch (e) {
+      if (btn) btn.disabled = false;
+      if (typeof notify === 'function') notify('Could not close the position — ' + e.message, true);
+    }
+  };
+  window.ffUndoClose = async function (id, scope) {
+    if (!(await window._confirmModal('Undo this close? The shares go back into the holding at the cost they left at.', {}))) return;
+    try {
+      await api('DELETE', `/api/realized-gains/${id}`);
+      if (typeof notify === 'function') notify('Close undone');
+      if (typeof window._refreshHoldings === 'function') window._refreshHoldings(scope);
+      await window.loadRealizedGains(scope);
+    } catch (e) { if (typeof notify === 'function') notify('Could not undo — ' + e.message, true); }
+  };
+  function _render(scope) {
+    const box = document.getElementById(scope === 'business' ? 'biz-inv-realized' : 'inv-realized');
+    const d = _cache[scope]; if (!box || !d) return;
+    if (!d.rows.length) { box.innerHTML = ''; return; }
+    const sign = (g) => (g >= 0 ? '+' : '−') + _money(Math.abs(g));
+    box.innerHTML = `<div data-style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <div data-style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div><div data-style="font-weight:600;font-size:13px">Realized gains</div><div data-style="font-size:11px;color:var(--t3)">Closed positions — tracking only, not tax advice, and not part of operating profit</div></div>
+        <div data-style="font-family:var(--font-mono);font-weight:600;color:${d.total >= 0 ? 'var(--green)' : 'var(--red)'}" id="${scope === 'business' ? 'biz-inv-realized-total' : 'inv-realized-total'}">${sign(d.total)}</div>
+      </div>
+      ${d.rows.map((r) => `<div class="realized-row" data-style="display:grid;grid-template-columns:86px 1fr 1fr 90px 52px;gap:8px;align-items:center;font-size:12px;padding:4px 0">
+        <span data-style="color:var(--t3)">${_esc(r.close_date)}</span>
+        <span><strong>${_esc(r.ticker)}</strong></span>
+        <span data-style="color:var(--t2)">${_esc(r.shares_closed)} at ${_money(r.close_price)} (cost ${_money(r.avg_cost)})</span>
+        <span data-style="text-align:right;font-family:var(--font-mono);color:${Number(r.gain) >= 0 ? 'var(--green)' : 'var(--red)'}">${sign(Number(r.gain))}</span>
+        <button class="btn btn-ghost" data-style="padding:1px 6px;font-size:10px" title="Undo this close" data-arg-id="${r.id}" data-arg-scope="${scope}" data-on-click="ffUndoClose(Number(this.dataset.argId), this.dataset.argScope)">Undo</button>
+      </div>`).join('')}
+    </div>`;
+  }
+  window.loadRealizedGains = async function (scope) {
+    scope = scope === 'business' ? 'business' : 'personal';
+    try {
+      const d = await api('GET', '/api/realized-gains?scope=' + scope);
+      _cache[scope] = { rows: (d && d.rows) || [], total: Number(d && d.total) || 0, at: Date.now() };
+    } catch (e) { console.warn('[RealizedGains]', e && e.message); return; }
+    _render(scope);
+  };
+  // Called by the two list renderers themselves (app-main renderInvestments, app-24 renderBizInvestments — the copies
+  // that run; app-24 calls its LOCAL function, so a window.* wrapper would miss it). Lists repaint on every price tick,
+  // so the server is asked at most once a minute; in between the cached list is redrawn.
+  window._ffRealizedRender = function (scope) {
+    const c = _cache[scope];
+    if (!c || Date.now() - c.at > 60000) window.loadRealizedGains(scope); else _render(scope);
+  };
+})();

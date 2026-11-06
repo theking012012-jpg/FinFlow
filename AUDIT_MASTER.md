@@ -392,11 +392,10 @@ was `boot-failures-gate` TIMEOUT (NEW-24, fixed).
 re-run): NEW-27 `3602a3f` (status constraints validated at boot) · NEW-23 `0822a8d` (restricted app login, proven on the real
 schema) · F89 `b6dfec2` (server clock for every client "today") · F41 `c09308a` (recurring end dates) · NEW-28 `62c2356` (🔴 Settings
 renamed businesses — found by F108's related run) · F108 `87d12e8` (one business per name + country) · F26-b `5104976` (lister) ·
-NEW-25 `000b805` (a skipped check is not green) · F52 `7b96f22` (accessibility) · NEW-29 (Back button + modals). **No code item is left open.**
+NEW-25 `000b805` (a skipped check is not green) · F52 `7b96f22` (accessibility) · NEW-29 `b307a13` (Back button + modals). **No code item is left open.**
 **Release steps (owner):** (1) the 3× sweep on the branch head (≈750 harnesses now); (2) then main fast-forwards to the swept head.
-**Needs an owner decision:** F30 (custom permissions that really apply, or remove the save nothing reads) · F109 (close an
-investment position — holdings serve both sides of the wall) · F110 (test-clock re-pin strategy; the guard is in) · F83 (the
-sweep runner's exit code — by design for now).
+**Owner decisions — all four made 2026-11-06 (owner: "fix"):** F83 always strict (`68aa3e7`) · F30 the enforced role table, no
+dead save (`9eaec6d`) · F110 the pin never moves (`fb5e669`) · F109 close a position, built (see the row).
 **Owner-only, after the release:** NEW-28 — run `tools/launch/list-renamed-businesses.js` (read-only) and decide what to rename
 back · F26-b — run `tools/launch/list-entityless-records.js` (read-only), decide each row's business · F108 — if boot logs
 "ux_entities_user_name_country not created", run `tools/launch/list-duplicate-businesses.js` · NEW-23 — switch the app to the
@@ -2844,8 +2843,11 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 
 ---
 
-### F109 🟢 LOW (FEATURE) — Investments have no CLOSE-POSITION / realized-gain path — **NEW (2026-07-25, owner-requested)**
-**Status:** OPEN — feature, owner-gated. No code.
+### F109 ✅ BUILT + VERIFIED (2026-11-06, owner: "fix") — close a position; realized gains on their own line
+**Built as proposed below.** `POST /api/holdings/:id/close` {shares, price, date} — full or partial; realized gain = shares × (price − the holding's average cost), stored in `realized_gains` on the **holding's own side of the wall** (written with the holding's own user_id / entity_id — a personal close is the person's, a business close the business's; an accountant member's close of a business holding is the business's); one transaction with the holding row locked, so two closes cannot sell the same shares; a fully closed position is removed; a future date / more shares than held are refused. `GET /api/realized-gains?scope=` — the same wall as holdings. **Undo** (`DELETE /api/realized-gains/:id`): the shares go back at the cost they left at, re-weighting the average — into the original holding, or the open one of that ticker on the same side, or a re-opened one (never a second row). Tracking only: **no books figure reads `realized_gains`** — operating revenue / expenses / profit are untouched. History on the right side (business → audit trail; personal → personal history, kind "Closed position"). Pages: a **Close** button on every holding row (personal and business — both renderers, Rule 1: app-24 calls its local renderer, so each renderer calls the hook itself), a named Close dialog with a live gain preview, and a **"Realized gains"** line under each list with its total and Undo, labelled "tracking only, not tax advice, and not part of operating profit". The table follows business / account deletion (FK cascade).
+**Executed:** `verify-f109-close-position` (real server + Postgres, hand-computed): +200 / two simultaneous closes → one refused / −20 / +300 business; personal total 260, business 300, never crossed; operating figures unchanged; history sides; the accountant's close; undo re-weighting 4 @ 130 + 2 @ 100 → 6 @ 120 in one AAPL row — **RED 10 failed / 1 passed on `fb5e669` → GREEN 17/0** (found on the way: the second undo created a second AAPL row — fixed before commit). `verify-f109b-close-position-ui` (the real page): Close → preview → saved → line → Undo, and the business page — **RED 2/0 → GREEN 10/0**. Related 50/50 green (holdings, investments, personal history, account / business deletion, the wall, F52, the handler registry).
+**Not built (as proposed):** cash-flow integration (the follow-on).
+**Was:** 🟢 LOW (FEATURE) — Investments have no CLOSE-POSITION / realized-gain path — NEW (2026-07-25, owner-requested). OPEN — feature, owner-gated.
 
 Holdings are stored as an aggregate position (average cost; there is **no sell/close path** today — a position can only be added to or deleted wholesale, so a realized gain can never be recorded).
 

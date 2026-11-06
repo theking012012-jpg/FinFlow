@@ -4158,7 +4158,7 @@ window.loadPersonalFinance=loadPersonalFinance;
 
 // LC3c: Personal's own history (GET /api/personal-history — the person's rows, whichever business is in view). Shown
 // here only; it is never written to, or read from, the business audit trail.
-const _PH_KIND={personal_transactions:'Transaction',bank_lines:'Bank line',bank_import:'Statement import',bank_sync:'Bank sync',bank_link:'Linked bank',bank_settings:'Bank settings',personal_accounts:'Asset / liability',goals:'Goal',holdings:'Investment',snapshots:'Net-worth snapshot',recurring_personal_transactions:'Recurring transaction',owner_salary:'Owner salary'};
+const _PH_KIND={personal_transactions:'Transaction',bank_lines:'Bank line',bank_import:'Statement import',bank_sync:'Bank sync',bank_link:'Linked bank',bank_settings:'Bank settings',personal_accounts:'Asset / liability',goals:'Goal',holdings:'Investment',realized_gains:'Closed position',snapshots:'Net-worth snapshot',recurring_personal_transactions:'Recurring transaction',owner_salary:'Owner salary'};
 const _PH_ACT={CREATE:'Added',UPDATE:'Changed',DELETE:'Deleted',LINK:'Linked',UNLINK:'Unlinked',IMPORT:'Imported',SYNC:'Synced',CAPTURE:'Captured'};
 function _phWhat(r){
   const d=r.after_data||r.before_data||{};
@@ -4487,6 +4487,7 @@ function renderInvestments(){
       <div data-style="text-align:right">
         <span class="inv-perf-chip ${pos?'inv-perf-up':'inv-perf-dn'}">${pos?'▲':'▼'} ${Math.abs(glPct)}%</span>
         ${h.id!=null?`<div class="inv-row-actions" data-style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
+          <button class="btn btn-ghost" data-style="padding:1px 7px;font-size:10px" title="Close all or part of this position" data-arg-id="${h.id}" data-on-click="event.stopPropagation();openClosePosition(Number(this.dataset.argId))">Close</button>
           <button class="btn btn-ghost" data-style="padding:1px 7px;font-size:10px" title="Edit holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();editHolding(Number(this.dataset.argId))">Edit</button>
           <button class="btn btn-ghost" data-style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();deleteHolding(Number(this.dataset.argId))">✕</button>
         </div>`:''}
@@ -4494,6 +4495,7 @@ function renderInvestments(){
     </div>`;
   }).join('');
 
+  if(typeof window._ffRealizedRender==='function') window._ffRealizedRender('personal');   // F109: realized gains under the list
   // Donut chart
   buildInvDonut(holdings,totalValue);
   // Real forward-only performance series: capture today's value + load snapshots,

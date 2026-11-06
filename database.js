@@ -99,6 +99,7 @@ const TABLES = [
   'journals', 'chart_of_accounts', 'lock_settings', 'audit_log',
   'documents', 'templates', 'autocat_rules', 'support_requests',
   'api_keys',
+  'realized_gains',   // F109: a closed (part of a) holding — same side of the wall as the holding it came from
 ];
 
 async function initDB() {
@@ -1213,7 +1214,7 @@ async function initDB() {
           'budget_targets','documents','templates','autocat_rules','invoice_payments',
           'bank_reconciliation','inventory_movements','fx_rates','fx_transactions','goals',
           'personal_transactions','lock_settings','team_members',
-          'user_settings','personal_accounts','snapshots'
+          'user_settings','personal_accounts','snapshots','realized_gains'
         ];
         uid_only text[] := ARRAY['entities','ai_cache','ai_usage','password_resets','accountants'];
       BEGIN

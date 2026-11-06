@@ -557,6 +557,7 @@ document.addEventListener('click', e=>{
   function renderBizInvestments(){
     const list = document.getElementById('biz-inv-holdings-list');
     if(!list) return;
+    if(typeof window._ffRealizedRender==='function') window._ffRealizedRender('business');   // F109: realized gains under the list
     const hs = window.bizHoldings || [];
     const bizEl = (id, val) => { const e=document.getElementById(id); if(e) e.textContent=val; };
     // LR22: holdings are priced in USD (M36) — say US$, so a TTD (or any non-USD) business never reads them as its own dollars.
@@ -599,7 +600,8 @@ document.addEventListener('click', e=>{
         <div data-style="text-align:right;font-family:var(--font-mono);color:var(--teal)">
           ${inc>0?window._fmtMoney(inc,'US$'):'—'}
           ${h.id!=null?`<div data-style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
-            <button class="btn btn-ghost" data-style="padding:1px 7px;font-size:10px" title="Edit holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();editHolding(Number(this.dataset.argId))">Edit</button>
+            <button class="btn btn-ghost" data-style="padding:1px 7px;font-size:10px" title="Close all or part of this position" data-arg-id="${h.id}" data-on-click="event.stopPropagation();openClosePosition(Number(this.dataset.argId))">Close</button>
+          <button class="btn btn-ghost" data-style="padding:1px 7px;font-size:10px" title="Edit holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();editHolding(Number(this.dataset.argId))">Edit</button>
             <button class="btn btn-ghost" data-style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" data-arg-id="${h.id}" data-on-click="event.stopPropagation();deleteHolding(Number(this.dataset.argId))">✕</button>
           </div>`:''}
         </div>

@@ -22,6 +22,7 @@ const KINDS = {
   personal_accounts: 'Asset / liability',
   goals: 'Goal',
   holdings: 'Investment',
+  realized_gains: 'Closed position',   // F109
   snapshots: 'Net-worth snapshot',
   recurring_personal_transactions: 'Recurring transaction',
   owner_salary: 'Owner salary',

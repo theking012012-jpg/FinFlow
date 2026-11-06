@@ -59,7 +59,9 @@ const V = [
       const okAll = []; for (const v of [...vals, ...vals.map(x => x.toUpperCase()), '']) okAll.push(await test(v));
       A(`${t}: accepts ${vals.join(' / ')} (any case, or none)`, okAll.every(Boolean), JSON.stringify(okAll));
       A(`${t}: refuses a value the app never writes ('bogus')`, (await test('bogus')) === false);
-      A(`${t}: NOT VALID (old rows not scanned — Rule 8)`, k.convalidated === false);
+      // NEW-27 (2026-11-06): added NOT VALID, then VALIDATED at boot once every existing row fits (scratch: no rows).
+      // A constraint with a row that does not fit stays NOT VALID — verify-new27-status-constraints-validated.
+      A(`${t}: VALIDATED at boot (no existing row breaks it — NEW-27)`, k.convalidated === true);
     }
     // a REAL write is refused with 23514 (one end-to-end per kind: a real column and a JSONB status)
     const w = async (sql, p) => { try { await c.query(sql, p); return 'ok'; } catch (e) { return e.code; } };

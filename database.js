@@ -1443,7 +1443,42 @@ async function initDB() {
     )`);
   } catch (e) { console.warn('[DB] stripe_webhook_events table:', e.message.slice(0, 80)); }
 
+  // NEW-27 — after the schema transaction has committed, so a failure here can never roll back or block boot.
+  await validateStatusConstraints();
+
   return pool;
+}
+
+/**
+ * NEW-27 — VALIDATE every F79 status constraint (`chk_<table>_status`) that is still NOT VALID. Added NOT VALID, a
+ * constraint checks new writes only; validating it makes Postgres scan the existing rows once and record that every row
+ * fits. Each constraint is validated on its own statement: one that has a row which does not fit is LEFT NOT VALID and
+ * logged with the reason (list the rows with tools/launch/list-status-violations.js) — no row is changed (Rule 8) and boot
+ * never fails on it. VALIDATE takes SHARE UPDATE EXCLUSIVE: reads and writes continue. Once validated, a constraint is
+ * skipped on every later boot (only the catalogue SELECT runs). Production on 2026-11-03: 26 constraints, 0 rows that
+ * do not fit (owner's list-status-violations run).
+ */
+async function validateStatusConstraints(q = pool) {
+  const out = { validated: [], failed: [] };
+  let rows;
+  try {
+    // format(%s, regclass) and %I quote the identifiers the way Postgres itself does — nothing from a request is used.
+    ({ rows } = await q.query(
+      `SELECT conname, format('ALTER TABLE %s VALIDATE CONSTRAINT %I', conrelid::regclass, conname) AS sql
+         FROM pg_constraint
+        WHERE contype = 'c' AND conname LIKE 'chk\\_%\\_status' AND NOT convalidated
+        ORDER BY conname`));
+  } catch (e) { console.warn('[DB] NEW-27 status constraints: could not list:', e.message); return out; }
+  for (const r of rows) {
+    try { await q.query(r.sql); out.validated.push(r.conname); }
+    catch (e) {
+      out.failed.push({ constraint: r.conname, reason: e.message, code: e.code });
+      console.warn(`[DB] NEW-27 ${r.conname} left NOT VALID — existing rows do not fit (${e.code || ''} ${e.message}). `
+        + 'Nothing was changed; list them with: node tools/launch/list-status-violations.js');
+    }
+  }
+  if (out.validated.length) console.log(`[DB] NEW-27 validated ${out.validated.length} status constraint(s)`);
+  return out;
 }
 
 // ── Auto-create missing table (JSONB schema) ─────────────────────────────────
@@ -1709,4 +1744,4 @@ async function runMigrations(dbPool = pool, dir = path.join(__dirname, 'scripts'
   return result;
 }
 
-module.exports = { db, initDB, pool, rowToObj, DEFAULT_COA, ensureLedgerAccountsForEntity, runMigrations };
+module.exports = { db, initDB, pool, rowToObj, DEFAULT_COA, ensureLedgerAccountsForEntity, runMigrations, validateStatusConstraints };

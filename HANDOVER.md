@@ -12,7 +12,9 @@
 - **🔴 NEW-28** (found by F108's related run): on multi-business accounts, saving Settings renamed the active business to the
   account-wide business name. Fixed; production may hold renamed businesses → owner runs `tools/launch/list-renamed-businesses.js`.
 - **Next:** the owner's 3× sweep on the branch head → fast-forward main → the owner-only list in AUDIT_MASTER "OUTSTANDING"
-  (NEW-28 / F26-b listers, NEW-23 switch-over §11). Decisions still the owner's: F30, F109, F110, F83.
+  (NEW-28 / F26-b listers, NEW-23 switch-over §11). The four owner decisions were made 2026-11-06 (owner: "fix"): F83 gates
+  always strict, F30 the enforced role table (no dead save), F110 the pin never moves, F109 close a position (built). Also NEW-29
+  (Back button + modals).
 - New read-only tools (tools/launch): list-renamed-businesses, list-entityless-records, list-duplicate-businesses. New owner tool:
   scripts/db-app-role.js (NEW-23). Sweep: a SKIP line now makes a harness not green (NEW-25); boot-failures-gate parallel (NEW-24).
 

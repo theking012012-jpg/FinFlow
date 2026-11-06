@@ -11,7 +11,8 @@ docs commit, fast-forwarded onto `main` (which was `14709a6`, the commit the 557
 > **2026-11-06: every outstanding code item built** (branch `feat/outstanding-2026-11-06`, awaiting the owner's 3× sweep): the
 > app's restricted database login (NEW-23 — owner switch-over, OWNER_ACTIONS §11), status rules validated (NEW-27), server clock
 > for periods (F89), recurring end dates (F41), one business per name + country (F108), accessibility (F52), and 🔴 NEW-28 (Settings
-> renamed businesses — fixed; owner checks production with the read-only lister). Owner decisions left: F30, F109, F110, F83.
+> renamed businesses — fixed; owner checks production with the read-only lister), NEW-29, and the four owner decisions made and
+> built: F83, F30, F110, F109 (close an investment position, realized gains — tracking only).
 
 > **2026-11-03: release.** PR #6 (with #5, #4) merged to `main` at `746696a` after the owner's 3× sweep (739/739 · 738/739 ·
 > 739/739; the red = NEW-24, a test-gate timeout, fixed and re-run green). Brings the database-written, tamper-evident audit

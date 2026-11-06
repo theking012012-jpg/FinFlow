@@ -283,10 +283,12 @@
         var el = document.getElementById(ENT_PROFILE_FIELDS[f]);
         if (!el) return;
         var v = prof[f];
-        if (v == null || v === '') v = _accountProfile[f];
-        // business_name falls back to the entity's own switcher name before the account blob, so a
-        // brand-new entity shows its own name rather than another entity's business name.
+        // business_name falls back to the entity's own switcher name BEFORE the account blob, so a business shows its
+        // own name rather than another business's. NEW-28: the code did the opposite of this comment (account first), and
+        // since saving Settings renames the active business from this box, saving on a second business renamed it to
+        // the account's business name.
         if ((v == null || v === '') && f === 'business_name' && ent && ent.name) v = ent.name;
+        if (v == null || v === '') v = _accountProfile[f];
         el.value = (v == null) ? '' : v;
       });
       // B1b: this business's invoice-number prefix (repainted on a switch like the profile; "INV-" when unset).

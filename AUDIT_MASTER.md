@@ -373,7 +373,7 @@ Many headers further down still say OPEN / PARTIAL / FIX HELD from July–August
 | **C3 / F37** 🔴 UTC record dates | `verify-n102-entity-record-dates` · `verify-f88-utc-parity` | 19/0 · 49/0 | server-filled dates use the business's calendar date; UTC businesses unchanged byte-for-byte |
 | **F88** fiscal year per user | `verify-f88-fiscal-year-per-business` | 9 failed → 10/0 (`269c72e`) | fixed this round — see F88 |
 | **F110** 🟡 clock pin / seed re-pin hazard | read | — | the guard landed (header says so); the re-pin *strategy* is still open (test tooling only) |
-| **F108** 🟡 entity has no jurisdiction | read | — | `entities.data.country` exists since F191 (country per business); a `(name, country)` unique key is not built — open as design |
+| **F108** one business per name + country | executed | ✅ | FIXED 2026-11-06 — route rule + guarded unique index + lister |
 | **F89** browser clock | executed | ✅ | FIXED 2026-11-06 — server clock for every client today |
 | **F41** bills | executed | ✅ | FIXED 2026-11-06 — end date in the form, on edit, one rule on every recurring type |
 
@@ -390,8 +390,6 @@ was `boot-failures-gate` TIMEOUT (NEW-24, fixed).
 the gate on his machine: GREEN) · 739/739 → PR #6 (containing #5 and #4) **merged to `main` as a fast-forward to `746696a`** — the
 exact commits swept. Railway auto-deploys `main`; F90's audit triggers and chain are created by `initDB()` at that boot.
 **Code — next, in order:**
-4. **F108** — no rule against two businesses in one account with the same name and country; a guarded unique index + a read-only
-   duplicate lister (country exists since F191).
 5. **F26-b** — read-only tool listing legacy entity-less sales receipts (the assignment itself is the owner's, Rule 8).
 6. **F52** — accessibility: `a11y-audit` reports 215 violation nodes across 10 pages (labels, contrast, keyboard).
 **Needs an owner decision:** F30 (custom permissions that really apply, or remove the save nothing reads) · F109 (close an
@@ -2852,7 +2850,9 @@ Holdings are stored as an aggregate position (average cost; there is **no sell/c
 
 ---
 
-### F108 🟡 MEDIUM (DESIGN/DATA) — Entities have no JURISDICTION attribute — blocks a real `(name, jurisdiction)` uniqueness key and jurisdiction-aware accounting — **NEW (2026-07-25, owner-identified)**
+### F108 ✅ FIXED + VERIFIED (2026-11-06) — was 🟡 MEDIUM — one business per (account, name, country)
+**Fixed 2026-11-06.** The jurisdiction exists since F191 (`entities.data.country`, required on create). One rule on create AND on rename / country change (`_dupBusiness`, server.js): a second business in the same account with the same name (case and outer spaces ignored) in the same country → **409 `DUPLICATE_BUSINESS`** naming the existing one; another country or another account is fine; businesses with no country (legacy) are outside the key. The guarantee: `ux_entities_user_name_country` (unique, partial on country) — created at boot only when no existing businesses break it, else skipped and logged with the read-only lister `tools/launch/list-duplicate-businesses.js` (Rule 8: nothing changed); a race past the route → 23505 → 409 in the error handler. Found on the way, fixed here: the 5-second double-click guard matched the NAME only, so "Beta Co" (CA) created within 5 s of "Beta Co" (US) silently returned the US business — it now matches name + country. Onboarding's retry after a dropped connection (the business created, the settings save lost) meets the 409 first now → it treats a 409 naming that business as "already created" exactly like its 402 path (`app-15-steps.js`). **Executed:** `verify-f108-unique-business` (real server + Postgres + initDB + the lister) — **RED 7 failed / 6 passed on `c09308a` → GREEN 15/0**. Related: 53 entity / sanctions / scope / onboarding harnesses — 52 green and **`verify-f88-fiscal-year-per-business` red, which exposed NEW-28** (Settings renamed a business to the account name — fixed in its own commit `62c2356`); `verify-onboarding-provision` (outside that list, caught by the NEW-25 sweep check) red → the retry fix above. Re-run green: f108 15/0, onboarding-provision 31/0, f88 10/0, c12, c13, f149.
+**Was:** 🟡 MEDIUM (DESIGN/DATA) — Entities have no JURISDICTION attribute — blocks a real `(name, jurisdiction)` uniqueness key and jurisdiction-aware accounting — NEW (2026-07-25, owner-identified)
 **Status:** OPEN — design + owner-supplied backfill required. No code. **Prerequisite for C1 Wave 1b** (the `entities` unique key).
 
 An entity today has a display name but **no structured jurisdiction**. Consequences: `entities` cannot take a meaningful hard unique key (name alone is not unique across jurisdictions — see C1 Wave 1b), and no leg can be jurisdiction-aware.

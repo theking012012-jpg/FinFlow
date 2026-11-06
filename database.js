@@ -1446,6 +1446,18 @@ async function initDB() {
     )`);
   } catch (e) { console.warn('[DB] stripe_webhook_events table:', e.message.slice(0, 80)); }
 
+  // F108 — one business per (account, name, country). Created only if no existing businesses break it: if some do, it
+  // is skipped and logged (nothing changed — Rule 8); list them with tools/launch/list-duplicate-businesses.js, and the
+  // next boot after they are renamed creates it. Businesses without a country are outside the key.
+  try {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS ux_entities_user_name_country
+      ON entities (user_id, lower(btrim(data->>'name')), upper(data->>'country'))
+      WHERE COALESCE(data->>'country', '') <> ''`);
+  } catch (e) {
+    console.warn(`[DB] F108 ux_entities_user_name_country not created — existing businesses share a name and country (${e.code || ''} ${e.message}). `
+      + 'Nothing was changed; list them with: node tools/launch/list-duplicate-businesses.js');
+  }
+
   // NEW-27 — after the schema transaction has committed, so a failure here can never roll back or block boot.
   await validateStatusConstraints();
 

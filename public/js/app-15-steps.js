@@ -256,7 +256,7 @@ async function _completeOnboarding(d){
   if(!d.address){ if(typeof notify==='function') notify('Business address is required', true); _obGotoStep(1); return; }
   const _btn=document.getElementById('ob-next-btn'); if(_btn) _btn.disabled=true;
   try{
-    // 1) Provision the first entity. Clean path is a single POST (201). On a 402 (entity cap) a PRIOR
+    // 1) Provision the first entity. Clean path is a single POST (201). On a 409 DUPLICATE_BUSINESS (F108) or a 402 (entity cap) a PRIOR
     //    half-completed attempt already created this account's one entity but its settings save failed;
     //    outside the 5s dedupe window a blind re-create would dead-end the retry (Rule 9). So on 402
     //    only, verify an entity actually exists and, if so, complete onboarding off it. A real input
@@ -265,10 +265,14 @@ async function _completeOnboarding(d){
       body:JSON.stringify({name:d.bizName,currency:d.currency,country:d.country})});
     if(!entRes.ok){
       let _entityExists=false;
+      const _eb=await entRes.json().catch(()=>({}));
+      // F108: a retry outside the 5s window now meets the one-business-per-name-and-country rule first — a 409 that
+      // names THIS business (same name + country, existing_id) is the same half-completed case: carry on with it.
+      if(entRes.status===409 && _eb && _eb.code==='DUPLICATE_BUSINESS' && _eb.existing_id) _entityExists=true;
       if(entRes.status===402){
         try{ const gr=await fetch('/api/entities',{credentials:'include'}); if(gr.ok){ const rows=await gr.json(); _entityExists=Array.isArray(rows)&&rows.length>0; } }catch(_e){}
       }
-      if(!_entityExists){ const e=await entRes.json().catch(()=>({})); if(typeof notify==='function') notify(e.error||'Could not create your business. Please try again.', true); if(_btn)_btn.disabled=false; return; }
+      if(!_entityExists){ if(typeof notify==='function') notify(_eb.error||'Could not create your business. Please try again.', true); if(_btn)_btn.disabled=false; return; }
     }
     // 2) Save account settings.
     const setRes=await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',

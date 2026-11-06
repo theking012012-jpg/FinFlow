@@ -1906,6 +1906,19 @@ app.get('/api/entities', requireAuth, wrap(async (req, res) => {
   // owners / all-access members (req.entityAccess null) see all.
   res.json(await db.allByUser('entities', scopeId(req), r => !Array.isArray(req.entityAccess) || req.entityAccess.includes(r.id), (a, b) => a.sort_order - b.sort_order));
 }));
+// F108 (2026-11-06): one account cannot hold two businesses with the same name (ignoring case and outer spaces) in the
+// same country — the same name in another country is a different business. Checked on create and on rename / country
+// change; the database's ux_entities_user_name_country index (database.js) is the guarantee behind it (a race → 409 via
+// the error handler). Legacy businesses with no country are not compared (no jurisdiction to compare).
+async function _dupBusiness(uid, name, country, exceptId) {
+  if (!name || !country) return null;
+  const { rows: [d] } = await pool.query(
+    `SELECT id, data->>'name' AS name FROM entities
+      WHERE user_id = $1 AND lower(btrim(data->>'name')) = lower(btrim($2)) AND upper(data->>'country') = upper($3) AND id <> $4 LIMIT 1`,
+    [uid, String(name), String(country), Number(exceptId) || 0]);
+  return d || null;
+}
+const _dupBusinessAnswer = (d, country) => ({ error: `You already have a business called "${d.name}" in ${String(country).toUpperCase()}. Use a different name, or open that one.`, code: 'DUPLICATE_BUSINESS', existing_id: d.id });
 app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c', timezone, country } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'Name is required.' });
@@ -1920,8 +1933,11 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   if (_badCountry(country)) return res.status(400).json({ error: 'Invalid country code. Use a 2-letter ISO code such as CA.' });
   { const _emb = Sanctions.embargoed(country); if (_emb) return res.status(400).json(Sanctions.refusal(_emb)); }   // Terms §11 — at the write
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
-  const _dup = await findRecentDuplicate('entities', scopeId(req), null, { textMatch: { name: name.trim().slice(0,100) } });
+  // F108: the double-click guard matches name AND country — by name alone, "Acme Ltd" (CA) created within 5 s of "Acme Ltd"
+  // (US) silently returned the US business.
+  const _dup = await findRecentDuplicate('entities', scopeId(req), null, { textMatch: { name: name.trim().slice(0,100), country: String(country) } });
   if (_dup) return res.status(200).json(_dup);
+  { const _same = await _dupBusiness(scopeId(req), name, country, 0); if (_same) return res.status(409).json(_dupBusinessAnswer(_same, country)); }   // F108
   // PL#3: enforce the plan's entity cap SERVER-SIDE — RBAC (entities:manage) governs WHO may manage
   // entities, not HOW MANY. Without this a direct API call bypasses the UI gate and creates unlimited
   // entities past the plan. req.userPlan is attached by the trial-expiry middleware. Dedupe runs
@@ -1988,6 +2004,9 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   if (_fyv != null && _fyv !== '' && !_FY_MONTH_NAMES.includes(String(_fyv))) return res.status(400).json({ error: 'The fiscal year starts in a month — January to December.', code: 'BAD_FISCAL_YEAR' });
   const _bp = (req.body || {}).bill_prefix;   // FA-M5c: same rule for the bill-number prefix (empty → "BILL-")
   if (_bp != null && !/^[A-Za-z0-9\-\/#_. ]{0,12}$/.test(String(_bp))) return res.status(400).json({ error: 'The bill prefix can use letters, numbers and - / # _ . (up to 12 characters).', code: 'BAD_BILL_PREFIX' });
+  { // F108: the name / country this business will have after the edit must not be another business's in this account
+    const _nn = name ? String(name).trim() : row.name, _nc = country !== undefined ? (country ? String(country) : null) : row.country;
+    const _same = await _dupBusiness(scopeId(req), _nn, _nc, row.id); if (_same) return res.status(409).json(_dupBusinessAnswer(_same, _nc)); }
   await db.updateById('entities', row.id, {
     ...(_ip != null && { invoice_prefix: String(_ip).trim() }),
     ...(_fyv != null && { fiscal_year: _fyv === '' ? null : String(_fyv) }),
@@ -15670,6 +15689,8 @@ async function _badStatusAnswer(err) {
 }
 app.use(async (err, req, res, _next) => {
   try { const b = await _badStatusAnswer(err); if (b) return res.status(400).json(b); } catch (_) {}
+  if (err && err.code === '23505' && err.constraint === 'ux_entities_user_name_country')   // F108: a race past the route check
+    return res.status(409).json({ error: 'You already have a business with that name in that country.', code: 'DUPLICATE_BUSINESS' });
   // F157: honour a typed, client-safe status set upstream (e.g. db.insert's NO_ACTIVE_ENTITY 400).
   // Only errors explicitly marked `expose` leak their message; everything else stays a generic 500.
   if (err && err.expose === true && Number.isInteger(err.status)) {

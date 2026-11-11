@@ -15498,13 +15498,32 @@ function _saneQuote(q) {
   return { ...q, price, dayChange: chg, dayChangePct: pct };
 }
 
+// N3-13 (live re-audit 2026-11-11; owner chose option (a)): the server values holdings from the STORED `price` — the
+// accountant portal's net worth + "Portfolio" (accountant-routes.js) and the net-worth / portfolio snapshots
+// (/api/snapshots/capture) — but the live quote only ever reached the owner's screen, so a holding added with an empty
+// "Current price" stayed at its COST forever (live: accountant net worth 14,000 vs the owner's 15,985.10). A quote the
+// owner's page fetches is now saved to that person's holdings of the symbol — at most ONCE PER DAY per holding
+// (price_as_of), so the F90 audit trigger records one valuation change a day, not one per page load. Best effort: a
+// failure here never fails the quote. Both scopes (business holdings are scopeId-owned, personal are the person's own).
+async function _persistQuote(req, symbol, price) {
+  if (!(Number(price) > 0)) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const owners = [...new Set([req.session && req.session.userId, scopeId(req)].filter(v => v != null).map(Number))];
+  if (!owners.length) return;
+  try {
+    await pool.query(
+      `UPDATE holdings SET data = data || jsonb_build_object('price', $3::numeric, 'price_as_of', $4::text), updated_at = NOW()
+        WHERE user_id = ANY($1::int[]) AND upper(COALESCE(data->>'ticker', '')) = $2 AND COALESCE(data->>'price_as_of', '') <> $4`,
+      [owners, symbol, Number(price), day]);
+  } catch (e) { console.warn('[N3-13] could not save the quote for ' + symbol + ': ' + e.message); }
+}
 app.get('/api/stock-price', requireAuth, async (req, res) => {
   const symbol = (req.query.symbol || '').toString().trim().toUpperCase();
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
 
   // Serve a fresh cached quote without touching the upstream API.
   const cached = _quoteCache.get(symbol);
-  if (cached && Date.now() - cached.ts < _QUOTE_TTL_MS) return res.json(cached.data);
+  if (cached && Date.now() - cached.ts < _QUOTE_TTL_MS) { await _persistQuote(req, symbol, cached.data && cached.data.price); return res.json(cached.data); }   // N3-13
 
   // Asset class: the client passes &type= from the holding (crypto vs stock/etf/…). That both routes to
   // the right provider AND disambiguates cross-class ticker collisions (e.g. ARB = Arbor Realty stock
@@ -15566,6 +15585,7 @@ app.get('/api/stock-price', requireAuth, async (req, res) => {
     }
     out = _saneQuote(out);
     if (out.price != null) _quoteCache.set(symbol, { data: out, ts: Date.now() });
+    await _persistQuote(req, symbol, out.price);   // N3-13: the stored price follows the market (once a day)
     return res.json(out);
   } catch (e) {
     // Transient network error → serve stale cache if we have it, else a clean error.

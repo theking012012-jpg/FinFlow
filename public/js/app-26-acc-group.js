@@ -488,6 +488,8 @@ window.sendAcctAttachment = function(inputEl){
   reader.readAsDataURL(f);
 };
 
+// N3-21: the label is decided by WHO sent it (sender), not by sender_name — the live copy of the owner's own message
+// carries the accountant-side name "Client", so the owner saw their message as "Client" until a reload.
 function renderAccountantMessages() {
   const el = document.getElementById('acct-chat-thread');
   if (!el) return;
@@ -507,7 +509,7 @@ function renderAccountantMessages() {
     return `<div data-style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px">
       <div data-style="max-width:80%;background:${isMe?'var(--acc)':'var(--bg3)'};color:${isMe?'#0e0b08':'var(--t1)'};padding:9px 13px;border-radius:${isMe?'14px 14px 4px 14px':'14px 14px 14px 4px'};font-size:13.5px;line-height:1.5">${_acctEsc(m.content)}</div>
       ${att}
-      <div data-style="font-size:11px;color:var(--t3);padding:0 4px">${_acctEsc(m.sender_name)} · ${dateStr}${seen}</div>
+      <div data-style="font-size:11px;color:var(--t3);padding:0 4px">${isMe ? 'You' : _acctEsc(m.sender_name || 'Your accountant')} · ${dateStr}${seen}</div>
     </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;

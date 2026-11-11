@@ -850,6 +850,10 @@ window.ffPersBankSync = async function(){
   else window.ffPersBankRender();
 };
 window.ffPersBankUnlink = async function(provider, itemId){
+  // N3-7 (live re-audit 2026-11-11): unlinking was one click with no confirmation (business AND personal). It stops the
+  // feed for good (re-linking means a new Plaid / Belvo sign-in), so it asks first — the app's own danger dialog.
+  if (!(await _ffConfirmUnlink(provider === 'belvo' ? 'Disconnect this bank (Belvo)?' : 'Unlink this bank?',
+        'New transactions stop arriving. Transactions already imported stay in your personal feed.'))) return;
   const path = provider === 'belvo' ? '/api/belvo/disconnect' : '/api/plaid/unlink';
   try{
     const r = await fetch(path + '?scope=personal', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(provider === 'belvo' ? {} : {item_id:itemId})});
@@ -869,7 +873,13 @@ window.ffBankSync = async function(){
     if(typeof loadBankingFromDB==='function') loadBankingFromDB();
   }catch(e){ if(typeof notify==='function') notify('Network error during sync.', true); }
 };
+// N3-7: one confirm for every bank unlink / disconnect (Cancel → no request is sent).
+async function _ffConfirmUnlink(title, detail){
+  if (typeof window._confirmModal !== 'function') return window.confirm ? window.confirm(title + ' ' + detail) : false;
+  return !!(await window._confirmModal(title + ' ' + detail, { danger: true, okText: 'Unlink' }));
+}
 window.ffBankUnlink = async function(itemId){
+  if (!(await _ffConfirmUnlink('Unlink this bank from the business?', 'New transactions stop arriving. Lines already imported stay in Banking and in your books.'))) return;   // N3-7
   try{
     const r = await fetch('/api/plaid/unlink', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({item_id:itemId})});
     const j = await r.json().catch(()=>({}));

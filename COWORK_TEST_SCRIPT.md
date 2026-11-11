@@ -14,7 +14,8 @@ in the browser, exactly as a user would. Enter the exact values given. After eac
    asks for real banking details, stop that step, mark it **BLOCKED**, and move on.
 4. **Expected values are exact.** Dashboard cards round big numbers (for example $15.4K). A card **passes** if it
    rounds the exact figure correctly. Report pages show the exact figure, and that must match to the cent.
-5. **Dates:** these expected values assume you run the test between **11 Oct and 31 Oct 2026**. If today is later,
+5. **Dates:** the base values assume a run between **11 Oct and 31 Oct 2026**; where a figure changes with the run date
+   (overdue after 31 Oct, Netflix from 1 Nov) the script now gives both values (N3-3, 2026-11-11). If today is later,
    note the date at the top of your report. Some "overdue" figures will differ, and that is expected.
 6. Use **Year** (or "This fiscal year", Jan–Dec 2026) whenever a page has a period selector, unless told otherwise.
 7. If an action fails with an error message, copy the message exactly.
@@ -229,7 +230,7 @@ Northwind is in the United States, so this should open **Plaid**.
 | Revenue | 16,200.00 | $16.2K |
 | Expenses | 11,005.00 | $11.0K |
 | Net Profit | 4,805.00 | $4.8K |
-| Outstanding | 2,400.00 | $2,400 |
+| Outstanding | 2,700.00 | $2,700 |
 
 How these are worked out, so you can see where a wrong number comes from:
 - **Revenue** = 12,000 + 2,500 + 1,200 + 800 stock sale (2.7) − 300 credit note = **16,200**. The draft (9,000) is
@@ -237,22 +238,26 @@ How these are worked out, so you can see where a wrong number comes from:
 - **Expenses** = expenses 1,920 + bank fee 35 + bills 1,050 + payroll 8,000 = **11,005**. Cost of goods (390) is shown
   separately, and the stock bill (180) is not an expense.
 - **Net** = 16,200 − 390 − 11,005 = **4,805**.
-- **Outstanding** = (2,500 − 1,000) + 1,200 − 300 credit = **2,400**.
+- **Outstanding** = Bright (2,500 − 1,000) 1,500 + Delta 1,200 = **2,700**. Acme's 300 credit is **not** subtracted: Acme owes
+  nothing (I1 is paid), so under G13 (owner decision 2026-11-01) it is a *customer deposit* (a liability on the balance
+  sheet), not a smaller receivable for Bright or Delta. Outstanding equals the balance sheet's Accounts receivable (N3-1/N3-2,
+  2026-11-11). Before that fix the app showed 2,400 — that was the bug.
 
 **Reports → Profit & Loss (Year):** Revenue 16,200.00 · Cost of goods sold 390.00 · Gross profit 15,810.00 · Payroll
 8,000.00 · Total expenses 11,005.00 · Net profit 4,805.00.
 - By month: Mar revenue 12,000 · Aug revenue 3,300 (2,500 + 800 stock sale) and COGS 390 · Sep revenue −300 and expenses 10,550 (rent 1,500 +
   bills 1,050 + payroll 8,000) · Oct revenue 1,200 and expenses 455 (240 + 180 + 35).
 
-**Reports → Balance Sheet:** Cash 2,495.00 · Accounts receivable 2,400.00 · Inventory 90.00 · Total assets 4,985.00 ·
-Accounts payable 180.00 · Payroll liabilities 0.00 · Total liabilities 180.00 · Equity 4,805.00. Assets must equal
-liabilities + equity.
+**Reports → Balance Sheet:** Cash 2,495.00 · Accounts receivable 2,700.00 · Inventory 90.00 · Total assets 5,285.00 ·
+Accounts payable 180.00 · Payroll liabilities 0.00 · Customer deposits 300.00 (Acme's credit, G13) · Total liabilities
+480.00 · Equity 4,805.00. Assets must equal liabilities + equity.
 - Cash, worked out: received 13,000 + 800 stock sale = 13,800. Paid out: expenses 1,955 + CloudHost 400 + Paper Supply 650 + net wages 6,700 +
   withholdings 1,300 + stock 300 = 11,305. Cash = 13,800 − 11,305 = **2,495**.
 
-**Overdue (AR / invoices page / aged receivables):** total overdue **1,500.00** — Bright Labs' 1,500 past due. Acme's
-unapplied 300 credit reduces only **Acme's** overdue (none), never another customer's; it still reduces Outstanding
-(2,400). Count of overdue invoices: **1**. (If you run this before 2026-10-31; Delta Co falls due that day.)
+**Overdue (AR / invoices page / aged receivables / accountant portal):** run **before 2026-10-31**: **1,500.00**, count **1**
+(Bright Labs). Run **on or after 2026-10-31** (Delta Co falls due that day): **2,700.00**, count **2** (Bright 1,500 + Delta
+1,200). Acme's unapplied 300 credit reduces only **Acme's** overdue (none) and never another customer's — overdue must not
+read 2,400 (the N3-1 bug). The AR report's per-customer rows must add up to its total, with no negative Acme row.
 
 **Reports → Income Tax Estimate:** set the "Income tax" line to **20 %** of taxable income.
 - Taxable income **5,020.00** = net 4,805 + non-deductible lunch 180 + bank fee 35. (A fee booked from the bank feed
@@ -325,7 +330,8 @@ Open **Personal** (sidebar). Set the period to **Year**, and the personal curren
 | Expense | Groceries | Groceries | 320.00 | 2026-10-04 |
 | Expense | Gym | Healthcare | 60.00 | 2026-10-01 |
 
-- Recurring: **Netflix**, 15.99, monthly, starting **2026-11-01**. It must **not** count yet (it starts in the future).
+- Recurring: **Netflix**, 15.99, monthly, starting **2026-11-01**. Run before 1 Nov: it must **not** count yet (it starts in
+  the future). Run on or after 1 Nov: it counts once (15.99).
 
 ### 5.2 "Your bank" card (Personal page)
 
@@ -363,7 +369,7 @@ Date,Description,Amount
 | Figure | Expected |
 |---|---|
 | Income (year) | **5,845.00** = 1,800 + 4,000 owner salary + 45 refund (card ≈ $5.8K) |
-| Spending (year) | **394.50** = 320 + 60 + 14.50 |
+| Spending (year) | **394.50** = 320 + 60 + 14.50 (run on/after 1 Nov: **410.49**, + Netflix 15.99) |
 | Net worth | **12,500 + 10 × P_AAPL** (= 10,000 + 8,000 − 5,500 + portfolio) |
 | Portfolio | **10 × P_AAPL**; cost basis 1,500.00 |
 | Emergency fund | **66.7 %** (10,000 of 15,000) |
@@ -397,11 +403,13 @@ Date,Description,Amount
 6.4 Back as the business owner, approve the accountant connection. Give access to **Northwind Studio: view**, and
 **Personal: none**.
 - 6.4a The accountant sees Northwind's figures: revenue 16,200.00, COGS 390.00, operating expenses 11,005.00, net
-  profit 4,805.00, outstanding 2,400.00, taxable income 5,020.00.
+  profit 4,805.00, outstanding 2,700.00, taxable income 5,020.00; overdue as in 3.4 (by run date). The Tax Summary shows the
+  owner's 20 % line (estimated tax 1,004.00) — not "Not set up" (N3-11).
 - 6.4b The accountant does **not** see Island Traders, and does **not** see any personal data.
 
 6.5 Owner changes Personal access to **view**.
-- 6.5a The accountant now sees personal: income **5,845.00**, expense **394.50**, net worth **12,500 + 10 × P_AAPL**,
+- 6.5a The accountant now sees personal: income **5,845.00**, expense **394.50** (410.49 on/after 1 Nov), net worth
+  **12,500 + 10 × P_AAPL** — the SAME market value the owner's Personal page shows, not 12,500 + the 1,500 cost (N3-13),
   and the list shows PAYPAL REFUND as income (not as spending).
 - 6.5b Owner sets Personal back to **none** → it disappears from the accountant's view again.
 
@@ -452,9 +460,9 @@ Northwind → Payroll → the September 2026 run → **Void**. Confirm the promp
 |---|---|
 | Dashboard Expenses (Year) | **3,005.00** (11,005 − 8,000 payroll), card ≈ $3.0K |
 | Dashboard Net Profit (Year) | **12,805.00** (card ≈ $12.8K) |
-| Revenue / COGS / Outstanding | unchanged: 16,200.00 / 390.00 / 2,400.00 |
+| Revenue / COGS / Outstanding | unchanged: 16,200.00 / 390.00 / 2,700.00 |
 | Balance Sheet cash | **10,495.00** (2,495 + net wages 6,700 + withholdings 1,300 reversed) |
-| Balance Sheet payroll liabilities | 0.00 · equity **12,805.00** · total assets **12,985.00** |
+| Balance Sheet payroll liabilities | 0.00 · customer deposits 300.00 · total liabilities 480.00 · equity **12,805.00** · total assets **13,285.00** |
 | Income Tax Estimate | taxable **13,020.00**, tax at 20 % **2,604.00** |
 | Personal income (Year) | **1,845.00**: the 4,000 owner-salary row is **gone** |
 

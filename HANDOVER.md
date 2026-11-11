@@ -5,6 +5,27 @@
 
 ---
 
+## ⚡ UPDATE 2026-11-11 — live re-audit on dab2 (account cowork.test+3) → findings N3-1…N3-13 — read this first
+
+- **Live re-audit** of `COWORK_TEST_SCRIPT.md` after the owner's clean 3× sweep: Parts 1–8 run (Part 9 void + 6.5b pending).
+  Every Part 3.4 / P&L / export / payroll / FIFO / tax / Part 4 / wall figure exact. 13 findings in AUDIT_MASTER
+  "LIVE RE-AUDIT 2026-11-10/11 — N3 rows". **Money bugs first:** N3-1 overdue capped by net outstanding (FA-M2 undone when a
+  credit's customer owes nothing — date-dependent, hid until Delta fell due 31 Oct), N3-11 accountant portal reads the
+  owner's tax lines from `users` instead of `user_settings`, N3-13 accountant/snapshots value the personal portfolio at the
+  stored (cost) price, not market.
+- **Fixed 2026-11-11 on branch `fix/n3-1-receivable-g13`** — commits `09e4367` (N3-1/2), `7e27ad6` (N3-9/10), `18c042a`
+  (N3-11/12), `fd87cce` (N3-13); each RED on the old code → GREEN, counts in the AUDIT_MASTER rows: N3-1 + N3-2 (receivable per customer == BS AR; overdue capped by it — `verify-n3-1-receivable-g13`
+  1/10 → 11/0, 58/58 related), N3-9 + N3-10 (`/join` checkbox + pay terms from tier-config — `verify-n3-9-10-join-page`
+  3/8 → 11/0), N3-11 + N3-12 (portal reads tax lines from user_settings; breakdown adds up — `verify-n3-11-portal-tax-lines`
+  RED → 10/0, 82/82 + 21/21 related), N3-13 option (a) (quote saved once a day — `verify-n3-13-portfolio-market-price`
+  3/5 → 8/0). `verify-fc1-overdue-date` structural regex updated (it pinned the N3-1 bug).
+- **Still open:** N3-4 (client staleness after stock sale), N3-5 (should stop with N3-13 — unverified), N3-6 (Bank Rec
+  category picker), N3-7 (unlink confirm), N3-8 (minor UX); live Part 9 (void) + 6.5b not yet run.
+- **Next:** owner 3× sweep in PowerShell on the pushed branch → fast-forward `main` (auto-deploys) → re-check live. Behaviour change to flag: Outstanding on the COWORK seed reads 2,700 (was 2,400) — Acme's credit is a deposit (G13).
+- **Docs:** COWORK_TEST_SCRIPT expectations updated for G13 + run dates (N3-3). Live audit method: Claude does NOT type
+  passwords or create accounts on the production host — the owner signs in; Claude pre-fills emails and drives the rest.
+  Owner and accountant share one session cookie in a browser, so they alternate (or use two different browsers).
+
 ## ⚡ UPDATE 2026-11-03 — `main` = `746696a` (PR #6, #5, #4 merged) — read this first
 
 - **Released:** PR #6 (owner decisions round 2; contains #5 and #4) fast-forwarded onto `main` at `746696a`, the exact commits

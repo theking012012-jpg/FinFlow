@@ -2348,18 +2348,24 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // Several accountants (owner decision 2026-11-01): a client route names the accountant (accountantId in the query or
   // body); without one it is the most recent active link (a client with one accountant needs nothing new).
   const _reqAccId = req => { const v = parseInt((req.query && req.query.accountantId) || (req.body && req.body.accountantId), 10); return Number.isInteger(v) && v > 0 ? v : null; };
+  // N3-17: with MORE THAN ONE active accountant and no accountantId, the request does not say whose thread it is — it was
+  // answered from the most recently invited accountant (a message meant for one went to the other). It is now refused,
+  // exactly as PUT /my-accountant/access already refuses it: { ambiguous: true } → every caller answers 400 WHICH_ACCOUNTANT.
   const _clientLink = async (userId, accountantId = null) => {
     const { rows } = await pool.query(
       `SELECT accountant_id, accountant_last_read FROM accountant_clients
-        WHERE user_id = $1 AND status = 'active' AND ($2::int IS NULL OR accountant_id = $2) ORDER BY invited_at DESC LIMIT 1`,
+        WHERE user_id = $1 AND status = 'active' AND ($2::int IS NULL OR accountant_id = $2) ORDER BY invited_at DESC LIMIT 2`,
       [userId, accountantId]
     ).catch(() => ({ rows: [] }));
+    if (accountantId == null && rows.length > 1) return { ambiguous: true };
     return rows[0] || null;
   };
+  const _whichAccountant = res => res.status(400).json({ error: 'You work with more than one accountant — say which one.', code: 'WHICH_ACCOUNTANT' });
 
   app.get('/api/accountants/my-accountant/messages', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const link = await _clientLink(req.session.userId, _reqAccId(req));
+    if (link && link.ambiguous) return _whichAccountant(res);   // N3-17
     if (!link) return res.json({ messages: [], otherLastRead: null, accountantId: null });
     const accId = link.accountant_id;
     const { rows } = await pool.query(
@@ -2387,6 +2393,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const content = String(req.body.content || req.body.message || '').trim().slice(0, 2000);
     if (!content) return res.status(400).json({ error: 'Message required.' });
     const link = await _clientLink(req.session.userId, _reqAccId(req));
+    if (link && link.ambiguous) return _whichAccountant(res);   // N3-17
     if (!link) return res.status(404).json({ error: 'No linked accountant.' });
     const accId = link.accountant_id;
     const row = await pool.query(
@@ -2404,6 +2411,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.post('/api/accountants/my-accountant/typing', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).end();
     const link = await _clientLink(req.session.userId, _reqAccId(req));
+    if (link && link.ambiguous) return _whichAccountant(res);   // N3-17
     if (!link) return res.status(404).end();
     _chatBroadcast(_convKey(link.accountant_id, req.session.userId), 'typing', { by: 'client' }, { exceptSide: 'client' });
     res.json({ ok: true });
@@ -2412,6 +2420,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.get('/api/accountants/my-accountant/stream', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).end();
     const link = await _clientLink(req.session.userId, _reqAccId(req));
+    if (link && link.ambiguous) return _whichAccountant(res);   // N3-17
     if (!link) return res.status(404).end();
     _openSse(res);
     const key = _convKey(link.accountant_id, req.session.userId);
@@ -2427,6 +2436,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.post('/api/accountants/my-accountant/attach', apiLimiter, wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const link = await _clientLink(req.session.userId, _reqAccId(req));
+    if (link && link.ambiguous) return _whichAccountant(res);   // N3-17
     if (!link) return res.status(404).json({ error: 'No linked accountant.' });
     const accId = link.accountant_id;
     const a = _decodeAttachment(req.body);
@@ -2528,6 +2538,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.get('/api/accountants/my-accountant/proposals', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const link = await _clientLink(req.session.userId, _reqAccId(req));
+    if (link && link.ambiguous) return _whichAccountant(res);   // N3-17
     if (!link) return res.json({ proposals: [], accountantId: null });
     const { rows } = await pool.query(
       `SELECT id,title,scope,fee_cents,currency,billing,status,accepted_at,declined_at,created_at
@@ -2602,6 +2613,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.get('/api/accountants/my-accountant/tasks', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const link = await _clientLink(req.session.userId, _reqAccId(req));
+    if (link && link.ambiguous) return _whichAccountant(res);   // N3-17
     if (!link) return res.json({ tasks: [], accountantId: null });
     const { rows } = await pool.query(
       `SELECT id,title,detail,due_date,status,done_at,created_at FROM accountant_tasks

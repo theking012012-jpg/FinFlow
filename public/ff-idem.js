@@ -31,6 +31,17 @@
   });
   var orig = window.fetch && window.fetch.bind(window);
   if (!orig) return;
+  // N3-14 (live re-audit 2026-11-11): ONE stock-change counter, bumped by every same-origin write to /api/inventory*
+  // (stock in / out, restock, product save / edit / delete — all pass through here) when it is SENT and again when it
+  // is ANSWERED. An inventory list load whose request started before a stock change answers with an OLDER count; the
+  // loaders compare ffStockGen() at start vs on arrival and re-read instead of overwriting the newer list (a Stock In
+  // followed by a sale was refused "Quantity exceeds stock on hand" when a page-open load landed in between).
+  // A load whose request went out WHILE a stock write was in flight can be read by the server mid-write and still answer
+  // before that write does (counter unchanged during the load) — so a loader first waits for in-flight stock writes to
+  // settle (ffStockSettled), THEN compares the counter with the one it started with.
+  window.__ffStockGen = 0; var stockInflight = 0, stockWaiters = [];
+  window.ffStockGen = function () { return window.__ffStockGen; };
+  window.ffStockSettled = function () { return stockInflight === 0 ? Promise.resolve() : new Promise(function (r) { stockWaiters.push(r); }); };
   window.fetch = function (input, init) {
     try {
       var url = typeof input === 'string' ? input : (input && input.url) || '';
@@ -51,7 +62,9 @@
           if (isH) h.set('Idempotency-Key', key); else init.headers = Object.assign({}, h || {}, { 'Idempotency-Key': key });
           if (fromGesture) { mine = g; g.inflight++; }
         }
-        var done = function () { if (mine) { mine.inflight = Math.max(0, mine.inflight - 1); mine.doneAt = Date.now(); } };
+        var stock = /^\/api\/inventory/.test(u.pathname);   // N3-14
+        if (stock) { window.__ffStockGen++; stockInflight++; }
+        var done = function () { if (stock) { window.__ffStockGen++; stockInflight = Math.max(0, stockInflight - 1); if (!stockInflight) { var w = stockWaiters; stockWaiters = []; w.forEach(function (f) { try { f(); } catch (_) {} }); } } if (mine) { mine.inflight = Math.max(0, mine.inflight - 1); mine.doneAt = Date.now(); } };
         return orig(input, init).then(function (res) {
           done();
           if (res && res.headers && res.headers.get('Idempotent-Replayed') === 'true') {

@@ -136,6 +136,7 @@
   }
 
   async function ffLoadData() {
+    var _stockGen0 = typeof window.ffStockGen==='function' ? window.ffStockGen() : 0;   // N3-14
     var res = await Promise.all([
       FF_API.getInvoices().catch(function(){return [];}),
       FF_API.getExpenses().catch(function(){return [];}),
@@ -155,7 +156,10 @@
     if(typeof window.customers!=='undefined')
       window.customers=res[2].map(function(r){return{_dbId:r.id,id:r.id,fname:r.fname,lname:r.lname,company:r.company,industry:r.industry,email:r.email,phone:r.phone,revenue:r.revenue,status:r.status,notes:r.notes||''};});
 
-    if(typeof window.inventory!=='undefined')
+    // N3-14: a stock change while this boot load was in flight → this inventory answer is older than the list on screen.
+    if(typeof window.ffStockSettled==='function') await window.ffStockSettled();
+    if(typeof window.ffStockGen==='function' && window.ffStockGen()!==_stockGen0){ if(typeof window.loadInventoryFromDB==='function') window.loadInventoryFromDB(); }
+    else if(typeof window.inventory!=='undefined')
       window.inventory=res[3].map(function(r){return{_dbId:r.id,id:r.id,sku:r.sku,name:r.name,units:r.units,max:r.max_units,cost:r.cost,low:r.low_stock===1};});
 
     if(typeof window.payrollEmployees!=='undefined')
@@ -1214,10 +1218,15 @@
     // Boot: load saved inventory
     let _inventoryFetched = false;
 
-    async function loadInventoryFromDB() {
+    async function loadInventoryFromDB(_retry) {
       try {
         const _eidInv = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
+        const _gen = typeof window.ffStockGen === 'function' ? window.ffStockGen() : 0;   // N3-14
         const rows = await api('GET', '/api/inventory' + (_eidInv ? '?entity_id=' + _eidInv : ''));
+        // N3-14: a stock change was sent or answered while this load was in flight — this answer is older than the list
+        // on screen. Re-read (the server has the change now) rather than overwrite the newer count with the older one.
+        if (typeof window.ffStockSettled === 'function') await window.ffStockSettled();
+        if (typeof window.ffStockGen === 'function' && window.ffStockGen() !== _gen) { if ((_retry || 0) < 3) return loadInventoryFromDB((_retry || 0) + 1); return; }
         _inventoryFetched = true;
         console.log('[Inventory] API returned', rows ? rows.length : 0, 'rows');
         if (Array.isArray(rows)) {   // C1: an empty answer replaces the list (an empty business kept the previous one's stock)
@@ -1240,6 +1249,7 @@
       }
     }
     loadInventoryFromDB();
+    window.loadInventoryFromDB = loadInventoryFromDB;   // N3-14: the multi-resource loads hand a stale inventory answer to it
 
     function nextSku() {
       const nums = (window.inventory || [])

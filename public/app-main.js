@@ -1461,6 +1461,7 @@ async function loadEntityData(idx){
     if (!_eid) { console.warn('[Entity] No _dbId found for idx', idx); _loadEntityDataRunning = false; return; }
     const _eq = '?entity_id='+_eid;
     console.log('[Entity] Loading data for entity_id='+_eid+' ('+_entityObj?.name+')');
+    const _stockGen0 = typeof window.ffStockGen==='function' ? window.ffStockGen() : 0;   // N3-14
     const [invRes, expRes, custRes, invtRes, payRes] = await Promise.all([
       fetch('/api/invoices'+_eq,   {credentials:'include'}),
       fetch('/api/expenses'+_eq,   {credentials:'include'}),
@@ -1537,11 +1538,15 @@ async function loadEntityData(idx){
     // Replace customers
     customers = custs.map(c=>({...c, _dbId:c.id}));
 
-    // Replace inventory
-    inventory = invt.map(r=>({_dbId:r.id, sku:r.sku, name:r.name, units:r.units, max:r.max_units||200, reorder_level:(r.reorder_level!=null&&r.reorder_level!=='')?Number(r.reorder_level):null, cost:r.cost, low:!!r.low_stock}));   // G5
+    // Replace inventory — N3-14: unless a stock change happened while this load was in flight (then this answer is older
+    // than the list on screen; the one inventory loader re-reads it). A business SWITCH always replaces (other entity).
+    if (typeof window.ffStockSettled==='function') await window.ffStockSettled();   // N3-14: let an in-flight stock write finish first
+    const _stockStale = typeof window.ffStockGen==='function' && window.ffStockGen()!==_stockGen0 && (window.inventory||[]).length && typeof window.loadInventoryFromDB==='function';
+    if (_stockStale) window.loadInventoryFromDB();
+    else inventory = invt.map(r=>({_dbId:r.id, sku:r.sku, name:r.name, units:r.units, max:r.max_units||200, reorder_level:(r.reorder_level!=null&&r.reorder_level!=='')?Number(r.reorder_level):null, cost:r.cost, low:!!r.low_stock}));   // G5
     // C1: the Inventory page (finflow-api-wiring-medium.js renderInventory, the runtime winner) reads window.inventory,
     // which only the boot loader set — so after a business switch the page kept the PREVIOUS business's stock.
-    window.inventory = inventory;
+    if (!_stockStale) window.inventory = inventory;
 
     // Update payroll — always reset employees per entity (no stale cross-entity rows)
     payrollEmployees = (payroll||[]).filter(r=>!r.is_owner).map(r=>({

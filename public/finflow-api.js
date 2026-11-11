@@ -135,6 +135,7 @@
   }
 
   async function ffLoadData() {
+    var _stockGen0 = typeof window.ffStockGen==='function' ? window.ffStockGen() : 0;   // N3-14
     var res = await Promise.all([
       FF_API.getInvoices().catch(function(){return [];}),
       FF_API.getExpenses().catch(function(){return [];}),
@@ -154,7 +155,10 @@
     if(typeof window.customers!=='undefined')
       window.customers=res[2].map(function(r){return{_dbId:r.id,id:r.id,fname:r.fname,lname:r.lname,company:r.company,industry:r.industry,email:r.email,phone:r.phone,revenue:r.revenue,status:r.status,notes:r.notes||''};});
 
-    if(typeof window.inventory!=='undefined')
+    // N3-14: a stock change while this boot load was in flight → this inventory answer is older than the list on screen.
+    if(typeof window.ffStockSettled==='function') await window.ffStockSettled();
+    if(typeof window.ffStockGen==='function' && window.ffStockGen()!==_stockGen0){ if(typeof window.loadInventoryFromDB==='function') window.loadInventoryFromDB(); }
+    else if(typeof window.inventory!=='undefined')
       window.inventory=res[3].map(function(r){return{_dbId:r.id,id:r.id,sku:r.sku,name:r.name,units:r.units,max:r.max_units,cost:r.cost,low:r.low_stock===1};});
 
     if(typeof window.payrollEmployees!=='undefined')

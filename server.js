@@ -231,6 +231,7 @@ async function suspendClientForUser(userId) {
     `UPDATE accountant_clients SET status = 'suspended' WHERE user_id = $1 AND status = 'active'`,
     [userId]
   );
+  try { require('./accountant-routes').chatEndLink(userId); } catch (_) {}   // N3-19: end that client's open chat streams
 }
 async function reactivateClientForUser(userId) {
   if (!userId) return;

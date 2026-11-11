@@ -237,6 +237,18 @@ function _chatBroadcast(key, event, data, opts = {}) {
   }
 }
 
+// N3-19: when a link stops being active (owner revokes, accountant suspends / rejects, the client's subscription ends),
+// every chat stream still open on that conversation is ENDED — a stream used to outlive the link that authorised it.
+// accountantId null = every accountant of that client (the subscription-ended path).
+function _chatEndLink(userId, accountantId = null) {
+  for (const [key, set] of [..._chatHub.entries()]) {
+    const [acc, uid] = key.split(':').map(Number);
+    if (uid !== Number(userId) || (accountantId != null && acc !== Number(accountantId))) continue;
+    for (const e of set) { try { e.res.write('event: ended\ndata: {}\n\n'); e.res.end(); } catch (_) {} }
+    _chatHub.delete(key);
+  }
+}
+
 // Is a given side (client|accountant) currently watching this conversation over SSE? Used to decide
 // whether a message needs an offline EMAIL nudge — if the recipient's stream is open they got it live.
 function _sideOnline(key, side) {
@@ -1515,6 +1527,7 @@ If you cannot find a field, use null. Be concise.`;
       `UPDATE accountant_clients SET status = 'rejected' WHERE user_id = $1 AND accountant_id = $2`,
       [userId, req.session.accountantId]
     );
+    _chatEndLink(userId, req.session.accountantId);   // N3-19
     await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_REJECT', field: 'status', newValue: 'rejected', req });  // F90 Phase B (accountant)
     return res.json({ success: true });
   }));
@@ -1608,6 +1621,7 @@ If you cannot find a field, use null. Be concise.`;
       SET status = 'suspended'
       WHERE user_id = $1 AND status = 'active' AND accountant_id = $2
     `, [userId, req.session.accountantId]);
+    _chatEndLink(userId, req.session.accountantId);   // N3-19
 
     await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_SUSPEND', field: 'status', newValue: 'suspended', req });  // F90 Phase B (accountant)
     return res.json({ success: true, message: 'Client commission suspended. No further payouts until client reactivates.' });
@@ -2148,6 +2162,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const r = await pool.query(
       `UPDATE accountant_clients SET status = 'revoked' WHERE user_id = $1 AND accountant_id = $2 AND status IN ('active', 'suspended', 'pending') RETURNING status`,
       [req.session.userId, accountantId]);
+    _chatEndLink(req.session.userId, accountantId);   // N3-19
     if (!r.rowCount) return res.status(404).json({ error: 'This accountant has no access to revoke.' });
     await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', action: 'CLIENT_REVOKE', field: 'status', newValue: 'revoked', newData: { by: 'client', accountant_id: accountantId }, req });
     return res.json({ success: true });
@@ -3091,3 +3106,4 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 //                  Set x-cron-secret: your-secret-here header
 //
 // ═══════════════════════════════════════════════════════════════════════════════
+module.exports.chatEndLink = _chatEndLink;   // N3-19: server.js suspendClientForUser (subscription ended)

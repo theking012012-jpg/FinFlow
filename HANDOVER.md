@@ -19,8 +19,12 @@
   3/8 → 11/0), N3-11 + N3-12 (portal reads tax lines from user_settings; breakdown adds up — `verify-n3-11-portal-tax-lines`
   RED → 10/0, 82/82 + 21/21 related), N3-13 option (a) (quote saved once a day — `verify-n3-13-portfolio-market-price`
   3/5 → 8/0). `verify-fc1-overdue-date` structural regex updated (it pinned the N3-1 bug).
-- **Still open:** N3-4 (client staleness after stock sale), N3-5 (should stop with N3-13 — unverified), N3-6 (Bank Rec
-  category picker), N3-7 (unlink confirm), N3-8 (minor UX); live Part 9 (void) + 6.5b not yet run.
+- **Also fixed 2026-11-11 (same branch):** `2de0c4b` N3-7 (confirm before unlinking a bank — 3/6 → 9/0, related 26/26),
+  `57a9ca9` N3-6 (Bank Rec "Book expense" takes a category — 1/3 → 4/0, related 27/27), `d0ad4ae` N3-4 (the customer a
+  stock sale creates reaches Customers without a reload — RED → 4/0; the stale-cards part did NOT reproduce, no change).
+- **Still open:** N3-5 (should stop with N3-13 — unverified), N3-8 (minor UX), N3-14 (`verify-stock-in-out-ui` flaky
+  under load on the OLD code too — expect an intermittent red in the 3× sweep until investigated); live Part 9 (void) +
+  6.5b not yet run (needs the owner signed in).
 - **Next:** owner 3× sweep in PowerShell on the pushed branch → fast-forward `main` (auto-deploys) → re-check live. Behaviour change to flag: Outstanding on the COWORK seed reads 2,700 (was 2,400) — Acme's credit is a deposit (G13).
 - **Docs:** COWORK_TEST_SCRIPT expectations updated for G13 + run dates (N3-3). Live audit method: Claude does NOT type
   passwords or create accounts on the production host — the owner signs in; Claude pre-fills emails and drives the rest.

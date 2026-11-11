@@ -5,7 +5,7 @@
 
 ---
 
-## ⚡ UPDATE 2026-11-11 — live re-audit on dab2 (account cowork.test+3) → findings N3-1…N3-13 — read this first
+## ⚡ UPDATE 2026-11-11 — live re-audit on dab2 (account cowork.test+3) → findings N3-1…N3-16 — read this first
 
 - **Live re-audit** of `COWORK_TEST_SCRIPT.md` after the owner's clean 3× sweep: Parts 1–8 run (Part 9 void + 6.5b pending).
   Every Part 3.4 / P&L / export / payroll / FIFO / tax / Part 4 / wall figure exact. 13 findings in AUDIT_MASTER
@@ -22,9 +22,15 @@
 - **Also fixed 2026-11-11 (same branch):** `2de0c4b` N3-7 (confirm before unlinking a bank — 3/6 → 9/0, related 26/26),
   `57a9ca9` N3-6 (Bank Rec "Book expense" takes a category — 1/3 → 4/0, related 27/27), `d0ad4ae` N3-4 (the customer a
   stock sale creates reaches Customers without a reload — RED → 4/0; the stale-cards part did NOT reproduce, no change).
-- **Still open:** N3-5 (should stop with N3-13 — unverified), N3-8 (minor UX), N3-14 (`verify-stock-in-out-ui` flaky
-  under load on the OLD code too — expect an intermittent red in the 3× sweep until investigated); live Part 9 (void) +
-  6.5b not yet run (needs the owner signed in).
+- **Also fixed 2026-11-11 (later, same branch):** `54e2170` N3-14 (a real UI race, not a flaky test: an inventory load that
+  started before a Stock In overwrote its count → the sale was refused; one shared stock-write counter in `ff-idem.js` —
+  deterministic harness 2 red → 4/0, `verify-stock-in-out-ui` 12/12 under load, related 238/243 with the 5 reds green solo),
+  `2186184` N3-5 (the "+149900%" came from a ZERO first snapshot used as baseline, NOT N3-13 — 1/2 → 3/0, related 15/15),
+  `2f50cbc` N3-8a (toasts were drawn under the onboarding window / modals — 4/2 → 6/0), `386f1f1` N3-8c (phone "+" covered
+  the last row's ✕ — 10/6 → 16/0). N3-8b (income category picker) did NOT reproduce — no change.
+- **Still open:** N3-15 (Investments period window compares dates as Date — Rule 10, low), N3-16 (five harnesses red under
+  4-wide load, green solo — may show as intermittent reds in the 3× sweep), access-matrix staleness note (N3-4); live Part 9
+  (void) + 6.5b not yet run (needs the owner signed in).
 - **Next:** owner 3× sweep in PowerShell on the pushed branch → fast-forward `main` (auto-deploys) → re-check live. Behaviour change to flag: Outstanding on the COWORK seed reads 2,700 (was 2,400) — Acme's credit is a deposit (G13).
 - **Docs:** COWORK_TEST_SCRIPT expectations updated for G13 + run dates (N3-3). Live audit method: Claude does NOT type
   passwords or create accounts on the production host — the owner signs in; Claude pre-fills emails and drives the rest.

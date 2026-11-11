@@ -16,6 +16,7 @@
   
 <meta charset="UTF-8">
 <script src="/ff-idem.js"></script>
+<script src="/js/ff-pw-eye.js"></script>   <!-- show/hide on every password field (sign-in gate, Settings, modals) -->
 <script src="/ff-csp.js"></script><script src="/_gen/ff-handlers.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
@@ -2425,7 +2426,6 @@
       <div data-style="font-size:11.5px;color:var(--t2);margin-bottom:5px;font-weight:500">Password</div>
       <div data-style="position:relative">
         <input class="finput" type="password" id="login-pw" placeholder="Your password" data-style="width:100%;padding-right:40px" data-on-keydown="if(event.key==='Enter')doLogin()">
-        <button type="button" class="pw-eye" aria-label="Show password" aria-pressed="false" data-on-click="ffPwToggle(this,'login-pw')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
       </div>
     </div>
     <div id="login-error" data-style="font-size:11.5px;color:var(--red,#e05454);min-height:18px;margin-bottom:.5rem"></div>
@@ -2454,7 +2454,6 @@
       <div data-style="font-size:11.5px;color:var(--t2);margin-bottom:5px;font-weight:500">Password</div>
       <div data-style="position:relative">
         <input class="finput" type="password" id="reg-pw" placeholder="At least 8 characters" data-style="width:100%;padding-right:40px" data-on-keydown="if(event.key==='Enter')doRegister()">
-        <button type="button" class="pw-eye" aria-label="Show password" aria-pressed="false" data-on-click="ffPwToggle(this,'reg-pw')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
       </div>
     </div>
     <div id="register-error" data-style="font-size:11.5px;color:var(--red,#e05454);min-height:18px;margin-bottom:.5rem"></div>

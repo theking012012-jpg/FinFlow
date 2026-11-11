@@ -4597,12 +4597,14 @@ function buildInvPerfChart(period){
   // `pts[0]||1`) printed "+149900.0%". History starts at the first non-zero point.
   const _fromNonZero=a=>{ const i=a.findIndex(s=>Math.abs(Number(s.value)||0)>0.005); return i<0?[]:a.slice(i); };
   snaps=_fromNonZero(snaps);
-  const now=new Date(); let cutoff=null;
-  if(period==='1m'){cutoff=new Date(now);cutoff.setMonth(now.getMonth()-1);}
-  else if(period==='3m'){cutoff=new Date(now);cutoff.setMonth(now.getMonth()-3);}
-  else if(period==='ytd'){cutoff=new Date(now.getFullYear(),0,1);}
-  else if(period==='1y'){cutoff=new Date(now);cutoff.setFullYear(now.getFullYear()-1);}
-  let series = cutoff ? _fromNonZero(snaps.filter(s=>new Date(s.date)>=cutoff)) : snaps;
+  // N3-15 (Rule 10): the window is compared as DATE STRINGS. `new Date(s.date)` (UTC midnight) >= "now − 1 month" (an
+  // instant with the time of day) dropped the window's first day at UTC and west of it. Cutoff = the viewer's today
+  // (personal data — the viewer is the owner) minus whole calendar months, day clamped to the month's length.
+  const _today=todayLocal(); const _ty=+_today.slice(0,4), _tm=+_today.slice(5,7), _td=+_today.slice(8,10);
+  const _back=n=>{ let y=_ty, m=_tm-n; while(m<1){m+=12;y--;} const dim=new Date(Date.UTC(y,m,0)).getUTCDate(); return y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(_td,dim)).padStart(2,'0'); };
+  const cutoff = period==='1m' ? _back(1) : period==='3m' ? _back(3) : period==='ytd' ? (_ty+'-01-01') : period==='1y' ? _back(12) : null;
+  const _ymd=d=>(window.FinFlowDates&&window.FinFlowDates._toYmd(d))||String(d||'').slice(0,10);
+  let series = cutoff ? _fromNonZero(snaps.filter(s=>_ymd(s.date)>=cutoff)) : snaps;
   if(series.length<2) series = snaps;   // window too sparse → show whatever real history exists
   if(series.length<2){ _clear('Performance history builds over time — check back as data accumulates'); return; }
   const pts=series.map(s=>s.value);

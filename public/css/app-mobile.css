@@ -28,6 +28,10 @@
     transition: transform .15s cubic-bezier(.34,1.6,.64,1), box-shadow .15s;
   }
   .mobile-fab:active { transform: scale(.93); }
+  /* N3-8c: room below a page's last row for the "+" (bottom 72 + 48 tall = 120px from the screen's bottom) + a 16px gap.
+     At the old 70px the last invoice's ✕ / Pay link, the last expense's ✕ and the last customer's row sat UNDER the "+"
+     with no way to scroll them clear. Keep in step with .mobile-fab's bottom/height above. */
+  .content { padding-bottom: calc(136px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (min-width: 701px) {
   #mobile-bottom-nav { display: none !important; }

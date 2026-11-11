@@ -413,6 +413,7 @@ async function loadBankRec(){
           '<div><div class="tx-name">'+esc(d.description||'Debit')+'</div><div class="tx-cat">'+esc(when)+' - money out</div>'+whyLine+'</div>'+
           '<div data-style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+
             '<div class="tx-amt dn" data-style="margin-right:6px">'+S(Math.abs(parseFloat(d.amount)||0))+'</div>'+
+            _brecCatSel(d)+
             '<button class="btn btn-ghost btn-sm" data-style="font-size:10px" data-arg-id="'+d.id+'" data-on-click="ffBankBookExpense(Number(this.dataset.argId))">Book expense</button>'+
             billSel+
             '<button class="btn btn-ghost btn-sm" data-style="font-size:10px;opacity:.7" data-arg-id="'+d.id+'" data-on-click="ffBankIgnore(Number(this.dataset.argId))">Ignore</button>'+
@@ -440,7 +441,22 @@ async function _brecAction(url,body,okMsg){
     if(typeof window._refreshDashboardUI==='function') window._refreshDashboardUI();
   }catch(e){ if(typeof notify==='function') notify('Could not reconcile - '+(e.message||'try again'),true); }
 }
-window.ffBankBookExpense=function(id){ _brecAction('/api/bank-reconciliation/book-expense',{banking_id:id},'Booked as expense'); };
+// N3-6 (live re-audit 2026-11-11): "Book expense" sent no category, so a bank line kept whatever it was imported with —
+// a CSV line is 'Uncategorized', and a bank fee booked from Bank Rec read "Uncategorized $35" on the P&L although "Bank
+// Fees" exists. Each Money Out row now carries the expense-form category list (FinFlowCategories.EXPENSE_CATEGORIES),
+// preselected from the bank's own code through the one mapper (BANK_FEES → Bank Fees, FOOD_AND_DRINK → Meals …). A line
+// with no usable category must be given one before it books — it never lands as "Uncategorized" silently.
+function _brecCatSel(d){
+  const C=window.FinFlowCategories; const list=(C&&C.EXPENSE_CATEGORIES)||[];
+  let pre=''; try{ const m=C&&C.businessCategory?C.businessCategory(d.category||'',d.category_detailed||d.provider_category_detailed||''):''; if(list.indexOf(m)>=0) pre=m; }catch(e){}
+  return '<select id="brec-cat-'+d.id+'" aria-label="Expense category" data-style="font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 4px;max-width:140px">'+
+    '<option value=""'+(pre?'':' selected')+'>Category…</option>'+list.map(function(c){return '<option'+(c===pre?' selected':'')+'>'+esc(c)+'</option>';}).join('')+'</select>';
+}
+window.ffBankBookExpense=function(id){
+  const sel=document.getElementById('brec-cat-'+id); const cat=sel?String(sel.value||''):'';
+  if(sel&&!cat){ if(typeof notify==='function')notify('Choose a category for this expense first (e.g. Bank Fees).',true); try{sel.focus();}catch(e){} return; }
+  _brecAction('/api/bank-reconciliation/book-expense',cat?{banking_id:id,category:cat}:{banking_id:id},'Booked as expense'+(cat?' — '+cat:''));
+};
 window.ffBankIgnore=function(id){ _brecAction('/api/bank-reconciliation/ignore',{banking_id:id},'Ignored'); };
 window.ffBankMatchBill=function(id){ const sel=document.getElementById('brec-bill-'+id); const billId=sel?parseInt(sel.value,10):0; if(!billId){ if(typeof notify==='function')notify('Choose the bill this payment settles first',true); return; } _brecAction('/api/bank-reconciliation/match-bill',{banking_id:id,bill_id:billId},'Matched to bill - marked paid'); };
 function selectBankTx(id,el){

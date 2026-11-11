@@ -927,6 +927,9 @@ async function submitStockOut(){
       notify(_isSale ? `✓ Sold ${qty} · ${S(_rev)} revenue (${data.sale&&data.sale.number?data.sale.number:'recorded'}) · cost ${S(cogs)} · profit ${S(Math.round((_rev-cogs)*100)/100)}` : `✓ Written off ${qty} · cost ${S(cogs)}`); }
     if(typeof renderInventory==='function')renderInventory();
     loadCOGS();
+    // N3-4 (live re-audit 2026-11-11): the buyer the sale creates server-side (FA-B7) never reached the Customers list
+    // until a full page reload — re-read it through the one customer reload.
+    if(_isSale&&typeof window.reloadCustomersFromDB==='function') window.reloadCustomersFromDB();
     if(_isSale&&typeof window.refreshFinancials==='function') window.refreshFinancials('all');   // FA-B7: the new receipt / invoice
   }catch(e){notify('Could not record stock out',true);}   // keep _stockOutIdemKey for idempotent retry
   finally{window._savingStockOut=false;if(_soBtn)_soBtn.disabled=false;}

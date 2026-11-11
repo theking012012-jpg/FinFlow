@@ -585,6 +585,21 @@
     // ════════════════════════════════════════════
     // 5. CUSTOMERS — save (create + edit) + delete
     // ════════════════════════════════════════════
+    // N3-4 (live re-audit 2026-11-11): ONE customer-list reload. renderCustomers reads app-main's top-level `customers`
+    // binding (not window.customers), so only this assignment refreshes the page. Used after a customer save (L17) and
+    // after a stock sale, which creates the buyer as a customer server-side (FA-B7) — that path never reloaded the list,
+    // so the new customer stayed missing until a full page reload.
+    window.reloadCustomersFromDB = async function (opts) {
+      try {
+        const _fresh = await api('GET', '/api/customers');
+        if (Array.isArray(_fresh)) {
+          const _mapped = _fresh.map(c => ({ ...c, _dbId: c.id }));
+          if (typeof customers !== 'undefined') customers = _mapped;   // eslint-disable-line no-undef
+          window.customers = _mapped;
+        }
+      } catch (_) { /* keep the current list; the next boot re-derives */ }
+      if (!(opts && opts.render === false) && typeof renderCustomers === 'function') renderCustomers(document.getElementById('cust-search')?.value);
+    };
     window.saveCustomer = async function () {
       // Input helpers — use same sanitize/validate functions already in the app
       const fname = (typeof sanitizeText === 'function')
@@ -633,14 +648,7 @@
         // L17: revenue is DERIVED on the server, so re-read the list after a save — into the list the page
         // RENDERS (app-main's top-level `customers`, mapped exactly like the boot load), not just
         // window.customers (a different binding renderCustomers never reads).
-        try {
-          const _fresh = await api('GET', '/api/customers');
-          if (Array.isArray(_fresh)) {
-            const _mapped = _fresh.map(c => ({ ...c, _dbId: c.id }));
-            if (typeof customers !== 'undefined') customers = _mapped;   // eslint-disable-line no-undef
-            window.customers = _mapped;
-          }
-        } catch (_) { /* keep the optimistic list; the next boot re-derives */ }
+        await window.reloadCustomersFromDB({ render: false });   // N3-4: the one reload (also used after a stock sale)
         closeModal('customer-modal');
         const search = document.getElementById('cust-search')?.value;
         if (typeof renderCustomers === 'function') renderCustomers(search);

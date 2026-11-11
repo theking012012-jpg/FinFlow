@@ -73,7 +73,7 @@ const OWNER = { email: 'fc1-owner@finflow.test', password: 'harness-password-not
     // per-customer values are asserted by executed numbers in verify-fam2-overdue-per-customer.
     AS('server reports.overdue reads the ONE date-based, credit-netted definition (computeBooks.arSummary)',
       /const overdue = \(books\.arSummary && books\.arSummary\.overdueTotal != null\)/.test(srv)
-      && /_ovd != null && _ovd < _today/.test(srv) && /overdueTotal: r2\(Math\.max\(0, Math\.min\(outstanding, _arOverdueNet\)\)\)/.test(srv));
+      && /_ovd != null && _ovd < _today/.test(srv) && /overdueTotal: r2\(Math\.max\(0, Math\.min\(arReceivable, _arOverdueNet\)\)\)/.test(srv));   // N3-1 (2026-11-11): the ceiling is the RECEIVABLE — this check used to pin `min(outstanding, …)`, the cap that let a deposit customer's credit hide others' overdue (executed in verify-n3-1-receivable-g13)
     const am = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8');
     AS('app-main arOutstanding overdue is due_date-based',
       /function arOutstanding[\s\S]{0,1400}i\.due_date[\s\S]{0,200}overdueTotal/.test(am));

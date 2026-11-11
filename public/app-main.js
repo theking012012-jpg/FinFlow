@@ -2180,7 +2180,7 @@ function arOutstanding(invoices){
   // FA-M2: overdue and credits are kept PER CUSTOMER (the same contact key as server.js _contactKey — case and spacing
   // never split a customer), so a credit note nets only its own customer's overdue.
   const _ck=v=>String(v==null?'':v).trim().toLowerCase().replace(/\s+/g,' ');
-  const _ovdBy={}, _cnBy={};
+  const _ovdBy={}, _cnBy={}, _openBy={};
   (invoices||[]).forEach(i=>{
     const st=(i.status||'').toLowerCase();
     if(!RECOGNIZED.includes(st)) return;
@@ -2191,6 +2191,7 @@ function arOutstanding(invoices){
     total+=due; count++;
     // F-C1: overdue = unpaid & past its due date (entity-local today), not a literal 'overdue' status.
     const _ovd=window.FinFlowDates._toYmd(i.due_date);
+    const k0=_ck(i.client); _openBy[k0]=(_openBy[k0]||0)+due;   // N3-1: each customer's open balance
     if(st==='overdue' || (_ovd!=null && _ovd<_arToday)){ overdueTotal+=due; overdueCount++; const k=_ck(i.client); _ovdBy[k]=(_ovdBy[k]||0)+due; }
   });
   // F58 CLOSE: open|applied credit notes are a receivable contra — the customer owes that much less.
@@ -2208,14 +2209,19 @@ function arOutstanding(invoices){
     const k=_ck(cn.customer||cn.client); _cnBy[k]=(_cnBy[k]||0)+c;
   });
   const invoiceTotal=total;   // LA6: before the credit-note contra — the captions show what makes up the net figure
-  total=Math.max(0,total-_cnTotal);
+  // N3-1 / N3-2 (live re-audit 2026-11-11): the receivable is PER CUSTOMER — each customer's open balance less their OWN
+  // credits, floored at 0 (G13: a credit beyond its customer's balance is a deposit, not a smaller receivable for everyone
+  // else). Mirror of computeBooks.receivable (== the balance sheet's AR). It was total − every credit, which also capped
+  // overdue below what customers who owe are past due (live: Bright 1,500 + Delta 1,200 read 2,400 by Acme's 300 credit).
+  total=Object.keys(_openBy).reduce((s,k)=>s+Math.max(0,_openBy[k]-(_cnBy[k]||0)),0);
+  const _netCredits=Math.max(0,invoiceTotal-total);   // the credits that DID reduce a receivable (captions)
   // L35: overdue nets the SAME contra and is clamped to [0, total] — mirror of computeBooks.arSummary.overdueTotal
   // and /api/reports `overdue` (server.js). Un-netted it read ABOVE outstanding whenever a credit note was open
   // (live: Overdue $14,300 > Outstanding $13,550) — impossible, overdue is a subset of outstanding.
   // FA-M2: …but only each customer's OWN credits, never below 0 for that customer (one customer's credit used to hide
   // another's past-due money). Mirror of computeBooks.arSummary.overdueTotal.
   overdueTotal=Math.max(0,Math.min(total,Object.keys(_ovdBy).reduce((s,k)=>s+Math.max(0,_ovdBy[k]-(_cnBy[k]||0)),0)));
-  return { total, count, overdueTotal, overdueCount, invoiceTotal, creditTotal:_cnTotal };
+  return { total, count, overdueTotal, overdueCount, invoiceTotal, creditTotal:_netCredits, depositTotal:Math.max(0,_cnTotal-_netCredits) };
 }
 window._arOutstanding = arOutstanding;
 // LA6 (live audit 2026-10-13 M3): "Outstanding $2,400 · 2 invoices" while the two invoices totalled $2,700 — the open

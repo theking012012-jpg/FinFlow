@@ -5142,7 +5142,7 @@ app.get('/api/payment-reminders', requireAuth, wrap(async (req, res) => {
   // open|applied credit notes, the figure every other surface shows — not Σ of the listed candidates' gross
   // balances (summary.total_outstanding, kept as the list sum). Live it read $14,300 vs $13,550.
   const _books = await computeBooks(scopeId(req), req.entityId || null, 'year');
-  summary.ar_outstanding = Math.round((Number(_books.outstanding) || 0) * 100) / 100;
+  summary.ar_outstanding = Math.round((Number(_books.receivable != null ? _books.receivable : _books.outstanding) || 0) * 100) / 100;   // N3-2
   res.json({ items, summary, business_name: ctx.businessName, currency: ctx.currency || null, generated_at: new Date().toISOString() });
 }));
 
@@ -5578,7 +5578,7 @@ app.get('/api/v1/reports/summary', requireApiKey, apiLimiter, wrap(async (req, r
     const expenses = Math.round((((books.cogs || 0) + (books.opex || 0)) + Number.EPSILON) * 100) / 100;
     res.json({ object: 'summary', period: 'year', scope: req.apiEntityId == null ? 'all' : req.apiEntityId,
       revenue: books.revenue ?? 0, cogs: books.cogs ?? 0, opex: books.opex ?? 0, expenses,
-      net_profit: books.netProfit ?? ((books.revenue || 0) - expenses), outstanding: books.outstanding ?? null });
+      net_profit: books.netProfit ?? ((books.revenue || 0) - expenses), outstanding: books.receivable ?? books.outstanding ?? null });   // N3-2
   } catch (e) { console.error('[api] summary failed:', e && e.message); res.status(500).json({ error: 'Could not compute summary.' }); }
 }));
 
@@ -7432,7 +7432,7 @@ Revenue (issued invoices + sales receipts − credit notes): ${money(pl.totalRev
 Cost of goods sold: ${money(pl.cogs)}
 Operating expenses (incl. payroll ${money(pl.payroll)}): ${money(pl.totalExpenses)}
 Net profit: ${money(pl.netProfit)}
-Open invoices: ${(_books.arSummary && _books.arSummary.openCount) || 0} (${money(_books.outstanding)} owed)
+Open invoices: ${(_books.arSummary && _books.arSummary.openCount) || 0} (${money(_books.receivable != null ? _books.receivable : _books.outstanding)} owed)
 Overdue invoices: ${(_books.arSummary && _books.arSummary.overdueCount) || 0} (${money(_books.arSummary && _books.arSummary.overdueTotal)} past due)`,
   };
 }
@@ -8688,7 +8688,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // transactions) stay computeBooks-derived. `books` is reused by the helper (no double compute).
     const _pl = await glProfitLoss(uid, eid, { period: bookPeriod, fyStartIdx, monthIdx: monthIdxArg, display, books });
     const revenue = _pl.totalRevenue;
-    const outstanding = books.outstanding;
+    const outstanding = books.receivable != null ? books.receivable : books.outstanding;   // N3-2: the receivable (== BS AR), not the GL-net figure
     // M24 (money audit 2026-10-09): ONE overdue definition — computeBooks.arSummary (arithmetic balance of every
     // recognised invoice issued on or before today and past its due date, net of open credit notes, clamped to
     // [0, outstanding]). This route kept its own status-filtered copy, which dropped any past-due invoice whose
@@ -14392,7 +14392,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const outstanding = r2(Math.max(0, _arGross - _arCreditContra));
   // G13 (owner decision 2026-11-01): CUSTOMER CREDITS — per customer, open credit notes beyond what that customer owes are
   // a LIABILITY (money owed back, or held against future invoices), not a smaller receivable for everyone else.
-  const _cKey = x => String((x && (x.client || x.customer)) || '').trim().toLowerCase();
+  const _cKey = x => _contactKey(x && (x.client || x.customer));   // N3-1: the ONE contact key (FA-M2 / batch 9) — case and spacing never split a customer
   const _arInv = issuedInv.filter(i => { const _y = FinFlowDates._toYmd(_invDate(i)); return _y != null && _y <= _today; });
   const _arCns = creditNotes.filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase()) && (function(){ const _y = FinFlowDates._toYmd(_cnDate(cn)); return _y != null && _y <= _today; })());
   let customerCredits = 0;
@@ -14402,6 +14402,12 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     if (net < 0) customerCredits += -net;
   }
   customerCredits = r2(customerCredits);
+  // N3-1 / N3-2 (live re-audit 2026-11-11): the RECEIVABLE every summary shows = what customers who owe still owe — per
+  // customer, open invoices less that customer's OWN credits, floored at 0 (Σ max(0, net)). A credit beyond its customer's
+  // balance is a deposit (G13 liability above), never a smaller receivable for everyone else. Equals the balance sheet's
+  // grossed-up AR (outstanding + customerCredits), so Dashboard Outstanding == BS AR again (F58's invariant, broken by G13).
+  // `outstanding` itself stays NET: the GL reconciliation compares it with ledger AR (Cr 1100 at credit-note creation).
+  const arReceivable = r2(outstanding + customerCredits);
 
   // F204 — per-customer AR breakdown, built from the EXACT same recognized+D2 set and FX path as
   // `outstanding` above, so Σ(rows) == outstanding by construction (the F58 invariant). This lets the
@@ -14447,11 +14453,13 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const _arOverdueNet = Object.keys(_ovdByCust).reduce((s, k) => s + Math.max(0, _ovdByCust[k] - (_cnByCust[k] || 0)), 0);
   const arByCustomer = Object.entries(_arByCustomer)
     .map(([customer, amount]) => ({ customer, amount: r2(amount) }))
-    .filter(r => Math.abs(r.amount) > 0.005)
+    .filter(r => r.amount > 0.005)   // N3-2: a customer whose credits exceed what they owe holds a deposit (G13), not a negative receivable row — Σ(rows) == arReceivable
     .sort((a, b) => b.amount - a.amount);
   // H1 / FA-M2: overdue is net of each customer's OWN credit notes (above), clamped to [0, outstanding] — a past-due
   // figure can never exceed the total it is a subset of. Client mirror: app-main.js arOutstanding.
-  const arSummary = { total: outstanding, openCount: _arOpenCount, overdueTotal: r2(Math.max(0, Math.min(outstanding, _arOverdueNet))), overdueCount: _arOverdueCount };
+  // N3-1: the ceiling is the RECEIVABLE, not net `outstanding` — net is lowered by a credit whose customer owes nothing, so
+  // capping at it let that credit hide other customers' past-due money again (live: Bright 1,500 + Delta 1,200 read 2,400).
+  const arSummary = { total: arReceivable, openCount: _arOpenCount, overdueTotal: r2(Math.max(0, Math.min(arReceivable, _arOverdueNet))), overdueCount: _arOverdueCount };
 
   // F205 — top clients by recognized revenue (mirrors the client _topClients: recognized statuses,
   // summed by client at FULL amount, no period/D2 filter — it is an all-time revenue ranking, not a
@@ -14595,7 +14603,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, vendorPrepayments, customerCredits, arCreditContra: r2(_arCreditContra), journalBalances, arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, receivable: arReceivable, accountsPayable, accountsPayableNet, vendorPrepayments, customerCredits, arCreditContra: r2(_arCreditContra), journalBalances, arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
     window: { start: winStart, end: winEnd, today: _today },   // L11: the resolved calendar window, so a caller can list exactly the rows these figures cover
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the

@@ -958,7 +958,7 @@ If you cannot find a field, use null. Be concise.`;
         agg.grossProfit += (+b.grossProfit || 0);
         agg.opex        += (+b.opex        || 0);
         agg.netProfit   += (+b.netProfit   || 0);
-        agg.outstanding += (+b.outstanding || 0);
+        agg.outstanding += (+(b.receivable != null ? b.receivable : b.outstanding) || 0);   // N3-2: the receivable (== BS AR), per entity
         if (b.tax) {
           agg.tax.deductible     += (+b.tax.deductible     || 0);
           agg.tax.deductibleFull += (+b.tax.deductibleFull || 0);
@@ -1123,7 +1123,7 @@ If you cannot find a field, use null. Be concise.`;
         grossProfit:   books.grossProfit.toFixed(2),
         opex:          books.opex.toFixed(2),
         netProfit:     books.netProfit.toFixed(2),
-        outstanding:   books.outstanding.toFixed(2),
+        outstanding:   Number(books.receivable != null ? books.receivable : books.outstanding).toFixed(2),   // N3-2
         // L10: canonical overdue AR (past due by DATE, net of credits — computeBooks.arSummary), so the
         // portal's Invoices page and overdue banner stop summing invoices whose status literal says
         // 'overdue' (0 for a past-due invoice still marked 'pending').
@@ -1684,7 +1684,7 @@ If you cannot find a field, use null. Be concise.`;
     const cur = String((ent && ent.currency) || (books.fxCoverage && books.fxCoverage.display) || (scope.entities.length === 1 && scope.entities[0].currency) || 'USD').toUpperCase();
     const money = (n) => (Number(n) || 0).toFixed(2) + ' ' + cur;
     const facts = {
-      revenue: books.revenue, outstanding: books.outstanding, overdueCnt,
+      revenue: books.revenue, outstanding: (books.receivable != null ? books.receivable : books.outstanding), overdueCnt,   // N3-2
       opex: books.opex, cogs: books.cogs, netProfit: books.netProfit,
       payroll: (books.parts && books.parts.payroll) || 0,
       invoiceCount: scopedInv.length, expenseCount: expCount,

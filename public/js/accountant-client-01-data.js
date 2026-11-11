@@ -592,11 +592,14 @@ function renderTax(invoices, expenses) {
     ? taxLines.map(l=>{ const suffix = l.type==='fixed' ? ' (fixed)' : l.type==='revenue' ? ` (${parseFloat(l.value)||0}% of revenue)` : ` (${parseFloat(l.value)||0}% of taxable)`; return `<div class="pl-row"><span class="pl-label">${escH(l.label||'Tax')}${suffix}</span><span data-style="color:var(--red);font-weight:500">${fmt(lineAmt(l))}</span></div>`; }).join('')
         + `<div class="pl-row" data-style="font-weight:600"><span class="pl-label">Total estimated tax</span><span data-style="color:var(--red)">${fmt(liability)}</span></div>`
     : (rate ? `<div class="pl-row"><span class="pl-label">Tax rate (${rate}%)</span><span data-style="color:var(--red);font-weight:500">${fmt(liability)}</span></div>` : '<div data-style="font-size:11px;color:var(--text3);padding:8px 0">Client has not set up tax lines in their settings.</div>');
+  // N3-12 (live re-audit 2026-11-11): the breakdown subtracts the SAME deduction the taxable figure uses (computeBooks
+  // taxDeductions — every ordinary cost). It listed only the expense-entry split (fully / 50 % deductible), so
+  // "16,200 − 1,740 − 0 = 5,020" did not add up on screen; the split stays as an 'of which' line.
   document.getElementById('tax-breakdown').innerHTML = `
     <div class="card-hdr"><div class="card-title">Tax Calculation Breakdown</div></div>
     <div class="pl-row"><span class="pl-label">Gross Revenue</span><span>${fmt(revenue)}</span></div>
-    <div class="pl-row"><span class="pl-label">Fully deductible expenses</span><span data-style="color:var(--green)">− ${fmt(dedFull)}</span></div>
-    <div class="pl-row"><span class="pl-label">50% deductible expenses</span><span data-style="color:var(--green)">− ${fmt(dedHalf)}</span></div>
+    <div class="pl-row"><span class="pl-label">Deductible costs <span data-style="font-size:11px;color:var(--text3)">(cost of goods, expenses, bills, payroll — non-deductible items excluded)</span></span><span data-style="color:var(--green)">− ${fmt(totalDed)}</span></div>
+    <div class="pl-row" data-style="font-size:11px;color:var(--text3)"><span class="pl-label">of which expense entries: fully deductible ${fmt(dedFull)} · 50% deductible ${fmt(dedHalf)}</span><span></span></div>
     <div class="pl-row"><span class="pl-label">Taxable Income</span><span data-style="color:var(--amber);font-weight:500">${fmt(taxable)}</span></div>
     ${linesHtml}`;
 }

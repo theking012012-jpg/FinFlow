@@ -898,7 +898,11 @@ If you cannot find a field, use null. Be concise.`;
       pool.query(`SELECT id, entity_id, data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT id, entity_id, data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT id, data->>'name' AS name, data->>'color' AS color, data->>'currency' AS currency FROM entities WHERE user_id = $1 ORDER BY id`, [userId]),
-      pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]),
+      // N3-11 (live re-audit 2026-11-11): the owner's Income Tax worksheet is saved by PUT /api/settings into user_settings
+      // (server.js, F137-k) — this read the `users` row, which never receives tax_lines / tax_rate, so the Tax Summary said
+      // "Not set up" while the owner's estimate showed 20 %. user_settings wins; the users row is the legacy fallback.
+      pool.query(`SELECT COALESCE((SELECT data FROM users WHERE id = $1), '{}'::jsonb)
+                      || COALESCE((SELECT data FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1), '{}'::jsonb) AS data`, [userId]),
       pool.query(`SELECT entity_id, data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT entity_id, data FROM journals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
       pool.query(`SELECT entity_id, data FROM customers WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),

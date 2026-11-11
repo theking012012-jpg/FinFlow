@@ -566,7 +566,8 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
 .empty-state p{font-size:12px;color:var(--t3);max-width:220px;line-height:1.6;margin-bottom:1rem}
 .empty-state .btn{margin-top:.25rem}
 /* NOTIF */
-.notif{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg1);border:1px solid var(--green-bd);border-radius:var(--radius-lg);padding:.75rem 1rem;font-size:13px;color:var(--t1);box-shadow:var(--shadow-lg);z-index:2000;display:flex;align-items:center;gap:8px;animation:slideIn .2s ease;max-width:300px}
+/* N3-8a: the toast is painted above EVERY overlay (onboarding .ob-overlay 2000, command palette 3000, modals up to the 99999 auth gate) — at 2000 it sat under the onboarding window and "Business name is required" was never seen. */
+.notif{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg1);border:1px solid var(--green-bd);border-radius:var(--radius-lg);padding:.75rem 1rem;font-size:13px;color:var(--t1);box-shadow:var(--shadow-lg);z-index:100000;display:flex;align-items:center;gap:8px;animation:slideIn .2s ease;max-width:300px}
 .notif.hidden{display:none}
 .notif.error{border-color:var(--red-bd)}
 @keyframes slideIn{from{opacity:0;transform:translateY(8px)}}

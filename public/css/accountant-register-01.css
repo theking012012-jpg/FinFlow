@@ -199,7 +199,9 @@
   .form-group { margin-bottom: 16px; }
   label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; letter-spacing: 0.03em; }
   label span.req { color: var(--gold); }
-  input, select, textarea {
+  /* N3-9: the blanket field style must not hit checkboxes / radios — with appearance:none + width:100% the required
+     Conduct Policy box rendered as an empty text field that never showed a tick. */
+  input:not([type=checkbox]):not([type=radio]), select, textarea {
     width: 100%; background: var(--bg2); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 14px;
     font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 300;
@@ -207,6 +209,7 @@
     appearance: none;
   }
   input:focus, select:focus, textarea:focus { border-color: var(--gold-dim); }
+  input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 auto; cursor: pointer; }
   input::placeholder { color: var(--text3); }
   select option { background: var(--card2); }
   textarea { resize: vertical; min-height: 70px; }

@@ -45,43 +45,10 @@
     <h2>Referral earnings</h2>
     <p class="section-sub">Bring your clients to FinFlow and earn monthly commissions per client — the more you bring, the longer you earn.</p>
 
-    <div class="tier-card">
-      <div class="tier-badge">I</div>
-      <div class="tier-info">
-        <h3>Starter — 1 to 50 clients</h3>
-        <p>$10 per client · paid for 1 month after they subscribe</p>
-      </div>
-      <div class="tier-earn">
-        <div class="amount">$10</div>
-        <div class="per">× 1 month</div>
-      </div>
-    </div>
+    <!-- N3-10: rendered from tier-config.js (the single source the app pays from) by /js/join-tiers.js -->
+    <div id="join-tiers"><p class="section-sub">Loading the referral ladder…</p></div>
 
-    <div class="tier-card">
-      <div class="tier-badge">II</div>
-      <div class="tier-info">
-        <h3>Growth — 50 to 500 clients</h3>
-        <p>$10 per client · paid for 3 months after they subscribe</p>
-      </div>
-      <div class="tier-earn">
-        <div class="amount">$30</div>
-        <div class="per">× 3 months</div>
-      </div>
-    </div>
-
-    <div class="tier-card">
-      <div class="tier-badge">III</div>
-      <div class="tier-info">
-        <h3>Elite — 500+ clients</h3>
-        <p>$10 per client · paid for 12 months after they subscribe</p>
-      </div>
-      <div class="tier-earn">
-        <div class="amount">$120</div>
-        <div class="per">× 12 months</div>
-      </div>
-    </div>
-
-    <div class="commission-box">
+    <div class="commission-box" id="join-commission">
       <div class="commission-icon">%</div>
       <div>
         <h4>4% service commission</h4>
@@ -407,6 +374,8 @@
 <script src="/conduct-policy.js"></script>
 <script src="/js/accountant-register-01-script.js"></script>
 <script src="/js/accountant-register-02-resume-credentials.js"></script>
+<script src="/tier-config.js"></script>
+<script src="/js/join-tiers.js"></script>
 </main>
 </body>
 </html>

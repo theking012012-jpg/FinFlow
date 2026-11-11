@@ -4593,17 +4593,21 @@ function buildInvPerfChart(period){
   if(!holdings || holdings.length===0){ _clear('No data — add holdings to see performance'); return; }
   // REAL snapshots only — never fabricated. Honest "building" state until ≥2 points.
   let snaps=(window._portSnapshots||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  // N3-5: a snapshot taken before any holding existed is worth 0 — it is not a baseline. Dividing by it (formerly
+  // `pts[0]||1`) printed "+149900.0%". History starts at the first non-zero point.
+  const _fromNonZero=a=>{ const i=a.findIndex(s=>Math.abs(Number(s.value)||0)>0.005); return i<0?[]:a.slice(i); };
+  snaps=_fromNonZero(snaps);
   const now=new Date(); let cutoff=null;
   if(period==='1m'){cutoff=new Date(now);cutoff.setMonth(now.getMonth()-1);}
   else if(period==='3m'){cutoff=new Date(now);cutoff.setMonth(now.getMonth()-3);}
   else if(period==='ytd'){cutoff=new Date(now.getFullYear(),0,1);}
   else if(period==='1y'){cutoff=new Date(now);cutoff.setFullYear(now.getFullYear()-1);}
-  let series = cutoff ? snaps.filter(s=>new Date(s.date)>=cutoff) : snaps;
+  let series = cutoff ? _fromNonZero(snaps.filter(s=>new Date(s.date)>=cutoff)) : snaps;
   if(series.length<2) series = snaps;   // window too sparse → show whatever real history exists
   if(series.length<2){ _clear('Performance history builds over time — check back as data accumulates'); return; }
   const pts=series.map(s=>s.value);
   const labels=series.map((s,i)=>i===0?'Start':i===series.length-1?'Now':'');
-  const first=pts[0]||1;
+  const first=pts[0];
   const retPct=(((pts[pts.length-1]-first)/first)*100).toFixed(1);
   if(retEl) retEl.textContent=`Portfolio ${retPct>=0?'+':''}${retPct}% since ${series[0].date}`;
   const{tc,gc}=chartDefaults();

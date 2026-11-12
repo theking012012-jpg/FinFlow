@@ -505,10 +505,12 @@ function renderAccountantMessages() {
     const isMe = m.sender === 'client';
     const dateStr = new Date(m.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
     const seen = i === lastSeen ? ' · <span data-style="color:var(--acc)">✓ Seen</span>' : '';
-    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" data-style="display:inline-flex;align-items:center;gap:6px;margin-top:5px;max-width:80%;background:${isMe?'rgba(0,0,0,.12)':'var(--bg2)'};border:1px solid ${isMe?'rgba(0,0,0,.15)':'var(--bd)'};border-radius:9px;padding:7px 11px;font-size:12.5px;color:${isMe?'#0e0b08':'var(--acc)'};text-decoration:none">📎 ${_acctEsc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
+    // N3-22: the file chip is drawn INSIDE the bubble (its dark-on-gold colours were meant for that — outside it, on the dark
+    // page, "owner-check.txt · 27 B" was unreadable), and the auto caption "📎 name" is not repeated above it.
+    const _attOnly = !!m.att_name && (!m.content || m.content === '📎 ' + m.att_name);
+    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" data-style="display:inline-flex;align-items:center;gap:6px;margin-top:${_attOnly?'0':'6px'};max-width:100%;background:${isMe?'rgba(0,0,0,.12)':'var(--bg2)'};border:1px solid ${isMe?'rgba(0,0,0,.15)':'var(--bd)'};border-radius:9px;padding:7px 11px;font-size:12.5px;color:${isMe?'#0e0b08':'var(--acc)'};text-decoration:none">📎 ${_acctEsc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
     return `<div data-style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px">
-      <div data-style="max-width:80%;background:${isMe?'var(--acc)':'var(--bg3)'};color:${isMe?'#0e0b08':'var(--t1)'};padding:9px 13px;border-radius:${isMe?'14px 14px 4px 14px':'14px 14px 14px 4px'};font-size:13.5px;line-height:1.5">${_acctEsc(m.content)}</div>
-      ${att}
+      <div data-style="max-width:80%;background:${isMe?'var(--acc)':'var(--bg3)'};color:${isMe?'#0e0b08':'var(--t1)'};padding:9px 13px;border-radius:${isMe?'14px 14px 4px 14px':'14px 14px 14px 4px'};font-size:13.5px;line-height:1.5">${_attOnly ? '' : `<div>${_acctEsc(m.content)}</div>`}${att}</div>
       <div data-style="font-size:11px;color:var(--t3);padding:0 4px">${isMe ? 'You' : _acctEsc(m.sender_name || 'Your accountant')} · ${dateStr}${seen}</div>
     </div>`;
   }).join('');

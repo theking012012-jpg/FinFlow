@@ -1007,9 +1007,11 @@ function renderMessages() {
   el.innerHTML = _msgs.map((m, i) => {
     const body = esc(m.content != null ? m.content : m.message);
     const seen = i === lastSeenIdx ? '<span class="seen">✓ Seen</span>' : '';
-    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" data-style="display:inline-flex;align-items:center;gap:6px;margin-top:5px;background:rgba(0,0,0,.15);border-radius:8px;padding:6px 10px;font-size:12px;color:inherit;text-decoration:none">📎 ${esc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
+    // N3-22: an attachment's auto caption ("📎 name") is not printed above the file chip that already names it.
+    const _attOnly = !!m.att_name && (!(m.content != null ? m.content : m.message) || (m.content != null ? m.content : m.message) === '📎 ' + m.att_name);
+    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" data-style="display:inline-flex;align-items:center;gap:6px;margin-top:${_attOnly?'0':'5px'};background:rgba(0,0,0,.15);border-radius:8px;padding:6px 10px;font-size:12px;color:inherit;text-decoration:none">📎 ${esc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
     return `<div class="msg-bubble msg-${esc(m.sender)}${m._sending ? ' sending' : ''}">
-        <div>${body}</div>
+        ${_attOnly ? '' : `<div>${body}</div>`}
         ${att}
         <div class="msg-meta">${m.sender === 'accountant' ? 'You' : 'Client'} · ${fmtDate(m.created_at)}${seen}</div>
       </div>`;

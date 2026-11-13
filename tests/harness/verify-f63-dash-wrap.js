@@ -17,8 +17,12 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
   const A = (n, ok, d) => { if (ok) { pass++; console.log(`  PASS  ${n}`); } else { fail++; console.log(`  FAIL  ${n}${d ? '  ' + d : ''}`); } };
   try {
     boot = await bootSpaInJsdom({});
-    const { window, settle } = boot;
-    await settle(40, 40);
+    const { window, settle, idle } = boot;
+    // N3-16 (2026-11-13): this read the page after a FIXED 1.6 s. Under load the dashboard wiring had not run yet —
+    // the wrapper was installed later (0/42 green with 6 copies at once, 8/8 alone). Wait for the page to go quiet and
+    // for the wiring to finish (up to 30 s); a wrapper that never appears still fails below.
+    await idle({ timeoutMs: 30000 });
+    for (let i = 0; i < 300 && !(window.updateDashboard && window.updateDashboard._ffDashWrapped); i++) await settle(1, 100);
 
     A('window.updateDashboard is a function after boot', typeof window.updateDashboard === 'function');
     A('it is marked _ffDashWrapped (guard installed the wrapper)', window.updateDashboard && window.updateDashboard._ffDashWrapped === true);

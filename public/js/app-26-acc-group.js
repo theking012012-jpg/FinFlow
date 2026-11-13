@@ -1039,6 +1039,9 @@ window.showPage = function(id, el) {
     if (titles) titles.textContent = 'My Accountant';
     if (!allAccountants.length) loadDirectory();
     if (linkedAccountant && linkedAccountant.status === 'active') { if (typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages(); }
+    // N3-25: the access list was drawn once, when the accountant first loaded — a business created afterwards was missing
+    // until a page reload. Redraw it from the CURRENT businesses every time the page opens.
+    if (linkedAccountant && typeof window.renderAccessMatrix === 'function') window.renderAccessMatrix();
   }
   if (id === 'advisors') {
     // Redirect old advisors page to find-accountant

@@ -28,6 +28,7 @@
   `2186184` N3-5 (the "+149900%" came from a ZERO first snapshot used as baseline, NOT N3-13 — 1/2 → 3/0, related 15/15),
   `2f50cbc` N3-8a (toasts were drawn under the onboarding window / modals — 4/2 → 6/0), `386f1f1` N3-8c (phone "+" covered
   the last row's ✕ — 10/6 → 16/0). N3-8b (income category picker) did NOT reproduce — no change.
+- **2026-11-12/13 (same branch, after the above):** N3-17 (two accountants: chat no longer guesses which), N3-19 (unlinking closes open chat streams), N3-20 (show/hide eye on every password field), N3-21 (owner's own chat message labelled "You"), N3-22 (chat file chips readable, named once), N3-23 (all browser harnesses find Playwright the same way — the 8 reds of the owner's first sweep). Harness-only: accountant personal wall, accountant writes + chat. **Owner full sweep on `28a69a5`: 757/757 GREEN.** Next: fast-forward `main` (auto-deploys), then a live check (Outstanding 2,700, password eye, chat labels / file chips). Open: N3-18 (signed-out owner chat reads "No messages yet"; one shared session cookie for owner + accountant), N3-24 (3 slow harnesses).
 - **Still open:** N3-15 (Investments period window compares dates as Date — Rule 10, low), N3-16 (five harnesses red under
   4-wide load, green solo — may show as intermittent reds in the 3× sweep), access-matrix staleness note (N3-4); live Part 9
   (void) + 6.5b not yet run (needs the owner signed in).

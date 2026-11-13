@@ -3095,7 +3095,9 @@ app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   // G5 / FA-B7: the reorder level is its own field (whole units, 0+; empty clears it) — the alert reads it first
   if (b.reorder_level != null && b.reorder_level !== '' && !(/^[0-9]{1,9}$/.test(String(b.reorder_level)))) return res.status(400).json({ error: 'The reorder level is a whole number of units (0 or more).', code: 'BAD_REORDER_LEVEL' });
   const newReorder = b.reorder_level === undefined ? row.reorder_level : (b.reorder_level === '' || b.reorder_level === null ? null : Number(b.reorder_level));
-  const patch = { units: newUnits, max_units: newMax, reorder_level: newReorder, low_stock: FinFlowDates.isLowStock({ units: newUnits, reorder_level: newReorder, max_units: newMax }) ? 1 : 0 };
+  // N3-27: `units` is NOT written back here — it was read above and an edit (name / cost / reorder level) racing a sale
+  // put the pre-sale count back. The count changes only through stock movements (N69), each one atomic.
+  const patch = { max_units: newMax, reorder_level: newReorder, low_stock: FinFlowDates.isLowStock({ units: newUnits, reorder_level: newReorder, max_units: newMax }) ? 1 : 0 };
   if (b.name != null) patch.name = b.name;
   if (b.cost != null) patch.cost = parseFloat(b.cost);
   await db.updateById('inventory', row.id, patch);
@@ -14682,10 +14684,17 @@ async function recordStockMovement({ userId, item, entityId = null, type, qty, u
     if (_out) await pool.query(`UPDATE inventory SET data = jsonb_set(data, '{units}', to_jsonb(COALESCE(NULLIF(data->>'units','')::numeric, 0) + $2::numeric)) WHERE id = $1`, [parseInt(item.id), qty]);   // FA-B7b: undo the decrement
     throw e;
   }
+  // N3-27 (concurrency test 2026-11-13): the count is changed ONLY by single atomic statements. This used to READ the
+  // units and then WRITE them back (with the low-stock flag): two sales at once each read the count after their own
+  // decrement and the slower write put back a stale, HIGHER count — 3 sales of 3 from 10 left "4" instead of 1, and
+  // the restored units were sold again (4 sales of 3 from 10 accepted). A purchase / return adds in one statement; the
+  // low-stock flag is then written ALONE (a merge patch) from the count the database holds now.
+  if (type === 'purchase' || type === 'return') {
+    await pool.query(`UPDATE inventory SET data = jsonb_set(data, '{units}', to_jsonb(COALESCE(NULLIF(data->>'units','')::numeric, 0) + $2::numeric)), updated_at = NOW() WHERE id = $1`, [parseInt(item.id), qty]);
+  }
   const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m, data->>'reorder_level' AS r FROM inventory WHERE id = $1`, [item.id]);
-  const _units = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
-  const newUnits = (type === 'purchase' || type === 'return') ? _units + qty : _units;   // FA-B7b: a sale / write-off was already taken off above; a return comes back in
-  await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: FinFlowDates.isLowStock({ units: newUnits, reorder_level: _cur && _cur.r, max_units: _max }) ? 1 : 0 });   // G5: the one rule
+  const newUnits = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
+  await db.updateById('inventory', parseInt(item.id), { low_stock: FinFlowDates.isLowStock({ units: newUnits, reorder_level: _cur && _cur.r, max_units: _max }) ? 1 : 0 });   // G5: the one rule
   try {
     const _mDate = FinFlowDates._toYmd(movement.movement_date) || FinFlowDates._toYmd(movement.moved_at);   // M32
     if ((type === 'sale' || type === 'adjustment') && cogs != null && +cogs > 0) {

@@ -26,7 +26,7 @@ const PAGES = ['/', '/app', '/404.html', '/accountant-client.html', '/accountant
     A('the CSP names no Google font host', csp && !/fonts\.googleapis|fonts\.gstatic/.test(csp), csp.slice(0, 200));
     A('the CSP no longer allows the unused Yahoo endpoint (NEW-20)', !/finance\.yahoo/.test(csp));
     A('fonts may load only from FinFlow (font-src \'self\')', /font-src 'self';/.test(csp));
-    const { chromium } = require('playwright');
+    const { chromium } = (require('./browserKit.js').loadPlaywright() || (() => { throw new Error('NOT RUN — Playwright is not installed (local or global). Install once: npm i --no-save playwright && npx playwright install chromium'); })());
     browser = await chromium.launch();
     const ctx = await browser.newContext();
     // Outside requests are recorded and then ABORTED: the harness network has no internet, and an abort still proves the page asked.

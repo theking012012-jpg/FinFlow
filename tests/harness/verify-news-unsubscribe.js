@@ -61,7 +61,7 @@ const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, 
     A('the admin log records the type and how many were skipped', /^news · all_users \(sent 2\/2, 0 failed, 1 unsubscribed skipped\)/.test(lg[1].notes) && lg[3].after_data.kind === 'service', lg.map(r => r.notes).join(' | '));
 
     // ── the pages ──
-    const { chromium } = require('playwright');
+    const { chromium } = (require('./browserKit.js').loadPlaywright() || (() => { throw new Error('NOT RUN — Playwright is not installed (local or global). Install once: npm i --no-save playwright && npx playwright install chromium'); })());
     browser = await chromium.launch();
     const page = await (await browser.newContext()).newPage();
     const errs = []; page.on('pageerror', e => errs.push(e.message));

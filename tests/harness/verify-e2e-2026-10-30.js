@@ -38,7 +38,7 @@ runBrowser('E2E 2026-10-30 fixes — draft invoices · lock refusal · payroll c
 
   // ── E2E-6 first: a fresh browser with NO session ───────────────────────────────────────────────────────────────
   {
-    const { chromium } = require('playwright');
+    const { chromium } = (require('./browserKit.js').loadPlaywright() || (() => { throw new Error('NOT RUN — Playwright is not installed (local or global). Install once: npm i --no-save playwright && npx playwright install chromium'); })());
     const b = await chromium.launch();
     const ctx = await b.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await ctx.newPage();

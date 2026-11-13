@@ -114,7 +114,7 @@ let ip = 10; const client = (base) => new HarnessHttp(base, { xff: '198.51.100.'
 
     // ── 7. the page ──
     const gAdd = await d2.post('/api/admin/admins', { name: 'Gia Owner', email: 'gia@finflow.test', role: 'owner' });
-    const { chromium } = require('playwright');
+    const { chromium } = (require('./browserKit.js').loadPlaywright() || (() => { throw new Error('NOT RUN — Playwright is not installed (local or global). Install once: npm i --no-save playwright && npx playwright install chromium'); })());
     browser = await chromium.launch();
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
     const errs = []; page.on('pageerror', e => errs.push(e.message));

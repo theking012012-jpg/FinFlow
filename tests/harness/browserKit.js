@@ -85,4 +85,4 @@ function runBrowser(title, body, opts = {}) {
   })();
 }
 
-module.exports = { runBrowser };
+module.exports = { runBrowser, loadPlaywright };   // loadPlaywright: the ONE Playwright lookup (local, else the global install)

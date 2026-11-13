@@ -35,7 +35,7 @@ const { HarnessHttp } = require('./httpClient.js');
 
 runBrowser('Live re-test (b) 2026-10-31 — NEW-6 · NEW-7 · NEW-8 · NEW-10', async ({ A, eq, J, http, c, uid, base, server }) => {
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  const { chromium } = require('playwright');
+  const { chromium } = (require('./browserKit.js').loadPlaywright() || (() => { throw new Error('NOT RUN — Playwright is not installed (local or global). Install once: npm i --no-save playwright && npx playwright install chromium'); })());
   const host = new URL(base).hostname;
   const browser = await chromium.launch();
   const openNY = async (path, opts = {}) => {

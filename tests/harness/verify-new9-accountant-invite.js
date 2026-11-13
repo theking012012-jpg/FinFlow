@@ -164,7 +164,7 @@ runBrowser('NEW-9 — accountant invitation → in-app request the client approv
 
   // the accountant dashboard lists the invitations
   const accPage = await (async () => {
-    const { chromium } = require('playwright'); const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+    const { chromium } = (require('./browserKit.js').loadPlaywright() || (() => { throw new Error('NOT RUN — Playwright is not installed (local or global). Install once: npm i --no-save playwright && npx playwright install chromium'); })()); const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
     const host = new URL(base).hostname; await ctx.addCookies([...AA.cookies.entries()].map(([name, value]) => ({ name, value, domain: host, path: '/' })));
     const p = await ctx.newPage(); await p.goto(base + '/accountant', { waitUntil: 'load' }); await wait(2500);
     const t = await p.evaluate(async () => { showPage('invite'); await new Promise(r => setTimeout(r, 1200)); return document.getElementById('invites-body').innerText; });

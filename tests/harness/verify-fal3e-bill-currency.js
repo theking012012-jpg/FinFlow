@@ -121,7 +121,7 @@ const N = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
     A('admin accountant list + detail: earned "$50.00 + JMD 8,686.00"', N(al.total_earnings_formatted) === '$50.00 + JMD 8,686.00' && N(adAcc.total_earnings_formatted) === '$50.00 + JMD 8,686.00', JSON.stringify([al.total_earnings_formatted, adAcc.total_earnings_formatted]));
 
     // ── the dashboard ──
-    const { chromium } = require('playwright');
+    const { chromium } = (require('./browserKit.js').loadPlaywright() || (() => { throw new Error('NOT RUN — Playwright is not installed (local or global). Install once: npm i --no-save playwright && npx playwright install chromium'); })());
     browser = await chromium.launch();
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await ctx.addCookies([...acc.cookies.entries()].map(([name, value]) => ({ name, value, url: base })));

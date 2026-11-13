@@ -13,7 +13,7 @@
  *        bug strings must be absent.
  */
 const fs = require('fs'), path = require('path');
-const { chromium } = require('playwright');
+const { chromium } = (require('./browserKit.js').loadPlaywright() || (() => { throw new Error('NOT RUN — Playwright is not installed (local or global). Install once: npm i --no-save playwright && npx playwright install chromium'); })());
 const ROOT = path.join(__dirname, '..', '..'), PUB = path.join(ROOT, 'public');
 const T = require(path.join(ROOT, 'tier-config.js'));
 let pass = 0, fail = 0;

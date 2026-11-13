@@ -58,10 +58,20 @@ function installEnv(scratchUrl) {
  * Returns the database module so the caller can close its pool; pg keeps the process alive
  * until the pool is ended.
  */
+// N3-26: the schema a harness tests is the schema PRODUCTION runs — initDB() and THEN the versioned migrations
+// (scripts/migrations/*.sql), exactly as server.js boot does. The harness used to stop after initDB(), so ~750 harnesses
+// ran without production's constraints (e.g. one payroll run per period). A failing migration fails the boot loudly.
+async function applyProductionSchema(database) {
+  await database.initDB();
+  const m = await database.runMigrations(database.pool);
+  if (m.failed && m.failed.length) throw new Error('[harness] migrations failed: ' + m.failed.map((x) => x.name + ' — ' + (x.error || x.message || '')).join('; '));
+  return m;
+}
+
 async function initSchema(scratchUrl) {
   const { scrubbed } = installEnv(scratchUrl);
   const database = require('../../database.js');
-  await database.initDB();
+  await applyProductionSchema(database);   // N3-26
   // F90 measurement (opt-in, scratch only): shadow every real row change so audit coverage can be measured.
   if (process.env.FF_AUDIT_SHADOW_OUT) await require('./auditShadow.js').install(database.pool);
   return { database, pool: database.pool, scrubbed };
@@ -80,7 +90,7 @@ async function bootServer(scratchUrl) {
   process.on('unhandledRejection', onUnhandled);
 
   const database = require('../../database.js');
-  await database.initDB();
+  await applyProductionSchema(database);   // N3-26
   if (process.env.FF_AUDIT_SHADOW_OUT) await require('./auditShadow.js').install(database.pool);   // F90 measurement (opt-in)
 
   const app = require('../../server.js');

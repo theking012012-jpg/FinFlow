@@ -117,7 +117,11 @@ const PAYROLL_RUNS = [
   // so cash flow is unchanged. Σlines 900, distinct from every other run total.
   { key: 'R0', period: '2026-04', run_date: '2026-04-30', status: 'approved', lines: [{ gross: 900 }] },
   { key: 'R1', period: '2026-06', run_date: '2026-06-30', status: 'approved', lines: [{ gross: 4200 }] },
-  { key: 'R2', period: '2026-07', run_date: '2026-07-15', status: 'draft',    lines: [{ gross: 3300 }] },
+  // N3-26 (2026-11-13): R2 and R3 both had period '2026-07' — a state PRODUCTION cannot hold (idx_payroll_runs_uniq:
+  // one non-voided run per user / business / period); the seed only loaded because the harness skipped production's
+  // migrations. R2's label is now '2026-07-b': still July (payrollPeriodYmd reads the leading YYYY-MM), still a draft
+  // beside a paid July run — so every figure and the draft-must-count-0 discrimination are unchanged.
+  { key: 'R2', period: '2026-07-b', run_date: '2026-07-15', status: 'draft',    lines: [{ gross: 3300 }] },
   { key: 'R3', period: '2026-07', run_date: '2026-07-20', status: 'paid',     lines: [{ gross: 1100 }] },
 ];
 

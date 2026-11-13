@@ -55,7 +55,7 @@ const OWNER = { email: 'fh1-owner@finflow.test', password: 'harness-password-not
     const draftId = (await c.query(
       `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [uid, E, 'July 2026', '2026-07-25', 'draft', 5000, 0, 5000]
+      [uid, E, 'July 2026 (draft)', '2026-07-25', 'draft', 5000, 0, 5000]   // N3-26 (2026-11-13): production allows ONE non-voided run per business + period (idx_payroll_runs_uniq); own label; still July by run_date
     )).rows[0].id;
     await c.query(`INSERT INTO payroll_run_lines (run_id, payroll_id, employee_name, gross, bonus, overtime, deductions, net_pay) VALUES ($1,NULL,$2,$3,0,0,'[]'::jsonb,$4)`,
       [draftId, 'Draft Emp', 5000, 5000]);

@@ -32,7 +32,7 @@ const LOGIN = { email: 'f73@finflow.test', password: 'harness-password-not-a-sec
       await c.query(
         `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net)
          VALUES ($1, NULL, $2, $3, 'approved', 1000, 0, 1000)`,
-        [uid, '2020-' + String((i % 12) + 1).padStart(2, '0'), '2020-01-15']);
+        [uid, '2020-' + String((i % 12) + 1).padStart(2, '0') + '-r' + i, '2020-01-15']);   // N3-26 (2026-11-13): production allows ONE non-voided run per business + period (idx_payroll_runs_uniq); unique labels, same months
     }
 
     const http = new HarnessHttp(server.baseUrl);

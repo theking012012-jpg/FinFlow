@@ -37,8 +37,8 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
           await c.query(`INSERT INTO payroll_run_lines (run_id, employee_name, gross, bonus, overtime, deductions, net_pay) VALUES ($1,'Pat Lee',3000,0,0,'[]',3000)`, [id]);
           return id;
         };
-        runA = await mkRun('2026-06');
-        runB = await mkRun('2026-05');
+        runA = await mkRun('2026-06-b');   // N3-26 (2026-11-13): production allows ONE non-voided run per business + period (idx_payroll_runs_uniq); the base seed already has 2026-06 / 2026-05 runs
+        runB = await mkRun('2026-05-b');
       },
     });
     const { window, client: c, settle, toast } = boot;

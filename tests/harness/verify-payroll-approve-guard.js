@@ -37,7 +37,7 @@ const OWNER = { email: 'payroll-guard@finflow.test', password: 'harness-password
     const mkRun = async (status) => (await c.query(
       `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [uid, E, 'July 2026', '2026-07-25', status, 5000, 0, 5000]
+      [uid, E, 'July 2026 ' + status, '2026-07-25', status, 5000, 0, 5000]   // N3-26 (2026-11-13): production allows ONE non-voided run per business + period (idx_payroll_runs_uniq); a label per run; July by run_date
     )).rows[0].id;
     const paidId = await mkRun('paid');
     const draftId = await mkRun('draft');

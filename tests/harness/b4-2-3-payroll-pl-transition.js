@@ -60,7 +60,9 @@ const LOGIN = { email: 'seed-owner@example.test', password: 'harness-pw-1' };
 // safe choice; it collides with seeded runs R2/R3, but every assertion here is a DELTA on this one run,
 // so seeded July activity is in the baseline and cancels out. (Contrast b4-4, whose CASH leg dates on
 // run_date = NOW() and so uses a future period freely.)
-const PERIOD = '2026-07';
+// N3-26 (2026-11-13): production allows ONE non-voided run per business + period (idx_payroll_runs_uniq); '2026-07' now IS seed R3's period, so the route would
+// answer R3. '2026-07-c' is still July (payrollPeriodYmd reads the leading YYYY-MM) and every assertion is a delta.
+const PERIOD = '2026-07-c';
 const BONUS_ONE = 777;
 const OVERTIME_TWO = 111;
 const ROSTER_GROSS = { 'Emp One': 3000, 'Emp Two': 2000 };   // tests/harness/seedData.js ROSTER

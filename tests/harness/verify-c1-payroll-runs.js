@@ -46,6 +46,8 @@ const WITH_INDEX = !process.env.NO_INDEX;
     server = await bootServer(scratch.url);      // runs initDB → ALTER ADD idempotency_key + idx_payroll_runs_idem_key
     console.log(`\n  MODE: ${WITH_INDEX ? 'WITH INDEX (the fix)' : 'NO INDEX (Rule-14 CONTROL — proves the JS guard alone is insufficient)'}\n`);
     if (!WITH_INDEX) {
+      // N3-26: the production schema also has idx_payroll_runs_uniq (one run per period); the control removes BOTH guards
+      await c.query(`DROP INDEX IF EXISTS idx_payroll_runs_uniq`);
       const d = await c.query(`DROP INDEX IF EXISTS idx_payroll_runs_idem_key`);
       console.log(`  (control) dropped idx_payroll_runs_idem_key — command tag: ${d.command || 'DROP'}\n`);
     } else {
@@ -120,21 +122,23 @@ const WITH_INDEX = !process.env.NO_INDEX;
       A('C. CONTROL (no index): 2nd raw same-token insert ACCEPTED → TWO runs', !rawRejected && nRaw === 2, `rejected=${rawRejected} rows=${nRaw}`);
     }
 
-    // ── D. different tokens, SAME period → TWO runs (token-based; one-run-per-period is DEFERRED) ──
+    // ── D. different tokens, SAME period → ONE run. N3-26 (2026-11-13): this asserted TWO, which is what the TEST schema
+    // did — production also runs scripts/migrations, whose idx_payroll_runs_uniq allows ONE non-voided run per
+    // (user, business, period). The harness now boots production's schema, so this states production's rule. ──
     const pD = 'legit-D-2026-04';
     const d1 = await post(pD, 'tok-D1');
     const d2 = await post(pD, 'tok-D2');
     const nD = await runCount(uid, pD);
-    A('D. different tokens, same period: TWO runs (token index does NOT enforce one-run-per-period — that natural key is the deferred post-launch item)',
-      nD === 2, `rows=${nD}  d1=${d1.status} d2=${d2.status} ids ${d1.json?.id}/${d2.json?.id}`);
+    A('D. different tokens, same period: ONE run — production\'s one-run-per-period index (2nd answers the existing run, no 5xx)',
+      !WITH_INDEX ? nD === 2 : (nD === 1 && d1.status < 300 && d2.status < 300 && d1.json?.id === d2.json?.id), `rows=${nD}  d1=${d1.status} d2=${d2.status} ids ${d1.json?.id}/${d2.json?.id}`);
 
     // ── E. no token, same period, >5s apart → TWO runs; <5s apart → ONE run (period pre-check) ──
     const pE = 'nokey-E-2026-05';
     const e1 = await post(pE);
     await ageOut(uid, pE);
     const e2 = await post(pE);
-    A('E. no-token, same period >5s apart: TWO runs — 5s window expired, no token index to catch it',
-      (await runCount(uid, pE)) === 2, `rows=${await runCount(uid, pE)}  e1=${e1.status} e2=${e2.status}`);
+    A('E. no-token, same period >5s apart: ONE run — past the 5 s window, production\'s one-run-per-period index still holds (N3-26)',
+      !WITH_INDEX ? (await runCount(uid, pE)) === 2 : ((await runCount(uid, pE)) === 1 && e1.status < 300 && e2.status < 300), `rows=${await runCount(uid, pE)}  e1=${e1.status} e2=${e2.status}`);
     const pE2 = 'nokey-E2-2026-06';
     const e2a = await post(pE2);
     const e2b = await post(pE2);

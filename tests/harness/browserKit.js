@@ -85,4 +85,4 @@ function runBrowser(title, body, opts = {}) {
   })();
 }
 
-module.exports = { runBrowser, loadPlaywright };   // loadPlaywright: the ONE Playwright lookup (local, else the global install)
+module.exports = { runBrowser, loadPlaywright, PW_FOR_TESTS: PW };   // PW: the kit owner's test-only password, for a harness that needs a second session   // loadPlaywright: the ONE Playwright lookup (local, else the global install)

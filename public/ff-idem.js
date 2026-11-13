@@ -76,4 +76,53 @@
     } catch (_) {}
     return orig(input, init);
   };
+  // N3-18 (live chat check 2026-11-11): when a session ENDS while a page is open (expired, signed out elsewhere, or the
+  // same browser signed in as another account — owner app and accountant portal share one session cookie), every /api
+  // call answers 401 and pages went quietly empty: the owner's chat read "No messages yet" while the accountant's
+  // messages were all there. ONE watcher here (every page loads this file, and every fetch passes through it) tells the
+  // user and offers to sign in again. It only fires after THIS page has seen its own identity in the session (header
+  // X-FF-Session), and only on a 401 whose session no longer holds it — so a signed-out visitor's first load, and a 401
+  // with the session intact (e.g. "current password is incorrect"), never show it. Strict-CSP safe.
+  var _ffAuthed = false, _ffEnded = false;
+  // Which identity THIS page needs; the server says which ones the session holds (X-FF-Session, server.js).
+  var _need = /^\/accountant/.test(location.pathname) ? 'accountant' : /^\/admin/.test(location.pathname) ? 'admin' : 'owner';
+  function _ffSessionEnded() {
+    if (_ffEnded) return; _ffEnded = true;
+    try { window.dispatchEvent(new CustomEvent('ff:session-ended')); } catch (_) {}
+    var isAcc = /^\/accountant/.test(location.pathname), isAdmin = /^\/admin/.test(location.pathname);
+    var go = function () { if (isAcc) location.href = '/accountant-login'; else location.reload(); };
+    var build = function () {
+      if (document.getElementById('ff-session-ended')) return;
+      var ov = document.createElement('div'); ov.id = 'ff-session-ended'; ov.setAttribute('role', 'alertdialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'ff-se-t');
+      var o = ov.style; o.position = 'fixed'; o.inset = '0'; o.zIndex = '99998'; o.display = 'flex'; o.alignItems = 'center'; o.justifyContent = 'center'; o.background = 'rgba(8,6,4,.72)'; o.padding = '16px';
+      var box = document.createElement('div'); var b = box.style; b.maxWidth = '380px'; b.width = '100%'; b.background = '#16120d'; b.border = '1px solid #3d3222'; b.borderRadius = '14px'; b.padding = '22px 24px'; b.color = '#f0e9dd'; b.fontFamily = 'Jost,system-ui,sans-serif'; b.boxShadow = '0 20px 60px rgba(0,0,0,.5)';
+      var t = document.createElement('div'); t.id = 'ff-se-t'; t.textContent = 'You’ve been signed out'; t.style.fontSize = '18px'; t.style.fontWeight = '600'; t.style.marginBottom = '8px';
+      var m = document.createElement('div'); m.textContent = 'Your session ended, so this page can’t load or save anything. Sign in again to continue. If you just signed in with another account in this browser, that ended this one.'; m.style.fontSize = '13.5px'; m.style.lineHeight = '1.55'; m.style.color = '#c9bfae'; m.style.marginBottom = '18px';
+      var btn = document.createElement('button'); btn.type = 'button'; btn.id = 'ff-se-signin'; btn.textContent = isAdmin ? 'Sign in to admin' : 'Sign in again';
+      var s2 = btn.style; s2.background = '#c9a84c'; s2.color = '#0e0b08'; s2.border = 'none'; s2.borderRadius = '8px'; s2.padding = '10px 18px'; s2.fontWeight = '600'; s2.fontSize = '14px'; s2.cursor = 'pointer'; s2.width = '100%';
+      btn.addEventListener('click', go);
+      box.appendChild(t); box.appendChild(m); box.appendChild(btn); ov.appendChild(box); document.body.appendChild(ov);
+      try { btn.focus(); } catch (_) {}
+    };
+    if (document.body) build(); else document.addEventListener('DOMContentLoaded', build);
+  }
+  window._ffSessionEnded = _ffSessionEnded;
+  var _inner = window.fetch;
+  window.fetch = function (input, init) {
+    var p = _inner.apply(window, arguments);
+    try {
+      var u = new URL(typeof input === 'string' ? input : (input && input.url) || '', location.href);
+      if (u.origin === location.origin && /^\/api\//.test(u.pathname)) {
+        p.then(function (res) {
+          if (!res) return;
+          var ids = (res.headers && res.headers.get('X-FF-Session')) || '';
+          if (!ids) return;                                  // not our server (or an old build): say nothing
+          var has = ids.split(',').indexOf(_need) >= 0;
+          if (has) _ffAuthed = true;                         // this page has been signed in
+          else if (_ffAuthed && res.status === 401) _ffSessionEnded();   // …and now it is not
+        }, function () {});
+      }
+    } catch (_) {}
+    return p;
+  };
 })();

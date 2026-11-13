@@ -887,6 +887,17 @@ app.use((req, res, next) => {
   else if (!authed && has) res.clearCookie('ff_auth', _ffAuthCookie);
   next();
 });
+// N3-18: every /api answer says which identities this session holds ("owner", "accountant", "admin", or "none"), so a
+// page can tell "you are signed out" from "that request was refused" (a wrong current password is also a 401, with the
+// session intact). The page-side watcher is in public/ff-idem.js. Names only — no id, no credential.
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    const s = req.session || {};
+    const ids = [s.userId && 'owner', s.accountantId && 'accountant', s.isAdmin && 'admin'].filter(Boolean).join(',') || 'none';
+    res.set('X-FF-Session', ids);
+  }
+  next();
+});
 app.get('/api/auth/session', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({ authenticated: !!(req.session && req.session.userId) });

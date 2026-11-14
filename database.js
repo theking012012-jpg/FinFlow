@@ -1547,6 +1547,39 @@ const db = {
     return { lastInsertRowid: inserted.id, row: inserted };
   },
 
+  // insertMany() — N3-30: many rows of one table in ONE statement (a bank statement of 20,000 lines was 20,000 round
+  // trips). Same rules as insert(): the entity-required check per row, data = the row minus its columns, a known-but-
+  // missing table created once. skipConflicts → ON CONFLICT DO NOTHING (no target: every unique index, incl. partial
+  // ones), so a row that a unique index already holds — or that an earlier row of this same call holds — is skipped,
+  // not an error. Returns the rows actually inserted, as objects (a skipped row is simply absent).
+  async insertMany(table, rows, { skipConflicts = false } = {}, client = pool) {
+    if (!rows.length) return [];
+    const uids = [], eids = [], datas = [];
+    for (const row of rows) {
+      const { user_id = null, entity_id = null, ...rest } = row;
+      if (entity_id == null && ENTITY_REQUIRED_TABLES.has(table)) {
+        const e = new Error('No active business entity. Create or select a business entity first.');
+        e.status = 400; e.expose = true; e.code = 'NO_ACTIVE_ENTITY';
+        throw e;
+      }
+      uids.push(user_id); eids.push(entity_id); datas.push(JSON.stringify(objToData(rest)));
+    }
+    const doInsert = () => client.query(
+      `INSERT INTO ${table} (user_id, entity_id, data)
+       SELECT u, e, d FROM unnest($1::int[], $2::int[], $3::jsonb[]) WITH ORDINALITY AS t(u, e, d, ord) ORDER BY ord
+       ${skipConflicts ? 'ON CONFLICT DO NOTHING' : ''}
+       RETURNING *`,
+      [uids, eids, datas]
+    );
+    let res;
+    try { res = await doInsert(); }
+    catch (err) {
+      if (err.code === '42P01' && await _ensureTable(table)) res = await doInsert();
+      else throw err;
+    }
+    return res.rows.map(rowToObj);
+  },
+
   // allByUser() — always uses the user_id index; optional extra JS filter
   async allByUser(table, userId, filterFn, sortFn) {
     try {

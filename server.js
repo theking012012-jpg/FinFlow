@@ -8366,7 +8366,7 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
   // re-imports still dedupe. The 1st occurrence keeps the original key form, so rows imported before this
   // change still match.
   const _seenInFile = new Map();
-  for (const t of txns) {
+  const _keyed = txns.map(t => {
     // Idempotent dedupe: OFX → FITID (exact); CSV → content hash of date+amount+desc (+ occurrence, M33).
     let key;
     if (t.fitid) key = 'ofx:' + t.fitid;
@@ -8375,22 +8375,38 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
       const n = (_seenInFile.get(base) || 0) + 1; _seenInFile.set(base, n);
       key = 'csv:' + crypto.createHash('sha1').update(n === 1 ? base : base + '|#' + n).digest('hex');
     }
-    // M60: a duplicate is one already in THIS scope — a statement imported into a business never blocks the same
-    // statement in Personal (or another business).
-    const { rows: [dup] } = await pool.query(
-      `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'import_key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, key, eid]);
-    if (dup) { skipped++; continue; }
-    let _impRow;
-    try {
-      ({ row: _impRow } = await db.insert('personal_transactions', {
+    return { t, key };
+  });
+  // N3-30: in batches of 500 — one look-up of the keys already in THIS scope, one insert, one set of audit entries — not
+  // three round trips per line (a 19,563-line statement took 113 s). The rules are the line-at-a-time loop's:
+  //  · M60: a duplicate is one already in THIS scope — a statement imported into a business never blocks the same
+  //    statement in Personal (or another business). The look-up is written in the SAME form as
+  //    idx_bank_line_import_key (user_id, COALESCE(entity_id, 0), import_key), so it is an index lookup.
+  //  · a key repeated within the file (an OFX FITID listed twice) is imported once, the rest skipped.
+  //  · NEW-3: a line a concurrent import wrote first is skipped (ON CONFLICT DO NOTHING on the unique index).
+  const _doneKeys = new Set();
+  for (let i = 0; i < _keyed.length; i += 500) {
+    const part = _keyed.slice(i, i + 500);
+    const { rows: had } = await pool.query(
+      `SELECT data->>'import_key' AS k FROM personal_transactions
+        WHERE user_id = $1 AND COALESCE(entity_id, 0) = COALESCE($2::int, 0) AND data->>'import_key' = ANY($3::text[]) AND data->>'import_key' IS NOT NULL`,
+      [uid, eid, part.map(x => x.key)]);
+    for (const r of had) _doneKeys.add(r.k);
+    const fresh = [];
+    for (const { t, key } of part) {
+      if (_doneKeys.has(key)) { skipped++; continue; }
+      _doneKeys.add(key);
+      fresh.push({
         user_id: uid, entity_id: eid,
         description: t.description, amount: t.amount, ..._bankTx(personal, t.tx_type === 'debit'), tx_date: t.tx_date,
         category: 'Uncategorized', source: 'banking', import_key: key,
         ...(_pCur ? { currency: _pCur } : {}),
-      }));
-    } catch (e) { if (e && e.code === '23505') { skipped++; continue; } throw e; }   // NEW-3: a concurrent import wrote it first
-    if (eid != null) await _auditRec(req, 'bank_lines', 'CREATE', null, _impRow);   // FIX-3b — business lines only
-    imported++;
+      });
+    }
+    const made = await db.insertMany('personal_transactions', fresh, { skipConflicts: true });
+    skipped += fresh.length - made.length;   // NEW-3: written by a concurrent import first
+    imported += made.length;
+    if (eid != null && made.length) await recordAuditMany(pool, made.map(row => ({ userId: scopeId(req), entityId: row.entity_id == null ? null : row.entity_id, table: 'bank_lines', recordId: row.id || null, action: 'CREATE', oldData: null, newData: row, req })));   // FIX-3b — business lines only (= _auditRec, batched)
   }
   // LC3c: a personal statement import is one entry in Personal's history (what was imported, not each line).
   if (eid == null && imported > 0) await _persHist(req, uid, 'bank_import', 'IMPORT', null, { format: format || null, imported, skipped, total: txns.length });
@@ -9424,7 +9440,7 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   // corrections never arrived. A row already reconciled into the books is never silently changed or deleted —
   // it is flagged (plaid_changed / plaid_removed) for the owner to review.
   // M60: a feed row is looked up in THIS scope only — a sync never modifies, deletes or skips a row of another scope.
-  const _txRow = async (id) => { const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE user_id=$1 AND data->>'plaid_txn_id'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, id, eid]); return r ? rowToObj(r) : null; };
+  const _txRow = async (id) => { const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE user_id=$1 AND COALESCE(entity_id, 0) = COALESCE($3::int, 0) AND data->>'plaid_txn_id'=$2 AND data->>'plaid_txn_id' IS NOT NULL LIMIT 1`, [uid, id, eid]); return r ? rowToObj(r) : null; };
   const _fields = t => ({
     description: t.name || t.merchant_name || 'Bank transaction',
     amount: Math.abs(Number(t.amount) || 0),
@@ -10821,7 +10837,7 @@ app.post('/api/belvo/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
         const list = Array.isArray(j) ? j : (j.results || []);
         for (const t of list) {
           if (!t || !t.id) continue;
-          const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'belvo_txn_id'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, String(t.id), eid]);   // M60: this scope only
+          const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id=$1 AND COALESCE(entity_id, 0) = COALESCE($3::int, 0) AND data->>'belvo_txn_id'=$2 AND data->>'belvo_txn_id' IS NOT NULL LIMIT 1`, [uid, String(t.id), eid]);   // M60: this scope only
           if (dup) continue;
           try { await db.insert('personal_transactions', belvoTxnToRow(t, uid, eid, personal, _pCur)); }
           catch (e) { if (e && e.code === '23505') continue; throw e; }   // NEW-3: a concurrent sync wrote it first
@@ -11454,24 +11470,40 @@ app.post('/api/dlocal/webhook', async (req, res) => {
 // approve, mark paid, message, …) is still written here.
 const _AUDITED_BY_DB = new Set(require('./audit-trigger').AUDITED_TABLES);
 const _ROW_CHANGE_ACTIONS = new Set(['CREATE', 'UPDATE', 'DELETE', 'RECALC']);
-async function recordAudit(pool, { userId = null, entityId = null, table, recordId = null, action, field = null, oldValue = null, newValue = null, oldData = null, newData = null, req = null, actorType: actorOverride = null }) {
+// One audit_trail row's values, or null when the database records this change itself (shared by recordAudit and
+// recordAuditMany, so the single-row and batched writers can never disagree on what an entry holds).
+function _auditValues({ userId = null, entityId = null, table, recordId = null, action, field = null, oldValue = null, newValue = null, oldData = null, newData = null, req = null, actorType: actorOverride = null }) {
+  if (_AUDITED_BY_DB.has(table) && _ROW_CHANGE_ACTIONS.has(String(action || '').toUpperCase())) return null;
+  let actorType = 'system', actorId = userId;
+  if (req && req.session && req.session.accountantId) { actorType = 'accountant'; actorId = req.session.accountantId; }
+  else if (req && req.session && req.session.userId)  { actorType = 'user';       actorId = req.session.userId; }
+  if (actorOverride) { actorType = actorOverride; if (actorOverride === 'anonymous') actorId = null; }   // LC3d: e.g. a failed sign-in
+  const _ua = req && typeof req.get === 'function' ? String(req.get('user-agent') || '').slice(0, 300) || null : null;   // LC3d
+  return [userId, entityId, table, recordId, action, field,
+    oldValue == null ? null : String(oldValue), newValue == null ? null : String(newValue),
+    oldData ? JSON.stringify(oldData) : null, newData ? JSON.stringify(newData) : null,
+    actorType, actorId, (req && (req.clientIp || req.ip)) || null, _ua,   // LR26
+    require('./audit-context').source(), require('./audit-context').requestId()];   // F90: the request / job it came from — pairs this event with the row changes it made
+}
+const _AUDIT_COLS = 'user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, old_data, new_data, actor_type, actor_id, ip_address, user_agent, source, request_id';
+async function recordAudit(pool, opts) {
   try {
-    if (_AUDITED_BY_DB.has(table) && _ROW_CHANGE_ACTIONS.has(String(action || '').toUpperCase())) return;
-    let actorType = 'system', actorId = userId;
-    if (req && req.session && req.session.accountantId) { actorType = 'accountant'; actorId = req.session.accountantId; }
-    else if (req && req.session && req.session.userId)  { actorType = 'user';       actorId = req.session.userId; }
-    if (actorOverride) { actorType = actorOverride; if (actorOverride === 'anonymous') actorId = null; }   // LC3d: e.g. a failed sign-in
-    const _ua = req && typeof req.get === 'function' ? String(req.get('user-agent') || '').slice(0, 300) || null : null;   // LC3d
-    await pool.query(
-      `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, old_data, new_data, actor_type, actor_id, ip_address, user_agent, source, request_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-      [userId, entityId, table, recordId, action, field,
-       oldValue == null ? null : String(oldValue), newValue == null ? null : String(newValue),
-       oldData ? JSON.stringify(oldData) : null, newData ? JSON.stringify(newData) : null,
-       actorType, actorId, (req && (req.clientIp || req.ip)) || null, _ua,   // LR26
-       require('./audit-context').source(), require('./audit-context').requestId()]   // F90: the request / job it came from — pairs this event with the row changes it made
-    );
+    const v = _auditValues(opts);
+    if (!v) return;
+    await pool.query(`INSERT INTO audit_trail (${_AUDIT_COLS}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`, v);
   } catch (e) { console.error('[audit] recordAudit failed:', e.message); }
+}
+// N3-30: many entries in one statement (a 20,000-line statement import recorded 20,000 entries one round trip each).
+// Same values per entry as recordAudit; 1,000 entries per statement keeps it well under Postgres' parameter limit.
+async function recordAuditMany(pool, list) {
+  try {
+    const rows = list.map(_auditValues).filter(Boolean);
+    for (let i = 0; i < rows.length; i += 1000) {
+      const part = rows.slice(i, i + 1000), params = [];
+      const tuples = part.map(v => '(' + v.map(x => { params.push(x); return '$' + params.length; }).join(',') + ')');
+      await pool.query(`INSERT INTO audit_trail (${_AUDIT_COLS}) VALUES ${tuples.join(',')}`, params);
+    }
+  } catch (e) { console.error('[audit] recordAuditMany failed:', e.message); }
 }
 
 // Back-compat wrapper (field-level shape). All existing auditLog(...) call sites keep working.

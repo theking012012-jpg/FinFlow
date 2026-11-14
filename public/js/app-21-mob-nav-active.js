@@ -121,7 +121,7 @@ async function _loadEntitiesFromDBImpl(){
     if (ENTITIES.length > 0) {
       try{ localStorage.setItem('ff_onboarded','1'); }catch(e){}
       try{ sessionStorage.setItem('ff_onboarded','1'); }catch(e){}
-      var _obw = document.getElementById('ob-overlay'); if (_obw) _obw.remove();
+      var _obw = document.getElementById('ob-overlay'); if (_obw && !window._ffObFinishing) _obw.remove();   // N3-28: the finishing wizard closes itself
     }
 
     // Sync businesses sidebar with real entities

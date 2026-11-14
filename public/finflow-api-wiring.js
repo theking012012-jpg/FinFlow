@@ -151,9 +151,29 @@
     };
 
     // Load settings from DB and apply them to the form fields
+    // LR21: a <select> shows a stored value even if its list lacks it (a legacy or renamed option) — never blank.
+    function _ffSetSettingsField(id, val) {
+      const el = document.getElementById(id);
+      if (!el || val == null) return;
+      if (el.tagName === 'SELECT' && val !== '' && ![...el.options].some(o => o.value === String(val))) el.add(new Option(String(val), String(val)));
+      el.value = val;
+    }
+    // N3-28: onboarding paints the profile it JUST saved into Settings at once (no round trip); a settings load that was
+    // already in flight is invalidated so its older answer cannot paint over it. The server re-read follows as before.
+    window._ffApplySavedProfile = function (p) {
+      _ffSettingsGen++;
+      _ffSetSettingsField('s-biz-name', p.business_name); _ffSetSettingsField('s-industry', p.industry);
+      _ffSetSettingsField('s-address', p.address); _ffSetSettingsField('s-email', p.email);
+      if (p.currency) _ffSetSettingsField('s-currency', p.currency);
+    };
+    // N3-28 (2026-11-13): settings answers can arrive out of order — the boot load starts before onboarding saves, and
+    // under load it can answer AFTER onboarding's re-read. Only the newest call may paint the form.
+    let _ffSettingsGen = 0;
     async function loadSettingsFromDB() {
+      const _gen = ++_ffSettingsGen;
       try {
         const s = await api('GET', '/api/settings');
+        if (_gen !== _ffSettingsGen) return;   // N3-28: a newer load started while this one was in flight
         // F197: honour the server's onboarding_done — the ONLY correct "this user finished onboarding"
         // signal. Suppress + remove the wizard for onboarded users; a user WITHOUT the flag keeps the
         // wizard so onboarding can provision their first entity. (Replaces the unconditional teardown
@@ -205,12 +225,7 @@
         }
         // Business profile fields (set from onboarding or earlier saves)
         // LR21: a <select> shows a stored value even if its list lacks it (a legacy or renamed option) — never blank.
-        const setField = (id, val) => {
-          const el = document.getElementById(id);
-          if (!el || val == null) return;
-          if (el.tagName === 'SELECT' && val !== '' && ![...el.options].some(o => o.value === String(val))) el.add(new Option(String(val), String(val)));
-          el.value = val;
-        };
+        const setField = _ffSetSettingsField;
         // NEW-6: the person's timezone for Personal's "today" — saved once from this device when none is set yet.
         window._ffPersonalTz = s.personal_timezone || null;
         if (!s.personal_timezone) {

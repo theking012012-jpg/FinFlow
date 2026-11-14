@@ -255,6 +255,13 @@ async function _completeOnboarding(d){
   if(!d.industry){ if(typeof notify==='function') notify('Industry is required', true); _obGotoStep(1); return; }
   if(!d.address){ if(typeof notify==='function') notify('Business address is required', true); _obGotoStep(1); return; }
   const _btn=document.getElementById('ob-next-btn'); if(_btn) _btn.disabled=true;
+  // N3-28: while this finish is saving, the wizard is OURS to close. The legacy "account has a business → past onboarding"
+  // dismissals (loadEntitiesFromDB, _ffDecideOnboarding) saw the entity created in step 1 and removed the wizard before the
+  // settings PUT returned — under load the app then showed Settings' blank defaults (Industry "Technology").
+  window._ffObFinishing = true;
+  try{ return await _completeOnboardingInner(d, _btn); } finally { window._ffObFinishing = false; }
+}
+async function _completeOnboardingInner(d, _btn){
   try{
     // 1) Provision the first entity. Clean path is a single POST (201). On a 402 (entity cap) a PRIOR
     //    half-completed attempt already created this account's one entity but its settings save failed;
@@ -278,6 +285,9 @@ async function _completeOnboarding(d){
     if(typeof notify==='function') notify('Network error finishing setup \u2014 please try again.', true);
     if(_btn)_btn.disabled=false; return;
   }
+  // N3-28: Settings shows what was just saved immediately — under load the re-read below landed seconds later and Settings
+  // read "Technology" (the first option) meanwhile; a Save in that window would have written it back.
+  try{ if(typeof window._ffApplySavedProfile==='function') window._ffApplySavedProfile({business_name:d.bizName,industry:d.industry,address:d.address,email:d.email,currency:d.currency}); }catch(_e){}
   // Only now that BOTH the entity and the settings persisted do we mark the user onboarded.
   try{ localStorage.setItem('ff_onboarded','1'); }catch(e){}
   try{ sessionStorage.setItem('ff_onboarded','1'); }catch(e){}
@@ -317,7 +327,7 @@ window.skipOnboarding = function(){
 // (loadSettingsFromDB passes its settings in). No reliance on the browser-global flag, so it can
 // neither leak to a new user nor re-trigger for a returning one.
 window._ffShowOnboarding = function(){ const o=document.getElementById('ob-overlay'); if(o) o.style.display=''; if(typeof window._ffFillCurrencySelects==='function') window._ffFillCurrencySelects(); };   // FA-B8: every supported currency
-window._ffHideOnboarding = function(){ const o=document.getElementById('ob-overlay'); if(o) o.remove(); };
+window._ffHideOnboarding = function(){ if(window._ffObFinishing) return; const o=document.getElementById('ob-overlay'); if(o) o.remove(); };   // N3-28: never mid-finish
 window._ffDecideOnboarding = async function(settings){
   try{
     let s = settings;

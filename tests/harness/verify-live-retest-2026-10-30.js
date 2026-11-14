@@ -37,14 +37,22 @@ runBrowser('Live re-test 2026-10-30 — NEW-1 … NEW-5', async ({ open, A, eq, 
   await page.evaluate(() => { const o = window.notify; window.notify = function (m) { try { window.__toast(String(m)); } catch (_) {} return o && o.apply(this, arguments); }; });
 
   // ── NEW-1: onboarding → Settings, same session ────────────────────────────────────────────────────────────────
+  // The user can only fill the wizard once it is on screen. Under load the app decides to show it later than the fixed 1.5 s
+  // settle; filling it earlier raced the boot (N3-16: the 'closed' check then passed on the not-yet-faded-in wizard).
+  await page.waitForFunction(() => { const o = document.getElementById('ob-overlay'); return o && getComputedStyle(o).display !== 'none' && getComputedStyle(o).opacity === '1'; }, null, { timeout: 60000 });
   await page.evaluate(async () => {
     const set = (id, v) => { const e = document.getElementById(id); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); };
     set('ob-biz-name', 'Northwind QA'); set('ob-industry', 'Media & Creative'); set('ob-user-name', 'Sam QA'); set('ob-email', 'qa@finflow.test');
     set('ob-address', '100 Main St'); set('ob-currency', 'USD'); set('ob-country', 'US');
     await window.skipOnboarding();   // calls finishOnboarding (the module's own, with the fields above)
   });
-  await wait(2500);
-  const ind = await page.evaluate(async () => { showPage('settings'); await new Promise(r => setTimeout(r, 800)); return document.getElementById('s-industry').value; });
+  // N3-16/N3-28 (2026-11-13): this waited a FIXED 2.5 s. Under load the wizard's own saves took longer, and the check
+  // opened Settings (programmatically) while the wizard still covered the app — a moment no user can reach. Wait until the
+  // wizard is GONE (it is removed only after BOTH saves succeed), exactly as a user would, then open Settings at once.
+  // (An opacity check also matched the wizard before it had faded in — a false 'closed'.)
+  await page.waitForFunction(() => !document.getElementById('ob-overlay'), null, { timeout: 60000 })
+    .catch(e => { throw new Error('the onboarding wizard did not close within 60 s after Finish: ' + e.message); });
+  const ind = await page.evaluate(async () => { showPage('settings'); await new Promise(r => setTimeout(r, 100)); return document.getElementById('s-industry').value; });
   eq('NEW-1 Settings → Industry right after onboarding', ind, 'Media & Creative', 'Technology');
 
   // ── seed through the API (the business onboarding just created) ───────────────────────────────────────────────

@@ -116,8 +116,11 @@ CREATE OR REPLACE FUNCTION ff_audit_chain() RETURNS trigger AS $$
 DECLARE last RECORD;
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('ff_audit_chain'), COALESCE(NEW.user_id, 0));
+  -- N3-31: looked up in idx_audit_trail_chain's own form (COALESCE(user_id, 0), chain_seq). \`user_id IS NOT DISTINCT
+  -- FROM\` could not use it: every entry scanned and sorted the account's whole trail. What is hashed is unchanged.
   SELECT chain_seq, row_hash INTO last FROM audit_trail
-   WHERE user_id IS NOT DISTINCT FROM NEW.user_id AND chain_seq IS NOT NULL ORDER BY chain_seq DESC LIMIT 1;
+   WHERE COALESCE(user_id, 0) = COALESCE(NEW.user_id, 0) AND chain_seq IS NOT NULL
+   ORDER BY COALESCE(user_id, 0) DESC, chain_seq DESC LIMIT 1;
   NEW.changed_at := COALESCE(NEW.changed_at, NOW());
   NEW.chain_seq := COALESCE(last.chain_seq, 0) + 1;
   NEW.prev_hash := last.row_hash;

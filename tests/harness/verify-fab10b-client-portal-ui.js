@@ -11,15 +11,19 @@ const { runBrowser } = require('./browserKit.js');
 runBrowser('FA-B10b UI — the owner shares a portal link; the customer opens it', async ({ open, eq }) => {
   const app = await open({ width: 1280, height: 800 });
   await app.evaluate(() => window.showPage('customers'));
-  await app.waitForTimeout(800);
-  const btn = await app.evaluateHandle(() => Array.from(document.querySelectorAll('#customers-list .cust-row')).filter(r => /Acme Ltd/.test(r.textContent))
-    .map(r => Array.from(r.querySelectorAll('button')).find(b => b.textContent.trim() === 'Portal'))[0] || null);
-  eq('1  Acme\'s row has a Portal button', !!(await btn.jsonValue() !== null && await app.evaluate(b => !!b, btn)), true, false);
+  // N3-16 (2026-11-13): this grabbed the Portal button ONCE after a fixed 0.8 s and clicked that element. The Customers
+  // list draws, then redraws when its data lands — on the owner's machine 2 of 7 runs clicked a button the redraw had
+  // already replaced ("Element is not attached to the DOM"). A locator is looked up again at click time and waits for it.
+  const portalBtn = app.locator('#customers-list .cust-row', { hasText: 'Acme Ltd' }).locator('button', { hasText: /^Portal$/ });
+  const has = await portalBtn.first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true, () => false);
+  eq('1  Acme\'s row has a Portal button', has, true, false);
   let url = '';
-  if (await app.evaluate(b => !!b, btn)) {
-    await btn.click(); await app.waitForTimeout(500);
-    await app.evaluate(() => Array.from(document.querySelectorAll('#cust-portal-modal button')).find(b => b.textContent === 'Create link').click());
-    await app.waitForTimeout(800);
+  if (has) {
+    await portalBtn.first().click();
+    const create = app.locator('#cust-portal-modal button', { hasText: /^Create link$/ });
+    await create.waitFor({ state: 'visible', timeout: 15000 });
+    await create.click();
+    await app.waitForFunction(() => /\/portal#/.test((document.getElementById('cust-portal-url') || {}).value || ''), null, { timeout: 15000 }).catch(() => {});
     url = await app.evaluate(() => (document.getElementById('cust-portal-url') || {}).value || '');
   }
   eq('1  "Create link" shows the link to copy', /\/portal#[A-Za-z0-9_-]{43}$/.test(url), true, false);
@@ -32,7 +36,8 @@ runBrowser('FA-B10b UI — the owner shares a portal link; the customer opens it
     page.on('console', m => { if (/Content Security Policy|Refused to/i.test(m.text())) blocked.push(m.text().slice(0, 140)); });
     page.on('pageerror', e => blocked.push('error: ' + e.message.slice(0, 140)));
   } }, url ? url.slice(url.indexOf('/portal#')) : '/portal#missing');
-  await cust.waitForTimeout(800);
+  // N3-16: wait for the customer's figures to arrive instead of a fixed 0.8 s
+  await cust.waitForFunction(() => /\$/.test((document.querySelector('#portal-total .v') || {}).textContent || ''), null, { timeout: 15000 }).catch(() => {});
   const r = await cust.evaluate(() => ({
     total: (document.querySelector('#portal-total .v') || {}).textContent || '',
     overdue: (document.querySelector('#portal-overdue .v') || {}).textContent || '',

@@ -41,7 +41,7 @@ const at = d => new Date(NOW + d * DAY).toISOString();
       STRIPE_PRICE_PRO: 'price_pro_m', STRIPE_PRICE_PRO_ANNUAL: 'price_pro_y', STRIPE_PRICE_BUSINESS: 'price_biz_m' });
     delete process.env.STRIPE_PRICE_BUSINESS_ANNUAL;
     const database = require('../../database.js');
-    await database.initDB();
+    await require('./boot.js').applyProductionSchema(database);   // N3-26: production schema (initDB + migrations)
     const PW = 'db5-pw-123';
     const mk = async (email, extra) => (await c.query(`INSERT INTO users (user_id,entity_id,data) VALUES (NULL,NULL,$1) RETURNING id`, [Object.assign({ email, name: email.split('@')[0], role: 'owner', password: bcrypt.hashSync(PW, 10) }, extra)])).rows[0].id;
     const sub = (id, interval, endDays, cancel) => ({ plan: 'business', stripe_subscription_id: id, stripe_customer_id: 'cus_' + id, subscriptionStatus: 'active',

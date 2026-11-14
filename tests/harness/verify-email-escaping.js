@@ -42,7 +42,7 @@ const EVIL_S = '<script>alert(1)</script>';
     process.env.ADMIN_EMAIL = 'admin@test.example';
     process.env.ADMIN_PASSWORD = 'harness-admin-password';
     const database = require('../../database.js');
-    await database.initDB();
+    await require('./boot.js').applyProductionSchema(database);   // N3-26: production schema (initDB + migrations)
     const app = require('../../server.js');
     server = await new Promise((res, rej) => { const s = app.listen(0, '127.0.0.1', () => res(s)); s.on('error', rej); });
     const base = `http://127.0.0.1:${server.address().port}`;

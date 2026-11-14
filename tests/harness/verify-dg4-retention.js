@@ -43,7 +43,7 @@ const ago = d => new Date(NOW - d * DAY).toISOString();
     process.env.EMAIL_FROM = 'FinFlow <noreply@test.example>';
     process.env.APP_URL = 'https://finflow-test.example';
     const database = require('../../database.js');
-    await database.initDB();
+    await require('./boot.js').applyProductionSchema(database);   // N3-26: production schema (initDB + migrations)
     const PW = 'dg4-pw-123';
     const mk = async (email, extra) => {
       const id = (await c.query(`INSERT INTO users (user_id,entity_id,data) VALUES (NULL,NULL,$1) RETURNING id`, [Object.assign({ email, name: email.split('@')[0], role: 'owner', password: bcrypt.hashSync(PW, 10) }, extra)])).rows[0].id;

@@ -121,4 +121,4 @@ async function bootServer(scratchUrl) {
   return { app, server, port, baseUrl, pool: database.pool, close, bootRejections };
 }
 
-module.exports = { bootServer, initSchema, installEnv };
+module.exports = { bootServer, initSchema, installEnv, applyProductionSchema };

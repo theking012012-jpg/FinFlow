@@ -47,7 +47,7 @@ const ROOT = path.join(__dirname, '..', '..');
     const c = scratch.client;
     installEnv(scratch.url);
     const database = require('../../database.js');
-    await database.initDB();
+    await require('./boot.js').applyProductionSchema(database);   // N3-26: production schema (initDB + migrations)
     const app = require('../../server.js');
     server = await new Promise((res, rej) => { const s = app.listen(0, '127.0.0.1', () => res(s)); s.on('error', rej); });
     const base = `http://127.0.0.1:${server.address().port}`;

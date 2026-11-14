@@ -27,7 +27,7 @@ async function main() {
   try {
     installEnv(scratch.url);
     database = require('../../database.js');
-    await database.initDB();
+    await require('./boot.js').applyProductionSchema(database);   // N3-26: production schema (initDB + migrations)
     const uid = (await c.query(`INSERT INTO users (user_id,entity_id,data) VALUES (NULL,NULL,$1) RETURNING id`, [{ email: 'um@finflow.test' }])).rows[0].id;
     const eid = (await c.query(`INSERT INTO entities (user_id,entity_id,data) VALUES ($1,NULL,$2) RETURNING id`, [uid, { name: 'UM Co', currency: 'USD' }])).rows[0].id;
     const inv = (await c.query(`INSERT INTO invoices (user_id,entity_id,data) VALUES ($1,$2,$3) RETURNING id`, [uid, eid, { client: 'C', amount: 500, amount_paid: 0, status: 'pending', issue_date: '2026-07-01' }])).rows[0].id;

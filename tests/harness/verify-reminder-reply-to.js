@@ -34,7 +34,7 @@ async function main() {
     // installEnv boot keeps RESEND_API_KEY (bootServer clears it). Resend itself is the require-cache mock above.
     installEnv(scratch.url);
     process.env.RESEND_API_KEY = 're_mock';
-    await require('../../database.js').initDB();
+    await require('./boot.js').applyProductionSchema(require('../../database.js'));   // N3-26
     const app = require('../../server.js');
     const srv = await new Promise((res, rej) => { const s = app.listen(0, '127.0.0.1', () => res(s)); s.on('error', rej); });
     server = { baseUrl: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise(r => srv.close(r)) };

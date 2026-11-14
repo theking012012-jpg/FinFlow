@@ -47,7 +47,7 @@ const NAME = 'Reset Tester';
     process.env.APP_URL = 'https://finflow-test.example';
 
     database = require('../../database.js');
-    await database.initDB();
+    await require('./boot.js').applyProductionSchema(database);   // N3-26: production schema (initDB + migrations)
     await c.query(
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW())`,
       [{ email: EMAIL, name: NAME, plan: 'trial', role: 'owner', password: bcrypt.hashSync('x', 10) }]

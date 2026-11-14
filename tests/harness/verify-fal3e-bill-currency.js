@@ -42,7 +42,7 @@ const N = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
     scratch = await startScratchPostgres({ keep: false }); const c = scratch.client;
     installEnv(scratch.url);
     process.env.RESEND_API_KEY = 're_mock'; process.env.EMAIL_FROM = 'FinFlow <noreply@test.example>';
-    const database = require('../../database.js'); await database.initDB();
+    const database = require('../../database.js'); await require('./boot.js').applyProductionSchema(database);   // N3-26: production schema (initDB + migrations)
     const app = require('../../server.js');
     server = await new Promise((res, rej) => { const s = app.listen(0, '127.0.0.1', () => res(s)); s.on('error', rej); });
     const base = `http://127.0.0.1:${server.address().port}`;

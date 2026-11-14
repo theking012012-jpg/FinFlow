@@ -44,10 +44,17 @@
   // DST and offset for real; formatToParts with 2-digit month/day gives a zero-padded 'YYYY-MM-DD'.
   // An unknown zone throws RangeError — resolvedToday catches it and falls back to UTC. Still a pure
   // FORMAT of a genuine instant to a calendar date, never a Date-to-Date comparison (Rule 10).
+  // N3-32: one formatter per zone, reused. Building an Intl.DateTimeFormat costs far more than formatting with one, and
+  // _entityToday() reaches here on every render (350 ms of a mobile app load). Same options, so the output is identical; an
+  // unknown zone still throws RangeError at construction (and is not cached), as before.
+  var _fmtByZone = Object.create(null);
   var _ymdInZone = function (d, tz) {
-    var parts = new Intl.DateTimeFormat('en-US', {
+    var key = tz === undefined ? '\u0000' : String(tz);
+    var f = _fmtByZone[key];
+    if (!f) f = _fmtByZone[key] = new Intl.DateTimeFormat('en-US', {
       timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
-    }).formatToParts(d);
+    });
+    var parts = f.formatToParts(d);
     var y = '', m = '', day = '';
     for (var i = 0; i < parts.length; i++) {
       if (parts[i].type === 'year') y = parts[i].value;

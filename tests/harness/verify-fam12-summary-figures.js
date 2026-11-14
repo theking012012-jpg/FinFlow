@@ -41,6 +41,13 @@ process.on('uncaughtException', (e) => { const s = String(e && e.message || e); 
     await settle(20, 100);
 
     // a — AI insights
+    // N3-16 (owner's Windows box, Node 24): updateAI ran before the seeded invoices had loaded — "[ai] Year-to-date revenue:
+    // $0 … Add invoices to see your highest and lowest revenue months." 0/8 alone. The app re-runs updateAI when its data
+    // lands and when the AI page opens; this test called it once at a fixed point. Wait until the books hold the seeded
+    // revenue (Σ 2,800), ≤ 30 s, and say so if they never do.
+    let _rev = 0;
+    for (let i = 0; i < 300; i++) { try { _rev = window.computeRevenue ? window.computeRevenue() : 0; } catch (_) {} if (_rev > 0) break; await new Promise(r => setTimeout(r, 100)); }
+    console.log('  [data] revenue loaded before the AI check: ' + _rev + ' · invoices ' + ((window.invoices || []).length));
     try { window.currentPeriod = 'year'; } catch (_) {}
     try { window.updateAI(); } catch (e) { A('updateAI ran', false, e.message); }
     const ai = ((d.getElementById('ai-insights-list') || {}).textContent || '').replace(/\s+/g, ' ');

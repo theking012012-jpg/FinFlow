@@ -222,6 +222,12 @@
         'reports':            () => { if (typeof window.renderReports           === 'function') window.renderReports(); },
         'budget':             () => { if (typeof window.renderBudget            === 'function') window.renderBudget(); },
         'cashflow':           () => { if (typeof window.renderCashflow          === 'function') window.renderCashflow(); },
+        // N3-29: the active-page repaint had no entry for the pages that are read off the books when they open.
+        // AI insights — an AI page open while the books load stayed on "$0 … Add invoices".
+        'ai':                 () => { if (typeof window.updateAI                === 'function') window.updateAI(); },
+        // N3-29 (same class): the Scenario planner's baseline is the books' Year — it stayed $0 if opened before they loaded.
+        // Only the baseline is re-read; the user's what-if inputs are left as they are.
+        'scenario':           () => { if (typeof window._syncScenarioBase === 'function') window._syncScenarioBase(); if (typeof window.updateScenario === 'function') window.updateScenario(); if (typeof window.renderScenarioChart === 'function') window.renderScenarioChart((window.BASE || {}).rev || 0, (window.BASE || {}).exp || 0); },
         // PL#11: tax-filing is a static placeholder — no render hook (calcAndRenderTax removed).
       };
 

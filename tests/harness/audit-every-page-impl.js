@@ -12,18 +12,19 @@
 const { runBrowser } = require('./browserKit.js');
 
 // N3-24 (2026-11-14): one harness took 110–125 s of the sweep's 180 s limit — every page at TWO widths plus 13 more
-// pages. Split by width into verify-audit-every-page.js (1280 px) and verify-audit-every-page-phone.js (375 px + the
-// pages outside /app). The checks are unchanged; each half runs its own browser.
+// pages. Split into verify-audit-every-page.js (1280 px), verify-audit-every-page-phone.js (375 px) and
+// verify-audit-every-page-outside.js (the 13 pages outside /app, 375 px) — the phone half alone still took 157 s on the
+// owner's first sweep run (2026-11-15). The checks are unchanged; each part runs its own browser.
 module.exports = function auditEveryPage(mode) {
 
-runBrowser(mode === 'phone' ? 'Full-app audit — every page at phone width (375 px) + the pages outside /app' : 'Full-app audit — every page at desktop width (1280 px)', async ({ open, eq }) => {
+runBrowser(mode === 'phone' ? 'Full-app audit — every /app page at phone width (375 px)' : mode === 'outside' ? 'Full-app audit — the pages outside /app, at phone width' : 'Full-app audit — every page at desktop width (1280 px)', async ({ open, eq }) => {
   const errs = [];
   const watch = async (ctx, page) => {
     await ctx.addInitScript(() => { window.__cspV = []; document.addEventListener('securitypolicyviolation', e => window.__cspV.push(e.violatedDirective + ' ' + String(e.sample || '').slice(0, 40))); });
     page.on('pageerror', e => errs.push(e.message.slice(0, 140)));
   };
   const result = { over: [], tiny: [], broken: [], csp: [] };
-  for (const [w, h, phone] of (mode === 'phone' ? [[375, 812, true]] : [[1280, 800, false]])) {
+  for (const [w, h, phone] of (mode === 'outside' ? [] : mode === 'phone' ? [[375, 812, true]] : [[1280, 800, false]])) {
     const page = await open({ width: w, height: h, beforeGoto: watch });
     const ids = await page.evaluate(() => Array.from(document.querySelectorAll('.page[id^="page-"]')).map(p => p.id.slice(5)));
     for (const id of ids) {
@@ -57,7 +58,7 @@ runBrowser(mode === 'phone' ? 'Full-app audit — every page at phone width (375
     await page.close();
   }
   // The pages outside /app, at phone width: no sideways scroll, no tiny control, no script error.
-  if (mode === 'phone') for (const p of ['/', '/accountants.html', '/accountant-login.html', '/accountant-register.html', '/admin.html', '/reset-password.html?token=x', '/team-accept.html?token=x', '/pay-received.html', '/privacy.html', '/terms.html', '/security.html', '/conduct.html', '/no-such-page']) {
+  if (mode === 'outside') for (const p of ['/', '/accountants.html', '/accountant-login.html', '/accountant-register.html', '/admin.html', '/reset-password.html?token=x', '/team-accept.html?token=x', '/pay-received.html', '/privacy.html', '/terms.html', '/security.html', '/conduct.html', '/no-such-page']) {
     const pg = await open({ width: 375, height: 812, beforeGoto: watch }, p);
     await pg.waitForTimeout(500);
     const r = await pg.evaluate(() => {
@@ -76,8 +77,8 @@ runBrowser(mode === 'phone' ? 'Full-app audit — every page at phone width (375
     await pg.close();
   }
   if (process.env.AUDIT_DUMP) console.log(JSON.stringify(result, null, 1));
-  eq('1  no page scrolls sideways (' + (mode === 'phone' ? 'phone' : 'desktop') + ')', result.over, []);
-  if (mode === 'phone') eq('2  no visible control under 24 × 24 px at 375 px', result.tiny.slice(0, 12), []);
+  eq('1  no page scrolls sideways (' + mode + ')', result.over, []);
+  if (mode !== 'desktop') eq('2  no visible control under 24 × 24 px at 375 px', result.tiny.slice(0, 12), []);
   eq('3  no script error', errs.slice(0, 8), []);
   eq('3  no Content-Security-Policy violation', result.csp.slice(0, 8), []);
   eq('4  no broken value on screen (NaN / undefined / [object Object] / Infinity / null)', [...new Set(result.broken)].slice(0, 12), []);

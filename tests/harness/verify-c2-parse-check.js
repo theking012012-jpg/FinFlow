@@ -10,8 +10,12 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     boot = await bootSpaInJsdom({});
     const { window, settle, consoleErrors } = boot;
     await settle(20, 25);
-    for (const fn of ['revokeAccountant', 'reportAccountant', 'leaveReview', 'deletePayrollRun', 'voidPayrollRun', 'deleteAutocatRule', 'deleteInvoice', 'deleteCustomer', 'deleteHolding']) {
-      A(`window.${fn} is defined (no parse break)`, typeof window[fn] === 'function');
+    const FNS = ['revokeAccountant', 'reportAccountant', 'leaveReview', 'deletePayrollRun', 'voidPayrollRun', 'deleteAutocatRule', 'deleteInvoice', 'deleteCustomer', 'deleteHolding'];
+    // N3-16 class (owner's sweep 2026-11-15, run 1 only: 9 passed, 1 failed): on a slow first run a script can finish
+    // after the 0.5 s quiet window. Wait up to 20 s for them. A real parse break still fails: the function never appears.
+    for (let i = 0; i < 200 && FNS.some(fn => typeof window[fn] !== 'function'); i++) await new Promise(r => setTimeout(r, 100));
+    for (const fn of FNS) {
+      A(`window.${fn} is defined (no parse break)`, typeof window[fn] === 'function', typeof window[fn]);
     }
     A('no SyntaxError / Unexpected token during boot', !consoleErrors.some(l => /SyntaxError|Unexpected (token|identifier|reserved)/i.test(l)),
       consoleErrors.filter(l => /Syntax|Unexpected/i.test(l)).slice(0, 3).join(' | '));

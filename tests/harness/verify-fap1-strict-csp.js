@@ -40,6 +40,10 @@ runBrowser('FA-P1 — strict CSP enforced, the app works under it', async ({ ope
   const atk = await app.evaluate(async () => {
     const box = document.createElement('div'); document.body.appendChild(box);
     box.innerHTML = '<img src="/nope-404.png" onerror="window.__pwned = 1"><button id="atk-btn" data-on-click="window.__pwned2 = 1">x</button><div id="atk-style" style="color: rgb(1, 2, 3)">s</div>';
+    // N3-16 class (2026-11-14, 6 copies at once): the 404 can land AFTER this step, and its blocked onerror was then
+    // counted against check 4 ("script-src-attr inline @app:1"). Wait for the image to fail before moving on.
+    const img = box.querySelector('img');
+    await new Promise(r => { if (img.complete) return r(); img.addEventListener('error', r, { once: true }); img.addEventListener('load', r, { once: true }); setTimeout(r, 10000); });
     await new Promise(r => setTimeout(r, 400));
     document.getElementById('atk-btn').click();
     const col = getComputedStyle(document.getElementById('atk-style')).color;
@@ -84,8 +88,9 @@ runBrowser('FA-P1 — strict CSP enforced, the app works under it', async ({ ope
   eq('3  after opening all ' + ids.length + ' pages, no data-style is left unapplied', await app.evaluate(() => document.querySelectorAll('[data-style]').length), 0);
   await app.evaluate(() => { window.showPage('invoices'); });
   await app.waitForTimeout(500);
-  const view = await app.$('[data-on-click^="viewInvoice("]');
-  if (view) { await view.click(); await app.waitForTimeout(1200); }
+  // a locator, re-found at click time: the invoice list can re-render as data lands (an element handle then detaches)
+  const view = app.locator('[data-on-click^="viewInvoice("]').first();
+  if (await view.count()) { await view.click(); await app.waitForTimeout(1200); }
   const docv = await app.evaluate(() => {
     const f = document.getElementById('ff-docview-frame'); const d = f && f.contentDocument;
     if (!d || !d.body) return null;

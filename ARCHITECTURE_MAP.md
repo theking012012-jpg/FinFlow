@@ -185,6 +185,19 @@ the `entity_id` column), while `db.update`/`db.insert` write the `entity_id`
 column explicitly ([database.js:578](database.js#L578),
 [592](database.js#L592), [453](database.js#L453)).
 
+**Bulk writes (N3-30, 2026-11-14).** `db.insertMany(table, rows, { skipConflicts })` writes many rows in ONE
+statement (same entity-required check and `objToData` as `db.insert`; `skipConflicts` → `ON CONFLICT DO NOTHING`, so a row a
+unique index already holds is skipped, not an error). The bank-statement import uses it in batches of 500, with
+`recordAuditMany` (server.js) writing the matching audit entries in one statement; `recordAudit` and `recordAuditMany`
+share one value builder, `_auditValues`, so a single entry and a batched one cannot differ.
+
+**Write lookups against expression indexes (N3-30 / N3-31).** Several unique indexes key on `COALESCE(entity_id, 0)` or
+`COALESCE(user_id, 0)` (bank-line source keys; the audit trail's tamper-evidence chain `idx_audit_trail_chain`). A lookup
+written `… IS NOT DISTINCT FROM $n` CANNOT use them and scans the table: that made every audit entry read the account's
+whole trail, and a statement import grow with the square of its size. Write such lookups in the index's own form:
+`COALESCE(col, 0) = COALESCE($n::int, 0)`. The audit chain trigger `ff_audit_chain` (audit-trigger.js CHAIN_SQL +
+migration `2026-11-14-audit-chain-index-lookup.sql`) does; what it hashes is unchanged.
+
 Real `data` field names per entity (from the route handlers and the frontend
 mappers in `loadEntityData` / `ffLoadData`):
 

@@ -1,7 +1,36 @@
 # FinFlow — session handover (for the next Claude)
 
-**Written:** 2026-08-14 · **Updated:** 2026-11-03 — `main` at `746696a` (see the first UPDATE below; older repo-state notes are history).
+**Written:** 2026-08-14 · **Updated:** 2026-11-15 — `main` at `8fd4873` (DEPLOYED); work branch `fix/n3-1-receivable-g13` ahead with docs only. Read the first UPDATE below; older repo-state notes are history.
 **You are picking up a single-founder SaaS build.** The owner (Shaq, Trinidad) plans/approves; you write code.
+
+---
+
+## ⚡ UPDATE 2026-11-15 — N3-18 … N3-34 fixed, deployed `8fd4873`; open = owner launch items — read this first
+
+- **Deployed:** `main` fast-forwarded `9333569 → 8fd4873` (owner's instruction, 2026-11-15). Railway deploy Active; migration
+  `2026-11-14-audit-chain-index-lookup.sql` applied (1 applied, 0 failed, 30 already); `/healthz` ok, 29 ms. Branch
+  `fix/n3-1-receivable-g13` = `main` + AUDIT_MASTER / LAUNCH_STATUS / runbook notes only (kept off `main`: a push deploys).
+- **Fixed this round (all RED → GREEN, related harnesses run, rows in AUDIT_MASTER):** N3-18 session-ended dialog · N3-25 access
+  list per new business · N3-26 harness boot applies production migrations (+13 harnesses converted 2026-11-14) · N3-27 stock
+  counter atomic · N3-28 onboarding wizard stays until both saves, Settings shows the saved profile at once · N3-29 AI insights
+  + Scenario repaint when the books load · N3-30 bank-statement import: index-form duplicate check (also Plaid / Belvo) + batches
+  of 500 (113 s → 11 s for 1.2 MB) · N3-31 audit chain finds its latest entry through its index (every audited write was
+  scanning the account's trail) · N3-32 one date formatter per zone; boot splash first in the page · N3-33 sweep test faults ·
+  N3-24 page audit split in three.
+- **Owner's sweep:** 3× on `5e76724` → 768/770 (test faults, N3-33) then **770/770 ×2**; the changed tests re-run 3× green on
+  the owner's Windows box. Live = that code + tests/docs.
+- **Capacity (N3-34, 🔴 launch blocker, owner):** production Supabase is **Free / Nano / no backups**. Staging copy (identical)
+  under k6, 200 users: p50 ≈ 9 s, p99 ≈ 21 s, 0 server errors, app CPU ≤ 0.3 vCPU. Owner to move the org to **Pro** (Micro),
+  re-run `LOAD_TEST_RUNBOOK.md` on staging at that size, then decide on Small; code follow-up (pool `max: 10`, trips per
+  request) only after that re-run shows where the time goes. Delete staging (Railway service `finflow-staging`, Supabase
+  `finflow-staging`) when done. Load-test accounts: `node tests/load/seed-load-users.js --remove`.
+- **Still open, owner:** LAUNCH_STATUS 1.1 rotate DB password · 1.6 purge production test data (incl. `cowork.test+3`,
+  `cowork.acct+3`) · 1.7 restore drill (needs Pro backups) · 1.8 `ALLOW_INDEXING=1` on launch day · 1.9 Pro + capacity ·
+  2.2 `SENTRY_DSN` · 2.6 legal review · 4.3 hands-on production smoke incl. e-mails arriving.
+- **Unexplained, watch:** N3-33 — on the owner's first sweep run, fap1 clicked into `#modal-edit-employee` with its
+  `data-style` unapplied; not reproduced in 12 runs under load.
+- **Optional perf (N3-32, open):** run Lighthouse on the LIVE app (owner's Chrome, mobile). If LCP > ~4 s, combine the 51
+  `/app` script files (a build change). Local HTTP/1.1 figures were pessimistic.
 
 ---
 

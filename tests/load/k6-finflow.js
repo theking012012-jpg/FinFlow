@@ -21,6 +21,10 @@ const PASSWORD = __ENV.LOAD_PASSWORD || 'LoadTest-pw-2026!';
 const USERS = parseInt(__ENV.USERS || '200', 10);
 
 export const options = {
+  // Each virtual user signs in ONCE and must stay signed in. k6 clears every VU's cookies at the end of each iteration
+  // unless this is set, so the first run (2026-11-15) worked for one loop per user and then sent everything signed-out:
+  // read ok 1,182 = 197 sign-ins × 6, then 29,493 × 429 (signed-out requests share one IP-keyed budget).
+  noCookiesReset: true,
   scenarios: {
     ramp: {
       executor: 'ramping-vus', startVUs: 0,
@@ -43,6 +47,7 @@ export const options = {
 
 const writeDur = new Trend('write_duration', true);
 const rateLimited = new Counter('rate_limited_429');
+const signedOut = new Counter('signed_out_401');   // should stay 0: each user keeps its session
 const H = { headers: { 'Content-Type': 'application/json' } };
 
 export function setup() {
@@ -58,12 +63,13 @@ export default function () {
     if (!check(r, { 'signed in': x => x.status === 200 })) { sleep(5); return; }
     signedIn = true;
   }
+  // a 401 means the session was lost: sign in again next loop (and count it, so a lost session can't hide in the totals)
   group('dashboard', () => {
     const rs = http.batch([
       ['GET', BASE + '/api/entities'], ['GET', BASE + '/api/settings'], ['GET', BASE + '/api/invoices'],
       ['GET', BASE + '/api/expenses'], ['GET', BASE + '/api/reports?period=year'], ['GET', BASE + '/api/customers'],
     ]);
-    rs.forEach(x => { if (x.status === 429) rateLimited.add(1); check(x, { 'read ok': y => y.status === 200 }); });
+    rs.forEach(x => { if (x.status === 429) rateLimited.add(1); if (x.status === 401) { signedOut.add(1); signedIn = false; } check(x, { 'read ok': y => y.status === 200 }); });
   });
   sleep(3 + Math.random() * 5);
   group('reports', () => {

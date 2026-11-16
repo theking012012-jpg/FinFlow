@@ -66,7 +66,7 @@ summary plus screenshots of the Railway and Supabase graphs, and I'll find the c
 2. Slow queries on the dashboard and reports.
 3. CPU on a small instance.
 
-`rate_limited_429` should stay at 0. Each user is its own account, and the limit is 300 writes a minute per account. If
+`rate_limited_429` and `signed_out_401` should both stay at 0. (First run, 2026-11-15: k6 cleared each user's cookies after every loop, so from the second loop all 200 users were signed out and rate-limited as one visitor: 29,493 × 429. Fixed with `noCookiesReset: true`; if either counter is not 0, the test is wrong, not the app.) Also check before running: `/healthz` on staging should show `latency_ms` close to production's (≈ 30). The first run had 213 because the staging app and database were in different regions. Each user is its own account, and the limit is 300 writes a minute per account. If
 it isn't 0, something is wrong with the test, not the app.
 
 ## 5. Clean up
